@@ -82,7 +82,7 @@ test('markAttendance raises an absence flag on the 6th consecutive full-day abse
       daySession('2026-07-05', ['stu-1']),
       daySession('2026-07-06', ['stu-1']),
     ]);
-    const findOutstandingMock = t.mock.method(attendanceAbsenceFlagRepository, 'findOutstandingForStudent', async () => null);
+    const findOutstandingMock = t.mock.method(attendanceAbsenceFlagRepository, 'findOutstandingForStudents', async () => []);
     const createFlagMock = t.mock.method(attendanceAbsenceFlagRepository, 'create', async (client, fields) => ({ id: 'flag-1', ...fields }));
     // RS-ATT-008 / RS-NTF-005: raising the flag also notifies the HOD —
     // resolvePositionOccupant is already mocked above (shared with the
@@ -133,7 +133,7 @@ test('markAttendance raises an absence flag on the 6th consecutive full-day abse
     // concurrent call's own findOutstandingForStudent also saw
     // nothing, and its create() has already committed by the time this
     // one runs) — the partial unique index is what actually catches it.
-    const findOutstandingMock = t.mock.method(attendanceAbsenceFlagRepository, 'findOutstandingForStudent', async () => null);
+    const findOutstandingMock = t.mock.method(attendanceAbsenceFlagRepository, 'findOutstandingForStudents', async () => []);
     const createFlagMock = t.mock.method(attendanceAbsenceFlagRepository, 'create', async () => {
       const err = new Error('duplicate key value violates unique constraint "attendance_absence_flags_student_outstanding_key"');
       err.code = '23505';
@@ -172,7 +172,7 @@ test('markAttendance raises an absence flag on the 6th consecutive full-day abse
       daySession('2026-07-05', ['stu-1']),
       daySession('2026-07-06', ['stu-1']),
     ]);
-    const findOutstandingMock = t.mock.method(attendanceAbsenceFlagRepository, 'findOutstandingForStudent', async () => ({ id: 'flag-existing' }));
+    const findOutstandingMock = t.mock.method(attendanceAbsenceFlagRepository, 'findOutstandingForStudents', async () => [{ id: 'flag-existing', student_id: 'stu-1' }]);
     const createFlagMock = t.mock.method(attendanceAbsenceFlagRepository, 'create');
     t.after(() => {
       getClassMock.mock.restore();
@@ -192,6 +192,56 @@ test('markAttendance raises an absence flag on the 6th consecutive full-day abse
     );
 
     assert.equal(createFlagMock.mock.callCount(), 0);
+  });
+
+  await t.test('multiple newly-absent students share one session-history query and one batched outstanding-flag check, not one each', async () => {
+    const getClassMock = t.mock.method(academicService, 'getClass', async () => APPROVED_CLASS);
+    const resolveTutorMock = t.mock.method(identityService, 'resolvePositionOccupant', async () => 'tutor-user');
+    const findMock = t.mock.method(attendanceRepository, 'findByClassSessionAndHour', async () => null);
+    const createMock = t.mock.method(attendanceRepository, 'create', async (client, fields) => ({ id: 'session-new', ...fields }));
+    const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
+    // stu-1 is over the threshold (6 consecutive full-day absences,
+    // including today); stu-2 is under it (only today) and stu-3 has no
+    // history at all — only stu-1 should ever reach the outstanding-flag
+    // check or a create() call.
+    const findRangeMock = t.mock.method(attendanceRepository, 'findByClassAndDateRange', async () => [
+      daySession('2026-07-01', ['stu-1']),
+      daySession('2026-07-02', ['stu-1']),
+      daySession('2026-07-03', ['stu-1']),
+      daySession('2026-07-04', ['stu-1']),
+      daySession('2026-07-05', ['stu-1']),
+      daySession('2026-07-06', ['stu-1', 'stu-2', 'stu-3']),
+    ]);
+    const findOutstandingMock = t.mock.method(attendanceAbsenceFlagRepository, 'findOutstandingForStudents', async () => []);
+    const createFlagMock = t.mock.method(attendanceAbsenceFlagRepository, 'create', async (client, fields) => ({ id: 'flag-1', ...fields }));
+    const getUserMock = t.mock.method(authRepository, 'getUserById', async () => ({ id: 'tutor-user', email: 'hod@example.com' }));
+    const sendMock = t.mock.method(notificationService, 'sendViaChannel', async () => ({ status: 'sent' }));
+    t.after(() => {
+      getClassMock.mock.restore();
+      resolveTutorMock.mock.restore();
+      findMock.mock.restore();
+      createMock.mock.restore();
+      auditMock.mock.restore();
+      findRangeMock.mock.restore();
+      findOutstandingMock.mock.restore();
+      createFlagMock.mock.restore();
+      getUserMock.mock.restore();
+      sendMock.mock.restore();
+    });
+
+    await attendanceService.markAttendance(
+      {},
+      {
+        classId: 'class-1', sessionDate: '2026-07-06', hourIndex: 1, absentStudentIds: ['stu-1', 'stu-2', 'stu-3'], totalStudents: 40,
+      },
+      { actorUserId: 'tutor-user', actorRole: 'class_tutor' },
+    );
+
+    assert.equal(findRangeMock.mock.callCount(), 1);
+    assert.equal(findOutstandingMock.mock.callCount(), 1);
+    assert.deepEqual(findOutstandingMock.mock.calls[0].arguments[1], ['stu-1']);
+    assert.equal(createFlagMock.mock.callCount(), 1);
+    assert.equal(createFlagMock.mock.calls[0].arguments[1].studentId, 'stu-1');
   });
 });
 

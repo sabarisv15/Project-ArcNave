@@ -378,11 +378,32 @@ async function markAttendance(
   // marked absent this time needs no check: presence breaks any streak,
   // and this function does not un-raise an already-outstanding flag
   // either way (RS-ATT-008 names only L3 closing it, never an automatic
-  // close).
+  // close). The class's session history is fetched once here and
+  // reused for every absent student's own streak computation (both
+  // used to be one query PER student, in a loop) — a large absence
+  // batch (e.g. 60 students marked absent in one hour) now costs one
+  // session-history query and, at most, one batched outstanding-flag
+  // query, not up to 120 sequential round-trips.
   const nowAbsentIds = JSON.parse(patch.absentStudentIds);
-  for (const studentId of nowAbsentIds) {
-    // eslint-disable-next-line no-await-in-loop -- deliberate: sequential per-student checks against one dbClient, same reasoning workflowChainService.resolveApproverChain's own loop gives
-    await raiseAbsenceFlagIfWarranted(client, cls, studentId);
+  if (nowAbsentIds.length > 0) {
+    const classSessions = await attendanceRepository.findByClassAndDateRange(client, classId, {});
+    const streakByStudentId = new Map(
+      nowAbsentIds.map((studentId) => [studentId, computeConsecutiveAbsentDaysFromSessions(classSessions, studentId)]),
+    );
+    const overThreshold = nowAbsentIds.filter((id) => streakByStudentId.get(id) > ABSENCE_FLAG_THRESHOLD_DAYS);
+
+    if (overThreshold.length > 0) {
+      const outstanding = await attendanceAbsenceFlagRepository.findOutstandingForStudents(client, overThreshold);
+      const alreadyOutstandingIds = new Set(outstanding.map((flag) => flag.student_id));
+
+      for (const studentId of overThreshold) {
+        if (alreadyOutstandingIds.has(studentId)) {
+          continue; // eslint-disable-line no-continue
+        }
+        // eslint-disable-next-line no-await-in-loop -- deliberate: sequential per-student raises against one dbClient, same reasoning workflowChainService.resolveApproverChain's own loop gives; only students actually crossing the threshold reach this point, not every absent student
+        await raiseAbsenceFlag(client, cls, studentId, streakByStudentId.get(studentId));
+      }
+    }
   }
 
   return session;
@@ -420,8 +441,11 @@ function absenceFlagDateKey(sessionDate) {
 // full-day absence — a gap in recorded dates (e.g. a weekend with no
 // sessions) is invisible here, exactly as intended: only real,
 // recorded working days count.
-async function computeConsecutiveAbsentDays(client, classId, studentId) {
-  const sessions = await attendanceRepository.findByClassAndDateRange(client, classId, {});
+// Pure — takes an already-fetched sessions list rather than querying
+// itself, so markAttendance's own multi-student loop can share one
+// findByClassAndDateRange call across every absent student instead of
+// each one re-fetching this class's whole session history.
+function computeConsecutiveAbsentDaysFromSessions(sessions, studentId) {
   const byDate = new Map();
   for (const session of sessions) {
     const key = absenceFlagDateKey(session.session_date);
@@ -443,24 +467,14 @@ async function computeConsecutiveAbsentDays(client, classId, studentId) {
 
 // RS-ATT-008/ADL-011: "more than five consecutive working days" ->
 // strictly greater than 5, i.e. the 6th consecutive full-day absence
-// is what raises the flag, never the 5th. findOutstandingForStudent is
-// checked first so a condition that's already flagged and still
-// outstanding never raises a second row — the partial unique index on
-// (student_id) WHERE closed_at IS NULL is the structural backstop, not
-// the primary guard.
-async function raiseAbsenceFlagIfWarranted(client, cls, studentId) {
-  const consecutiveAbsentDays = await computeConsecutiveAbsentDays(client, cls.id, studentId);
-  if (consecutiveAbsentDays <= ABSENCE_FLAG_THRESHOLD_DAYS) {
-    return null;
-  }
-
-  const existing = await attendanceAbsenceFlagRepository.findOutstandingForStudent(client, studentId);
-  if (existing !== null) {
-    return null;
-  }
-
-  // The findOutstandingForStudent check above is the common case, not
-  // the guarantee — attendance_absence_flags_student_outstanding_key
+// is what raises the flag, never the 5th. The caller (markAttendance)
+// already filters to students over the threshold and batch-checks
+// findOutstandingForStudents before calling this — this function only
+// performs the actual raise (create + audit + notify), one per
+// qualifying student.
+async function raiseAbsenceFlag(client, cls, studentId, consecutiveAbsentDays) {
+  // The caller's own batched findOutstandingForStudents check is the
+  // common case, not the guarantee — attendance_absence_flags_student_outstanding_key
   // (the partial unique index) is what actually prevents two rows for
   // the same still-outstanding student under a genuine race (two
   // concurrent markAttendance calls, e.g. different periods for the

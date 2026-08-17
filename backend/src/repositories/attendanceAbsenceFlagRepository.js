@@ -36,6 +36,22 @@ async function findOutstandingForStudent(client, studentId) {
   return result.rows[0] || null;
 }
 
+// Batch form of findOutstandingForStudent — markAttendance's own
+// per-mark check for every newly-absent student crossing the
+// consecutive-absence threshold, resolved in one round-trip instead of
+// one query per student. Same `= ANY($1)` pattern listOutstanding's own
+// classIds filter already uses in this file.
+async function findOutstandingForStudents(client, studentIds) {
+  if (!Array.isArray(studentIds) || studentIds.length === 0) {
+    return [];
+  }
+  const result = await client.query(
+    'SELECT * FROM attendance_absence_flags WHERE student_id = ANY($1) AND closed_at IS NULL',
+    [studentIds],
+  );
+  return result.rows;
+}
+
 // classIds undefined/null means unrestricted (principal) — same
 // "no filter means no filter" convention assessmentMarkRepository.
 // findByFilters/attendanceCorrectionRepository already use elsewhere in
@@ -66,5 +82,5 @@ async function close(client, id, { closedByUserId, remarks }) {
 }
 
 module.exports = {
-  create, findById, findOutstandingForStudent, listOutstanding, close,
+  create, findById, findOutstandingForStudent, findOutstandingForStudents, listOutstanding, close,
 };

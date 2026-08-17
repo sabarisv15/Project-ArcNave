@@ -1,49 +1,13 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Outlet, Route, Routes, useParams } from 'react-router-dom';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { AppShell } from './components/AppShell';
 import { HomeView } from './routes/HomeView';
-import { ChatRoute } from './routes/ChatRoute';
-import { ProjectsView } from './routes/ProjectsView';
-import { ProjectDetail } from './routes/ProjectDetail';
-import { ArtifactLibrary } from './routes/ArtifactLibrary';
-import { ArtifactCreate } from './routes/ArtifactCreate';
-import { ArtifactEditor } from './routes/ArtifactEditor';
-import { CurriculumView } from './routes/CurriculumView';
-import { CurriculumLanding } from './routes/CurriculumLanding';
-import { MyClassView } from './routes/MyClassView';
-import { MyClassStudentsView } from './routes/MyClassStudentsView';
-import { ClassApprovalsView } from './routes/ClassApprovalsView';
-import { ClassFinanceView } from './routes/ClassFinanceView';
-import { ClassTimetableView } from './routes/ClassTimetableView';
 import { AttendanceTabsLayout } from './routes/AttendanceTabsLayout';
-import { AttendanceHomeView } from './routes/AttendanceHomeView';
-import { ClassLogsView } from './routes/ClassLogsView';
-import { ReportsView } from './routes/ReportsView';
-import { TimetableView } from './routes/TimetableView';
-import { WorkloadView } from './routes/WorkloadView';
-import { AssessmentsView } from './routes/AssessmentsView';
-import { DocumentsView } from './routes/DocumentsView';
-import { CalendarView } from './routes/CalendarView';
-import { DepartmentOverview } from './routes/DepartmentOverview';
-import { DepartmentClassesView } from './routes/DepartmentClassesView';
-import { DepartmentFacultyView } from './routes/DepartmentFacultyView';
-import { DepartmentStudentsView } from './routes/DepartmentStudentsView';
-import { DepartmentPromotionsView } from './routes/DepartmentPromotionsView';
-import { DepartmentApprovalsView } from './routes/DepartmentApprovalsView';
-import { DepartmentTimetableView } from './routes/DepartmentTimetableView';
 import { DepartmentGate } from './components/DepartmentGate';
-import { InstitutionOverview } from './routes/InstitutionOverview';
-import { InstitutionDepartmentsView } from './routes/InstitutionDepartmentsView';
-import { InstitutionFacultyView } from './routes/InstitutionFacultyView';
-import { InstitutionStudentsView } from './routes/InstitutionStudentsView';
-import { InstitutionApprovalsView } from './routes/InstitutionApprovalsView';
-import { InstitutionTimetableView } from './routes/InstitutionTimetableView';
 import { InstitutionGate } from './components/InstitutionGate';
 import { DelegatedGate, DelegatedNotConfigured } from './components/DelegatedGate';
-import { DelegatedOverview } from './routes/DelegatedOverview';
-import { DelegatedApprovalsView } from './routes/DelegatedApprovalsView';
-import { DelegatedWorkAreaDetail, DelegatedWorkAreasView } from './routes/DelegatedWorkAreaView';
 import { delegatedRegistered } from './lib/delegatedScope';
 import { ClassGate } from './components/ClassGate';
 import { AssessmentsProvider } from './store/AssessmentsProvider';
@@ -51,7 +15,58 @@ import { AttendanceProvider } from './store/AttendanceProvider';
 import { AcademicRosterProvider } from './store/AcademicRosterProvider';
 import { AcademicTermProvider } from './store/AcademicTermProvider';
 import { InstitutionalLifecycleProvider } from './store/InstitutionalLifecycleProvider';
-import { InstitutionAcademicYearView } from './routes/InstitutionAcademicYearView';
+import { Loading } from './components/InstitutionalState';
+
+// Every route view below is a named export, not a default one — React.lazy
+// needs a default export from the dynamic import, so this re-wraps each
+// module's named export as one. Layout/gate/provider components (AppShell,
+// the *Gate components, the store Providers, AttendanceTabsLayout, HomeView
+// itself as the landing route) stay eagerly imported above: they are either
+// tiny and structural, or needed on effectively every navigation, so lazy-
+// loading them would trade a real bundle-size win for a loading flash on the
+// most common paths. Everything else here used to ship in the single main
+// bundle regardless of which seat/page a visitor ever opened.
+const lazyNamed = (importer, name) => lazy(() => importer().then((m) => ({ default: m[name] })));
+
+const ChatRoute = lazyNamed(() => import('./routes/ChatRoute'), 'ChatRoute');
+const ProjectsView = lazyNamed(() => import('./routes/ProjectsView'), 'ProjectsView');
+const ProjectDetail = lazyNamed(() => import('./routes/ProjectDetail'), 'ProjectDetail');
+const ArtifactLibrary = lazyNamed(() => import('./routes/ArtifactLibrary'), 'ArtifactLibrary');
+const ArtifactCreate = lazyNamed(() => import('./routes/ArtifactCreate'), 'ArtifactCreate');
+const ArtifactEditor = lazyNamed(() => import('./routes/ArtifactEditor'), 'ArtifactEditor');
+const CurriculumView = lazyNamed(() => import('./routes/CurriculumView'), 'CurriculumView');
+const CurriculumLanding = lazyNamed(() => import('./routes/CurriculumLanding'), 'CurriculumLanding');
+const MyClassView = lazyNamed(() => import('./routes/MyClassView'), 'MyClassView');
+const MyClassStudentsView = lazyNamed(() => import('./routes/MyClassStudentsView'), 'MyClassStudentsView');
+const ClassApprovalsView = lazyNamed(() => import('./routes/ClassApprovalsView'), 'ClassApprovalsView');
+const ClassFinanceView = lazyNamed(() => import('./routes/ClassFinanceView'), 'ClassFinanceView');
+const ClassTimetableView = lazyNamed(() => import('./routes/ClassTimetableView'), 'ClassTimetableView');
+const AttendanceHomeView = lazyNamed(() => import('./routes/AttendanceHomeView'), 'AttendanceHomeView');
+const ClassLogsView = lazyNamed(() => import('./routes/ClassLogsView'), 'ClassLogsView');
+const ReportsView = lazyNamed(() => import('./routes/ReportsView'), 'ReportsView');
+const TimetableView = lazyNamed(() => import('./routes/TimetableView'), 'TimetableView');
+const WorkloadView = lazyNamed(() => import('./routes/WorkloadView'), 'WorkloadView');
+const AssessmentsView = lazyNamed(() => import('./routes/AssessmentsView'), 'AssessmentsView');
+const DocumentsView = lazyNamed(() => import('./routes/DocumentsView'), 'DocumentsView');
+const CalendarView = lazyNamed(() => import('./routes/CalendarView'), 'CalendarView');
+const DepartmentOverview = lazyNamed(() => import('./routes/DepartmentOverview'), 'DepartmentOverview');
+const DepartmentClassesView = lazyNamed(() => import('./routes/DepartmentClassesView'), 'DepartmentClassesView');
+const DepartmentFacultyView = lazyNamed(() => import('./routes/DepartmentFacultyView'), 'DepartmentFacultyView');
+const DepartmentStudentsView = lazyNamed(() => import('./routes/DepartmentStudentsView'), 'DepartmentStudentsView');
+const DepartmentPromotionsView = lazyNamed(() => import('./routes/DepartmentPromotionsView'), 'DepartmentPromotionsView');
+const DepartmentApprovalsView = lazyNamed(() => import('./routes/DepartmentApprovalsView'), 'DepartmentApprovalsView');
+const DepartmentTimetableView = lazyNamed(() => import('./routes/DepartmentTimetableView'), 'DepartmentTimetableView');
+const InstitutionOverview = lazyNamed(() => import('./routes/InstitutionOverview'), 'InstitutionOverview');
+const InstitutionDepartmentsView = lazyNamed(() => import('./routes/InstitutionDepartmentsView'), 'InstitutionDepartmentsView');
+const InstitutionFacultyView = lazyNamed(() => import('./routes/InstitutionFacultyView'), 'InstitutionFacultyView');
+const InstitutionStudentsView = lazyNamed(() => import('./routes/InstitutionStudentsView'), 'InstitutionStudentsView');
+const InstitutionApprovalsView = lazyNamed(() => import('./routes/InstitutionApprovalsView'), 'InstitutionApprovalsView');
+const InstitutionTimetableView = lazyNamed(() => import('./routes/InstitutionTimetableView'), 'InstitutionTimetableView');
+const InstitutionAcademicYearView = lazyNamed(() => import('./routes/InstitutionAcademicYearView'), 'InstitutionAcademicYearView');
+const DelegatedOverview = lazyNamed(() => import('./routes/DelegatedOverview'), 'DelegatedOverview');
+const DelegatedApprovalsView = lazyNamed(() => import('./routes/DelegatedApprovalsView'), 'DelegatedApprovalsView');
+const DelegatedWorkAreasView = lazyNamed(() => import('./routes/DelegatedWorkAreaView'), 'DelegatedWorkAreasView');
+const DelegatedWorkAreaDetail = lazyNamed(() => import('./routes/DelegatedWorkAreaView'), 'DelegatedWorkAreaDetail');
 
 function AttendanceLayout() {
   return (
@@ -108,6 +123,7 @@ export default function App() {
       whole institution reads — and would lose them on navigation besides.
     */}
     <InstitutionalLifecycleProvider>
+    <Suspense fallback={<Loading label="Loading…" />}>
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route element={<ProtectedRoute />}>
@@ -226,6 +242,7 @@ export default function App() {
       </Route>
       </Route>
     </Routes>
+    </Suspense>
     </InstitutionalLifecycleProvider>
     </AcademicRosterProvider>
     </AcademicTermProvider>

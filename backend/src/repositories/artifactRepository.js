@@ -48,6 +48,18 @@ async function findById(client, id) {
   return result.rows[0] || null;
 }
 
+// Every column except `content` — the library list view (ArtifactCard/
+// ArtifactLibrary.jsx, via fetchArtifactsReal) renders title/type/
+// updated-at/conversation only, never the artifact body, so there is
+// no reason to pull every artifact's full TEXT content (markdown,
+// potentially large) back for a listing. findById below still selects
+// `*`: opening one specific artifact genuinely needs its content.
+const LIST_COLUMNS = [
+  'id', 'college_id', 'user_id', 'conversation_id', 'source_message_id', 'title',
+  'status', 'version_number', 'published_document_id', 'published_at', 'deleted_at',
+  'created_at', 'updated_at',
+].join(', ');
+
 // limit/offset are opt-in, unlike conversationRepository.listByUser's
 // own limit=50 default — a user's own artifact library is loaded in
 // full by every existing caller (no "load more" UI on top of it yet),
@@ -56,7 +68,7 @@ async function findById(client, id) {
 // page without any further repository change.
 async function listByUser(client, userId, { limit, offset } = {}) {
   const values = [userId];
-  let query = 'SELECT * FROM artifacts WHERE user_id = $1 AND deleted_at IS NULL ORDER BY updated_at DESC';
+  let query = `SELECT ${LIST_COLUMNS} FROM artifacts WHERE user_id = $1 AND deleted_at IS NULL ORDER BY updated_at DESC`;
   if (limit !== undefined) {
     values.push(limit);
     query += ` LIMIT $${values.length}`;

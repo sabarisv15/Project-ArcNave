@@ -259,7 +259,18 @@ export function ScopedStudentTable({ s }) {
     );
 
     return cols;
-  }, [s]);
+    // Only the fields cell renderers actually close over — not the whole
+    // hook-return object `s`, which is a new reference every render
+    // (query/filters/sort/export-menu changes elsewhere shouldn't force
+    // every column def, including their popover/menu renderers, to rebuild).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    s.allSelected, s.someSelected, s.toggleSelectAll,
+    s.selected, s.toggleRow, s.openDetail,
+    s.scopeIsAll, s.classes,
+    s.statusPopoverId, s.setStatusPopoverId,
+    s.rowMenuId, s.setRowMenuId,
+  ]);
 
   const table = useReactTable({ data: s.rows, columns, getCoreRowModel: getCoreRowModel() });
   const grid = s.scopeIsAll ? GRID_ALL : GRID_SCOPED;

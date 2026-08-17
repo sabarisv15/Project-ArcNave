@@ -48,4 +48,43 @@ async function extractTextFromImage(buffer, lang = 'eng') {
   return { text: text.trim(), confidence };
 }
 
-module.exports = { OcrExtractionError, extractTextFromImage };
+// Same per-page result shape as extractTextFromImage (called once per
+// page in order), but one Tesseract.createWorker(lang) is created and
+// reused across every page instead of Tesseract.recognize()'s own
+// implicit create-worker-then-tear-down per call — a multi-page PDF
+// (documentExtractionService.js/documentSearchService.js's own PDF
+// branch, the only callers with more than one page) no longer pays
+// that setup/teardown cost once per page. Single-image callers keep
+// using extractTextFromImage unchanged — a worker is only worth
+// creating up front when there's more than one page to reuse it for.
+async function extractTextFromPages(buffers, lang = 'eng') {
+  if (!Array.isArray(buffers) || buffers.length === 0) {
+    return [];
+  }
+  let worker;
+  try {
+    worker = await Tesseract.createWorker(lang);
+  } catch (err) {
+    throw new OcrExtractionError(`Tesseract OCR failed: ${err.message}`);
+  }
+  try {
+    const results = [];
+    for (const buffer of buffers) {
+      let result;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        result = await worker.recognize(buffer);
+      } catch (err) {
+        throw new OcrExtractionError(`Tesseract OCR failed: ${err.message}`);
+      }
+      const text = result && result.data && typeof result.data.text === 'string' ? result.data.text : '';
+      const confidence = result && result.data && typeof result.data.confidence === 'number' ? result.data.confidence : 0;
+      results.push({ text: text.trim(), confidence });
+    }
+    return results;
+  } finally {
+    await worker.terminate();
+  }
+}
+
+module.exports = { OcrExtractionError, extractTextFromImage, extractTextFromPages };

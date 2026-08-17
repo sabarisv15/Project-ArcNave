@@ -139,7 +139,9 @@ test('documentSearchService.ingestDocument', async (t) => {
     const rasterizeMock = t.mock.method(pdfRasterizer, 'rasterizePdfToImages', async () => [
       Buffer.from('page-1-png-bytes'), Buffer.from('page-2-png-bytes'), Buffer.from('page-3-png-bytes'),
     ]);
-    const ocrMock = t.mock.method(tesseractOcr, 'extractTextFromImage', async (pageBuffer) => ({ text: `[text from ${pageBuffer.toString()}]`, confidence: 90 }));
+    const ocrMock = t.mock.method(tesseractOcr, 'extractTextFromPages', async (pageBuffers) => pageBuffers.map(
+      (pageBuffer) => ({ text: `[text from ${pageBuffer.toString()}]`, confidence: 90 }),
+    ));
     t.after(() => {
       rasterizeMock.mock.restore();
       ocrMock.mock.restore();
@@ -148,11 +150,12 @@ test('documentSearchService.ingestDocument', async (t) => {
     const result = await documentSearchService.ingestDocument({}, 'doc-1', { actorUserId: 'u1' });
 
     assert.equal(rasterizeMock.mock.callCount(), 1);
-    assert.equal(ocrMock.mock.callCount(), 3);
-    // Page order preserved: OCR called in the same order pages were returned.
-    assert.equal(ocrMock.mock.calls[0].arguments[0].toString(), 'page-1-png-bytes');
-    assert.equal(ocrMock.mock.calls[1].arguments[0].toString(), 'page-2-png-bytes');
-    assert.equal(ocrMock.mock.calls[2].arguments[0].toString(), 'page-3-png-bytes');
+    assert.equal(ocrMock.mock.callCount(), 1);
+    // Page order preserved: pages handed to extractTextFromPages in the order they were returned.
+    const [pagesArg] = ocrMock.mock.calls[0].arguments;
+    assert.equal(pagesArg[0].toString(), 'page-1-png-bytes');
+    assert.equal(pagesArg[1].toString(), 'page-2-png-bytes');
+    assert.equal(pagesArg[2].toString(), 'page-3-png-bytes');
 
     assert.equal(embedMock.mock.callCount(), 1);
     const [, texts] = embedMock.mock.calls[0].arguments;
@@ -169,7 +172,7 @@ test('documentSearchService.ingestDocument', async (t) => {
       },
     });
     const rasterizeMock = t.mock.method(pdfRasterizer, 'rasterizePdfToImages', async () => [Buffer.from('page-1')]);
-    const ocrMock = t.mock.method(tesseractOcr, 'extractTextFromImage', async () => ({ text: 'some aadhaar text', confidence: 90 }));
+    const ocrMock = t.mock.method(tesseractOcr, 'extractTextFromPages', async () => [{ text: 'some aadhaar text', confidence: 90 }]);
     t.after(() => {
       rasterizeMock.mock.restore();
       ocrMock.mock.restore();

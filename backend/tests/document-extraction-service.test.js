@@ -408,11 +408,10 @@ test('documentExtractionService.runOcr', async (t) => {
 
   await t.test('a PDF rasterizes to pages, OCRs each, concatenates text, and averages confidence across pages', async () => {
     const rasterMock = t.mock.method(pdfRasterizer, 'rasterizePdfToImages', async () => [Buffer.from('p1'), Buffer.from('p2')]);
-    let call = 0;
-    const ocrMock = t.mock.method(tesseractOcr, 'extractTextFromImage', async () => {
-      call += 1;
-      return call === 1 ? { text: 'page one', confidence: 80 } : { text: 'page two', confidence: 60 };
-    });
+    const ocrMock = t.mock.method(tesseractOcr, 'extractTextFromPages', async () => [
+      { text: 'page one', confidence: 80 },
+      { text: 'page two', confidence: 60 },
+    ]);
     t.after(() => {
       rasterMock.mock.restore();
       ocrMock.mock.restore();

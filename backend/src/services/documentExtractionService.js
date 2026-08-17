@@ -91,11 +91,13 @@ async function runOcr(fileBuffer, mimeType, { lang = 'eng' } = {}) {
     );
   }
 
-  const pageResults = [];
-  for (const page of pages) {
-    // eslint-disable-next-line no-await-in-loop
-    pageResults.push(await tesseractOcr.extractTextFromImage(page, lang));
-  }
+  // A single page (the plain-image case) keeps using extractTextFromImage
+  // directly; a multi-page PDF reuses one Tesseract worker across every
+  // page via extractTextFromPages instead of paying a fresh worker
+  // create/teardown per page.
+  const pageResults = pages.length === 1
+    ? [await tesseractOcr.extractTextFromImage(pages[0], lang)]
+    : await tesseractOcr.extractTextFromPages(pages, lang);
 
   const text = pageResults.map((p) => p.text).join('\n\n');
   const ocrConfidence = pageResults.length > 0

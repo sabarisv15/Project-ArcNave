@@ -172,10 +172,12 @@ function chunkText(text) {
 
 // The only Business Service call this file makes to get file bytes —
 // documentService.downloadDocument, never fileStorage/documentRepository
-// directly (CLAUDE.md rule 2). Chunks are embedded and inserted one at
-// a time (not batched into a single embed() call): deliberately simple
-// over throughput for this first slice — a real backfill job batching
-// many chunks per request is a follow-up, not built speculatively here.
+// directly (CLAUDE.md rule 2). All of a document's chunks are embedded
+// in a single adapter.embed() call (adapter.embed already accepts an
+// array of texts) rather than one round-trip per chunk; each chunk is
+// still inserted individually via aiDocumentChunkRepository.create —
+// batching those inserts too is a further, separate change, not done
+// here.
 async function ingestDocument(client, documentId, { actorUserId } = {}) {
   const result = await documentService.downloadDocument(client, documentId);
   if (result === null) {
@@ -201,13 +203,8 @@ async function ingestDocument(client, documentId, { actorUserId } = {}) {
     ({ text } = await tesseractOcr.extractTextFromImage(buffer));
   } else if (document.mime_type === PDF_MIME_TYPE) {
     const pageImages = await pdfRasterizer.rasterizePdfToImages(buffer);
-    const pageTexts = [];
-    for (const pageImage of pageImages) {
-      // eslint-disable-next-line no-await-in-loop
-      const { text: pageText } = await tesseractOcr.extractTextFromImage(pageImage);
-      pageTexts.push(pageText);
-    }
-    text = pageTexts.join('\n\n');
+    const pageResults = await tesseractOcr.extractTextFromPages(pageImages);
+    text = pageResults.map((p) => p.text).join('\n\n');
   } else {
     throw new DocumentSearchUnsupportedContentError(
       `document ${JSON.stringify(documentId)} has mime_type ${JSON.stringify(document.mime_type)}, which this `
@@ -220,15 +217,18 @@ async function ingestDocument(client, documentId, { actorUserId } = {}) {
   const chunks = chunkText(text);
   const { adapter, config: aiConfig } = await configurationService.getAiConfig(client, document.college_id);
 
+  const embeddings = chunks.length > 0
+    ? await adapter.embed(aiConfig, chunks, { inputType: 'passage' })
+    : [];
+
   for (let i = 0; i < chunks.length; i += 1) {
-    const [embedding] = await adapter.embed(aiConfig, [chunks[i]], { inputType: 'passage' });
     await aiDocumentChunkRepository.create(client, {
       collegeId: document.college_id,
       documentId: document.id,
       chunkIndex: i,
       chunkText: chunks[i],
       classification,
-      embedding,
+      embedding: embeddings[i],
     });
   }
 

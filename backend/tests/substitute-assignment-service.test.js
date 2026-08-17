@@ -356,8 +356,8 @@ test('attendanceService.listSubstituteAssignmentsWithMarkingStatus', async (t) =
       academicService, 'listSubstituteAssignmentsForClass',
       async () => [{ id: 'sub-1', timetable_period_id: 'p1', assignment_date: '2026-06-01', created_at: oldTimestamp }],
     );
-    const periodMock = t.mock.method(academicService, 'getTimetablePeriod', async () => ({ id: 'p1', hour_index: 2 }));
-    const sessionMock = t.mock.method(attendanceRepository, 'findByClassSessionAndHour', async () => null);
+    const periodMock = t.mock.method(academicService, 'getTimetablePeriodsByIds', async () => [{ id: 'p1', hour_index: 2 }]);
+    const sessionMock = t.mock.method(attendanceRepository, 'findByClassAndDateRange', async () => []);
     t.after(() => {
       listMock.mock.restore();
       periodMock.mock.restore();
@@ -375,8 +375,12 @@ test('attendanceService.listSubstituteAssignmentsWithMarkingStatus', async (t) =
       academicService, 'listSubstituteAssignmentsForClass',
       async () => [{ id: 'sub-1', timetable_period_id: 'p1', assignment_date: '2026-06-01', created_at: oldTimestamp }],
     );
-    const periodMock = t.mock.method(academicService, 'getTimetablePeriod', async () => ({ id: 'p1', hour_index: 2 }));
-    const sessionMock = t.mock.method(attendanceRepository, 'findByClassSessionAndHour', async () => ({ id: 'sess-1' }));
+    const periodMock = t.mock.method(academicService, 'getTimetablePeriodsByIds', async () => [{ id: 'p1', hour_index: 2 }]);
+    const sessionMock = t.mock.method(
+      attendanceRepository,
+      'findByClassAndDateRange',
+      async () => [{ id: 'sess-1', session_date: '2026-06-01', hour_index: 2 }],
+    );
     t.after(() => {
       listMock.mock.restore();
       periodMock.mock.restore();
@@ -386,5 +390,52 @@ test('attendanceService.listSubstituteAssignmentsWithMarkingStatus', async (t) =
     const [result] = await attendanceService.listSubstituteAssignmentsWithMarkingStatus({}, 'class-1');
     assert.equal(result.marked, true);
     assert.equal(result.markingOverdue, false);
+  });
+
+  await t.test('resolves periods and sessions for multiple assignments in one batched call each, not one per assignment', async () => {
+    const listMock = t.mock.method(
+      academicService, 'listSubstituteAssignmentsForClass',
+      async () => [
+        { id: 'sub-1', timetable_period_id: 'p1', assignment_date: '2026-06-01', created_at: new Date().toISOString() },
+        { id: 'sub-2', timetable_period_id: 'p2', assignment_date: '2026-06-03', created_at: new Date().toISOString() },
+      ],
+    );
+    const periodMock = t.mock.method(
+      academicService, 'getTimetablePeriodsByIds',
+      async () => [{ id: 'p1', hour_index: 2 }, { id: 'p2', hour_index: 4 }],
+    );
+    const sessionMock = t.mock.method(
+      attendanceRepository, 'findByClassAndDateRange',
+      async () => [{ id: 'sess-1', session_date: '2026-06-01', hour_index: 2 }],
+    );
+    t.after(() => {
+      listMock.mock.restore();
+      periodMock.mock.restore();
+      sessionMock.mock.restore();
+    });
+
+    const results = await attendanceService.listSubstituteAssignmentsWithMarkingStatus({}, 'class-1');
+
+    assert.equal(periodMock.mock.callCount(), 1);
+    assert.deepEqual(periodMock.mock.calls[0].arguments[1], ['p1', 'p2']);
+    assert.equal(sessionMock.mock.callCount(), 1);
+    assert.deepEqual(sessionMock.mock.calls[0].arguments[2], { startDate: '2026-06-01', endDate: '2026-06-03' });
+
+    assert.equal(results[0].marked, true);
+    assert.equal(results[1].marked, false);
+  });
+
+  await t.test('an empty assignment list resolves no periods and no sessions', async () => {
+    const listMock = t.mock.method(academicService, 'listSubstituteAssignmentsForClass', async () => []);
+    const periodMock = t.mock.method(academicService, 'getTimetablePeriodsByIds', async () => { throw new Error('must not be called'); });
+    const sessionMock = t.mock.method(attendanceRepository, 'findByClassAndDateRange', async () => { throw new Error('must not be called'); });
+    t.after(() => {
+      listMock.mock.restore();
+      periodMock.mock.restore();
+      sessionMock.mock.restore();
+    });
+
+    const results = await attendanceService.listSubstituteAssignmentsWithMarkingStatus({}, 'class-1');
+    assert.deepEqual(results, []);
   });
 });

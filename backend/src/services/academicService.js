@@ -2046,6 +2046,14 @@ async function getTimetablePeriod(client, id) {
   return timetablePeriodRepository.findById(client, id);
 }
 
+// Batch form of getTimetablePeriod — attendanceService.
+// listSubstituteAssignmentsWithMarkingStatus's own caller, resolving
+// every assignment's period in one round-trip instead of one per
+// assignment.
+async function getTimetablePeriodsByIds(client, ids) {
+  return timetablePeriodRepository.findByIds(client, ids);
+}
+
 async function listTimetablePeriods(client, { limit, offset } = {}) {
   return timetablePeriodRepository.list(client, { limit, offset });
 }
@@ -2342,6 +2350,7 @@ module.exports = {
   createTimetablePeriod,
   importTimetablePeriodsCsv,
   getTimetablePeriod,
+  getTimetablePeriodsByIds,
   listTimetablePeriods,
   removeTimetablePeriod,
   getClassTimetableForActor,

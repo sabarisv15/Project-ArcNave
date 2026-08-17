@@ -948,26 +948,52 @@ async function computeAttendancePercentageForStudents(client, students) {
 // is no separate approval timestamp to add.
 const SUBSTITUTE_MARKING_WINDOW_HOURS = 24;
 
+// DATE columns come back from pg as JS Date objects in production but
+// as plain 'YYYY-MM-DD' strings from every unit test's own mocked rows
+// (no live Postgres in those) — normalized to the same string shape
+// here so a Map key built from one matches a Map key built from the
+// other regardless of which shape a given caller's row actually is.
+function dateKey(value) {
+  return value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
+}
+
+// Batches what used to be 2 queries per assignment (getTimetablePeriod
+// + findByClassSessionAndHour, both in a for-loop) into 2 queries
+// total for the whole list: every referenced period fetched in one
+// findByIds call, and every attendance_sessions row across the
+// assignments' own date range fetched in one findByClassAndDateRange
+// call, then joined in memory by (date, hour_index).
 async function listSubstituteAssignmentsWithMarkingStatus(client, classId) {
   const assignments = await academicService.listSubstituteAssignmentsForClass(client, classId);
+  if (assignments.length === 0) {
+    return [];
+  }
 
-  const result = [];
-  for (const assignment of assignments) {
-    // eslint-disable-next-line no-await-in-loop
-    const period = await academicService.getTimetablePeriod(client, assignment.timetable_period_id);
-    // eslint-disable-next-line no-await-in-loop
-    const session = period ? await attendanceRepository.findByClassSessionAndHour(
-      client, classId, assignment.assignment_date, period.hour_index,
-    ) : null;
+  const periodIds = [...new Set(assignments.map((a) => a.timetable_period_id))];
+  const periods = await academicService.getTimetablePeriodsByIds(client, periodIds);
+  const periodById = new Map(periods.map((p) => [p.id, p]));
+
+  const assignmentDates = assignments.map((a) => a.assignment_date);
+  const startDate = assignmentDates.reduce((min, d) => (d < min ? d : min));
+  const endDate = assignmentDates.reduce((max, d) => (d > max ? d : max));
+  const sessions = await attendanceRepository.findByClassAndDateRange(client, classId, { startDate, endDate });
+  const sessionByDateHour = new Map(
+    sessions.map((s) => [`${dateKey(s.session_date)}|${s.hour_index}`, s]),
+  );
+
+  return assignments.map((assignment) => {
+    const period = periodById.get(assignment.timetable_period_id) || null;
+    const session = period
+      ? sessionByDateHour.get(`${dateKey(assignment.assignment_date)}|${period.hour_index}`) || null
+      : null;
 
     const hoursElapsed = (Date.now() - new Date(assignment.created_at).getTime()) / (60 * 60 * 1000);
-    result.push({
+    return {
       ...assignment,
       marked: session !== null,
       markingOverdue: session === null && hoursElapsed > SUBSTITUTE_MARKING_WINDOW_HOURS,
-    });
-  }
-  return result;
+    };
+  });
 }
 
 module.exports = {

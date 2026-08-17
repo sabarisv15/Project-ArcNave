@@ -40,6 +40,20 @@ async function findById(client, id) {
   return result.rows[0] || null;
 }
 
+// Batch form of findById — `= ANY($1)` against a plain array param,
+// same pattern documentRepository.findInstitutional's own
+// publicationStatuses filter already uses. An empty/missing ids array
+// short-circuits to an empty result without a round-trip, same as
+// computeAttendancePercentageForStudents's own empty-input guard in
+// attendanceService.js.
+async function findByIds(client, ids) {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return [];
+  }
+  const result = await client.query('SELECT * FROM timetable_periods WHERE id = ANY($1)', [ids]);
+  return result.rows;
+}
+
 async function findByCollegeDayAndHour(client, collegeId, dayOfWeek, hourIndex) {
   const result = await client.query(
     `SELECT * FROM timetable_periods
@@ -113,6 +127,7 @@ async function findCurrentByCollegeAndDay(client, collegeId, dayOfWeek, currentT
 module.exports = {
   create,
   findById,
+  findByIds,
   findByCollegeDayAndHour,
   update,
   remove,

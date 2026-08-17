@@ -634,6 +634,14 @@ test('AcademicService timetable period validation and audit logging (no DB)', as
     assert.equal(result.id, 'period-9');
   });
 
+  await t.test('getTimetablePeriodsByIds is a thin passthrough to findByIds', async () => {
+    const findMock = t.mock.method(timetablePeriodRepository, 'findByIds', async (client, ids) => ids.map((id) => ({ id })));
+    t.after(() => findMock.mock.restore());
+
+    const result = await academicService.getTimetablePeriodsByIds({}, ['period-9', 'period-10']);
+    assert.deepEqual(result, [{ id: 'period-9' }, { id: 'period-10' }]);
+  });
+
   await t.test('getTimetablePeriodByDayAndHour is a thin passthrough to findByCollegeDayAndHour', async () => {
     const findMock = t.mock.method(timetablePeriodRepository, 'findByCollegeDayAndHour', async (client, collegeId, dayOfWeek, hourIndex) => ({
       collegeId, dayOfWeek, hourIndex,

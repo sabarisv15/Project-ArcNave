@@ -1,0 +1,31 @@
+{
+  "name": "arcnave-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ARCNAVE backend — Express (Node.js, plain JavaScript). See docs/adr/ADR-016-Node-Backend.md.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "migrate": "node scripts/migrate.js up",
+    "migrate:down": "node scripts/migrate.js down",
+    "test": "node --test tests/"
+  },
+  "dependencies": {
+    "argon2": "^0.41.1",
+    "docx": "^9.7.1",
+    "docxtemplater": "^3.69.0",
+    "exceljs": "^4.4.0",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.2",
+    "nodemailer": "^6.10.1",
+    "pdfkit": "^0.19.1",
+    "pg": "^8.12.0",
+    "pizzip": "^3.2.0",
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "jszip": "^3.10.1",
+    "node-pg-migrate": "^7.6.1"
+  }
+}

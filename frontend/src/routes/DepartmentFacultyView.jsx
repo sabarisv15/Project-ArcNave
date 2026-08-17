@@ -1,0 +1,260 @@
+import { useMemo, useState } from 'react';
+import { ChevronRight } from 'lucide-react';
+import { DEPARTMENT, facultyInitials } from '../lib/departmentData';
+import { FACULTY_LOAD } from '../lib/departmentSignals';
+import { WORKLOAD_STATES } from '../lib/departmentTimetableData';
+import { FACULTY_LIFECYCLE_STATES } from '../lib/facultyLifecycle';
+import { DepartmentScopeHeader } from '../components/DepartmentScopeHeader';
+import { DepartmentFacultyDrawer } from '../components/DepartmentFacultyDrawer';
+import { NoAssignedDepartment, NoFaculty, NoResults } from '../components/InstitutionalState';
+import { SearchPopoverField, SortIconPopover } from '../components/ToolbarIcons';
+import { FilterPopover, FilterSelect } from '../components/FilterPopover';
+import { PANE, STICKY_HEAD, TABLE_HEAD, StickyTableShell } from '../components/WorkspaceLayout';
+import { cn } from '../lib/utils';
+
+/**
+ * Department → Faculty.
+ *
+ * The question this page answers is **"who is carrying what, and where is the
+ * slack"** — so teaching load and workload state are columns, not detail. Both
+ * are counted from the live timetable rather than stored on the record, which is
+ * what makes them agree with the Timetable page by construction.
+ *
+ * Deliberately not an HR screen: no payroll, no leave administration, no
+ * employment records. Those belong to a different system and a different seat.
+ */
+
+const SORTS = [
+  { key: 'load_desc', label: 'Teaching load (high first)' },
+  { key: 'load_asc', label: 'Teaching load (low first)' },
+  { key: 'name', label: 'Name (A–Z)' },
+  { key: 'designation', label: 'Designation (A–Z)' },
+];
+
+const STATE_OPTIONS = [
+  { value: '', label: 'All' },
+  { value: 'high', label: 'High load' },
+  { value: 'balanced', label: 'Balanced' },
+  { value: 'light', label: 'Light load' },
+  { value: 'unassigned', label: 'Unassigned' },
+  { value: 'unavailable', label: 'Unavailable' },
+  { value: 'not_teaching', label: 'Not teaching' },
+];
+
+/**
+ * Attachment to the department, which is a different question from workload.
+ *
+ * "Who can I give this class to" and "who is free this week" are two questions,
+ * and a single status column answering both would answer neither: somebody with
+ * an unaccepted invitation holds no periods and is not available work capacity.
+ */
+const LIFECYCLE_OPTIONS = [
+  { value: '', label: 'All' },
+  ...Object.entries(FACULTY_LIFECYCLE_STATES).map(([key, def]) => ({ value: key, label: def.label })),
+];
+
+const DESIGNATION_OPTIONS = [
+  { value: '', label: 'All' },
+  ...[...new Set(FACULTY_LOAD.map((l) => l.faculty.designation))].map((d) => ({ value: d, label: d })),
+];
+
+/*
+ * Tight tier: Faculty · Load · Status · Chevron. Designation, assigned classes
+ * and availability are demoted into the drawer. Each demoted cell carries its
+ * own `hidden md:block` wrapper, because a hidden child still occupies a grid
+ * track and would push the sticky header out of alignment with its rows.
+ */
+const GRID =
+  'grid grid-cols-[minmax(0,1.6fr)_72px_minmax(0,112px)_38px] md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_74px_74px_minmax(0,120px)_minmax(0,124px)_38px] gap-x-[12px] items-center px-[16px]';
+
+export function DepartmentFacultyView() {
+  const [query, setQuery] = useState('');
+  const [state, setState] = useState('');
+  const [lifecycle, setLifecycle] = useState('');
+  const [designation, setDesignation] = useState('');
+  const [sortKey, setSortKey] = useState('load_desc');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [openId, setOpenId] = useState(null);
+
+  const rows = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    const filtered = FACULTY_LOAD.filter((l) => {
+      if (term && ![l.faculty.name, l.faculty.employeeId, l.faculty.designation, l.faculty.email].join(' ').toLowerCase().includes(term)) {
+        return false;
+      }
+      if (state && l.state !== state) return false;
+      if (lifecycle && l.faculty.lifecycle !== lifecycle) return false;
+      if (designation && l.faculty.designation !== designation) return false;
+      return true;
+    });
+
+    return [...filtered].sort((a, b) => {
+      if (sortKey === 'name') return a.faculty.name.localeCompare(b.faculty.name);
+      if (sortKey === 'designation') return a.faculty.designation.localeCompare(b.faculty.designation);
+      if (sortKey === 'load_asc') return a.periods - b.periods;
+      return b.periods - a.periods;
+    });
+  }, [query, state, lifecycle, designation, sortKey]);
+
+  const activeFilterCount = [state, lifecycle, designation].filter(Boolean).length;
+
+  function clearFilters() {
+    setState('');
+    setLifecycle('');
+    setDesignation('');
+  }
+
+  if (!DEPARTMENT) {
+    return (
+      <div className={PANE}>
+        <DepartmentScopeHeader dept={null} />
+        <StickyTableShell>
+          <NoAssignedDepartment />
+        </StickyTableShell>
+      </div>
+    );
+  }
+
+  const open = openId ? FACULTY_LOAD.find((l) => l.faculty.id === openId) : null;
+
+  return (
+    <div className={PANE}>
+      <DepartmentScopeHeader />
+
+      <div className="flex-none flex items-center gap-[8px] mb-[12px]">
+        <h1 className="m-0 text-[17px] font-[600] tracking-[-.01em]">Faculty</h1>
+        <span className="text-[11.5px] text-ink-faint tabular-nums" aria-live="polite">
+          {rows.length === FACULTY_LOAD.length ? `${FACULTY_LOAD.length} faculty` : `${rows.length} of ${FACULTY_LOAD.length}`}
+        </span>
+        <div className="flex-1" />
+        <SearchPopoverField
+          value={query}
+          onChange={setQuery}
+          placeholder="Search name, ID, designation…"
+          ariaLabel="Search faculty"
+        />
+        <SortIconPopover options={SORTS} value={sortKey} onChange={setSortKey} label="Sort faculty" />
+        <FilterPopover
+          open={filterOpen}
+          onOpenChange={setFilterOpen}
+          activeCount={activeFilterCount}
+          onClear={clearFilters}
+          iconOnly
+          label="Filter faculty"
+          width={240}
+          align="end"
+        >
+          <FilterSelect label="Workload" value={state} onChange={setState} options={STATE_OPTIONS} />
+          <FilterSelect label="Attachment" value={lifecycle} onChange={setLifecycle} options={LIFECYCLE_OPTIONS} />
+          <FilterSelect
+            label="Designation"
+            value={designation}
+            onChange={setDesignation}
+            options={DESIGNATION_OPTIONS}
+          />
+        </FilterPopover>
+      </div>
+
+      <StickyTableShell minWidth={360}>
+        <div className={cn(GRID, STICKY_HEAD, TABLE_HEAD, 'h-[38px]')}>
+          <span>Faculty member</span>
+          <span className="hidden md:block">Designation</span>
+          <span className="hidden md:block">Classes</span>
+          <span>Load</span>
+          <span className="hidden md:block">Attachment</span>
+          <span>Status</span>
+          <span className="sr-only">Open</span>
+        </div>
+
+        {rows.map((l) => (
+          <button
+            key={l.faculty.id}
+            type="button"
+            onClick={() => setOpenId(l.faculty.id)}
+            aria-label={`${l.faculty.name} — open record`}
+            className={cn(
+              GRID,
+              'w-full h-[48px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2'
+            )}
+          >
+            <span className="min-w-0 flex items-center gap-[9px]">
+              <span
+                aria-hidden="true"
+                className="flex-none w-[26px] h-[26px] grid place-items-center rounded-full bg-warm-soft text-warm text-[10.5px] font-[500]"
+              >
+                {facultyInitials(l.faculty.name)}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[13px] text-ink truncate" title={l.faculty.name}>
+                  {l.faculty.name}
+                </span>
+                <span className="block text-[11px] text-ink-faint truncate tabular-nums">{l.faculty.employeeId}</span>
+              </span>
+            </span>
+
+            <span className="hidden md:block min-w-0 text-[12.5px] text-ink-muted truncate">
+              {l.faculty.designation}
+            </span>
+
+            <span className="hidden md:block text-[12.5px] text-ink-muted tabular-nums">
+              {l.classIds.length === 0 ? <span className="text-ink-faint">—</span> : l.classIds.length}
+            </span>
+
+            {/*
+              The number always shows. Colour marks the two ends worth acting on
+              and never stands in for the figure itself.
+            */}
+            <span
+              className={cn(
+                'text-[13px] tabular-nums',
+                l.state === 'high' ? 'font-[500] text-pending' : l.periods === 0 ? 'text-ink-faint' : 'text-ink'
+              )}
+            >
+              {l.periods} <span className="text-[11px] text-ink-faint">/wk</span>
+            </span>
+
+            {/*
+              Attachment and workload are separate columns because they are
+              separate facts. Somebody invited and not yet accepted holds no
+              periods, and reading that as spare capacity would have this screen
+              recommend giving work to a person who cannot take it.
+            */}
+            <span className="hidden md:block min-w-0">
+              <span
+                className={cn(
+                  'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500] max-w-full truncate',
+                  FACULTY_LIFECYCLE_STATES[l.faculty.lifecycle]?.tone
+                )}
+              >
+                {FACULTY_LIFECYCLE_STATES[l.faculty.lifecycle]?.label ?? '—'}
+              </span>
+            </span>
+
+            <span className="min-w-0">
+              <span
+                className={cn(
+                  'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500] max-w-full truncate',
+                  WORKLOAD_STATES[l.state].tone
+                )}
+              >
+                {WORKLOAD_STATES[l.state].label}
+              </span>
+            </span>
+
+            <span className="flex justify-end text-ink-faint">
+              <ChevronRight size={15} strokeWidth={2} aria-hidden="true" />
+            </span>
+          </button>
+        ))}
+
+        {rows.length === 0 && (FACULTY_LOAD.length === 0 ? <NoFaculty /> : <NoResults what="faculty" />)}
+      </StickyTableShell>
+
+      <p className="flex-none m-0 mt-[8px] text-[11.5px] text-ink-faint">
+        Teaching load is counted from the live timetable · leave and payroll are not handled here.
+      </p>
+
+      <DepartmentFacultyDrawer row={open} onClose={() => setOpenId(null)} />
+    </div>
+  );
+}

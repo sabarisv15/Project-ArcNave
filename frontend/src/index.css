@@ -1,0 +1,579 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /*
+   * The palette lives here, once, as RGB channel triples so Tailwind can apply
+   * opacity modifiers (`border-line/70`) to any of them. Every component reads
+   * these through a Tailwind token — `bg-surface`, `border-line`, `text-ink` —
+   * so no screen carries a hard-coded colour of its own and the whole scheme
+   * can be re-tuned from this block.
+   *
+   * **The workspace is white, and it is the brightest thing on screen.** That
+   * is the premise the depth is built around: `#FFFFFF` is not a rare "lift"
+   * tone held back for floating surfaces, it is the canvas the product is read
+   * on, and the app ground and the paper-white rail sit a real, visible step
+   * *under* it. Nothing is cream, beige or grey, and nothing is washed out.
+   *
+   * Hierarchy, from the outside in:
+   *
+   *   ground `#F2F6FB` → rail `#F8FBFD` → workspace, cards, tables `#FFFFFF`
+   *   secondary panel nested inside white `#FAFCFE`
+   *   quiet inset / table head `#F1F5FA`
+   *   cool hover `#EEF5FB` · scope + panel-header mist `#EDF4FA`
+   *   selected navigation `#DFEDF5` (accent-tinted, never a teal slab)
+   *
+   * At 2–4% saturation none of these reads as "blue" on its own — the effect
+   * is that every surface has a job you can see at a glance without any of
+   * them going grey. There is no gradient anywhere, no image, no glass, and
+   * teal stays reserved for things the user can act on.
+   *
+   * The text ramp is four steps of deep blue-charcoal and each has a job:
+   * `ink` (`#0B1F2A`) for headings, card titles and essential values;
+   * `ink-soft` (`#22323C`) for sidebar navigation and regular high-emphasis UI
+   * text (and the document default); `ink-muted` (`#4E626D`, 7.0:1) for
+   * secondary labels and support copy; `ink-faint` (`#6B7E89`, 4.6:1) for
+   * placeholders and low-priority helper text. `ink-ghost` (`#A5B7C2`) is the
+   * subdued **icon** tone and is never used for text, so anything readable
+   * uses `ink-faint` or darker.
+   *
+   * `warm` / `warm-soft` is the one saturated tone in the whole interface: the
+   * reference spends under 1% of its pixels on colour, all of it the amber
+   * profile avatar, and ArcNave does the same. It is never a CTA, never
+   * destructive, never a table or navigation colour.
+   */
+  :root {
+    /*
+     * The anchored ramp, and the *order* is the whole system — depth runs
+     * outside-in, and the surface being worked in is the brightest thing on
+     * screen:
+     *
+     *   ground #F2F6FB → rail #F8FBFD → workspace, cards, tables #FFFFFF
+     *   secondary panel nested inside white  #FAFCFE
+     *   quiet inset / table head  #F1F5FA
+     *
+     * The previous ramp put all four of these inside 4/255 of each other
+     * (`#FBFBFD`/`#FEFEFE`/`#FFFFFF`), which is *why* the interface read as a
+     * flat low-resolution wash at desktop width: there was no tonal step left
+     * for the eye to resolve, so every region had to be inferred from a
+     * hairline. The ground is now a real step under the canvas — around 13/255
+     * — while staying an unmistakably cool paper-white. Nothing here is grey,
+     * cream or beige, and nothing reads as "blue" on its own; the cast is 2–4%
+     * toward cool, which is what keeps stacked whites from yellowing.
+     *
+     * Tone separates the regions; the hairline sharpens the edge. Neither one
+     * is doing the job alone any more, and no shadow is doing it at all.
+     */
+    --c-frame: 242 246 251; /* #F2F6FB — outer app ground, behind the island */
+    --c-sidebar: 248 251 253; /* #F8FBFD — the docked rail: paper white, between ground and canvas */
+    --c-paper: 255 255 255; /* #FFFFFF — the workspace island, cards, panels, tables, composer */
+    --c-raised: 255 255 255; /* #FFFFFF — drawers, dialogs, popovers: same white, firmer edge */
+
+    /* `surface-subtle` #F1F5FA — the one quiet surface: inset panels, sticky
+       table heads, the composer attachment strip, the Sources and
+       artifact-context surface, calendar secondary cells, disabled. Deep
+       enough that a table head is legibly a *band* against a white body. */
+    --c-surface: 241 245 250;
+    --c-soft: 241 245 250;
+    --c-tint: 241 245 250;
+    /* `surface-hover` #EEF5FB — hover and pressed states, neutral inactive
+       chips. A *cool* step, not a grey one: on a white row the pointer has to
+       register at a glance, and the one thing it must never look like is
+       selection — which is why selection is accent-tinted rather than simply
+       one shade darker than this. */
+    --c-tint2: 238 245 251;
+    --c-hover: 238 245 251;
+    /* `surface-active` #DFEDF5 — the selected navigation surface. Tinted
+       toward the accent so the current route reads as *the actionable one*,
+       and pale enough that a full menu of them never becomes a teal wall.
+       Selection is this surface plus the accent label and icon — no slab, no
+       pill, no leading bar. */
+    --c-active: 223 237 245;
+    /* `mist` #EDF4FA — the calm cool field a *header* sits on: scope lines and
+       the header band of a panel or monitoring card. It says "this labels what
+       is under it", which is a different job from `tint`'s table head, so the
+       two are deliberately different tones rather than one shared grey. */
+    --c-mist: 237 244 250;
+
+    /*
+     * Deep blue-charcoal, not neutral grey.
+     *
+     * The ramp was `#000`/`#333`/`#616161`/`#757575` — pure greys over cool
+     * surfaces, which is the other half of the washed-out feel. Every step
+     * keeps its job and clears AA on white (muted 7.3:1, faint 4.6:1); what
+     * changes is that they belong to the same family as everything they sit
+     * on, and the headline tone is a deep blue-charcoal rather than flat
+     * black. Nothing readable is allowed to drift pale enough to look
+     * disabled — that is what `ink-disabled` is for, and it is a state.
+     */
+    --c-ink: 10 29 40; /* #0A1D28 — headings, card titles, essential values */
+    --c-ink-soft: 31 48 59; /* #1F303B — sidebar nav, regular UI text, body default */
+    --c-ink-muted: 74 94 107; /* #4A5E6B — secondary labels, support text, inactive nav */
+    --c-ink-faint: 100 120 133; /* #647885 — placeholders, muted helper copy */
+    --c-ink-ghost: 155 175 189; /* #9BAFBD — default subdued ICON tone, never text */
+    --c-ink-disabled: 165 183 194;
+
+    /* One teal, richer and deeper than the old `#0B7285`, at 6.7:1 on white —
+       so a single value carries primary actions, active navigation, links and
+       focus without a second, darker "text teal" existing beside it. It is
+       never a page, a rail or a table; it marks what can be acted on. */
+    --c-accent: 6 101 123; /* #06657B — actionable and selected states only */
+    --c-accent-hover: 5 88 107; /* #05586B */
+    --c-accent-press: 4 73 90; /* #04495A */
+    --c-accent-soft: 220 237 244; /* #DCEDF4 — selected row, focused chip */
+    --c-accent-soft2: 198 226 236; /* #C6E2EC — one step down, hover on a selected surface */
+    --c-accent-line: 143 191 206; /* #8FBFCE — focused input / selected chip hairline */
+
+    /* The one warm detail. Tiny footprint by design — see the note above. */
+    --c-warm: 224 144 56; /* #E09038 */
+    --c-warm-soft: 250 240 226; /* a quiet amber wash for the avatar fallback */
+
+    /* The hairline, in fine cool blue-grey — never a dark or heavy neutral.
+       Tone now separates the *regions*, so the border's job is to make an edge
+       crisp: define a table, a card, a drawer and the workspace island itself.
+       Three steps, each with a job:
+
+         `line-strong` #CFDCE8 — floating surfaces only: drawers, dialogs,
+             popovers, menus. One firmer edge is what makes something read as
+             lifted off a white canvas, since it cannot be whiter than one.
+         `line`       #DEE7F1 — cards, tables, inputs, buttons, panel headers.
+         `line-light` #E9EFF6 — row separators inside an already-bordered
+             surface, where a full-strength line would stripe the table. */
+    --c-line: 222 231 241; /* #DEE7F1 */
+    --c-divider: 219 229 240; /* #DBE5F0 — the rail/workspace island boundary */
+    --c-line-strong: 207 220 232; /* #CFDCE8 */
+    --c-line-light: 233 239 246; /* #E9EFF6 */
+    --c-line-lighter: 233 239 246;
+
+    /* Neutral, never tinted: one scrim value backs every overlay and shadow. */
+    --c-overlay: 0 0 0;
+
+    /*
+     * The status families, defined once.
+     *
+     * They were raw hex literals repeated across a dozen fixture and component
+     * files (`text-[#8A6212] bg-[#FAF5EA]`), which is how a "pending" badge in
+     * the department workspace and one in the delegated queue could quietly
+     * drift apart — and how a beige-cream wash became the most common coloured
+     * surface in a blue-white interface. Each family is a grounded text tone
+     * plus the wash it sits on, and every seat renders the same one for the
+     * same meaning.
+     */
+    --c-success: 17 114 81; /* #117251 — approved, confirmed, locked, on track */
+    --c-success-soft: 225 242 234; /* #E1F2EA */
+    --c-pending: 138 94 17; /* #8A5E11 — awaiting a decision, in review */
+    --c-pending-soft: 250 240 217; /* #FAF0D9 */
+    --c-warning: 165 82 35; /* #A55223 — conflict, returned, needs attention */
+    --c-warning-soft: 251 233 221; /* #FBE9DD */
+    --c-info: 26 108 150; /* #1A6C96 — live, current, selected context, monitoring */
+    --c-info-soft: 223 237 248; /* #DFEDF8 */
+
+    --c-danger: 168 58 50; /* #A83A32 — muted, but unmistakably red */
+    --c-danger-hover: 143 47 40; /* #8F2F28 */
+    --c-danger-soft: 250 232 228; /* #FAE8E4 */
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  /*
+   * The interface font is Inter, and it is the document default — everything
+   * that is not a chat reading or writing surface inherits it: sidebar,
+   * navigation, tables, forms, Curriculum, profile, calendar, documents,
+   * buttons, drawers, settings. Inter is drawn for exactly this kind of small,
+   * dense, data-bearing UI, where a tall x-height and true tabular figures do
+   * more for legibility than any amount of extra spacing.
+   *
+   * Chat is the single exception and opts in explicitly through `font-chat`
+   * (DM Sans) — see `tailwind.config.js`. Reading a long reply and scanning a
+   * roster are different tasks, and one face cannot be best at both.
+   *
+   * Default weight is 400 and the default line-height is roomy enough to read
+   * without looking oversized; hierarchy is carried by 500/600, size and muted
+   * colour, never by making everything semibold.
+   */
+  body {
+    margin: 0;
+    background: rgb(var(--c-frame));
+    /* Regular UI text, not the heading black — anything that needs #000000
+       asks for it explicitly with `text-ink`. */
+    color: rgb(var(--c-ink-soft));
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    font-weight: 400;
+    letter-spacing: -0.002em;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  textarea::placeholder,
+  input::placeholder {
+    /* `ink-faint`, not the icon tone: a placeholder is read, so it has to clear
+       AA against the white composer/input surface it sits on (4.6:1). */
+    color: rgb(var(--c-ink-faint));
+  }
+  /*
+   * Visible but restrained: a soft teal ring, never a heavy rectangular
+   * outline. Links are included on purpose — sidebar navigation items are
+   * links, and keyboard focus there has to read as a different thing from the
+   * pale surface that marks the current route.
+   */
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid rgb(var(--c-accent) / 0.55);
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+  a {
+    color: rgb(var(--c-accent));
+    text-decoration: none;
+  }
+  a:hover {
+    color: rgb(var(--c-accent-press));
+    text-decoration: underline;
+  }
+}
+
+@layer utilities {
+  /*
+   * Auto-hiding scrollbars, everywhere a surface scrolls.
+   *
+   * A permanently drawn track is a piece of chrome that says nothing until the
+   * moment it is used, so the thumb rests transparent and only comes forward
+   * while the container is being used: hovered, focused within (which covers
+   * keyboard scrolling), or actively scrolling by wheel, trackpad or touch —
+   * the last of those is `is-scrolling`, set by `autoHideScrollbars.js` and
+   * dropped again after a short idle. Nothing here changes `overflow`, so
+   * scrolling itself is untouched by any input method.
+   *
+   * Both the standard properties and the WebKit pseudo-elements are declared.
+   * They are not duplicates: Chromium and Firefox honour `scrollbar-width` /
+   * `scrollbar-color` and ignore the pseudo-elements once they are set, while
+   * Safari has only the pseudo-elements — so each platform gets one complete
+   * description of the same behaviour. The visible thumb is `ink-ghost`, a step
+   * firmer than the hairline grey, so it stays legible against paper while it
+   * is showing.
+   */
+  .scroll-quiet {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 220ms ease;
+  }
+  .scroll-quiet:hover,
+  .scroll-quiet:focus-within,
+  .scroll-quiet.is-scrolling {
+    scrollbar-color: rgb(var(--c-ink-ghost)) transparent;
+  }
+  .scroll-quiet::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  .scroll-quiet::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 9px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+    transition: background-color 220ms ease;
+  }
+  .scroll-quiet:hover::-webkit-scrollbar-thumb,
+  .scroll-quiet:focus-within::-webkit-scrollbar-thumb,
+  .scroll-quiet.is-scrolling::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--c-ink-ghost));
+  }
+  .scroll-quiet::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  /* Long-form reading (chat, artefact documents) gets the looser measure. */
+  .prose-measure {
+    line-height: 1.58;
+  }
+}
+
+/*
+ * The chat workspace runs out to the bottom of the app area.
+ *
+ * A chat has no bottom edge to speak of: the transcript scrolls into a docked
+ * composer, so the island's bottom corners, bottom hairline and bottom margin
+ * only draw a line under something that never ends. They are dropped here
+ * rather than in `AppShell`, so the island stays one unconditional shape and
+ * no route has to know about the shell it renders into — every non-chat
+ * workspace keeps the rounded island exactly as it is. Top and side structure
+ * are untouched.
+ */
+/*
+ * Radix's ScrollArea wraps a viewport's children in an element it styles
+ * `display: table; min-width: 100%`, which shrink-wraps to the widest child.
+ * In Recents that meant one long chat title stretched the whole list past the
+ * rail, where it was clipped by the rail's own `overflow: hidden` — so the
+ * titles never ellipsised and the row's own truncation measured as zero.
+ * Blocking that wrapper is the documented fix; it is scoped to this one list
+ * so no other scroll area's layout changes.
+ */
+.recents-viewport > div {
+  display: block !important;
+}
+
+/*
+ * The same auto-hide rule for the one list that scrolls through Radix's
+ * ScrollArea rather than a native overflow container. The scrollbar is mounted
+ * always (so keyboard scrolling can reveal it) but painted only while the
+ * region is hovered, focused within or actively scrolling — `is-scrolling` on
+ * the viewport is set by the same listener that drives `.scroll-quiet`.
+ */
+.autohide-bar {
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+.autohide-scope:hover .autohide-bar,
+.autohide-scope:focus-within .autohide-bar,
+.autohide-scope:has(.is-scrolling) .autohide-bar {
+  opacity: 1;
+}
+
+main:has(.chat-workspace) {
+  margin-bottom: 0;
+  border-bottom-width: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/*
+ * ── ArcNave Vel mark motion ───────────────────────────────────────────────
+ *
+ * One state machine, expressed declaratively: `ArcNaveVelMark` sets
+ * `data-vel-state` and every part reads its behaviour from here, so no
+ * component can invent a seventh state or animate a part the brand doesn't.
+ *
+ * Deliberately CSS rather than a requestAnimationFrame loop (which is what the
+ * interactive reference uses): the product only ever needs six discrete
+ * states, none of them pointer-driven, and a compositor-only animation costs
+ * nothing when several chats are mounted. It also means the global
+ * reduced-motion rule at the bottom of this file switches all of it off for
+ * free, leaving a legible static mark.
+ *
+ * Every part transforms about its own anchor — the blade pivots at the foot of
+ * its shaft (64 108), the arc about the mark centre (64 64) — so a lean or a
+ * breath never detaches one part from another.
+ */
+.vel .vel-blade {
+  transform-box: view-box;
+  transform-origin: 64px 108px;
+}
+.vel .vel-arc,
+.vel .vel-node,
+.vel .vel-ring {
+  transform-box: view-box;
+  transform-origin: 64px 64px;
+}
+.vel .vel-node,
+.vel .vel-ring {
+  transform-origin: 64px 40px;
+}
+
+/* idle — resting. A slow drift and a shallow breath, nothing that reads as
+   activity and nothing that pulls the eye off the page it sits on. */
+.vel[data-vel-state='idle'] .vel-arc {
+  animation: velDrift 15s ease-in-out infinite;
+}
+.vel[data-vel-state='idle'] .vel-node {
+  animation: velBreathe 5.2s ease-in-out infinite;
+}
+
+/* listening — voice capture is live. The blade leans toward the speaker and
+   the arc counter-shifts behind it; both stop the instant the state leaves. */
+.vel[data-vel-state='listening'] .vel-blade {
+  animation: velLean 1.9s ease-in-out infinite;
+}
+.vel[data-vel-state='listening'] .vel-arc {
+  animation: velCounterLean 1.9s ease-in-out infinite;
+}
+
+/* thinking — a probe steps between positions on the arc. `steps()` is the
+   whole point: it advances in measured jumps like something being weighed,
+   which is what keeps it from reading as a generic loading spinner. */
+.vel[data-vel-state='thinking'] .vel-probe {
+  opacity: 1;
+  animation: velProbe 2.8s steps(8, end) infinite;
+}
+.vel[data-vel-state='thinking'] .vel-blade {
+  animation: velSway 3.4s ease-in-out infinite;
+}
+
+/* working — throughput. Flow travels up the shaft and the arc fills slowly;
+   low-intensity on purpose, since this runs for as long as the task does. */
+.vel[data-vel-state='working'] .vel-flow {
+  opacity: 0.85;
+  animation: velFlow 1.1s linear infinite;
+}
+.vel[data-vel-state='working'] .vel-progress {
+  opacity: 1;
+  animation: velProgress 3.6s ease-in-out infinite;
+}
+
+/* success — one shot. `both` fill and no iteration count, so it plays once and
+   holds the resting pose; remount with a `key` to replay it. */
+.vel[data-vel-state='success'] .vel-blade {
+  animation: velLift 620ms cubic-bezier(0.2, 0.9, 0.28, 1.2) both;
+}
+.vel[data-vel-state='success'] .vel-ring {
+  animation: velRing 620ms ease-out both;
+}
+
+/* error — recoverable. One small controlled tip off-axis and back square;
+   a shake would say "you broke it", and this says "try that again". */
+.vel[data-vel-state='error'] .vel-blade {
+  animation: velTip 560ms ease-out both;
+}
+
+@keyframes velDrift {
+  0%,
+  100% {
+    transform: rotate(-2.5deg);
+  }
+  50% {
+    transform: rotate(2.5deg);
+  }
+}
+@keyframes velBreathe {
+  0%,
+  100% {
+    transform: scale(0.96);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+}
+@keyframes velLean {
+  0%,
+  100% {
+    transform: rotate(-9deg);
+  }
+  50% {
+    transform: rotate(9deg);
+  }
+}
+@keyframes velCounterLean {
+  0%,
+  100% {
+    transform: rotate(4deg) scale(1.03);
+  }
+  50% {
+    transform: rotate(-4deg) scale(1.03);
+  }
+}
+@keyframes velProbe {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -241;
+  }
+}
+@keyframes velSway {
+  0%,
+  100% {
+    transform: rotate(-1.6deg);
+  }
+  50% {
+    transform: rotate(1.6deg);
+  }
+}
+@keyframes velFlow {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+@keyframes velProgress {
+  0% {
+    stroke-dashoffset: 241;
+  }
+  70%,
+  100% {
+    stroke-dashoffset: 60;
+  }
+}
+@keyframes velLift {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  45% {
+    transform: translateY(-5px) scale(1.07);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes velRing {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.6);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.1);
+  }
+}
+@keyframes velTip {
+  0% {
+    transform: rotate(0deg);
+  }
+  30% {
+    transform: rotate(-7deg);
+  }
+  62% {
+    transform: rotate(3.5deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+/*
+ * ── Active sidebar icon settle ────────────────────────────────────────────
+ *
+ * Applied to exactly one element: the icon of the sidebar row matching the
+ * current route, and only for the length of one navigation. It is a short
+ * confirmation that the click landed — never an idle loop, never on a label,
+ * a row, a table icon, a toolbar or a button. `both` fill plus a React `key`
+ * on the icon means it replays per navigation and then holds still.
+ */
+@keyframes navIconSettle {
+  0% {
+    transform: scale(0.94) translateX(-2px);
+  }
+  55% {
+    transform: scale(1.06) translateX(1px);
+  }
+  100% {
+    transform: scale(1) translateX(0);
+  }
+}
+.nav-icon-settle {
+  animation: navIconSettle 200ms cubic-bezier(0.2, 0.9, 0.28, 1.2) both;
+}
+
+/* Reduced motion: no sliding, no idle animation, instant state changes. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -1,0 +1,116 @@
+services:
+  db:
+    # pgvector/pgvector:pg16, not plain postgres:16 — a drop-in image
+    # (same Postgres 16 build) with the pgvector extension's shared
+    # library preinstalled, needed by the Module 9 RAG slice's
+    # ai_document_chunks migration (CREATE EXTENSION vector). Existing
+    # data in the pgdata volume is unaffected by this swap — same
+    # Postgres major version, only an additional extension available.
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-arcnave_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-arcnave}
+      ARCNAVE_APP_PASSWORD: ${ARCNAVE_APP_PASSWORD:?set ARCNAVE_APP_PASSWORD in .env}
+      ARCNAVE_PLATFORM_PASSWORD: ${ARCNAVE_PLATFORM_PASSWORD:?set ARCNAVE_PLATFORM_PASSWORD in .env}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-arcnave_admin} -d ${POSTGRES_DB:-arcnave}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: ./backend
+    environment:
+      APP_NAME: ARCNAVE
+      ENVIRONMENT: development
+      LOG_LEVEL: info
+      # Runtime role — least privilege, subject to RLS. See
+      # docker/postgres/init/01-app-role.sh and ADR-015. Same
+      # three-role separation as the Python backend had; only the
+      # driver-specific connection string scheme changed
+      # (postgresql+psycopg:// -> postgresql://, since node-postgres
+      # needs no dialect suffix).
+      DATABASE_URL: postgresql://arcnave_app:${ARCNAVE_APP_PASSWORD}@db:5432/${POSTGRES_DB:-arcnave}
+      # Migration role — owns the tables. Used only by
+      # backend/scripts/migrate.js (node-pg-migrate) and by tests that
+      # seed/verify fixture data directly, never by application
+      # routes. Renamed from ALEMBIC_DATABASE_URL — Alembic is gone
+      # (ADR-016), and the old name would now be actively misleading.
+      MIGRATION_DATABASE_URL: postgresql://${POSTGRES_USER:-arcnave_admin}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-arcnave}
+      # Platform role — least privilege, granted only on
+      # platform_admins/colleges/principal_invitations. See
+      # docker/postgres/init/02-platform-role.sh and ADR-015.
+      PLATFORM_DATABASE_URL: postgresql://arcnave_platform:${ARCNAVE_PLATFORM_PASSWORD}@db:5432/${POSTGRES_DB:-arcnave}
+      # Signs/verifies tenant access JWTs (HS256). Back in the app's
+      # env now that JWT auth is rebuilt (ADR-016) — was removed for
+      # the schema/RLS-only scaffolding pass since nothing used it yet.
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?set JWT_SECRET_KEY in .env}
+      # Signs/verifies platform-admin access JWTs. Deliberately a
+      # DIFFERENT value from JWT_SECRET_KEY — never reuse that one
+      # here, or a tenant and a platform token become indistinguishable
+      # by signature alone. Back in the app's env now that the Super
+      # Admin Portal API is rebuilt (ADR-016).
+      PLATFORM_JWT_SECRET_KEY: ${PLATFORM_JWT_SECRET_KEY:?set PLATFORM_JWT_SECRET_KEY in .env}
+      # Optional — NotificationService's real email channel (Module 8).
+      # `:-` defaults, not `:?` like the secrets above: unset means the
+      # log-only stub fallback, not a startup failure. See config.js.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_ADDRESS: ${SMTP_FROM_ADDRESS:-no-reply@arcnave.local}
+      # Optional — Module 9's LLM step (services/llmProvider.js). `:-`
+      # defaults, not `:?`: unset NIM_API_KEY means the AI "ask" path
+      # 503s cleanly (LlmNotConfiguredError), not a startup failure.
+      NIM_API_KEY: ${NIM_API_KEY:-}
+      NIM_BASE_URL: ${NIM_BASE_URL:-https://integrate.api.nvidia.com/v1}
+      NIM_MODEL: ${NIM_MODEL:-meta/llama-3.1-8b-instruct}
+      # Optional — Module 9's RAG slice (services/documentSearchService.js).
+      # A different model from NIM_MODEL above (embeddings, not chat
+      # completion); defaults to a model purpose-built for retrieval.
+      NIM_EMBEDDING_MODEL: ${NIM_EMBEDDING_MODEL:-nvidia/nv-embedqa-e5-v5}
+      # DocumentService's local-disk root (ADR-017), stated explicitly
+      # rather than left to config.js's default so this file and
+      # config.js's own comment agree on exactly where uploaded files
+      # live — and so the document_storage volume mount below is
+      # mounted at a path this project actually declares, not one that
+      # happens to match config.js's fallback by coincidence.
+      DOCUMENT_STORAGE_ROOT: /app/storage
+      DOCUMENT_BACKUP_ROOT: /app/storage-backups
+      DOCUMENT_STORAGE_ENCRYPTION_KEY: ${DOCUMENT_STORAGE_ENCRYPTION_KEY:?set DOCUMENT_STORAGE_ENCRYPTION_KEY in .env}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      # Anonymous volume over node_modules: the bind mount above would
+      # otherwise shadow the node_modules installed into the image
+      # during `npm install` (the host's backend/ has none), since bind
+      # mounts are applied on top of whatever the image already has at
+      # that path.
+      - /app/node_modules
+      # ADR-017's own flagged gap, closed: uploaded files must not live
+      # only inside the app container's writable layer. A real named
+      # volume, same durability pattern already proven for Postgres
+      # itself (pgdata below) — survives container recreation
+      # regardless of how this service is deployed, not just because
+      # the ./backend bind mount above happens to cover the same path
+      # in local dev. Same technique already used for /app/node_modules:
+      # a volume mounted at a subpath of an existing bind mount takes
+      # precedence at that exact path.
+      - document_storage:/app/storage
+      - document_storage_backups:/app/storage-backups
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  document_storage:
+  document_storage_backups:

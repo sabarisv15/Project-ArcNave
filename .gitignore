@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+.env.local.sh
+*.log
+backend/storage/
+backend/storage-backups/

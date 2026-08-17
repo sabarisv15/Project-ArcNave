@@ -55,8 +55,8 @@ async function resolveOwnArtifact(client, id, actorUserId) {
   return artifact;
 }
 
-async function listOwnArtifacts(client, { userId }) {
-  return artifactRepository.listByUser(client, userId);
+async function listOwnArtifacts(client, { userId, limit, offset }) {
+  return artifactRepository.listByUser(client, userId, { limit, offset });
 }
 
 async function getOwnArtifact(client, id, { userId }) {

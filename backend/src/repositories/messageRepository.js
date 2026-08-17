@@ -46,11 +46,24 @@ async function findById(client, id) {
   return result.rows[0] || null;
 }
 
-async function listByConversation(client, conversationId) {
-  const result = await client.query(
-    'SELECT * FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC',
-    [conversationId],
-  );
+// limit/offset are opt-in, unlike conversationRepository.listByUser's
+// own limit=50 default — a conversation's own transcript is loaded in
+// full by every existing caller (no "load more" UI on top of it yet),
+// so an omitted limit here still returns everything, same as before
+// this parameter existed. A future paginated caller can now ask for a
+// page without any further repository change.
+async function listByConversation(client, conversationId, { limit, offset } = {}) {
+  const values = [conversationId];
+  let query = 'SELECT * FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC';
+  if (limit !== undefined) {
+    values.push(limit);
+    query += ` LIMIT $${values.length}`;
+  }
+  if (offset !== undefined) {
+    values.push(offset);
+    query += ` OFFSET $${values.length}`;
+  }
+  const result = await client.query(query, values);
   return result.rows;
 }
 

@@ -48,11 +48,24 @@ async function findById(client, id) {
   return result.rows[0] || null;
 }
 
-async function listByUser(client, userId) {
-  const result = await client.query(
-    'SELECT * FROM artifacts WHERE user_id = $1 AND deleted_at IS NULL ORDER BY updated_at DESC',
-    [userId],
-  );
+// limit/offset are opt-in, unlike conversationRepository.listByUser's
+// own limit=50 default — a user's own artifact library is loaded in
+// full by every existing caller (no "load more" UI on top of it yet),
+// so an omitted limit here still returns everything, same as before
+// this parameter existed. A future paginated caller can now ask for a
+// page without any further repository change.
+async function listByUser(client, userId, { limit, offset } = {}) {
+  const values = [userId];
+  let query = 'SELECT * FROM artifacts WHERE user_id = $1 AND deleted_at IS NULL ORDER BY updated_at DESC';
+  if (limit !== undefined) {
+    values.push(limit);
+    query += ` LIMIT $${values.length}`;
+  }
+  if (offset !== undefined) {
+    values.push(offset);
+    query += ` OFFSET $${values.length}`;
+  }
+  const result = await client.query(query, values);
   return result.rows;
 }
 

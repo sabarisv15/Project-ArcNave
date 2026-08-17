@@ -29,6 +29,30 @@ test('ConversationService (no DB)', async (t) => {
     assert.equal(listMock.mock.calls.length, 1);
   });
 
+  await t.test('listMessages passes limit/offset straight through to messageRepository', async () => {
+    const findMock = t.mock.method(conversationRepository, 'findById', async () => ({ id: 'conv1', user_id: 'u1' }));
+    const listMock = t.mock.method(messageRepository, 'listByConversation', async (client, conversationId, opts) => {
+      assert.equal(conversationId, 'conv1');
+      assert.deepEqual(opts, { limit: 20, offset: 10 });
+      return [];
+    });
+    t.after(() => { findMock.mock.restore(); listMock.mock.restore(); });
+
+    await conversationService.listMessages({}, 'conv1', { userId: 'u1', limit: 20, offset: 10 });
+    assert.equal(listMock.mock.calls.length, 1);
+  });
+
+  await t.test('listMessages with no limit/offset passes undefined through, not a default — the full transcript is still returned', async () => {
+    const findMock = t.mock.method(conversationRepository, 'findById', async () => ({ id: 'conv1', user_id: 'u1' }));
+    const listMock = t.mock.method(messageRepository, 'listByConversation', async (client, conversationId, opts) => {
+      assert.deepEqual(opts, { limit: undefined, offset: undefined });
+      return [];
+    });
+    t.after(() => { findMock.mock.restore(); listMock.mock.restore(); });
+
+    await conversationService.listMessages({}, 'conv1', { userId: 'u1' });
+  });
+
   await t.test('resolveOwnConversation throws ConversationForbiddenError for another user\'s conversation', async () => {
     const findMock = t.mock.method(conversationRepository, 'findById', async () => ({ id: 'conv1', user_id: 'OTHER' }));
     t.after(() => findMock.mock.restore());

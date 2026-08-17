@@ -41,7 +41,12 @@ function createArtifactsRouter() {
 
   router.get('/artifacts', requireAuth, asyncHandler(async (req, res) => {
     if (!requireResolvedTenant(req, res)) return;
-    const artifacts = await artifactService.listOwnArtifacts(req.dbClient, { userId: identityService.resolveActorUserId(req.capabilities) });
+    const { limit, offset } = req.query || {};
+    const artifacts = await artifactService.listOwnArtifacts(req.dbClient, {
+      userId: identityService.resolveActorUserId(req.capabilities),
+      limit: limit !== undefined ? Number(limit) : undefined,
+      offset: offset !== undefined ? Number(offset) : undefined,
+    });
     res.json(artifacts);
   }));
 

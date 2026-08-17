@@ -13,6 +13,28 @@ const documentService = require('../src/services/documentService');
 const artifactService = require('../src/services/artifactService');
 
 test('ArtifactService (no DB)', async (t) => {
+  await t.test('listOwnArtifacts passes limit/offset straight through to artifactRepository', async () => {
+    const listMock = t.mock.method(artifactRepository, 'listByUser', async (client, userId, opts) => {
+      assert.equal(userId, 'u1');
+      assert.deepEqual(opts, { limit: 20, offset: 10 });
+      return [];
+    });
+    t.after(() => listMock.mock.restore());
+
+    await artifactService.listOwnArtifacts({}, { userId: 'u1', limit: 20, offset: 10 });
+    assert.equal(listMock.mock.calls.length, 1);
+  });
+
+  await t.test('listOwnArtifacts with no limit/offset passes undefined through, not a default — the full library is still returned', async () => {
+    const listMock = t.mock.method(artifactRepository, 'listByUser', async (client, userId, opts) => {
+      assert.deepEqual(opts, { limit: undefined, offset: undefined });
+      return [];
+    });
+    t.after(() => listMock.mock.restore());
+
+    await artifactService.listOwnArtifacts({}, { userId: 'u1' });
+  });
+
   await t.test('createArtifact requires title and content', async () => {
     await assert.rejects(
       () => artifactService.createArtifact({}, { title: '', content: 'x' }, { userId: 'u1', collegeId: 'c1' }),

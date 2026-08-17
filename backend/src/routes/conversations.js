@@ -98,9 +98,16 @@ function createConversationsRouter() {
 
   router.get('/conversations/:id/messages', requireAuth, asyncHandler(async (req, res) => {
     if (!requireResolvedTenant(req, res)) return;
+    const { limit, offset } = req.query || {};
     try {
       const messages = await conversationService.listMessages(
-        req.dbClient, req.params.id, { userId: identityService.resolveActorUserId(req.capabilities) },
+        req.dbClient,
+        req.params.id,
+        {
+          userId: identityService.resolveActorUserId(req.capabilities),
+          limit: limit !== undefined ? Number(limit) : undefined,
+          offset: offset !== undefined ? Number(offset) : undefined,
+        },
       );
       res.json(messages);
     } catch (err) {

@@ -72,9 +72,9 @@ async function deleteConversation(client, id, { userId }) {
   await conversationRepository.remove(client, id);
 }
 
-async function listMessages(client, conversationId, { userId }) {
+async function listMessages(client, conversationId, { userId, limit, offset }) {
   await resolveOwnConversation(client, conversationId, userId);
-  return messageRepository.listByConversation(client, conversationId);
+  return messageRepository.listByConversation(client, conversationId, { limit, offset });
 }
 
 async function addMessage(client, conversationId, {

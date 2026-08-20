@@ -44,6 +44,19 @@ module.exports = {
   // the negative control) — never by application routes.
   migrationDatabaseUrl: required('MIGRATION_DATABASE_URL'),
 
+  // Pool sizing/timeouts shared by both db/pool.js Pools. Defaults are
+  // pg's own recommended starting point for a single-instance app, not
+  // tuned against real traffic — safe to override per-environment
+  // without a code change once real load data exists. statement_timeout
+  // is deliberately not here — that's set at the DB role level (see
+  // db/pool.js's own comment).
+  dbPool: {
+    max: Number(process.env.DB_POOL_MAX) || 10,
+    min: Number(process.env.DB_POOL_MIN) || 0,
+    idleTimeoutMillis: Number(process.env.DB_POOL_IDLE_TIMEOUT_MS) || 30000,
+    connectionTimeoutMillis: Number(process.env.DB_POOL_CONNECTION_TIMEOUT_MS) || 5000,
+  },
+
   // Platform (Super Admin Portal) DB connection — arcnave_platform, a
   // separate least-privilege role from arcnave_app, granted only on
   // platform_admins/colleges/principal_invitations (see the ported

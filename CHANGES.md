@@ -121,3 +121,23 @@ The 50/15min limit itself: initially proposed at the `express-rate-limit` defaul
 ### Explicitly not changed this session
 
 See `CHECKPOINT.md`'s round-10 P2/P3 list — real, evidenced findings from the same audit, deliberately left for a later pass since none were P0/P1.
+
+---
+
+## 2026-08-20 — Independent-report cross-check: 3 verified fixes
+
+A third-party report (`arcnave_improvements_report.md`, generated against a stale, separate copy of the repo — `D:/Project ArcNAve`, missing several fixes already landed here, e.g. `roleScopeLevels.js` still present, `middleware/rateLimit.js` absent) was spot-checked against the real, current `D:/gstack` code before acting on anything, rather than trusted at face value. 7 of 8 spot-checked claims held true against the current code; one (`"no rate limiting on any endpoint"`) was corrected — rate limiting already covers auth/OTP/staff/students/platform, the real gap was narrower (AI endpoints + no global limiter, left unfixed this pass). Of the report's items, 3 were cheap, unambiguous, no-design-decision-needed fixes and were implemented; the rest (streaming, cost dashboard, hybrid RAG search, notification queue, frontend re-render/context splitting, etc.) were left alone as genuine scoping/design decisions, not spot-fixes.
+
+| File | Change |
+|---|---|
+| `backend/src/config.js` | New `dbPool` config block (`max`, `min`, `idleTimeoutMillis`, `connectionTimeoutMillis`, env-overridable). Deliberately excludes `statement_timeout` — see next row. |
+| `backend/src/db/pool.js` | Both `appPool`/`platformPool` now pass pool sizing/timeouts to `pg.Pool`, and both register an `.on('error', ...)` listener (logs via `logging/logger.js`) — previously an idle-client disconnect (network reset, DB restart) was an unhandled Pool error, which crashes the entire Node process, not just the one bad connection. **Caught during implementation:** an initial version also set `statement_timeout` at the pool level (30s), which silently overrode the more precise 20s already set at the `arcnave_app` DB role level (migration `1762100000000`, round 11) — `tests/db-role-timeouts.test.js` caught the conflict immediately; removed the pool-level setting rather than reconciling two sources of truth for the same GUC. |
+| `backend/src/services/aiProviders/gemini.js` | API key moved from the URL query string (`?key=...`, visible in HTTP/proxy logs and error traces) to the `x-goog-api-key` header. |
+| `backend/src/services/aiProviders/retry.js` | New. Shared `withRetry` helper — retries a transient failure (429, 502/503/504, or the fetch call itself throwing) up to 2 times with exponential backoff (300ms/600ms); a real 4xx like 400/401 is never retried. |
+| `backend/src/services/aiProviders/claude.js`, `gemini.js`, `nim.js`, `selfHosted.js` | `postJson` in all 4 adapters now wraps its fetch attempt in `withRetry` — previously a single network blip on any provider call failed the whole AI turn with no retry at all. |
+
+Test result: **1,759/1,759 passed** (full suite, real local Postgres, no regressions).
+
+### Explicitly not changed this session
+
+Everything else in the report: streaming responses, token/cost tracking dashboard, hybrid RAG search (pgvector + full-text), chunk-overlap/embedding cache, notification delivery queue, AI-endpoint rate limiting + global rate limiter, Policy Gate entity-level tenant validation, frontend `WorkspaceProvider` context splitting, chat streaming rendering, Dockerfile hardening (non-root user, multi-stage build, tini), config centralization for hardcoded values, and the test-coverage gaps list. All are real, scoped findings that need a design decision or nontrivial effort — not spot-fixes.

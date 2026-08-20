@@ -2,7 +2,7 @@
 
 > **How to use this file:** at the start of a new session, read this file first instead of re-reading old conversation history. It tells you what's already been decided, what's already been implemented, and what's still open — cheaply, without re-deriving 9 rounds of analysis. When the user says "checkpoint," update this file's **Latest checkpoint** section and append a dated entry to `CHANGES.md` for any code changes made since the last checkpoint.
 
-**Latest checkpoint:** 2026-08-20 — end of the final pre-launch proof audit + the 7-fix implementation pass that followed it.
+**Latest checkpoint:** 2026-08-20 — end of an independent third-party report cross-check (3 verified fixes landed: DB pool error handler/sizing, Gemini API key moved off the URL, retry-with-backoff on all 4 AI provider adapters).
 
 ---
 
@@ -23,10 +23,15 @@ A multi-tenant college ERP (Node.js/Express, plain JS, PostgreSQL + pgvector) wi
 9. **Second backend optimization pass** — the 6 findings explicitly deferred from round 8, now closed. See `CHANGES.md` for exact diff.
 10. **Final pre-launch proof audit** — 6 parallel investigation agents, one per area (concurrency/transactions/DB resources; AI workflow safety/prompt injection; database integrity/migrations; document pipeline/uploads; provider safety/secrets/API hardening; auditability/test quality/dead code). Verdict: **READY AFTER SPECIFIC FIXES**, not NOT READY (the core security substrate — RLS, Policy Gate, tenant isolation, audit-log immutability, AI/SQL/filesystem boundary — held up under every adversarial scenario tested) and not PRE-LAUNCH READY (one real P0 — no login rate limiting — plus a coherent P1 cluster). Also surfaced that the "bounded multi-step workflow engine" round 6 designed was never actually implemented — `askAgent` invokes at most one tool per request; flagged as a doc/code divergence to reconcile, not a vulnerability (no plan structure exists for anything to exploit).
 11. **7-fix implementation pass** — every P0/P1 from round 10, implemented one at a time with the user reviewing and correcting the approach before each: verify mechanisms against real code rather than assume, prove concurrency fixes under genuine races (not fixes that happen to pass), keep numeric parameters (timeouts, page caps) evidence-derived rather than default guesses. See `CHANGES.md` for the exact diff and the 3 real bugs caught and fixed during implementation (not just designed away on paper).
+12. **Independent-report cross-check** — a third-party `arcnave_improvements_report.md` (audited a stale, separate copy of the repo, `D:/Project ArcNAve`) was spot-checked claim-by-claim against the real current code before acting — 7/8 spot-checked claims held, 1 was overstated and corrected (rate limiting already exists on auth/OTP/staff/students/platform; only AI endpoints + a global limiter are actually missing). 3 cheap, no-design-decision fixes from the report were implemented; the rest were left as genuine scoping decisions. See `CHANGES.md` for the exact diff and a real regression caught mid-implementation (a naive pool-level `statement_timeout` silently conflicting with the more precise DB-role-level one from round 11).
 
 ## What's Actually Implemented in Code (not just recommended)
 
-Three real implementation passes have now landed, fully tested (**1,759/1,759 tests passing** against a real local Postgres as of this checkpoint — 1,732 from the two optimization passes + 27 new tests from the round-11 fix pass). Full file-by-file diff for all three: see `CHANGES.md`.
+Four real implementation passes have now landed, fully tested (**1,759/1,759 tests passing** against a real local Postgres as of this checkpoint — round 12 modified existing adapters/pool code, no new tests needed). Full file-by-file diff for all four: see `CHANGES.md`.
+
+### Round 12 — 3 fixes from an independent third-party report, verified before acting
+
+DB pool error listener + explicit sizing (`db/pool.js`/`config.js`); Gemini API key moved from the URL query string to the `x-goog-api-key` header; shared retry-with-backoff (`aiProviders/retry.js`) wired into all 4 provider adapters for transient failures (429/502/503/504/network error, never a real 4xx). A regression was caught by the existing `db-role-timeouts.test.js` during implementation — an initial pool-level `statement_timeout` silently overrode the more precise DB-role-level one from round 11 — and removed before landing.
 
 ### Round 11 — the 7 P0/P1 fixes from the final pre-launch audit
 

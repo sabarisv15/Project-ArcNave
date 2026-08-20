@@ -7,6 +7,7 @@
 // exercised against a live endpoint.
 
 const { LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError } = require('./errors');
+const { withRetry } = require('./retry');
 
 const REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
@@ -25,22 +26,22 @@ function baseUrl(cfg) {
 }
 
 async function postJson(cfg, path, body) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-  let response;
-  try {
-    response = await fetch(`${baseUrl(cfg)}${path}?key=${encodeURIComponent(cfg.apiKey)}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch (err) {
-    throw new LlmRequestError(`request to Gemini failed: ${err.message}`);
-  } finally {
-    clearTimeout(timeout);
-  }
+  const response = await withRetry(async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(`${baseUrl(cfg)}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': cfg.apiKey },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      throw new LlmRequestError(`request to Gemini failed: ${err.message}`);
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
 
   if (!response.ok) {
     const bodyText = await response.text().catch(() => '');

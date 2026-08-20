@@ -10,6 +10,7 @@
 // `cfg` from config.nim.* when no college_ai_config row exists).
 
 const { LlmNotConfiguredError, LlmRequestError } = require('./errors');
+const { withRetry } = require('./retry');
 
 const REQUEST_TIMEOUT_MS = 30000;
 const EMBEDDING_DIMENSIONS = 1024;
@@ -24,25 +25,25 @@ function isConfigured(cfg) {
 }
 
 async function postJson(cfg, path, body) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-  let response;
-  try {
-    response = await fetch(`${cfg.baseUrl}${path}`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${cfg.apiKey}`,
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch (err) {
-    throw new LlmRequestError(`request to LLM provider failed: ${err.message}`);
-  } finally {
-    clearTimeout(timeout);
-  }
+  const response = await withRetry(async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(`${cfg.baseUrl}${path}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${cfg.apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      throw new LlmRequestError(`request to LLM provider failed: ${err.message}`);
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
 
   if (!response.ok) {
     const bodyText = await response.text().catch(() => '');

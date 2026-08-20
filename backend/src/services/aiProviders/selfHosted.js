@@ -20,6 +20,7 @@
 // nim.js's request shape was.
 
 const { LlmNotConfiguredError, LlmRequestError } = require('./errors');
+const { withRetry } = require('./retry');
 
 const REQUEST_TIMEOUT_MS = 30000;
 // Matches claude.js's own MAX_TOKENS — this adapter previously sent no
@@ -33,25 +34,25 @@ function isConfigured(cfg) {
 }
 
 async function postJson(cfg, path, body) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
   const headers = { 'content-type': 'application/json' };
   if (cfg.apiKey) headers.authorization = `Bearer ${cfg.apiKey}`;
 
-  let response;
-  try {
-    response = await fetch(`${cfg.baseUrl}${path}`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch (err) {
-    throw new LlmRequestError(`request to self-hosted LLM provider failed: ${err.message}`);
-  } finally {
-    clearTimeout(timeout);
-  }
+  const response = await withRetry(async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(`${cfg.baseUrl}${path}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      throw new LlmRequestError(`request to self-hosted LLM provider failed: ${err.message}`);
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
 
   if (!response.ok) {
     const bodyText = await response.text().catch(() => '');

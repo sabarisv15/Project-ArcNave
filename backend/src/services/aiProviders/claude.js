@@ -15,6 +15,7 @@
 // answer.
 
 const { LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError } = require('./errors');
+const { withRetry } = require('./retry');
 
 const REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_BASE_URL = 'https://api.anthropic.com';
@@ -30,26 +31,26 @@ function baseUrl(cfg) {
 }
 
 async function postJson(cfg, path, body) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-  let response;
-  try {
-    response = await fetch(`${baseUrl(cfg)}${path}`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': cfg.apiKey,
-        'anthropic-version': ANTHROPIC_VERSION,
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch (err) {
-    throw new LlmRequestError(`request to Claude failed: ${err.message}`);
-  } finally {
-    clearTimeout(timeout);
-  }
+  const response = await withRetry(async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(`${baseUrl(cfg)}${path}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': cfg.apiKey,
+          'anthropic-version': ANTHROPIC_VERSION,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      throw new LlmRequestError(`request to Claude failed: ${err.message}`);
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
 
   if (!response.ok) {
     const bodyText = await response.text().catch(() => '');

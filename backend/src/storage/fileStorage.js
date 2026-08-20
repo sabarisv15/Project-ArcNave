@@ -8,10 +8,14 @@
 // nothing else in this codebase may require this module.
 //
 // Paths are always tenant-prefixed (Architecture.md 2.9) and never
-// trust caller-supplied file names verbatim — sanitizeFileName strips
-// anything that isn't alnum/dot/dash/underscore, closing the
-// directory-traversal door (`../../etc/passwd`-style names) at the one
-// place paths are built, not relied on elsewhere. Path-building stays
+// trust caller-supplied segments verbatim — sanitizeFileName strips
+// anything that isn't alnum/dot/dash/underscore from the file name
+// itself, and sanitizePathSegment strips anything that isn't
+// alnum/dash/underscore from every OTHER segment (collegeId, studentId,
+// docType, draftId), closing the directory-traversal door
+// (`../../etc/passwd`-style names, or a `docType` crafted to land
+// inside a DIFFERENT tenant's own collegeId prefix) at the one place
+// paths are built, not relied on elsewhere. Path-building stays
 // provider-agnostic (every provider stores at the same relative path
 // shape) — only writeFile/readFile/deleteFile dispatch to a specific
 // provider.
@@ -34,6 +38,29 @@ function sanitizeFileName(fileName) {
   return base.replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
+// Every OTHER path segment (collegeId, studentId, docType, draftId) is a
+// single directory name, never a nested path — unlike fileName, it has
+// no legitimate reason to contain '.', '/', or '\', so those (and
+// anything else outside alnum/dash/underscore) are stripped outright
+// rather than escaped. This is what actually closes the
+// directory-traversal door this file's header comment already claimed
+// was closed: sanitizeFileName alone never protected these segments,
+// and path.posix.join happily collapses a caller-supplied
+// '../../otherCollegeId' segment into a path that lands OUTSIDE the
+// caller's own collegeId prefix (still inside the storage root, so
+// localDiskProvider's resolveInside never sees it — a same-root,
+// cross-tenant write). Falls back to a fixed, harmless literal rather
+// than throwing: every call site already validates these fields are
+// present before calling in (documentService.js's own "required"
+// checks), so an empty result here only happens if a caller's own
+// value sanitizes to nothing (e.g. a value that was ONLY '../' — most
+// likely an attack attempt, not a legitimate empty field), and a fixed
+// literal segment is a safer default than surfacing the raw error.
+function sanitizePathSegment(value, fallback) {
+  const cleaned = String(value == null ? '' : value).replace(/[^a-zA-Z0-9_-]/g, '_');
+  return cleaned || fallback;
+}
+
 // {collegeId}/{studentId}/{docType}/{timestamp}-{random}-{fileName} —
 // the timestamp+random pair guarantees two versions of the same
 // doc_type never collide on disk (documentRepository has no unique
@@ -49,7 +76,12 @@ function sanitizeFileName(fileName) {
 // "undefined".
 function buildStoragePath({ collegeId, studentId, docType, fileName }) {
   const unique = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-  return path.posix.join(collegeId, studentId || 'shared', docType, `${unique}-${sanitizeFileName(fileName)}`);
+  return path.posix.join(
+    sanitizePathSegment(collegeId, 'college'),
+    sanitizePathSegment(studentId, 'shared'),
+    sanitizePathSegment(docType, 'unknown'),
+    `${unique}-${sanitizeFileName(fileName)}`,
+  );
 }
 
 // Create Student admission wizard — draft documents live under
@@ -61,7 +93,13 @@ function buildStoragePath({ collegeId, studentId, docType, fileName }) {
 // timestamp+random suffix as buildStoragePath.
 function buildDraftStoragePath({ collegeId, draftId, docType, fileName }) {
   const unique = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-  return path.posix.join(collegeId, 'drafts', draftId, docType, `${unique}-${sanitizeFileName(fileName)}`);
+  return path.posix.join(
+    sanitizePathSegment(collegeId, 'college'),
+    'drafts',
+    sanitizePathSegment(draftId, 'draft'),
+    sanitizePathSegment(docType, 'unknown'),
+    `${unique}-${sanitizeFileName(fileName)}`,
+  );
 }
 
 // resolveAbsolutePath/resolveBackupPath are local_disk-specific

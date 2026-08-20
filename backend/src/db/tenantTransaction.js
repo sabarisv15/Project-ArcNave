@@ -1,7 +1,7 @@
 'use strict';
 
 const { appPool } = require('./pool');
-const { getRequestContext } = require('../logging/context');
+const { getRequestContext, AFTER_COMMIT_CALLBACKS } = require('../logging/context');
 const { logError } = require('../logging/logger');
 
 // The shared "open a transaction, set_config, wire up commit-on-
@@ -44,6 +44,31 @@ async function openTenantTransaction(req, res, collegeId) {
       await client.query('COMMIT');
     } finally {
       client.release();
+    }
+
+    // Only reached once COMMIT has actually succeeded (a throw above
+    // exits before this line, same as rollbackAndRelease never running
+    // this at all) — see registerAfterCommit's own comment for why
+    // this exists. Each callback is isolated in its own try/catch: one
+    // throwing must never turn an already-successful commit into a
+    // failed response — by this point the transaction is durably
+    // committed and the connection already released, so there is
+    // nothing left for a callback's failure to roll back or corrupt,
+    // only its own (logged, swallowed) side effect to lose.
+    const callbacks = context ? context[AFTER_COMMIT_CALLBACKS] : null;
+    if (callbacks && callbacks.length > 0) {
+      context[AFTER_COMMIT_CALLBACKS] = [];
+      for (const fn of callbacks) {
+        try {
+          fn();
+        } catch (err) {
+          logError('after_commit_callback_failed', {
+            requestId: req.requestId,
+            collegeId: req.collegeId,
+            error: err.message,
+          });
+        }
+      }
     }
   };
 
@@ -104,4 +129,35 @@ async function openTenantTransaction(req, res, collegeId) {
   return client;
 }
 
-module.exports = { openTenantTransaction };
+// Defers `fn` until the CURRENT request's transaction has actually
+// committed — for work that must never start against data a concurrent
+// reader could fail to see yet (backgroundJobService.enqueue's worker
+// trigger is the one real caller today: it used to fire via
+// setImmediate at enqueue-call-time, on a brand-new pool connection
+// that could reach Postgres before the enqueuing transaction's own
+// COMMIT — fired later, from res.end above — actually landed).
+//
+// Reads the SAME AsyncLocalStorage context openTenantTransaction
+// itself populates (middleware/requestContext.js's initial store
+// already carries an empty AFTER_COMMIT_CALLBACKS array) rather than
+// needing `req` threaded through every service that wants this —
+// callers here only ever have `client` in scope, same as every other
+// repository/service call in this codebase (CLAUDE.md rule 1).
+//
+// Falls back to firing `fn` immediately when there's no request
+// context at all (a direct call outside the normal HTTP request
+// lifecycle, e.g. a test invoking a service function straight against
+// a manually-opened transaction) — preserves today's behavior for
+// exactly the callers that were never going through openTenantTransaction
+// to begin with, rather than silently dropping the work.
+function registerAfterCommit(fn) {
+  const context = getRequestContext();
+  if (!context) {
+    fn();
+    return;
+  }
+  if (!context[AFTER_COMMIT_CALLBACKS]) context[AFTER_COMMIT_CALLBACKS] = [];
+  context[AFTER_COMMIT_CALLBACKS].push(fn);
+}
+
+module.exports = { openTenantTransaction, registerAfterCommit };

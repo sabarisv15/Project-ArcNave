@@ -232,6 +232,25 @@ async function approveRequest(client, id, { actorUserId, remarks } = {}) {
   const request = await loadPendingStepForActor(client, id, actorUserId);
   assertNotSelfApproval(request, actorUserId);
 
+  // The guarded state transition runs FIRST, before either write below
+  // — see workflowRepository.updatePendingStatus's own comment for why
+  // this closes the concurrent-double-approval race. Ordering this
+  // ahead of recordAction/the audit log (not just adding the guard) is
+  // itself load-bearing: a caller who loses the race gets ZERO side
+  // effects, not a stray approval_history/audit_log row claiming an
+  // approval that never actually took effect.
+  const isFinalStep = request.current_step >= request.approver_chain.length;
+  const updated = await workflowRepository.updatePendingStatus(
+    client,
+    id,
+    isFinalStep ? { status: 'Approved' } : { currentStep: request.current_step + 1 },
+  );
+  if (updated === null) {
+    throw new WorkflowRequestAlreadyResolvedError(
+      `workflow request ${JSON.stringify(id)} was already resolved by a concurrent request`,
+    );
+  }
+
   await approvalHistoryRepository.recordAction(client, {
     collegeId: request.college_id,
     workflowRequestId: id,
@@ -240,13 +259,6 @@ async function approveRequest(client, id, { actorUserId, remarks } = {}) {
     action: 'Approved',
     remarks: remarks || null,
   });
-
-  const isFinalStep = request.current_step >= request.approver_chain.length;
-  const updated = await workflowRepository.update(
-    client,
-    id,
-    isFinalStep ? { status: 'Approved' } : { currentStep: request.current_step + 1 },
-  );
 
   await auditLogRepository.createAuditLogEntry(client, {
     collegeId: request.college_id,
@@ -297,6 +309,18 @@ async function escalateRequest(client, id, {
     );
   }
 
+  const nextStep = request.approver_chain.length + 1;
+  const approverChain = [...request.approver_chain, { step: nextStep, role: escalateToRole, user_id: escalateToUserId }];
+
+  // Guarded update first — same reasoning as approveRequest's own
+  // comment: a race loser gets no approval_history/audit_log row.
+  const updated = await workflowRepository.updatePendingStatus(client, id, { approverChain, currentStep: nextStep });
+  if (updated === null) {
+    throw new WorkflowRequestAlreadyResolvedError(
+      `workflow request ${JSON.stringify(id)} was already resolved by a concurrent request`,
+    );
+  }
+
   await approvalHistoryRepository.recordAction(client, {
     collegeId: request.college_id,
     workflowRequestId: id,
@@ -305,11 +329,6 @@ async function escalateRequest(client, id, {
     action: 'Escalated',
     remarks: remarks || null,
   });
-
-  const nextStep = request.approver_chain.length + 1;
-  const approverChain = [...request.approver_chain, { step: nextStep, role: escalateToRole, user_id: escalateToUserId }];
-
-  const updated = await workflowRepository.update(client, id, { approverChain, currentStep: nextStep });
 
   await auditLogRepository.createAuditLogEntry(client, {
     collegeId: request.college_id,
@@ -332,6 +351,15 @@ async function rejectRequest(client, id, { actorUserId, remarks } = {}) {
 
   const request = await loadPendingStepForActor(client, id, actorUserId);
 
+  // Guarded update first — same reasoning as approveRequest's own
+  // comment: a race loser gets no approval_history/audit_log row.
+  const updated = await workflowRepository.updatePendingStatus(client, id, { status: 'Rejected' });
+  if (updated === null) {
+    throw new WorkflowRequestAlreadyResolvedError(
+      `workflow request ${JSON.stringify(id)} was already resolved by a concurrent request`,
+    );
+  }
+
   await approvalHistoryRepository.recordAction(client, {
     collegeId: request.college_id,
     workflowRequestId: id,
@@ -340,8 +368,6 @@ async function rejectRequest(client, id, { actorUserId, remarks } = {}) {
     action: 'Rejected',
     remarks: remarks || null,
   });
-
-  const updated = await workflowRepository.update(client, id, { status: 'Rejected' });
 
   await auditLogRepository.createAuditLogEntry(client, {
     collegeId: request.college_id,

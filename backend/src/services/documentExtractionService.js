@@ -20,6 +20,7 @@
 
 const tesseractOcr = require('../ocr/tesseractOcr');
 const pdfRasterizer = require('../ocr/pdfRasterizer');
+const { withOcrSlot } = require('../ocr/ocrConcurrencyLimit');
 const documentTypeRegistryRepository = require('../repositories/documentTypeRegistryRepository');
 const configurationService = require('./configurationService');
 const { logWarn } = require('../logging/logger');
@@ -79,25 +80,35 @@ async function runOcr(fileBuffer, mimeType, { lang = 'eng' } = {}) {
     throw new DocumentExtractionValidationError('fileBuffer and mimeType are required');
   }
 
-  let pages;
-  if (OCR_IMAGE_MIME_TYPES.has(mimeType)) {
-    pages = [fileBuffer];
-  } else if (mimeType === PDF_MIME_TYPE) {
-    pages = await pdfRasterizer.rasterizePdfToImages(fileBuffer);
-  } else {
+  if (mimeType !== PDF_MIME_TYPE && !OCR_IMAGE_MIME_TYPES.has(mimeType)) {
     throw new DocumentExtractionValidationError(
       `mimeType ${JSON.stringify(mimeType)} is not supported for OCR (only `
       + `[${[...OCR_IMAGE_MIME_TYPES].join(', ')}] and ${PDF_MIME_TYPE})`,
     );
   }
 
-  // A single page (the plain-image case) keeps using extractTextFromImage
-  // directly; a multi-page PDF reuses one Tesseract worker across every
-  // page via extractTextFromPages instead of paying a fresh worker
-  // create/teardown per page.
-  const pageResults = pages.length === 1
-    ? [await tesseractOcr.extractTextFromImage(pages[0], lang)]
-    : await tesseractOcr.extractTextFromPages(pages, lang);
+  // withOcrSlot: see ocr/ocrConcurrencyLimit.js — bounds how many of
+  // this call's own pdftoppm rasterization + Tesseract calls can run
+  // at once, process-wide, alongside documentSearchService.js's own
+  // ingestion path (the other real entry point into these same two
+  // modules). Wrapped around BOTH steps together, not each separately
+  // — one logical OCR job should occupy exactly one concurrency slot,
+  // not briefly grab a second one of its own while rasterizing.
+  const pageResults = await withOcrSlot(async () => {
+    let pages;
+    if (OCR_IMAGE_MIME_TYPES.has(mimeType)) {
+      pages = [fileBuffer];
+    } else {
+      pages = await pdfRasterizer.rasterizePdfToImages(fileBuffer);
+    }
+    // A single page (the plain-image case) keeps using
+    // extractTextFromImage directly; a multi-page PDF reuses one
+    // Tesseract worker across every page via extractTextFromPages
+    // instead of paying a fresh worker create/teardown per page.
+    return pages.length === 1
+      ? [await tesseractOcr.extractTextFromImage(pages[0], lang)]
+      : await tesseractOcr.extractTextFromPages(pages, lang);
+  });
 
   const text = pageResults.map((p) => p.text).join('\n\n');
   const ocrConfidence = pageResults.length > 0

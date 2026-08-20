@@ -1,6 +1,7 @@
 'use strict';
 
 const { appPool } = require('../db/pool');
+const { registerAfterCommit } = require('../db/tenantTransaction');
 const backgroundJobRepository = require('../repositories/backgroundJobRepository');
 
 function publicJob(job) {
@@ -99,12 +100,22 @@ async function enqueue(client, {
     payload,
   });
 
-  setImmediate(async () => {
-    try {
-      await runTenantJob(collegeId, job.id, handler);
-    } catch {
-      // Status updates are best-effort; callers can still see the queued row.
-    }
+  // Deferred until the enqueuing transaction actually commits — see
+  // db/tenantTransaction.js's registerAfterCommit. Previously fired
+  // immediately here, on a brand-new connection that could reach
+  // Postgres before this function's own INSERT (above) was durably
+  // committed, silently losing every status update on the loser side
+  // of that race (markRunning/markCompleted/markFailed all match zero
+  // rows against a job Postgres doesn't consider to exist yet, and none
+  // of them checked that).
+  registerAfterCommit(() => {
+    setImmediate(async () => {
+      try {
+        await runTenantJob(collegeId, job.id, handler);
+      } catch {
+        // Status updates are best-effort; callers can still see the queued row.
+      }
+    });
   });
 
   return publicJob(job);

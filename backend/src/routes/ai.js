@@ -91,6 +91,14 @@ function mapAiToolError(err, res) {
     res.status(400).json({ detail: err.message });
     return true;
   }
+  // 422, not 400 — the request is well-formed on its own, the problem
+  // is specifically that this Idempotency-Key value was already used
+  // for different params (see aiService.invokeToolIdempotent's own
+  // comment).
+  if (err instanceof aiService.AiIdempotencyKeyReusedError) {
+    res.status(422).json({ detail: err.message });
+    return true;
+  }
   // UAT finding: a live LLM call omitting a tool's own required
   // parameter (or sending it as an empty/placeholder value) previously
   // reached the Business Service unvalidated and crashed as an
@@ -99,6 +107,14 @@ function mapAiToolError(err, res) {
   // same "untrusted input, validate before use" reasoning as
   // AiServiceValidationError above.
   if (err instanceof aiToolRegistry.AiToolInvalidParamsError) {
+    res.status(400).json({ detail: err.message });
+    return true;
+  }
+  // Second optimization pass, finding #4: a bulk-capable tool's
+  // estimated affected-row count exceeded its own hard safety ceiling
+  // — a 400, same category as AiToolInvalidParamsError above (a
+  // request the caller must narrow, not an authorization decision).
+  if (err instanceof aiToolRegistry.AiToolBulkOperationRejectedError) {
     res.status(400).json({ detail: err.message });
     return true;
   }
@@ -276,10 +292,22 @@ function createAiRouter() {
     const identityContext = buildAiIdentityContext(req);
     const params = (req.body || {}).params || {};
     const question = (req.body || {}).question;
+    // Opt-in — a caller that never sends this header (every caller
+    // today; wiring the frontend to send one is a separate, later
+    // piece of work) sees byte-for-byte the same behavior as before.
+    // Only applies to the plain-invoke write path, not askAboutTool
+    // (a read, nothing to deduplicate) — see
+    // aiService.invokeToolIdempotent's own comment on scope.
+    const idempotencyKey = req.get('Idempotency-Key');
     try {
-      const result = question !== undefined
-        ? await aiService.askAboutTool(req.dbClient, req.params.name, params, question, { identityContext })
-        : await aiService.invokeTool(req.dbClient, req.params.name, params, { identityContext });
+      let result;
+      if (question !== undefined) {
+        result = await aiService.askAboutTool(req.dbClient, req.params.name, params, question, { identityContext });
+      } else if (idempotencyKey) {
+        result = await aiService.invokeToolIdempotent(req.dbClient, req.params.name, params, { identityContext, idempotencyKey });
+      } else {
+        result = await aiService.invokeTool(req.dbClient, req.params.name, params, { identityContext });
+      }
       res.json(result);
     } catch (err) {
       if (mapAiToolError(err, res)) return;

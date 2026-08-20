@@ -3,6 +3,7 @@
 const express = require('express');
 const asyncHandler = require('../middleware/asyncHandler');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
+const { createUserScopedRateLimiter } = require('../middleware/rateLimit');
 const studentService = require('../services/studentService');
 const phoneVerificationService = require('../services/phoneVerificationService');
 const workflowService = require('../services/workflowService');
@@ -241,6 +242,14 @@ function mapPhoneVerificationServiceError(err, res) {
 
 function createStudentsRouter() {
   const router = express.Router();
+
+  // OTP-request brute-force protection — config.js's own `otp` comment
+  // flags this as a known, previously-unsolved gap. Keyed on the
+  // already-authenticated actor's own userId (requireAuth runs first),
+  // not on the student/target phone — see middleware/rateLimit.js.
+  const otpRequestLimiter = createUserScopedRateLimiter(
+    (req) => identityService.resolveActorUserId(req.capabilities),
+  );
 
   // POST/PUT/DELETE /students: requirePermission maps each to the
   // roles that can EVER qualify (['staff'] for create; ['staff', 'hod',
@@ -603,7 +612,7 @@ function createStudentsRouter() {
   // phoneVerificationService.requestOtp/verifyOtp enforce the real
   // tutor(own class)/hod(own department)/principal(own college) scope
   // (this session's own task, same boundary as reads/update/delete).
-  router.post('/students/:id/phone-verification/otp', requireAuth, asyncHandler(async (req, res) => {
+  router.post('/students/:id/phone-verification/otp', requireAuth, otpRequestLimiter, asyncHandler(async (req, res) => {
     if (!requireResolvedTenant(req, res)) return;
     try {
       const result = await phoneVerificationService.requestOtp(

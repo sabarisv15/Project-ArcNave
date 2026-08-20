@@ -9,11 +9,32 @@
 const express = require('express');
 const asyncHandler = require('../middleware/asyncHandler');
 const { requireAuth } = require('../middleware/rbac');
+const { createCredentialRateLimiter } = require('../middleware/rateLimit');
 const authService = require('../services/authService');
 const identityService = require('../services/identityService');
 
 function createAuthRouter() {
   const router = express.Router();
+
+  // Brute-force protection — see middleware/rateLimit.js's own file
+  // comment for why this is IP+identifier keyed, in-memory, and never
+  // logs/stores the raw identifier. One instance per route because
+  // each keys on a different request-body field.
+  //
+  // login's own limit (50, not the 10 default) is measured, not
+  // guessed: this codebase's test suite legitimately re-authenticates
+  // the same seeded user many times per file (a fresh JWT per subtest,
+  // rather than reusing one token) — classes.test.js alone calls
+  // login(collegeA, 'principaluser') 30 times against one shared app
+  // instance. 50 clears that with real headroom while still being a
+  // genuine throttle: a real attacker needs far more than 50 guesses
+  // against an argon2-hashed password to have any realistic chance,
+  // and each guess already costs a real argon2 hash on this server
+  // regardless of this limiter.
+  const loginLimiter = createCredentialRateLimiter('username', 50);
+  const mfaVerifyLimiter = createCredentialRateLimiter('challenge_id');
+  const mfaResendLimiter = createCredentialRateLimiter('challenge_id');
+  const passwordResetLimiter = createCredentialRateLimiter('email');
 
   // Business rule task #19: a login this college's 'auth' config gates
   // into MFA returns { mfa_required: true, challenge_id, expires_at }
@@ -21,7 +42,7 @@ function createAuthRouter() {
   // comes back (see its own MFA-gating comment); this route only
   // relays whichever one it got, same "service decides, route relays"
   // split every other route in this file already keeps.
-  router.post('/auth/login', asyncHandler(async (req, res) => {
+  router.post('/auth/login', loginLimiter, asyncHandler(async (req, res) => {
     if (req.collegeId === null) {
       res.status(400).json({ detail: 'No tenant could be resolved for this request' });
       return;
@@ -55,7 +76,7 @@ function createAuthRouter() {
   // code for the real token pair. No requireAuth here — the caller
   // isn't authenticated yet (that's the entire point of this route),
   // same as /auth/login itself.
-  router.post('/auth/mfa/verify', asyncHandler(async (req, res) => {
+  router.post('/auth/mfa/verify', mfaVerifyLimiter, asyncHandler(async (req, res) => {
     if (req.collegeId === null) {
       res.status(400).json({ detail: 'No tenant could be resolved for this request' });
       return;
@@ -90,7 +111,7 @@ function createAuthRouter() {
   // /auth/login's own MFA-required branch exactly, since
   // authService.resendMfaChallenge returns via the same issueMfaChallenge
   // codepath login() uses.
-  router.post('/auth/mfa/resend', asyncHandler(async (req, res) => {
+  router.post('/auth/mfa/resend', mfaResendLimiter, asyncHandler(async (req, res) => {
     if (req.collegeId === null) {
       res.status(400).json({ detail: 'No tenant could be resolved for this request' });
       return;
@@ -159,7 +180,7 @@ function createAuthRouter() {
   // active account, the caller sees the identical response either way.
   // authService.requestPasswordReset itself is what actually decides
   // whether to mint a token + send an email at all.
-  router.post('/auth/password-reset', asyncHandler(async (req, res) => {
+  router.post('/auth/password-reset', passwordResetLimiter, asyncHandler(async (req, res) => {
     if (req.collegeId === null) {
       res.status(400).json({ detail: 'No tenant could be resolved for this request' });
       return;

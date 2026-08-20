@@ -401,7 +401,7 @@ test('DocumentService validation, actor stamping, and audit logging (no DB, no f
 
     assert.equal(findInstitutionalMock.mock.callCount(), 1);
     assert.deepEqual(findInstitutionalMock.mock.calls[0].arguments[1], {
-      docType: undefined, classId: undefined, categoryId: 'cat-1', academicYearId: 'year-1', departmentId: 'dept-1', search: 'notice', publicationStatuses: undefined,
+      docType: undefined, classId: undefined, categoryId: 'cat-1', academicYearId: 'year-1', departmentId: 'dept-1', search: 'notice', limit: undefined, publicationStatuses: undefined,
     });
     assert.deepEqual(result, [{ id: 'doc-1' }]);
   });

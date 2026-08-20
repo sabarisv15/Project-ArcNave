@@ -63,6 +63,18 @@ async function findById(client, id) {
   return result.rows[0] || null;
 }
 
+// Batch form of findById — same `= ANY($1)` pattern
+// timetablePeriodRepository.findByIds already establishes. An empty/
+// missing ids array short-circuits without a round-trip, matching that
+// function's own guard.
+async function findByIds(client, ids) {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return [];
+  }
+  const result = await client.query('SELECT * FROM classes WHERE id = ANY($1)', [ids]);
+  return result.rows;
+}
+
 async function findByCollegeAndClassName(client, collegeId, className) {
   const result = await client.query(
     'SELECT * FROM classes WHERE college_id = $1 AND class_name = $2',
@@ -117,6 +129,7 @@ async function list(client, { limit = 50, offset = 0 } = {}) {
 module.exports = {
   create,
   findById,
+  findByIds,
   findByCollegeAndClassName,
   findByDepartmentId,
   update,

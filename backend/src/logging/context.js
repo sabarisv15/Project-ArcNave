@@ -43,4 +43,14 @@ function getRequestContext() {
   return als.getStore();
 }
 
-module.exports = { runWithRequestContext, getRequestContext };
+// A Symbol key, not a plain string property — logging/logger.js's
+// buildPayload spreads the ENTIRE context object into every log line
+// via Object.entries(context), on purpose, so any ordinary field added
+// here (e.g. a plain `afterCommitCallbacks: []`) would silently start
+// appearing in every single log line across the whole app. Symbol keys
+// are invisible to Object.entries/for-in/JSON.stringify, so this stays
+// reachable by reference (db/tenantTransaction.js's registerAfterCommit/
+// commitAndRelease) without ever leaking into logs.
+const AFTER_COMMIT_CALLBACKS = Symbol('afterCommitCallbacks');
+
+module.exports = { runWithRequestContext, getRequestContext, AFTER_COMMIT_CALLBACKS };

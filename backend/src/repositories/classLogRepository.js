@@ -63,8 +63,14 @@ async function remove(client, id) {
 // classId omitted means "every class the caller's own scope already
 // resolved" — the service passes an explicit IN-list via classIds
 // instead when the caller isn't scoped to a single class.
+// limit is optional and undefined by default — every existing caller
+// (the human-facing GET /class-logs Teaching Journal route included)
+// keeps its exact current unbounded behavior; only an explicit opt-in
+// caller (the class_log_list AI tool) gets a capped, most-recent-first
+// result — already the query's own ORDER BY, so a LIMIT here is a
+// genuine "recent entries" view, not an arbitrary truncation.
 async function list(client, {
-  classId, classIds, subject, fromDate, toDate,
+  classId, classIds, subject, fromDate, toDate, limit,
 } = {}) {
   const conditions = [];
   const values = [];
@@ -90,8 +96,13 @@ async function list(client, {
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  let limitClause = '';
+  if (limit !== undefined) {
+    values.push(limit);
+    limitClause = ` LIMIT $${values.length}`;
+  }
   const result = await client.query(
-    `SELECT * FROM class_logs ${whereClause} ORDER BY session_date DESC, created_at DESC`,
+    `SELECT * FROM class_logs ${whereClause} ORDER BY session_date DESC, created_at DESC${limitClause}`,
     values,
   );
   return result.rows;

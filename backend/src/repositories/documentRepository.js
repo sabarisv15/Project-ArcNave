@@ -135,8 +135,14 @@ async function findByClassId(client, classId) {
 // staff-tier one. `= ANY($n)` against a plain array param, same
 // pattern absent_student_ids-style array filters already use
 // elsewhere in this codebase — never string-built into the query.
+// limit is optional and undefined by default — every existing caller
+// (the human-facing GET /documents/institutional browse route
+// included) keeps its exact current unbounded behavior; only an
+// explicit opt-in caller (the list_institutional_documents AI tool)
+// gets a capped result, already "most recent first" per this query's
+// own ORDER BY and this tool's own description.
 async function findInstitutional(client, {
-  docType, classId, categoryId, academicYearId, departmentId, search, publicationStatuses,
+  docType, classId, categoryId, academicYearId, departmentId, search, publicationStatuses, limit,
 } = {}) {
   // student_id IS NULL alone doesn't distinguish an institutional
   // document from a personal one (uploadPersonalDocument also sets
@@ -177,10 +183,15 @@ async function findInstitutional(client, {
     conditions.push(`publication_status = ANY($${values.length})`);
   }
 
+  let limitClause = '';
+  if (limit !== undefined) {
+    values.push(limit);
+    limitClause = ` LIMIT $${values.length}`;
+  }
   const result = await client.query(
     `SELECT * FROM documents
      WHERE ${conditions.join(' AND ')}
-     ORDER BY created_at DESC`,
+     ORDER BY created_at DESC${limitClause}`,
     values,
   );
   return result.rows;

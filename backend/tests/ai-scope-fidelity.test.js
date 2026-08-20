@@ -135,12 +135,15 @@ test('assessmentService.listMarksForActor: Institutional Position Account scope 
 
 test('academicService.getClassTimetableForActor: Institutional Position Account scope vs. Personal scope', async (t) => {
   await t.test('an Institutional ActorContext returns only the Position Account\'s own class', async () => {
-    const findByIdMock = t.mock.method(classRepository, 'findById', async (client, classId) => (
-      classId === TUTOR_CLASS_ID ? { id: TUTOR_CLASS_ID, class_name: 'Own Class' } : null
+    // Second optimization pass: getClassTimetableForActor now batches
+    // via findByIds/findByClassIds instead of one findById/findByClassId
+    // call per class — same scope-fidelity claim, updated mock seam.
+    const findByIdsMock = t.mock.method(classRepository, 'findByIds', async (client, ids) => (
+      ids.includes(TUTOR_CLASS_ID) ? [{ id: TUTOR_CLASS_ID, class_name: 'Own Class' }] : []
     ));
-    const allocationsMock = t.mock.method(facultyAllocationRepository, 'findByClassId', async () => []);
+    const allocationsMock = t.mock.method(facultyAllocationRepository, 'findByClassIds', async () => []);
     t.after(() => {
-      findByIdMock.mock.restore();
+      findByIdsMock.mock.restore();
       allocationsMock.mock.restore();
     });
 
@@ -151,12 +154,12 @@ test('academicService.getClassTimetableForActor: Institutional Position Account 
   });
 
   await t.test('the same occupant\'s Personal scope includes the extra faculty-allocated class too', async () => {
-    const findByIdMock = t.mock.method(classRepository, 'findById', async (client, classId) => ({
-      id: classId, class_name: classId === TUTOR_CLASS_ID ? 'Own Class' : 'Faculty Class',
-    }));
-    const allocationsMock = t.mock.method(facultyAllocationRepository, 'findByClassId', async () => []);
+    const findByIdsMock = t.mock.method(classRepository, 'findByIds', async (client, ids) => ids.map((id) => ({
+      id, class_name: id === TUTOR_CLASS_ID ? 'Own Class' : 'Faculty Class',
+    })));
+    const allocationsMock = t.mock.method(facultyAllocationRepository, 'findByClassIds', async () => []);
     t.after(() => {
-      findByIdMock.mock.restore();
+      findByIdsMock.mock.restore();
       allocationsMock.mock.restore();
     });
 

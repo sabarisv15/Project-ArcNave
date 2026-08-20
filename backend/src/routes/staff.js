@@ -3,6 +3,7 @@
 const express = require('express');
 const asyncHandler = require('../middleware/asyncHandler');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
+const { createUserScopedRateLimiter } = require('../middleware/rateLimit');
 const staffService = require('../services/staffService');
 const staffPhoneVerificationService = require('../services/staffPhoneVerificationService');
 const staffWorkHistoryService = require('../services/staffWorkHistoryService');
@@ -252,6 +253,12 @@ function mapStaffWorkHistoryServiceError(err, res) {
 function createStaffRouter() {
   const router = express.Router();
 
+  // Same OTP-request brute-force protection as students.js's own
+  // instance — see middleware/rateLimit.js.
+  const otpRequestLimiter = createUserScopedRateLimiter(
+    (req) => identityService.resolveActorUserId(req.capabilities),
+  );
+
   // RBAC here is the same deliberately conservative default
   // students.js uses, not a final decision. BusinessRules.md's real
   // Staff registration chain (Faculty submits -> HOD approves ->
@@ -378,7 +385,7 @@ function createStaffRouter() {
   // RS-STF-014 (ADL-030) — self-only phone OTP, mirrors
   // /students/:id/phone-verification/otp|verify's shape exactly, minus
   // the `target` field (staff has one phone, not phone+parent_phone).
-  router.post('/staff/me/phone-verification/otp', requireAuth, asyncHandler(async (req, res) => {
+  router.post('/staff/me/phone-verification/otp', requireAuth, otpRequestLimiter, asyncHandler(async (req, res) => {
     if (!requireResolvedTenant(req, res)) return;
     try {
       const result = await staffPhoneVerificationService.requestOtp(

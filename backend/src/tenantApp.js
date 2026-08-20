@@ -1,6 +1,9 @@
 'use strict';
 
 const express = require('express');
+const helmet = require('helmet');
+const cors = require('cors');
+const config = require('./config');
 const { appPool } = require('./db/pool');
 const asyncHandler = require('./middleware/asyncHandler');
 const { requestContextMiddleware } = require('./middleware/requestContext');
@@ -83,6 +86,43 @@ function createTenantApp({ registerExtraRoutes } = {}) {
   // the request-scoped AsyncLocalStorage context it opens.
   app.use(requestContextMiddleware);
 
+  // Security headers (X-Frame-Options/CSP/HSTS/etc, helmet's own
+  // defaults) — no launch blocker was ever about a specific header
+  // here, this is standard baseline hardening for any HTTP surface.
+  app.use(helmet());
+  // CORS — a single explicit origin (config.frontendOrigin), never a
+  // wildcard (see config.js's own comment on why). No credentials:
+  // true — this app has no cookie-based auth anywhere (bearer tokens
+  // only, see security.js), so the browser never needs permission to
+  // forward cookies cross-origin. allowedHeaders lists every custom
+  // header a real cross-origin frontend request actually sends today:
+  // Authorization (the bearer token), X-Request-ID (requestContext.js's
+  // own client-settable correlation id), and Idempotency-Key (the
+  // AI tool-invoke idempotency header — see routes/ai.js).
+  app.use(cors({
+    origin: config.frontendOrigin,
+    credentials: false,
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'Idempotency-Key'],
+  }));
+
+  // Path-scoped, ahead of the global default below — deliberately, not
+  // incidentally. Pre-launch audit finding: body-parser's json
+  // middleware sets req._body = true after it parses a body and every
+  // later express.json() call in the chain just sees that flag and
+  // no-ops (lib/read.js) — it does NOT re-parse with a different
+  // limit. The 4 document-upload routes each used to carry their own
+  // route-level `express.json({limit:'15mb'})`, but since the global
+  // default below always ran FIRST for every request (registered
+  // before any router), those route-level instances were silently
+  // inert dead code — the global default's 100kb limit was the one
+  // actually enforced, capping real uploads to ~75kb of raw file after
+  // base64 overhead. Registering this narrower, larger-limit instance
+  // for exactly this one path prefix BEFORE the global default fixes
+  // it correctly: /documents/* requests get parsed here (real 15mb),
+  // the global default below then no-ops for them (req._body already
+  // true), and every other route is completely unaffected — still the
+  // same 100kb default it always had.
+  app.use('/documents', express.json({ limit: '15mb' }));
   app.use(express.json());
 
   // Minimal liveness + DB connectivity check — same purpose as the

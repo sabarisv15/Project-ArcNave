@@ -141,7 +141,9 @@ test('CalendarService.listEvents / getEvent', async (t) => {
 
     const result = await calendarService.listEvents({}, { collegeId: 'c1', fromDate: '2026-01-01', toDate: '2026-12-31' });
     assert.equal(result.length, 1);
-    assert.deepEqual(listMock.mock.calls[0].arguments[1], { collegeId: 'c1', fromDate: '2026-01-01', toDate: '2026-12-31' });
+    assert.deepEqual(listMock.mock.calls[0].arguments[1], {
+      collegeId: 'c1', fromDate: '2026-01-01', toDate: '2026-12-31', limit: undefined,
+    });
   });
 
   await t.test('getEvent throws CalendarEventNotFoundError for an unknown id', async () => {

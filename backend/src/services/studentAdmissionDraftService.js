@@ -183,6 +183,9 @@ function buildExtractionHandler(collegeId, draftId, getJobId) {
       const ocrEnabledKeys = new Set(registryRows.filter((r) => r.ocr_enabled).map((r) => r.key));
       documents = allDocuments.filter((d) => ocrEnabledKeys.has(d.doc_type) && d.storage_path);
       await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
     } finally {
       client.release();
     }
@@ -275,6 +278,9 @@ function buildExtractionHandler(collegeId, draftId, getJobId) {
           fieldsNeedingReview: checklist.length,
         },
       };
+    } catch (err) {
+      await finalClient.query('ROLLBACK').catch(() => {});
+      throw err;
     } finally {
       finalClient.release();
     }

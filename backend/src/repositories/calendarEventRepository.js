@@ -64,7 +64,17 @@ async function remove(client, id) {
 // "everything" (Institution Settings admin view) and "what's coming up
 // in this window" (a dashboard widget or the AI tool below). Ordered
 // by start_date — a calendar's natural sort order.
-async function list(client, { collegeId, fromDate, toDate } = {}) {
+// limit is optional and undefined by default — every existing caller
+// (the human-facing GET /calendar-events route included, which
+// legitimately wants the full "everything" admin view per this file's
+// own header comment) keeps its exact current unbounded behavior. Only
+// a caller that explicitly opts in (the list_calendar_events AI tool)
+// gets a capped result — a safety backstop against an unfiltered
+// college-wide, all-time query being fully serialized into an LLM
+// prompt, not a functional limit for realistic event counts.
+async function list(client, {
+  collegeId, fromDate, toDate, limit,
+} = {}) {
   const conditions = [];
   const values = [];
 
@@ -82,8 +92,13 @@ async function list(client, { collegeId, fromDate, toDate } = {}) {
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  let limitClause = '';
+  if (limit !== undefined) {
+    values.push(limit);
+    limitClause = ` LIMIT $${values.length}`;
+  }
   const result = await client.query(
-    `SELECT * FROM academic_calendar_events ${whereClause} ORDER BY start_date ASC`,
+    `SELECT * FROM academic_calendar_events ${whereClause} ORDER BY start_date ASC${limitClause}`,
     values,
   );
   return result.rows;

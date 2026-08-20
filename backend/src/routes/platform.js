@@ -3,6 +3,7 @@
 const express = require('express');
 const asyncHandler = require('../middleware/asyncHandler');
 const { requirePlatformAdmin } = require('../middleware/platformAuth');
+const { createCredentialRateLimiter } = require('../middleware/rateLimit');
 const platformService = require('../services/platformService');
 const platformAuditService = require('../services/platformAuditService');
 const positionAccountInvitationService = require('../services/positionAccountInvitationService');
@@ -13,6 +14,14 @@ const { openTenantTransaction } = require('../db/tenantTransaction');
 
 function createPlatformRouter() {
   const router = express.Router();
+
+  // Same brute-force protection as the tenant side's /auth/login — a
+  // separate instance (own IP+identifier bucket space), same reasoning,
+  // see routes/auth.js and middleware/rateLimit.js. Same measured-not-
+  // guessed 50 limit too: principal-invitation.test.js alone calls the
+  // platform login route 11+ times against one shared seeded admin
+  // within a single test file/app instance.
+  const loginLimiter = createCredentialRateLimiter('username', 50);
 
   // Deliberately unauthenticated, like /invitations/accept on the
   // tenant side — there is no admin yet to gate this behind. Stays
@@ -43,7 +52,7 @@ function createPlatformRouter() {
   // Limitations documents this as a deliberate scope cut, not
   // something this pass is re-deciding). Platform admins simply
   // re-authenticate when their access token expires.
-  router.post('/auth/login', asyncHandler(async (req, res) => {
+  router.post('/auth/login', loginLimiter, asyncHandler(async (req, res) => {
     const { username, password } = req.body || {};
     try {
       const token = await platformService.login(platformPool, { username, password });

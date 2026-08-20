@@ -10,6 +10,11 @@ const { LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError } = re
 
 const REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
+// Matches claude.js's own MAX_TOKENS — this adapter previously sent no
+// generationConfig at all, so output length was fully unbounded (relying
+// entirely on Gemini's own server-side default) with no cost ceiling
+// this codebase controlled.
+const MAX_OUTPUT_TOKENS = 1024;
 
 function isConfigured(cfg) {
   return Boolean(cfg && cfg.apiKey);
@@ -57,6 +62,7 @@ async function complete(cfg, { systemPrompt, userPrompt }) {
   const payload = await postJson(cfg, `/models/${cfg.model}:generateContent`, {
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+    generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS },
   });
 
   const parts = payload && payload.candidates && payload.candidates[0]
@@ -84,6 +90,7 @@ async function completeWithTools(cfg, { systemPrompt, userPrompt, tools }) {
         parameters: tool.params,
       })),
     }],
+    generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS },
   });
 
   const parts = payload && payload.candidates && payload.candidates[0]

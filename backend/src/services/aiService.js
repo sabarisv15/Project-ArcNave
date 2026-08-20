@@ -15,12 +15,14 @@
 // LLM picks through the exact same invokeTool/Policy Gate as the other
 // two, never a separate or looser path.
 
+const crypto = require('crypto');
 const aiToolRegistry = require('./aiToolRegistry');
 const aiContextBuilder = require('./aiContextBuilder');
 const aiPromptSafetyLayer = require('./aiPromptSafetyLayer');
 const aiActorContext = require('./aiActorContext');
 const configurationService = require('./configurationService');
 const auditLogRepository = require('../repositories/auditLogRepository');
+const idempotencyKeyRepository = require('../repositories/idempotencyKeyRepository');
 // AI Experience Layer (AIX) — presentation only, added after the real
 // pipeline above has already produced its final, authorized result.
 // Every field this file already returns (entries, preamble, question,
@@ -34,6 +36,15 @@ const aiExperienceLayer = require('./aiExperience');
 // work" pattern every other *ValidationError in this codebase already
 // uses.
 class AiServiceValidationError extends Error {}
+
+// The same Idempotency-Key header was reused with a different `params`
+// body — refuse rather than silently replaying a stored response for
+// parameters it was never actually computed for. See
+// invokeToolIdempotent's own comment for the reasoning this can only
+// legitimately happen if a caller reuses a key by mistake, not from any
+// real concurrent-request race (that case is resolved by the DB
+// UNIQUE constraint before this check ever runs).
+class AiIdempotencyKeyReusedError extends Error {}
 
 // The agent's own operating instructions for tool selection — a
 // different concern from aiPromptSafetyLayer's renderForLlm (which
@@ -189,13 +200,106 @@ async function invokeTool(client, toolName, params, { identityContext } = {}) {
     action: 'ai_tool_invoked',
     entity: 'ai_tools',
     entityId: null,
-    metadata: { toolName },
+    // estimate() is a pure function over already-known params (no extra
+    // DB call) — recomputed here only so the audit trail records the
+    // same affected-row estimate the bulk-operation ceiling in
+    // aiToolRegistry.checkToolPreconditions already evaluated.
+    metadata: tool.maxAffectedRows
+      ? { toolName, estimatedAffectedRows: tool.maxAffectedRows.estimate(params) }
+      : { toolName },
   });
 
   const presentation = aiExperienceLayer.buildPresentation({
     sanitizedContext, toolUsed: toolName, tool, actorRole: identityContext.role,
   });
   return { ...sanitizedContext, presentation };
+}
+
+function hashParams(params) {
+  // Good-enough canonicalization, not a deep canonical-JSON sort: a
+  // genuine retry re-sends the exact same client-constructed object,
+  // which serializes identically. This only needs to catch "the same
+  // key was reused for different params," not survive adversarial key
+  // reordering — see AiIdempotencyKeyReusedError's own comment.
+  return crypto.createHash('sha256').update(JSON.stringify(params || {})).digest('hex');
+}
+
+// Idempotency wrapper around invokeTool for POST /ai/tools/:name/invoke
+// (routes/ai.js) — opt-in via an Idempotency-Key header, so a client
+// that never sends one sees no change in behavior. Not wired into
+// askAgent/askAboutTool: those are the LLM-tool-selection and read-only
+// paths respectively, neither of which this audit finding was about,
+// and extending scope there was explicitly not asked for.
+//
+// The reserve -> invokeTool -> markCompleted sequence below runs
+// entirely on the SAME `client` — the caller's own per-request
+// transaction (tenantTransaction.js) — which is what makes this
+// correct across a mid-request crash without any extra application-
+// level compensation logic. See the idempotency_keys migration's own
+// comment for the full crash-timing analysis (before COMMIT: nothing
+// persisted, safe fresh retry; after COMMIT: the real response is
+// already stored, safe replay) — this function does not need to
+// special-case either case itself, Postgres's own transaction
+// atomicity already guarantees both.
+async function invokeToolIdempotent(client, toolName, params, { identityContext, idempotencyKey }) {
+  const paramsHash = hashParams(params);
+
+  let reservation;
+  // A SAVEPOINT, not a bare try/catch around the INSERT alone: Postgres
+  // aborts the ENTIRE surrounding transaction on any statement error,
+  // including an ordinary unique-violation — every later statement on
+  // this same client (this function's own findByKey below, and every
+  // other query the rest of this request would still need to run)
+  // would otherwise fail with "current transaction is aborted" even
+  // though the conflict itself is an expected, handled case, not a
+  // real failure. ROLLBACK TO SAVEPOINT undoes only the failed
+  // reservation attempt and leaves the rest of the transaction usable
+  // — the other existing 23505-catch patterns in this codebase
+  // (financeService/workflowService) never needed this because they
+  // always just re-throw and let the whole request fail; this
+  // function is the one case that needs to keep going afterward.
+  await client.query('SAVEPOINT idempotency_reserve');
+  try {
+    reservation = await idempotencyKeyRepository.reserve(client, {
+      collegeId: identityContext.collegeId,
+      userId: identityContext.userId,
+      idempotencyKey,
+      toolName,
+      paramsHash,
+    });
+    await client.query('RELEASE SAVEPOINT idempotency_reserve');
+  } catch (err) {
+    await client.query('ROLLBACK TO SAVEPOINT idempotency_reserve');
+    if (err.code !== idempotencyKeyRepository.UNIQUE_VIOLATION) throw err;
+
+    // Lost the reservation race (or this key was already used, in an
+    // earlier request) — by the time our own blocked INSERT above was
+    // able to proceed far enough to hit this real conflict, the other
+    // transaction that owns this key had already committed (an
+    // uncommitted conflicting row would have blocked us, not failed
+    // us) — so this lookup is guaranteed to find a fully-completed row,
+    // never a half-finished one. See the migration's own comment.
+    const existing = await idempotencyKeyRepository.findByKey(client, {
+      collegeId: identityContext.collegeId,
+      userId: identityContext.userId,
+      idempotencyKey,
+    });
+    if (!existing || existing.response_body === null) {
+      throw new AiServiceValidationError(
+        `Idempotency-Key ${JSON.stringify(idempotencyKey)} is in an unexpected state — please retry with a new key`,
+      );
+    }
+    if (existing.params_hash !== paramsHash) {
+      throw new AiIdempotencyKeyReusedError(
+        `Idempotency-Key ${JSON.stringify(idempotencyKey)} was already used with different parameters`,
+      );
+    }
+    return existing.response_body;
+  }
+
+  const result = await invokeTool(client, toolName, params, { identityContext });
+  await idempotencyKeyRepository.markCompleted(client, reservation.id, result);
+  return result;
 }
 
 // Same pipeline as invokeTool, plus the LLM step: the tool still runs
@@ -306,23 +410,42 @@ async function askAgent(client, question, {
     // — the same checks invokeTool itself would do) so a request that would
     // be denied or malformed never even reaches the confirmation question.
     const tool = aiToolRegistry.getTool(decision.toolName);
-    if (tool && tool.level === 'L3') {
-      const { safeParams } = await aiToolRegistry.checkToolPreconditions(decision.toolName, {
+    const isL3 = Boolean(tool && tool.level === 'L3');
+    // Second optimization pass, finding #4: a bulk-capable L1/L2 tool
+    // (mark_attendance_nl, academic_generate_timetable/reviseTimetable,
+    // departments_create) reuses this exact same pause-and-ask flow —
+    // never a new mechanism — once its estimated affected-row count
+    // crosses its own confirmAt threshold. checkToolPreconditions
+    // already enforces the hard rejectAt ceiling regardless of whether
+    // this branch runs at all, so a request too large to ever confirm
+    // is rejected here before a confirmation question is even asked.
+    const hasBulkGuard = Boolean(tool && tool.maxAffectedRows && !isL3);
+    if (isL3 || hasBulkGuard) {
+      const { safeParams, estimatedAffectedRows } = await aiToolRegistry.checkToolPreconditions(decision.toolName, {
         client, identityContext, params: decision.arguments || {},
       });
-      const confirmationQuestion = `${tool.description} Shall I go ahead and submit this for approval?`;
-      const sanitizedContext = aiPromptSafetyLayer.buildSanitizedContext([]);
-      const presentation = aiExperienceLayer.buildPresentation({
-        sanitizedContext, question, answer: confirmationQuestion, toolUsed: null, tool: null, actorRole: identityContext.role,
-      });
-      return {
-        ...sanitizedContext,
-        question,
-        toolUsed: null,
-        answer: confirmationQuestion,
-        presentation,
-        pendingConfirmation: { toolName: decision.toolName, params: safeParams },
-      };
+      const needsConfirmation = isL3
+        || estimatedAffectedRows > tool.maxAffectedRows.confirmAt;
+      if (needsConfirmation) {
+        const confirmationQuestion = isL3
+          ? `${tool.description} Shall I go ahead and submit this for approval?`
+          : `${tool.description} This will affect approximately ${estimatedAffectedRows} record(s) — shall I go ahead?`;
+        const sanitizedContext = aiPromptSafetyLayer.buildSanitizedContext([]);
+        const presentation = aiExperienceLayer.buildPresentation({
+          sanitizedContext, question, answer: confirmationQuestion, toolUsed: null, tool: null, actorRole: identityContext.role,
+        });
+        return {
+          ...sanitizedContext,
+          question,
+          toolUsed: null,
+          answer: confirmationQuestion,
+          presentation,
+          pendingConfirmation: { toolName: decision.toolName, params: safeParams },
+        };
+      }
+      // hasBulkGuard but below confirmAt: preconditions (including the
+      // rejectAt ceiling) are already checked above — falls through to
+      // the normal invoke path below with no pause.
     }
 
     const sanitizedContext = await invokeTool(client, decision.toolName, decision.arguments || {}, { identityContext });
@@ -354,8 +477,10 @@ async function askAgent(client, question, {
 
 module.exports = {
   AiServiceValidationError,
+  AiIdempotencyKeyReusedError,
   listTools,
   invokeTool,
+  invokeToolIdempotent,
   askAboutTool,
   askAgent,
 };

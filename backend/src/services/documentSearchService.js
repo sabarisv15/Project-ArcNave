@@ -62,6 +62,7 @@ const aiClassificationAccess = require('./aiClassificationAccess');
 const configurationService = require('./configurationService');
 const tesseractOcr = require('../ocr/tesseractOcr');
 const pdfRasterizer = require('../ocr/pdfRasterizer');
+const { withOcrSlot } = require('../ocr/ocrConcurrencyLimit');
 const auditLogRepository = require('../repositories/auditLogRepository');
 const aiDocumentChunkRepository = require('../repositories/aiDocumentChunkRepository');
 const visibilityService = require('./visibilityService');
@@ -200,11 +201,18 @@ async function ingestDocument(client, documentId, { actorUserId } = {}) {
   if (typeof document.mime_type === 'string' && document.mime_type.startsWith('text/')) {
     text = buffer.toString('utf8');
   } else if (typeof document.mime_type === 'string' && OCR_IMAGE_MIME_TYPES.has(document.mime_type)) {
-    ({ text } = await tesseractOcr.extractTextFromImage(buffer));
+    // withOcrSlot: see ocr/ocrConcurrencyLimit.js — the same shared
+    // limiter documentExtractionService.runOcr uses, bounding how many
+    // of this call and that one can run pdftoppm/Tesseract at once,
+    // process-wide, since these are the two real entry points into
+    // those two modules.
+    ({ text } = await withOcrSlot(() => tesseractOcr.extractTextFromImage(buffer)));
   } else if (document.mime_type === PDF_MIME_TYPE) {
-    const pageImages = await pdfRasterizer.rasterizePdfToImages(buffer);
-    const pageResults = await tesseractOcr.extractTextFromPages(pageImages);
-    text = pageResults.map((p) => p.text).join('\n\n');
+    text = await withOcrSlot(async () => {
+      const pageImages = await pdfRasterizer.rasterizePdfToImages(buffer);
+      const pageResults = await tesseractOcr.extractTextFromPages(pageImages);
+      return pageResults.map((p) => p.text).join('\n\n');
+    });
   } else {
     throw new DocumentSearchUnsupportedContentError(
       `document ${JSON.stringify(documentId)} has mime_type ${JSON.stringify(document.mime_type)}, which this `

@@ -162,10 +162,14 @@ function createDocumentsRouter() {
   // BusinessRules.md's Staff section — not assumed here) — that's a
   // new permission mapping at that point, not a new mechanism.
 
-  // A route-level body-size limit, not a global one: base64 adds ~33%
-  // overhead over raw bytes, and this is the only endpoint in the app
-  // that needs headroom above express.json()'s default 100kb.
-  router.post('/documents', requirePermission('documents.upload'), express.json({ limit: '15mb' }), asyncHandler(async (req, res) => {
+  // The real 15mb body-size limit for this route (base64 adds ~33%
+  // overhead over raw bytes) is enforced by tenantApp.js's path-scoped
+  // express.json({limit:'15mb'}) mounted at '/documents', ahead of the
+  // app-wide default — NOT by an inline express.json() call here. See
+  // that file's own comment: a second express.json() call on the same
+  // request is always a silent no-op (body-parser's req._body flag),
+  // so a route-level instance here would do nothing.
+  router.post('/documents', requirePermission('documents.upload'), asyncHandler(async (req, res) => {
     if (!requireResolvedTenant(req, res)) return;
     const { file_base64: fileBase64 } = req.body || {};
     if (typeof fileBase64 !== 'string' || fileBase64.length === 0) {
@@ -198,7 +202,9 @@ function createDocumentsRouter() {
   // doc_type='template'/student_id=null structurally — a caller here
   // cannot forge a template row with a student_id, or a student
   // document silently tagged as a template.
-  router.post('/documents/templates', requirePermission('documents.templates.upload'), express.json({ limit: '15mb' }), asyncHandler(async (req, res) => {
+  // Same 15mb limit, same enforcement point (tenantApp.js) as
+  // POST /documents above.
+  router.post('/documents/templates', requirePermission('documents.templates.upload'), asyncHandler(async (req, res) => {
     if (!requireResolvedTenant(req, res)) return;
     const { file_base64: fileBase64, file_name: fileName, mime_type: mimeType } = req.body || {};
     if (typeof fileBase64 !== 'string' || fileBase64.length === 0) {
@@ -250,7 +256,9 @@ function createDocumentsRouter() {
   // repository" action. confirm_upload (task #3) lets a caller push
   // past a detected duplicate after the user has seen the warning
   // (the 409 DocumentDuplicateDetectedError response below).
-  router.post('/documents/institutional', requirePermission('documents.institutional.upload'), express.json({ limit: '15mb' }), asyncHandler(async (req, res) => {
+  // Same 15mb limit, same enforcement point (tenantApp.js) as
+  // POST /documents above.
+  router.post('/documents/institutional', requirePermission('documents.institutional.upload'), asyncHandler(async (req, res) => {
     if (!requireResolvedTenant(req, res)) return;
     const {
       file_base64: fileBase64,
@@ -322,7 +330,9 @@ function createDocumentsRouter() {
   // structurally fixes studentId/classId to null and the actor to
   // themselves, so there is nothing a caller could forge here beyond
   // their own storage quota).
-  router.post('/documents/personal', requireAuth, express.json({ limit: '15mb' }), asyncHandler(async (req, res) => {
+  // Same 15mb limit, same enforcement point (tenantApp.js) as
+  // POST /documents above.
+  router.post('/documents/personal', requireAuth, asyncHandler(async (req, res) => {
     if (!requireResolvedTenant(req, res)) return;
     const {
       file_base64: fileBase64,

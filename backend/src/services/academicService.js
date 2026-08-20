@@ -1703,9 +1703,14 @@ async function resolveNextTeachingMomentForStaff(client, collegeId, staffUserId,
     return null;
   }
 
-  const withPeriods = await Promise.all(allocations.map(async (allocation) => ({
-    allocation, period: await timetablePeriodRepository.findById(client, allocation.period_id),
-  })));
+  const periods = await timetablePeriodRepository.findByIds(
+    client,
+    allocations.map((allocation) => allocation.period_id),
+  );
+  const periodsById = new Map(periods.map((period) => [period.id, period]));
+  const withPeriods = allocations.map((allocation) => ({
+    allocation, period: periodsById.get(allocation.period_id) || null,
+  }));
 
   const todaysRemaining = withPeriods
     .filter(({ period }) => period && period.college_id === collegeId
@@ -1747,9 +1752,14 @@ async function resolveWeeklyScheduleForStaff(client, collegeId, staffUserId) {
     return [];
   }
 
-  const withPeriods = await Promise.all(allocations.map(async (allocation) => ({
-    allocation, period: await timetablePeriodRepository.findById(client, allocation.period_id),
-  })));
+  const weeklyPeriods = await timetablePeriodRepository.findByIds(
+    client,
+    allocations.map((allocation) => allocation.period_id),
+  );
+  const weeklyPeriodsById = new Map(weeklyPeriods.map((period) => [period.id, period]));
+  const withPeriods = allocations.map((allocation) => ({
+    allocation, period: weeklyPeriodsById.get(allocation.period_id) || null,
+  }));
 
   const relevant = withPeriods.filter(({ period }) => period && period.college_id === collegeId);
   const classIds = [...new Set(relevant.map(({ allocation }) => allocation.class_id))];
@@ -2261,22 +2271,47 @@ const CLASS_TIMETABLE_SCOPE_LIMIT = 500;
 async function getClassTimetableForActor(client, actorInput) {
   const classIds = await visibilityService.getVisibleClassIds(client, actorInput);
 
+  // Principal path (classIds === null): listClasses already returns the
+  // full class rows in one query — reuse them directly instead of
+  // discarding className/etc. and re-fetching each row individually
+  // below. Scoped-actor path: only ids are known yet, so a single batch
+  // fetch resolves them. Either way, at most one class-row query total,
+  // never one per class.
   let targetClassIds;
+  let classesById;
   if (classIds === null) {
     const classes = await listClasses(client, { limit: CLASS_TIMETABLE_SCOPE_LIMIT });
     targetClassIds = classes.map((cls) => cls.id);
+    classesById = new Map(classes.map((cls) => [cls.id, cls]));
   } else {
     targetClassIds = classIds;
+    classesById = new Map(
+      (await classRepository.findByIds(client, targetClassIds)).map((cls) => [cls.id, cls]),
+    );
   }
   if (targetClassIds.length === 0) {
     return [];
   }
 
-  return Promise.all(targetClassIds.map(async (classId) => {
-    const cls = await classRepository.findById(client, classId);
-    const allocations = await listFacultyAllocationsForClass(client, classId);
-    return { classId, className: cls ? cls.class_name : null, allocations };
-  }));
+  const allocations = await facultyAllocationRepository.findByClassIds(client, targetClassIds);
+  const allocationsByClassId = new Map();
+  for (const allocation of allocations) {
+    const list = allocationsByClassId.get(allocation.class_id);
+    if (list) {
+      list.push(allocation);
+    } else {
+      allocationsByClassId.set(allocation.class_id, [allocation]);
+    }
+  }
+
+  return targetClassIds.map((classId) => {
+    const cls = classesById.get(classId);
+    return {
+      classId,
+      className: cls ? cls.class_name : null,
+      allocations: allocationsByClassId.get(classId) || [],
+    };
+  });
 }
 
 module.exports = {

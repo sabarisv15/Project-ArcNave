@@ -1,7 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const { runWithRequestContext } = require('../logging/context');
+const { runWithRequestContext, AFTER_COMMIT_CALLBACKS } = require('../logging/context');
 const { logInfo } = require('../logging/logger');
 
 // Outermost middleware — registered first in app.js, before
@@ -69,7 +69,15 @@ function requestContextMiddleware(req, res, next) {
     });
   });
 
-  runWithRequestContext({ requestId, collegeId: null }, () => next());
+  // AFTER_COMMIT_CALLBACKS: see db/tenantTransaction.js's
+  // registerAfterCommit/commitAndRelease — a request-scoped queue of
+  // work that must not start until the request's own DB transaction
+  // has actually committed (e.g. backgroundJobService.enqueue's worker
+  // trigger, previously fired immediately at enqueue-call-time, which
+  // could reach Postgres before the enqueuing transaction's COMMIT did).
+  // A Symbol key, not a plain field — see AFTER_COMMIT_CALLBACKS's own
+  // comment for why (kept out of the generic per-request log payload).
+  runWithRequestContext({ requestId, collegeId: null, [AFTER_COMMIT_CALLBACKS]: [] }, () => next());
 }
 
 module.exports = { requestContextMiddleware };

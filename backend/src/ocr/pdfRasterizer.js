@@ -44,9 +44,9 @@ const childProcess = require('child_process');
 // ENOENT). Calling childProcess.execFile(...) directly here, as a live
 // property lookup, is what actually makes this mockable the same way
 // every other dependency in this codebase already is.
-function execFileAsync(command, args) {
+function execFileAsync(command, args, options) {
   return new Promise((resolve, reject) => {
-    childProcess.execFile(command, args, (err, stdout, stderr) => {
+    childProcess.execFile(command, args, options, (err, stdout, stderr) => {
       if (err) reject(err); else resolve({ stdout, stderr });
     });
   });
@@ -57,6 +57,44 @@ class PdfRasterizationError extends Error {}
 // -r 200: 200 DPI — high enough for Tesseract to read ordinary printed
 // text reliably without producing unreasonably large PNGs per page.
 const RASTER_DPI = '200';
+
+// Pre-launch audit finding (P1): pdftoppm ran with no timeout and no
+// page-count ceiling — a hung/malformed PDF could block this call
+// forever while holding a pooled DB connection (see
+// db/tenantTransaction.js's own idle_in_transaction_session_timeout,
+// set to 90s specifically to sit above this 60s so Postgres never
+// kills that connection out from under a still-legitimately-running
+// rasterization), and rasterizePdfToImages holds every page's PNG
+// buffer in memory simultaneously (see the loop below), so an
+// unbounded page count is an unbounded memory footprint.
+//
+// EXEC_TIMEOUT_MS: 60s — generous above any real single-document
+// rasterization (poppler processes a typical multi-page document in
+// well under a second per page), tight enough that a hung/malformed
+// PDF is reclaimed within one request's realistic patience budget.
+//
+// MAX_PAGES: a conservative TECHNICAL SAFETY CEILING against
+// out-of-memory, not a product decision about how many pages a real
+// document may have — that decision needs real evidence this
+// pre-launch pass doesn't have (see the audit's own review comment:
+// "protect the server first, then choose the product limit from
+// evidence"). The number itself IS evidence-based, not guessed:
+// measured directly against this exact pdftoppm/poppler build (`docker
+// run gstack-app:latest`) at RASTER_DPI=200 — a single A4 page with
+// dense mixed text/shape content (a reasonable proxy for a busy
+// document, not a sparse one) rasterized to ~650KB as a PNG. A
+// maximally adversarial/photographic page could compress far less
+// well; the mathematical ceiling for any 200 DPI A4 PNG is
+// 1654x2339x3 bytes =~ 11.6MB raw (PNG cannot exceed uncompressed
+// size). Budgeting 3MB/page — comfortably above the measured
+// mixed-content figure, comfortably below the raw ceiling, matching
+// the commonly-cited range for real full-color document scans — against
+// an 750MB peak-memory budget for ONE rasterization call (leaving
+// headroom on a modest droplet for the OCR_CONCURRENCY_LIMIT=2 worth of
+// simultaneous calls plus the rest of the Node process and Postgres)
+// gives 750/3 =~ 250 pages, rounded down to a clean number.
+const EXEC_TIMEOUT_MS = 60_000;
+const MAX_PAGES = 250;
 
 function pageNumberFromFileName(fileName) {
   const match = fileName.match(/-(\d+)\.png$/);
@@ -74,7 +112,18 @@ async function rasterizePdfToImages(pdfBuffer) {
     const outputPrefix = path.join(tempDir, 'page');
 
     try {
-      await execFileAsync('pdftoppm', ['-png', '-r', RASTER_DPI, inputPath, outputPrefix]);
+      // -l MAX_PAGES: stop producing pages past the safety ceiling
+      // rather than erroring — a document under the ceiling is
+      // completely unaffected; one over it simply gets its first
+      // MAX_PAGES pages processed instead of hanging the process or
+      // exhausting memory, same "truncate the worst case, don't crash"
+      // reasoning the repository-level LIMITs elsewhere in this
+      // codebase already use.
+      await execFileAsync(
+        'pdftoppm',
+        ['-png', '-r', RASTER_DPI, '-l', String(MAX_PAGES), inputPath, outputPrefix],
+        { timeout: EXEC_TIMEOUT_MS },
+      );
     } catch (err) {
       throw new PdfRasterizationError(`pdftoppm failed: ${err.message}`);
     }
@@ -98,4 +147,6 @@ async function rasterizePdfToImages(pdfBuffer) {
   }
 }
 
-module.exports = { PdfRasterizationError, rasterizePdfToImages };
+module.exports = {
+  PdfRasterizationError, rasterizePdfToImages, EXEC_TIMEOUT_MS, MAX_PAGES,
+};

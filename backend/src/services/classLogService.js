@@ -108,12 +108,12 @@ async function deleteLogEntry(client, id, { actorUserId, collegeId }) {
 // checked); omitting it searches across every class the actor may see
 // — the "Teaching Journal" screen's own default view.
 async function listLogEntries(client, {
-  classId, subject, fromDate, toDate,
+  classId, subject, fromDate, toDate, limit,
 }, { actorUserId, actorRole, collegeId }) {
   if (classId) {
     await visibilityService.assertCanViewClass(client, classId, { actorUserId, actorRole, collegeId });
     return classLogRepository.list(client, {
-      classId, subject, fromDate, toDate,
+      classId, subject, fromDate, toDate, limit,
     });
   }
 
@@ -126,6 +126,7 @@ async function listLogEntries(client, {
     subject,
     fromDate,
     toDate,
+    limit,
   });
 }
 

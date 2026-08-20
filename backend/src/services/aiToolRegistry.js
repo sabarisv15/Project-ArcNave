@@ -117,6 +117,19 @@ class AiToolDepartmentScopeError extends Error {}
 // well-formed caller.
 class AiToolInvalidParamsError extends Error {}
 
+// Second optimization pass, finding #4: a small number of tools can
+// affect more than one row per call (mark_attendance_nl,
+// academic_generate_timetable/reviseTimetable, departments_create — see
+// each tool's own maxAffectedRows comment for why it specifically needs
+// this and how its estimate is computed). This is a HARD ceiling,
+// deliberately never bypassable: unlike the soft confirmAt threshold
+// (aiService.askAgent's job, matching the existing L3 confirmation-pause
+// pattern), rejectAt is enforced here, inside checkToolPreconditions —
+// the one choke point every entry point (askAgent AND the direct
+// POST /ai/tools/:name/invoke path) already goes through. A tool that
+// doesn't declare maxAffectedRows is entirely unaffected by this check.
+class AiToolBulkOperationRejectedError extends Error {}
+
 // A runtime backstop for the L3 discipline the file-level comment
 // above otherwise only documents: an L3 handler returned a result that
 // looks like it dispatched/sent something directly instead of only
@@ -405,6 +418,7 @@ function describePolicyFailureReason(err) {
   if (err instanceof AiToolDataClassificationError) return 'classification';
   if (err instanceof AiToolDepartmentScopeError) return 'department_scope';
   if (err instanceof AiToolL3BypassError) return 'l3_bypass';
+  if (err instanceof AiToolBulkOperationRejectedError) return 'bulk_operation_ceiling';
   return 'unknown';
 }
 
@@ -483,7 +497,29 @@ async function checkToolPreconditions(name, { client, identityContext, params } 
   const safeParams = sanitizeParams(tool, params || {});
   assertParamsValid(tool, safeParams);
 
-  return { tool, safeParams };
+  // Bulk-operation safety ceiling — see AiToolBulkOperationRejectedError's
+  // own comment. estimate() is a pure function over the already-validated
+  // params (no DB call), so this adds no query and no measurable latency.
+  let estimatedAffectedRows;
+  if (tool.maxAffectedRows) {
+    estimatedAffectedRows = tool.maxAffectedRows.estimate(safeParams);
+    if (estimatedAffectedRows > tool.maxAffectedRows.rejectAt) {
+      await auditLogRepository.createAuditLogEntry(client, {
+        collegeId: identityContext.collegeId,
+        userId: identityContext.userId,
+        action: 'ai_tool_denied',
+        entity: 'ai_tools',
+        entityId: null,
+        metadata: { toolName: name, reason: 'bulk_operation_ceiling', estimatedAffectedRows },
+      });
+      throw new AiToolBulkOperationRejectedError(
+        `tool ${JSON.stringify(name)} would affect approximately ${estimatedAffectedRows} record(s), `
+        + `above the safety ceiling of ${tool.maxAffectedRows.rejectAt} — narrow the request and try again`,
+      );
+    }
+  }
+
+  return { tool, safeParams, estimatedAffectedRows };
 }
 
 async function invokeTool(name, { client, identityContext, params } = {}) {
@@ -863,9 +899,16 @@ registerTool({
       params.department ? collegeProfileService.resolveDepartmentId(client, actor.collegeId, params.department) : undefined,
       params.academic_year ? academicYearService.resolveAcademicYearId(client, actor.collegeId, params.academic_year) : undefined,
     ]);
+    // limit: this tool's own description already frames its ordering
+    // as "most recent first" — capping it here matches that stated
+    // semantic rather than truncating something the tool promises to
+    // return in full. The human-facing GET /documents/institutional
+    // browse route is untouched.
     return documentService.listInstitutionalDocuments(
       client,
-      { categoryId, departmentId, academicYearId, search: params.search },
+      {
+        categoryId, departmentId, academicYearId, search: params.search, limit: 200,
+      },
       { actorRole: actor.role },
     );
   },
@@ -971,6 +1014,23 @@ registerTool({
     required: ['absent_roll_numbers'],
     additionalProperties: false,
   },
+  // Second optimization pass, finding #4: the true affected count is
+  // the resolved session's whole roster (every enrolled student is
+  // touched, not just the named absentees) — not knowable without
+  // running the handler's own session/roster resolution first, which
+  // this pre-mutation gate deliberately doesn't do (out of scope for a
+  // surgical pass; attendanceService would need its own dry-run/count
+  // support to make that exact). absent_roll_numbers.length is used
+  // instead as a cheap, honest proxy: no real class session in this
+  // domain has anywhere near 300 students, so this is a pure backstop
+  // against a malformed/injected oversized list, never a limit a
+  // legitimate single-session attendance call could realistically hit —
+  // no confirmAt tier is set, matching that (a routine call should
+  // never pause for confirmation here).
+  maxAffectedRows: {
+    estimate: (params) => (Array.isArray(params.absent_roll_numbers) ? params.absent_roll_numbers.length : 0),
+    rejectAt: 300,
+  },
   handler: (client, params, actor) => attendanceService.markAttendanceByRollNumbers(
     client,
     { absentRollNumbers: params.absent_roll_numbers },
@@ -1008,8 +1068,14 @@ registerTool({
     },
     additionalProperties: false,
   },
+  // limit: a safety backstop, not a functional truncation — a college's
+  // real calendar-event count (semester dates, holidays, exams) never
+  // realistically approaches this; it exists purely to bound what gets
+  // JSON-stringified into the LLM prompt for an unfiltered, all-time
+  // query. The human-facing GET /calendar-events route is untouched —
+  // this limit is only ever passed by this tool.
   handler: (client, params, actor) => calendarService.listEvents(client, {
-    collegeId: actor.collegeId, fromDate: params.from_date, toDate: params.to_date,
+    collegeId: actor.collegeId, fromDate: params.from_date, toDate: params.to_date, limit: 500,
   }),
 });
 
@@ -1239,6 +1305,21 @@ registerTool({
     required: ['class_id', 'requirements'],
     additionalProperties: false,
   },
+  // Second optimization pass, finding #4: the actual write count is
+  // roughly one faculty_allocation row per period across every
+  // requirement — Σ periods_per_week is an exact, zero-cost estimate
+  // computable directly from the already-validated params, not a proxy.
+  // Scoped to one class only (class_id is required), so a normal
+  // request is tens of periods at most; confirmAt sits above a full
+  // single-class weekly schedule, rejectAt guards against a malformed/
+  // injected requirements array trying to generate an implausible
+  // number of periods in one call.
+  maxAffectedRows: {
+    estimate: (params) => (params.requirements || [])
+      .reduce((sum, r) => sum + (Number(r.periods_per_week) || 0), 0),
+    confirmAt: 40,
+    rejectAt: 200,
+  },
   handler: async (client, params, actor) => {
     const classId = await academicService.resolveClassId(client, actor.collegeId, params.class_id);
     const requirements = (params.requirements || []).map((r) => ({
@@ -1274,6 +1355,14 @@ registerTool({
     },
     required: ['class_id', 'requirements'],
     additionalProperties: false,
+  },
+  // Same reasoning as academic_generate_timetable's own maxAffectedRows
+  // comment — identical requirements shape, identical write pattern.
+  maxAffectedRows: {
+    estimate: (params) => (params.requirements || [])
+      .reduce((sum, r) => sum + (Number(r.periods_per_week) || 0), 0),
+    confirmAt: 40,
+    rejectAt: 200,
   },
   handler: async (client, params, actor) => {
     const classId = await academicService.resolveClassId(client, actor.collegeId, params.class_id);
@@ -1933,10 +2022,14 @@ registerTool({
     const classId = params.class_id
       ? await academicService.resolveClassId(client, actor.collegeId, params.class_id)
       : undefined;
+    // limit: caps this tool's own result at the most recent entries —
+    // the query is already ORDER BY session_date DESC, so this is a
+    // genuine "recent journal entries" view, not an arbitrary
+    // truncation. The human-facing GET /class-logs route is untouched.
     return classLogService.listLogEntries(
       client,
       {
-        classId, subject: params.subject, fromDate: params.from_date, toDate: params.to_date,
+        classId, subject: params.subject, fromDate: params.from_date, toDate: params.to_date, limit: 200,
       },
       { actorUserId: actor.userId, actorRole: actor.role, collegeId: actor.collegeId },
     );
@@ -2459,6 +2552,19 @@ registerTool({
     required: ['name', 'course_duration', 'default_sections'],
     additionalProperties: false,
   },
+  // Second optimization pass, finding #4: course_duration × default_sections
+  // is the exact, deterministic number of classes this call cascades
+  // into creating (one class per year × section) — not a proxy, the
+  // real count, computable directly from the two required params with
+  // no DB call. confirmAt sits above what any real department's own
+  // course structure needs; rejectAt guards against a malformed/
+  // injected huge duration or section count triggering a runaway
+  // class-creation cascade.
+  maxAffectedRows: {
+    estimate: (params) => (Number(params.course_duration) || 0) * (Number(params.default_sections) || 0),
+    confirmAt: 30,
+    rejectAt: 100,
+  },
   handler: (client, params, actor) => collegeProfileService.createDepartment(
     client,
     {
@@ -2625,6 +2731,7 @@ module.exports = {
   AiToolL3BypassError,
   AiToolInvalidParamsError,
   AiToolAnalyticsLevelViolationError,
+  AiToolBulkOperationRejectedError,
   registerTool,
   getTool,
   listTools,

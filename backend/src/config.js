@@ -19,6 +19,17 @@ module.exports = {
   environment: process.env.ENVIRONMENT || 'development',
   logLevel: process.env.LOG_LEVEL || 'info',
 
+  // The one browser origin allowed to make cross-origin requests to
+  // this API (see tenantApp.js/platformApp.js's cors() wiring) — never
+  // a wildcard: this app serves student/staff PII across every tenant,
+  // and auth is bearer-token-in-header (see security.js — no cookies
+  // anywhere in this codebase), so an overly permissive CORS policy
+  // would let any third-party page read a response if it ever got hold
+  // of a token, not just enable convenience. Defaults to the frontend's
+  // own local dev server (frontend/vite.config.js, port 3100) —
+  // deploy-specific, must be set for any non-local frontend origin.
+  frontendOrigin: process.env.FRONTEND_ORIGIN || 'http://localhost:3100',
+
   // Runtime app connection — must use the least-privilege arcnave_app
   // role, never the migration-owner role. That role is a Postgres
   // superuser (provisioned by the official postgres image) and

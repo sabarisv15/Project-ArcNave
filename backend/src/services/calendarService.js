@@ -111,8 +111,12 @@ async function getEvent(client, id) {
   return event;
 }
 
-async function listEvents(client, { collegeId, fromDate, toDate } = {}) {
-  return calendarEventRepository.list(client, { collegeId, fromDate, toDate });
+async function listEvents(client, {
+  collegeId, fromDate, toDate, limit,
+} = {}) {
+  return calendarEventRepository.list(client, {
+    collegeId, fromDate, toDate, limit,
+  });
 }
 
 module.exports = {

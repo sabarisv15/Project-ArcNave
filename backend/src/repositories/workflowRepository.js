@@ -104,6 +104,43 @@ async function update(client, id, fields) {
   return result.rows[0] || null;
 }
 
+// Same column-building logic as update() above, but with an added
+// `AND status = 'Pending'` guard, and the row count of the UPDATE
+// itself is what tells the caller whether it won or lost a concurrent
+// race — not a separate SELECT beforehand, which two callers could
+// both pass before either writes (the exact TOCTOU bug this exists to
+// close: workflowService.js's approve/reject/escalate all used to
+// read-then-write with no guard on the write). Postgres serializes two
+// concurrent UPDATEs to the same row even under READ COMMITTED (the
+// second blocks until the first's transaction settles, then
+// re-evaluates this WHERE clause against the now-current row) — no
+// SELECT ... FOR UPDATE needed, the UPDATE's own row lock is the guard.
+// Returns null if the row doesn't exist OR — the race case — a
+// concurrent call already resolved it first; the caller cannot tell
+// which from this alone and doesn't need to (loadPendingStepForActor
+// already ran a friendly existence/ownership check first).
+async function updatePendingStatus(client, id, fields) {
+  const entries = COLUMNS.filter(([key]) => fields[key] !== undefined);
+  if (entries.length === 0) {
+    const result = await client.query(
+      "SELECT * FROM workflow_requests WHERE id = $1 AND status = 'Pending'",
+      [id],
+    );
+    return result.rows[0] || null;
+  }
+
+  const setClauses = entries.map(([, column], i) => `${column} = $${i + 2}`);
+  const values = entries.map(([key]) => toRow(fields)[key]);
+
+  const result = await client.query(
+    `UPDATE workflow_requests SET ${setClauses.join(', ')}, updated_at = now()
+     WHERE id = $1 AND status = 'Pending'
+     RETURNING *`,
+    [id, ...values],
+  );
+  return result.rows[0] || null;
+}
+
 async function list(client, { limit = 50, offset = 0 } = {}) {
   const result = await client.query(
     `SELECT * FROM workflow_requests
@@ -119,5 +156,6 @@ module.exports = {
   findByEntity,
   findPendingForApprover,
   update,
+  updatePendingStatus,
   list,
 };

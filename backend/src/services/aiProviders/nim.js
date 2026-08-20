@@ -13,6 +13,11 @@ const { LlmNotConfiguredError, LlmRequestError } = require('./errors');
 
 const REQUEST_TIMEOUT_MS = 30000;
 const EMBEDDING_DIMENSIONS = 1024;
+// Matches claude.js's own MAX_TOKENS — this adapter previously sent no
+// max_tokens at all, so output length was fully unbounded (relying
+// entirely on the OpenAI-compatible server's own default) with no cost
+// ceiling this codebase controlled.
+const MAX_TOKENS = 1024;
 
 function isConfigured(cfg) {
   return Boolean(cfg && cfg.apiKey);
@@ -62,6 +67,7 @@ async function complete(cfg, { systemPrompt, userPrompt }) {
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
     ],
+    max_tokens: MAX_TOKENS,
     temperature: 0.2,
   });
 
@@ -94,6 +100,7 @@ async function completeWithTools(cfg, { systemPrompt, userPrompt, tools }) {
       },
     })),
     tool_choice: 'auto',
+    max_tokens: MAX_TOKENS,
     temperature: 0.2,
   });
 

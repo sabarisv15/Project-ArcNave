@@ -22,6 +22,11 @@
 const { LlmNotConfiguredError, LlmRequestError } = require('./errors');
 
 const REQUEST_TIMEOUT_MS = 30000;
+// Matches claude.js's own MAX_TOKENS — this adapter previously sent no
+// max_tokens at all, so output length was fully unbounded (relying
+// entirely on the self-hosted server's own default) with no cost
+// ceiling this codebase controlled.
+const MAX_TOKENS = 1024;
 
 function isConfigured(cfg) {
   return Boolean(cfg && cfg.baseUrl);
@@ -71,6 +76,7 @@ async function complete(cfg, { systemPrompt, userPrompt }) {
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
     ],
+    max_tokens: MAX_TOKENS,
     temperature: 0.2,
   });
 
@@ -99,6 +105,7 @@ async function completeWithTools(cfg, { systemPrompt, userPrompt, tools }) {
       function: { name: tool.name, description: tool.description, parameters: tool.params },
     })),
     tool_choice: 'auto',
+    max_tokens: MAX_TOKENS,
     temperature: 0.2,
   });
 

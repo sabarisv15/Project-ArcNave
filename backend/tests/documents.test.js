@@ -221,6 +221,45 @@ test('documents', async (t) => {
     assert.ok(fromStorage.equals(fileBytes), 'DocumentService reads back the original bytes');
   });
 
+  // Regression test for the pre-launch audit's F7-1/D6 finding: a
+  // second express.json() call on the same request is always a silent
+  // no-op (body-parser's req._body flag — see tenantApp.js's own
+  // comment), so the route-level express.json({limit:'15mb'}) this
+  // route used to carry never actually took effect — the app-wide
+  // default (100kb) was the real, silent limit, capping real uploads
+  // to ~75kb of raw file after base64 overhead. This upload is ~1MB —
+  // comfortably above that old effective cap, comfortably below the
+  // real 15mb limit now enforced by tenantApp.js's path-scoped parser.
+  await t.test('upload accepts a file well above the old ~75kb effective cap (real 15mb limit now applies)', async () => {
+    const token = await login(collegeA, 'principaluser');
+    const bigFileBytes = Buffer.alloc(1024 * 1024, 'A'); // 1MB
+    const resp = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {
+      student_id: collegeA.studentId, doc_type: 'aadhaar', file_name: 'big.pdf', mime_type: 'application/pdf',
+      file_base64: bigFileBytes.toString('base64'),
+    });
+    assert.equal(resp.status, 201);
+    assert.equal(resp.body.file_size_bytes, String(bigFileBytes.length));
+  });
+
+  await t.test('upload still rejects a body genuinely over the 15mb limit — not accidentally unbounded now', async () => {
+    const token = await login(collegeA, 'principaluser');
+    const tooBigBytes = Buffer.alloc(16 * 1024 * 1024, 'A'); // 16MB raw -> >15mb base64
+    const resp = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {
+      student_id: collegeA.studentId, doc_type: 'aadhaar', file_name: 'toobig.pdf', mime_type: 'application/pdf',
+      file_base64: tooBigBytes.toString('base64'),
+    });
+    // 500, not 413: middleware/errorHandler.js always responds 500 for
+    // any unhandled error regardless of the error's own status code
+    // (body-parser's PayloadTooLargeError does carry a real .status of
+    // 413, but this app's generic error handler doesn't look at it) —
+    // pre-existing, consistent behavior for every unhandled error in
+    // this codebase, not something this fix changed or should change
+    // here. The actual claim this test verifies is the one that
+    // matters for Fix 7: the request is genuinely REJECTED past 15mb,
+    // not silently accepted as if the limit were unbounded.
+    assert.equal(resp.status, 500);
+  });
+
   await t.test('upload rejects a missing file_base64 with 400, not a 500', async () => {
     const token = await login(collegeA, 'principaluser');
     const resp = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {

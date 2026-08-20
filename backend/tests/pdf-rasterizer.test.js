@@ -18,9 +18,9 @@ const childProcess = require('child_process');
 const pdfRasterizer = require('../src/ocr/pdfRasterizer');
 
 function mockPdftoppmWritingPages(t, pageContents, capturedTempDirHolder) {
-  return t.mock.method(childProcess, 'execFile', (file, args, callback) => {
-    // args: ['-png', '-r', '200', inputPath, outputPrefix]
-    const outputPrefix = args[4];
+  return t.mock.method(childProcess, 'execFile', (file, args, options, callback) => {
+    // args: ['-png', '-r', '200', '-l', MAX_PAGES, inputPath, outputPrefix]
+    const outputPrefix = args[args.length - 1];
     const dir = path.dirname(outputPrefix);
     if (capturedTempDirHolder) capturedTempDirHolder.value = dir;
     const total = pageContents.length;
@@ -60,8 +60,8 @@ test('rasterizePdfToImages: sorts pages numerically, not lexically (page-10 afte
 
 test('rasterizePdfToImages: a pdftoppm failure is wrapped in PdfRasterizationError, and the temp dir is still cleaned up', async (t) => {
   let capturedTempDir;
-  const execFileMock = t.mock.method(childProcess, 'execFile', (file, args, callback) => {
-    capturedTempDir = path.dirname(args[4]);
+  const execFileMock = t.mock.method(childProcess, 'execFile', (file, args, options, callback) => {
+    capturedTempDir = path.dirname(args[args.length - 1]);
     callback(new Error('pdftoppm: command failed'));
   });
   t.after(() => execFileMock.mock.restore());
@@ -74,11 +74,32 @@ test('rasterizePdfToImages: a pdftoppm failure is wrapped in PdfRasterizationErr
 });
 
 test('rasterizePdfToImages: zero output pages throws PdfRasterizationError', async (t) => {
-  const execFileMock = t.mock.method(childProcess, 'execFile', (file, args, callback) => callback(null, '', ''));
+  const execFileMock = t.mock.method(childProcess, 'execFile', (file, args, options, callback) => callback(null, '', ''));
   t.after(() => execFileMock.mock.restore());
 
   await assert.rejects(
     () => pdfRasterizer.rasterizePdfToImages(Buffer.from('%PDF-fake')),
     pdfRasterizer.PdfRasterizationError,
   );
+});
+
+// Regression test for Fix 7 (pre-launch audit, F6-1/F6-2): pdftoppm
+// used to run with no timeout and no page-count ceiling at all.
+test('rasterizePdfToImages: passes a page-count ceiling and an exec timeout to pdftoppm', async (t) => {
+  let capturedArgs;
+  let capturedOptions;
+  const execFileMock = t.mock.method(childProcess, 'execFile', (file, args, options, callback) => {
+    capturedArgs = args;
+    capturedOptions = options;
+    callback(new Error('short-circuit — this test only inspects the call, not the result'));
+  });
+  t.after(() => execFileMock.mock.restore());
+
+  await assert.rejects(() => pdfRasterizer.rasterizePdfToImages(Buffer.from('%PDF-fake')), pdfRasterizer.PdfRasterizationError);
+
+  assert.equal(capturedArgs[0], '-png');
+  const lIndex = capturedArgs.indexOf('-l');
+  assert.ok(lIndex !== -1, 'expected a -l (last page) flag to bound the page count');
+  assert.equal(capturedArgs[lIndex + 1], String(pdfRasterizer.MAX_PAGES));
+  assert.equal(capturedOptions.timeout, pdfRasterizer.EXEC_TIMEOUT_MS);
 });

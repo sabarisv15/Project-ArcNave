@@ -1,6 +1,9 @@
 'use strict';
 
 const express = require('express');
+const helmet = require('helmet');
+const cors = require('cors');
+const config = require('./config');
 const { requestContextMiddleware } = require('./middleware/requestContext');
 const errorHandler = require('./middleware/errorHandler');
 const createPlatformRouter = require('./routes/platform');
@@ -40,6 +43,18 @@ function createPlatformApp({ registerExtraRoutes } = {}) {
   const app = express();
 
   app.use(requestContextMiddleware);
+  // Same security-headers/CORS wiring as tenantApp.js, own instance —
+  // this app never shares middleware with the tenant app (module
+  // docstring above) so this can't be a single shared app.use() call
+  // higher up without breaking that isolation. See tenantApp.js's own
+  // comment for why credentials stay false and why this origin is
+  // never a wildcard.
+  app.use(helmet());
+  app.use(cors({
+    origin: config.frontendOrigin,
+    credentials: false,
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
+  }));
   app.use(express.json());
   app.use(createPlatformRouter());
 

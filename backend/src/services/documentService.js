@@ -542,7 +542,7 @@ async function uploadInstitutionalDocument(client, {
 // defaults to "no filter," never to the more restrictive behavior, so
 // this is purely additive for any caller that doesn't opt in.
 async function listInstitutionalDocuments(client, {
-  docType, classId, categoryId, academicYearId, departmentId, search,
+  docType, classId, categoryId, academicYearId, departmentId, search, limit,
 } = {}, { actorRole } = {}) {
   return documentRepository.findInstitutional(client, {
     docType,
@@ -551,6 +551,7 @@ async function listInstitutionalDocuments(client, {
     academicYearId,
     departmentId,
     search,
+    limit,
     publicationStatuses: allowedPublicationStatusesForRole(actorRole),
   });
 }

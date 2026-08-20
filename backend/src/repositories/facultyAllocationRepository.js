@@ -70,6 +70,22 @@ async function findByClassId(client, classId) {
   return result.rows;
 }
 
+// Batch form of findByClassId — same `= ANY($1)` pattern this file's
+// sibling repositories already use for their own batch lookups. Still
+// this table's own rows only (no join into classRepository or any
+// other repository — see this file's own header comment); grouping by
+// class_id is the caller's job.
+async function findByClassIds(client, classIds) {
+  if (!Array.isArray(classIds) || classIds.length === 0) {
+    return [];
+  }
+  const result = await client.query(
+    'SELECT * FROM faculty_allocation WHERE class_id = ANY($1)',
+    [classIds],
+  );
+  return result.rows;
+}
+
 async function findByStaffUserId(client, staffUserId) {
   const result = await client.query(
     'SELECT * FROM faculty_allocation WHERE staff_user_id = $1',
@@ -125,6 +141,7 @@ module.exports = {
   findById,
   findByClassAndPeriod,
   findByClassId,
+  findByClassIds,
   findByStaffUserId,
   findByClassAndSubject,
   update,

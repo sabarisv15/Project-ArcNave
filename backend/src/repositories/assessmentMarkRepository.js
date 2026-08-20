@@ -79,8 +79,16 @@ async function update(client, id, fields) {
 // list of classIds first (via classRepository.findByDepartmentId) and
 // passes that through as classIds, not a separate departmentId
 // parameter this repository would need its own join for.
+// limit defaults to a hard backstop, not a page size — an unfiltered
+// principal-scope call (no classIds) previously had no ceiling at all,
+// returning every mark the college has ever recorded in one response;
+// every existing caller keeps working unchanged since this is additive
+// and the default is far above any single class/department's real
+// row count.
+const DEFAULT_FILTER_LIMIT = 5000;
+
 async function findByFilters(client, {
-  academicYear, classId, classIds, subject, assessmentTypeId,
+  academicYear, classId, classIds, subject, assessmentTypeId, limit = DEFAULT_FILTER_LIMIT,
 } = {}) {
   const conditions = ['deleted_at IS NULL'];
   const values = [];
@@ -106,8 +114,9 @@ async function findByFilters(client, {
     conditions.push(`assessment_type_id = $${values.length}`);
   }
 
+  values.push(limit);
   const result = await client.query(
-    `SELECT * FROM assessment_marks WHERE ${conditions.join(' AND ')} ORDER BY created_at`,
+    `SELECT * FROM assessment_marks WHERE ${conditions.join(' AND ')} ORDER BY created_at LIMIT $${values.length}`,
     values,
   );
   return result.rows;

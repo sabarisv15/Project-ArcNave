@@ -119,13 +119,13 @@ test('gemini adapter.completeStream: streams candidates[0].content.parts[].text 
     'data: {"candidates":[{"content":{"parts":[{"text":" world"}]}}]}\n\n',
   ]);
   await withMockFetch(async () => response, async () => {
-    const full = await geminiAdapter.completeStream({ apiKey: 'k' }, { systemPrompt: 's', userPrompt: 'u' }, (d) => deltas.push(d));
+    const full = await geminiAdapter.completeStream({ projectId: 'p', accessToken: 't' }, { systemPrompt: 's', userPrompt: 'u' }, (d) => deltas.push(d));
     assert.deepEqual(deltas, ['Hello', ' world']);
     assert.equal(full, 'Hello world');
   });
 });
 
-test('gemini adapter.completeStream: unconfigured (no apiKey) throws LlmNotConfiguredError, no fetch attempted', async () => {
+test('gemini adapter.completeStream: unconfigured (no projectId) throws LlmNotConfiguredError, no fetch attempted', async () => {
   let fetchCalled = false;
   await withMockFetch(async () => { fetchCalled = true; }, async () => {
     await assert.rejects(

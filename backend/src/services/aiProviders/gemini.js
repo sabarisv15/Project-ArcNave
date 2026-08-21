@@ -1,31 +1,95 @@
 'use strict';
 
-// Google Gemini adapter (Generative Language API). Real request/
-// response shapes per Google's documented REST API — NOT live-verified
-// against a real Gemini API key (none exists in this environment); the
-// shape is real, not fabricated, but unlike nim.js this hasn't been
-// exercised against a live endpoint.
+// Google Gemini adapter — Vertex AI (not the API-key Generative Language
+// API this file used before). Auth is Application Default Credentials
+// (ADC) via google-auth-library: `gcloud auth application-default
+// login` for local dev, or the runtime's own service account in a real
+// GCP deployment — never a static key a college admin types into a
+// form. isConfigured() therefore keys off cfg.projectId, not cfg.apiKey.
+// Request/response body shapes (contents/systemInstruction/
+// generationConfig, candidates[].content.parts[].text) are the same
+// ones Vertex AI's generateContent shares with the public Gemini API —
+// only the auth header, host, and URL path differ. Real shapes per
+// Google's documented REST API — NOT live-verified against a real GCP
+// project (none exists in this environment).
 
+const { GoogleAuth } = require('google-auth-library');
 const { LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError } = require('./errors');
 const { withRetry } = require('./retry');
 const { iterateSseLines } = require('./sse');
 
 const REQUEST_TIMEOUT_MS = 30000;
-const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
+// 'global' — not a real GCP region, Vertex AI's own non-regional
+// endpoint — is where Gemini 3.6/3.7 Flash actually serve from; a
+// regional location like us-central1 404s for these models. Verified
+// live against the real API, not assumed from docs alone.
+const DEFAULT_LOCATION = 'global';
+// Google's current agentic-workhorse Flash model (launched Aug 2026) —
+// the default whenever a config doesn't name a specific model, same
+// "sane default, never a hard requirement" treatment MAX_OUTPUT_TOKENS
+// already gets below.
+const DEFAULT_MODEL = 'gemini-3.7-flash';
 // Matches claude.js's own MAX_TOKENS — this adapter previously sent no
 // generationConfig at all, so output length was fully unbounded (relying
 // entirely on Gemini's own server-side default) with no cost ceiling
 // this codebase controlled.
 const MAX_OUTPUT_TOKENS = 1024;
+const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 
 const supportsVision = true;
 
 function isConfigured(cfg) {
-  return Boolean(cfg && cfg.apiKey);
+  return Boolean(cfg && cfg.projectId);
 }
 
-function baseUrl(cfg) {
-  return cfg.baseUrl || DEFAULT_BASE_URL;
+function location(cfg) {
+  return cfg.location || DEFAULT_LOCATION;
+}
+
+function model(cfg) {
+  return cfg.model || DEFAULT_MODEL;
+}
+
+// Vertex AI's publisher-model base path — every generateContent/
+// streamGenerateContent/predict call below is this plus :verb. The
+// 'global' location is a genuine exception to Vertex's usual
+// per-region-subdomain host pattern: it lives on the plain
+// aiplatform.googleapis.com host, not global-aiplatform.googleapis.com
+// (that subdomain doesn't exist — 404s, caught live against the real
+// API), while every real region (us-central1, europe-west4, ...) does
+// get its own `{region}-aiplatform.googleapis.com` host.
+function modelUrl(cfg, modelId, verb) {
+  const loc = location(cfg);
+  const host = loc === 'global' ? 'aiplatform.googleapis.com' : `${loc}-aiplatform.googleapis.com`;
+  return `https://${host}/v1/projects/${cfg.projectId}/locations/${loc}/publishers/google/models/${modelId}:${verb}`;
+}
+
+// One GoogleAuth instance reused across calls — it caches the minted
+// access token internally (and refreshes it once it's near expiry), so
+// this isn't a fresh ADC handshake on every request.
+let sharedAuth = null;
+function getAuth() {
+  if (!sharedAuth) {
+    sharedAuth = new GoogleAuth({ scopes: CLOUD_PLATFORM_SCOPE });
+  }
+  return sharedAuth;
+}
+
+// cfg.accessToken is a direct bearer-token override — the escape hatch
+// tests use to avoid touching real ADC (this repo's Docker image is
+// Node 20, too old for node:test's module-mocking), and a legitimate
+// path for a caller that already minted a short-lived token itself.
+// The real, default path is ADC via GoogleAuth.
+async function getAccessToken(cfg) {
+  if (cfg.accessToken) {
+    return cfg.accessToken;
+  }
+  const client = await getAuth().getClient();
+  const { token } = await client.getAccessToken();
+  if (!token) {
+    throw new LlmRequestError('Google ADC did not return an access token — run `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS');
+  }
+  return token;
 }
 
 // Builds the user turn's `parts` array — text only when no images are
@@ -42,19 +106,20 @@ function buildUserParts(userPrompt, images) {
   ];
 }
 
-async function postJson(cfg, path, body) {
+async function postJson(cfg, url, body) {
+  const token = await getAccessToken(cfg);
   const response = await withRetry(async () => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      return await fetch(`${baseUrl(cfg)}${path}`, {
+      return await fetch(url, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-goog-api-key': cfg.apiKey },
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
         signal: controller.signal,
       });
     } catch (err) {
-      throw new LlmRequestError(`request to Gemini failed: ${err.message}`);
+      throw new LlmRequestError(`request to Gemini (Vertex AI) failed: ${err.message}`);
     } finally {
       clearTimeout(timeout);
     }
@@ -62,13 +127,13 @@ async function postJson(cfg, path, body) {
 
   if (!response.ok) {
     const bodyText = await response.text().catch(() => '');
-    throw new LlmRequestError(`Gemini returned ${response.status}: ${bodyText.slice(0, 500)}`);
+    throw new LlmRequestError(`Gemini (Vertex AI) returned ${response.status}: ${bodyText.slice(0, 500)}`);
   }
 
   try {
     return await response.json();
   } catch (err) {
-    throw new LlmRequestError(`Gemini returned a non-JSON response: ${err.message}`);
+    throw new LlmRequestError(`Gemini (Vertex AI) returned a non-JSON response: ${err.message}`);
   }
 }
 
@@ -79,10 +144,10 @@ async function postJson(cfg, path, body) {
 // inconsistency in this codebase.
 async function completeWithMeta(cfg, { systemPrompt, userPrompt, images } = {}) {
   if (!isConfigured(cfg)) {
-    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
+    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
   }
 
-  const payload = await postJson(cfg, `/models/${cfg.model}:generateContent`, {
+  const payload = await postJson(cfg, modelUrl(cfg, model(cfg), 'generateContent'), {
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents: [{ role: 'user', parts: buildUserParts(userPrompt, images) }],
     generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS },
@@ -108,24 +173,22 @@ async function complete(cfg, prompts) {
 
 // Streaming variant of complete() (P0.5) — see nim.js's own comment
 // for the shared reasoning (only the final answer streams, retries
-// only cover the initial connection). Gemini's streaming endpoint is
-// a genuinely different path (`:streamGenerateContent`, `alt=sse`
-// query param), not just a `stream: true` body flag like the OpenAI-
-// compatible adapters — a real, structural difference between vendors
-// (matches round 2's own note that Gemini's caching API is similarly
-// structurally different, not just a details difference).
+// only cover the initial connection). Vertex AI's streaming path is
+// the same `:streamGenerateContent?alt=sse` shape the public Gemini
+// API uses — only the host/auth above differ.
 async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, onDelta) {
   if (!isConfigured(cfg)) {
-    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
+    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
   }
 
+  const token = await getAccessToken(cfg);
   const response = await withRetry(async () => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      return await fetch(`${baseUrl(cfg)}/models/${cfg.model}:streamGenerateContent?alt=sse`, {
+      return await fetch(`${modelUrl(cfg, model(cfg), 'streamGenerateContent')}?alt=sse`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-goog-api-key': cfg.apiKey },
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: systemPrompt }] },
           contents: [{ role: 'user', parts: buildUserParts(userPrompt, images) }],
@@ -134,7 +197,7 @@ async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, on
         signal: controller.signal,
       });
     } catch (err) {
-      throw new LlmRequestError(`request to Gemini failed: ${err.message}`);
+      throw new LlmRequestError(`request to Gemini (Vertex AI) failed: ${err.message}`);
     } finally {
       clearTimeout(timeout);
     }
@@ -142,7 +205,7 @@ async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, on
 
   if (!response.ok) {
     const bodyText = await response.text().catch(() => '');
-    throw new LlmRequestError(`Gemini returned ${response.status}: ${bodyText.slice(0, 500)}`);
+    throw new LlmRequestError(`Gemini (Vertex AI) returned ${response.status}: ${bodyText.slice(0, 500)}`);
   }
 
   let full = '';
@@ -191,10 +254,10 @@ function stripAdditionalProperties(schema) {
 
 async function completeWithTools(cfg, { systemPrompt, userPrompt, tools, images } = {}) {
   if (!isConfigured(cfg)) {
-    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
+    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
   }
 
-  const payload = await postJson(cfg, `/models/${cfg.model}:generateContent`, {
+  const payload = await postJson(cfg, modelUrl(cfg, model(cfg), 'generateContent'), {
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents: [{ role: 'user', parts: buildUserParts(userPrompt, images) }],
     tools: [{
@@ -227,31 +290,31 @@ async function completeWithTools(cfg, { systemPrompt, userPrompt, tools, images 
 
 async function embed(cfg, texts, { inputType } = {}) {
   if (!isConfigured(cfg)) {
-    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
+    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
   }
   if (!Array.isArray(texts) || texts.length === 0) {
     throw new LlmRequestError('embed() requires a non-empty array of texts');
   }
-
-  // Gemini's embedContent is single-input; batchEmbedContents is the
-  // batch form — used here so embed()'s array contract (one caller
-  // request in, one embedding per input out) holds without an N-call
-  // loop for a multi-chunk ingest.
-  const taskType = inputType === 'query' ? 'RETRIEVAL_QUERY' : 'RETRIEVAL_DOCUMENT';
-  const payload = await postJson(cfg, `/models/${cfg.embeddingModel}:batchEmbedContents`, {
-    requests: texts.map((text) => ({
-      model: `models/${cfg.embeddingModel}`,
-      content: { parts: [{ text }] },
-      taskType,
-    })),
-  });
-
-  const embeddings = Array.isArray(payload && payload.embeddings) ? payload.embeddings : null;
-  if (!embeddings || embeddings.length !== texts.length) {
-    throw new LlmRequestError('Gemini embeddings response did not contain one embedding per input text');
+  if (!cfg.embeddingModel) {
+    throw new LlmRequestError('embed() requires cfg.embeddingModel (Vertex AI has no embedding default — e.g. gemini-embedding-001)');
   }
 
-  return embeddings.map((item) => item.values);
+  // Vertex AI's embeddings endpoint is a `:predict` call (Vertex's
+  // generic prediction shape — instances[]/predictions[]), a genuinely
+  // different request/response shape from the public Gemini API's
+  // embedContent/batchEmbedContents this adapter used before, not just
+  // a details difference.
+  const taskType = inputType === 'query' ? 'RETRIEVAL_QUERY' : 'RETRIEVAL_DOCUMENT';
+  const payload = await postJson(cfg, modelUrl(cfg, cfg.embeddingModel, 'predict'), {
+    instances: texts.map((content) => ({ content, task_type: taskType })),
+  });
+
+  const predictions = Array.isArray(payload && payload.predictions) ? payload.predictions : null;
+  if (!predictions || predictions.length !== texts.length) {
+    throw new LlmRequestError('Gemini (Vertex AI) embeddings response did not contain one prediction per input text');
+  }
+
+  return predictions.map((item) => item && item.embeddings && item.embeddings.values);
 }
 
 module.exports = {

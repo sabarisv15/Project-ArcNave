@@ -73,14 +73,14 @@ test('getAiConfig: DEFAULT_AI_PROVIDER=gemini routes a no-row college to the glo
   const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async () => null);
   t.after(() => findMock.mock.restore());
   const originalDefaultAiProvider = globalConfig.defaultAiProvider;
-  const originalGeminiApiKey = globalConfig.gemini.apiKey;
+  const originalGeminiProjectId = globalConfig.gemini.projectId;
   const originalGeminiModel = globalConfig.gemini.model;
   globalConfig.defaultAiProvider = 'gemini';
-  globalConfig.gemini.apiKey = 'gemini-real-key';
+  globalConfig.gemini.projectId = 'gemini-real-project';
   globalConfig.gemini.model = 'gemini-3.7-flash';
   t.after(() => {
     globalConfig.defaultAiProvider = originalDefaultAiProvider;
-    globalConfig.gemini.apiKey = originalGeminiApiKey;
+    globalConfig.gemini.projectId = originalGeminiProjectId;
     globalConfig.gemini.model = originalGeminiModel;
   });
 
@@ -88,7 +88,7 @@ test('getAiConfig: DEFAULT_AI_PROVIDER=gemini routes a no-row college to the glo
 
   assert.equal(result.provider, 'gemini');
   assert.equal(result.adapter.name, 'gemini');
-  assert.equal(result.config.apiKey, 'gemini-real-key');
+  assert.equal(result.config.projectId, 'gemini-real-project');
   assert.equal(result.config.model, 'gemini-3.7-flash');
 });
 

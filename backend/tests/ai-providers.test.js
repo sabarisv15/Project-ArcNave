@@ -174,7 +174,7 @@ test('claude adapter.complete: with no images, content stays a plain string (unc
 test('gemini adapter.completeWithTools: images build the real Gemini inline_data parts shape (images first, text last)', async () => {
   const gemini = aiProviders.getAdapter('gemini');
   const body = await capturedRequestBody(() => gemini.completeWithTools(
-    { apiKey: 'k', model: 'gemini-x' },
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
     {
       systemPrompt: 's',
       userPrompt: 'what is in this image?',
@@ -191,7 +191,7 @@ test('gemini adapter.completeWithTools: images build the real Gemini inline_data
 test('gemini adapter.complete: with no images, parts stays text-only (unchanged shape)', async () => {
   const gemini = aiProviders.getAdapter('gemini');
   const body = await capturedRequestBody(() => gemini.completeWithMeta(
-    { apiKey: 'k', model: 'gemini-x' },
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
     { systemPrompt: 's', userPrompt: 'u' },
   ).catch(() => {}));
   assert.deepEqual(body.contents[0].parts, [{ text: 'u' }]);
@@ -217,7 +217,7 @@ test('openai adapter.completeWithTools: images build the real OpenAI image_url c
 test('gemini adapter.completeWithTools: additionalProperties is stripped (recursively) from every tool schema — real Gemini API rejects it (\'Unknown name "additionalProperties"\'), caught live against the actual endpoint', async () => {
   const gemini = aiProviders.getAdapter('gemini');
   const body = await capturedRequestBody(() => gemini.completeWithTools(
-    { apiKey: 'k', model: 'gemini-x' },
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
     {
       systemPrompt: 's',
       userPrompt: 'u',

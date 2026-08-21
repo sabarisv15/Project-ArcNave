@@ -119,8 +119,8 @@ function globalNimConfig() {
 
 function globalGeminiConfig() {
   return {
-    apiKey: globalConfig.gemini.apiKey,
-    baseUrl: globalConfig.gemini.baseUrl,
+    projectId: globalConfig.gemini.projectId,
+    location: globalConfig.gemini.location,
     model: globalConfig.gemini.model,
     embeddingModel: globalConfig.gemini.embeddingModel,
     fastModel: globalConfig.gemini.fastModel,
@@ -158,6 +158,13 @@ async function getAiConfig(client, collegeId) {
     return { provider, config: GLOBAL_CONFIG_BUILDERS[provider](), adapter: aiProviders.getAdapter(provider) };
   }
 
+  // A college row with provider='gemini' has no projectId — Vertex AI's
+  // ADC credential is a server-level credential (gcloud/service
+  // account), not a per-tenant secret a college admin can paste into
+  // this table's api_key column — so gemini.js's isConfigured() will
+  // correctly read this as unconfigured (same clean 503 as any other
+  // missing config, never a crash). A college that wants Gemini today
+  // gets it only via the global default block above.
   const config = {
     apiKey: row.api_key ? cryptoUtil.decryptSecret(row.api_key) : null,
     baseUrl: row.base_url,

@@ -191,15 +191,17 @@ module.exports = {
 
   // Google Gemini — a second, optional global-default provider
   // (configurationService.js's own comment on GLOBAL_CONFIG_BUILDERS).
-  // Same "unset means unavailable, never a startup failure" reasoning
-  // as nim above — this app must keep running whether or not a Gemini
-  // key exists. baseUrl has no default here (gemini.js's own
-  // DEFAULT_BASE_URL applies when this is null); embeddingModel is
-  // null by default since Gemini's embedContent isn't why a college
-  // would set this — chat/vision is.
+  // Auth is Vertex AI + Application Default Credentials (gemini.js), not
+  // an API key — so "configured" hinges on projectId, not a secret this
+  // block holds. Same "unset means unavailable, never a startup
+  // failure" reasoning as nim above — this app must keep running
+  // whether or not GEMINI_PROJECT_ID is set. embeddingModel is null by
+  // default since Gemini's embed() isn't why a college would set this —
+  // chat/vision is, and Vertex AI has no embedding-model default of its
+  // own to fall back on.
   gemini: {
-    apiKey: process.env.GEMINI_API_KEY || null,
-    baseUrl: process.env.GEMINI_BASE_URL || null,
+    projectId: process.env.GEMINI_PROJECT_ID || null,
+    location: process.env.GEMINI_LOCATION || null,
     model: process.env.GEMINI_MODEL || null,
     embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || null,
     fastModel: process.env.GEMINI_FAST_MODEL || null,

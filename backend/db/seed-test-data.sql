@@ -74,6 +74,15 @@ DELETE FROM audit_log            WHERE college_id = 'demo';
 DELETE FROM fee_corrections      WHERE college_id = 'demo';
 DELETE FROM fee_payments         WHERE college_id = 'demo';
 DELETE FROM generated_reports    WHERE college_id = 'demo';
+-- artifact_versions/artifacts (1761600000000_ai-artifacts.js) postdate
+-- this script's original cleanup block — artifacts.published_document_id
+-- FKs into documents (no ON DELETE action), so both must go before the
+-- documents DELETE below. Found live: any AI-drafted artifact ever
+-- published against the demo tenant (round 17's "AI documents downloadable
+-- from chat" live-testing) left a row here that silently broke this
+-- script's own "idempotent re-run" claim with an FK violation.
+DELETE FROM artifact_versions    WHERE college_id = 'demo';
+DELETE FROM artifacts            WHERE college_id = 'demo';
 DELETE FROM documents            WHERE college_id = 'demo';
 DELETE FROM document_categories  WHERE college_id = 'demo';
 DELETE FROM attendance_sessions  WHERE college_id = 'demo';
@@ -111,6 +120,18 @@ DELETE FROM student_admission_drafts WHERE college_id = 'demo';
 -- student_admission_draft_documents.extraction_job_id ON DELETE SET
 -- NULL, so this is always safe regardless of draft/draft-document order.
 DELETE FROM background_jobs       WHERE college_id = 'demo';
+-- messages/conversations/projects (1761500000000_ai-conversations-and-
+-- projects.js) and idempotency_keys (1762200000000_idempotency-keys.js)
+-- all FK into users (no ON DELETE action) — same missing-cleanup gap as
+-- artifacts above, for the same reason (both migrations postdate this
+-- script's original write). messages.conversation_id cascades off
+-- conversations, so deleting conversations is enough for both, but
+-- messages is deleted explicitly first anyway for clarity/symmetry with
+-- the rest of this block.
+DELETE FROM messages              WHERE college_id = 'demo';
+DELETE FROM conversations         WHERE college_id = 'demo';
+DELETE FROM projects              WHERE college_id = 'demo';
+DELETE FROM idempotency_keys      WHERE college_id = 'demo';
 DELETE FROM users                 WHERE college_id = 'demo';
 DELETE FROM configurations        WHERE college_id = 'demo';
 DELETE FROM colleges              WHERE college_id = 'demo';

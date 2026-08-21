@@ -25,6 +25,33 @@ const { logError } = require('../logging/logger');
 // picking up the right collegeId with no req in scope.
 async function openTenantTransaction(req, res, collegeId) {
   const client = await appPool.connect();
+
+  // A client checked out for this request/transaction's whole lifetime —
+  // unlike an idle pool client (db/pool.js's own pool-level `error`
+  // listener, which only ever fires for a client sitting unused in the
+  // pool), a server-initiated disconnect on THIS client (e.g. Postgres's
+  // own idle_in_transaction_session_timeout killing the connection while
+  // this request awaits something slow and DB-unrelated, like an LLM
+  // call inside askAgent) emits its `error` event directly here, which
+  // pool.js's listener never sees. Node's default behavior for an
+  // EventEmitter `error` with no listener is to throw, unhandled —
+  // crashing the entire process and every other tenant's in-flight
+  // request with it (live-reproduced: a single slow /ai/ask/stream call
+  // took the whole backend down). A listener here is all that's needed
+  // to fix that: once one exists, every later operation this now-dead
+  // client attempts (COMMIT, ROLLBACK, or a handler's own next query)
+  // already rejects its promise normally instead of hanging or crashing
+  // — the existing try/finally release() paths below (commitAndRelease/
+  // rollbackAndRelease) and res.end's own commitAndRelease().catch(...)
+  // already handle that rejection correctly with no further change.
+  client.on('error', (err) => {
+    logError('db_client_error_mid_transaction', {
+      requestId: req.requestId,
+      collegeId,
+      error: err.message,
+    });
+  });
+
   try {
     await client.query('BEGIN');
     if (collegeId !== null) {

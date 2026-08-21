@@ -149,6 +149,42 @@ test('gemini adapter.completeStream: a well-formed response with zero visible te
   assert.equal(deltaCalled, false);
 });
 
+// Regression test for the P0 finding from the AI red-team evaluation
+// session (2026-08-21) — the streaming counterpart of ai-providers.
+// test.js's equivalent completeWithMeta test. attemptStream previously
+// got a fresh REQUEST_TIMEOUT_MS (30s) on every withRetry sub-attempt
+// AND on every one of completeStream's own MAX_EMPTY_RETRIES+1 outer
+// attempts, compounding to ~90s+ for a single call — this is the exact
+// call this incident's own live trace pointed at (askAgent's final-
+// answer synthesis, held inside the same per-request DB transaction
+// whose idle_in_transaction_session_timeout, 90s, killed the connection
+// and — before a separate fix to tenantTransaction.js — crashed the
+// whole backend process). MAX_TOTAL_STREAM_MS now bounds the whole
+// operation. Proven with a genuinely hanging mock fetch (rejects only
+// when the AbortSignal fires), not a fast-failing one.
+test('gemini adapter.completeStream: a hanging request is aborted well within the overall time budget, never the old ~90s+ worst case', async () => {
+  const hangingFetch = (url, options) => new Promise((resolve, reject) => {
+    options.signal.addEventListener('abort', () => {
+      const err = new Error('The operation was aborted');
+      err.name = 'AbortError';
+      reject(err);
+    });
+  });
+  const startedAt = Date.now();
+  await withMockFetch(hangingFetch, async () => {
+    await assert.rejects(
+      () => geminiAdapter.completeStream(
+        { projectId: 'p', accessToken: 't', maxTotalStreamMs: 150 },
+        { systemPrompt: 's', userPrompt: 'u' },
+        () => {},
+      ),
+      LlmRequestError,
+    );
+  });
+  const elapsed = Date.now() - startedAt;
+  assert.ok(elapsed < 5000, `expected the call to give up within a few seconds of the 150ms budget, took ${elapsed}ms`);
+});
+
 test('gemini adapter.completeStream: unconfigured (no projectId) throws LlmNotConfiguredError, no fetch attempted', async () => {
   let fetchCalled = false;
   await withMockFetch(async () => { fetchCalled = true; }, async () => {

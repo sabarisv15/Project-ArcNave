@@ -197,6 +197,46 @@ test('gemini adapter.complete: with no images, parts stays text-only (unchanged 
   assert.deepEqual(body.contents[0].parts, [{ text: 'u' }]);
 });
 
+// Regression test for the P0 finding from the AI red-team evaluation
+// session (2026-08-21): a hanging Gemini request previously got a fresh
+// REQUEST_TIMEOUT_MS (30s) on every one of withRetry's own MAX_ATTEMPTS
+// (3), compounding to ~90s+ for a single postJson-based call
+// (completeWithMeta/completeWithTools/embed all share it) — long enough
+// to collide with the per-request DB transaction's own
+// idle_in_transaction_session_timeout (90s, db-role-timeouts.test.js)
+// and, before a separate fix to tenantTransaction.js, crash the whole
+// backend process. MAX_TOTAL_LATENCY_MS now bounds the WHOLE operation
+// (every retry combined), not just each individual attempt — proven
+// here with a genuinely hanging mock fetch (rejects only when the
+// AbortSignal actually fires, never on its own), so a real early abort
+// is what's being measured, not just a fast-failing mock that would
+// pass even without the fix.
+test('gemini adapter.completeWithMeta: a hanging request is aborted well within the overall time budget, never the old ~90s worst case', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const originalFetch = global.fetch;
+  global.fetch = (url, options) => new Promise((resolve, reject) => {
+    options.signal.addEventListener('abort', () => {
+      const err = new Error('The operation was aborted');
+      err.name = 'AbortError';
+      reject(err);
+    });
+  });
+  const startedAt = Date.now();
+  try {
+    await assert.rejects(
+      () => gemini.completeWithMeta(
+        { projectId: 'p', accessToken: 't', maxTotalLatencyMs: 150 },
+        { systemPrompt: 's', userPrompt: 'u' },
+      ),
+      aiProviders.LlmRequestError,
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+  const elapsed = Date.now() - startedAt;
+  assert.ok(elapsed < 5000, `expected the call to give up within a few seconds of the 150ms budget, took ${elapsed}ms`);
+});
+
 test('openai adapter.completeWithTools: images build the real OpenAI image_url content shape (text first, images after)', async () => {
   const openai = aiProviders.getAdapter('openai');
   const body = await capturedRequestBody(() => openai.completeWithTools(

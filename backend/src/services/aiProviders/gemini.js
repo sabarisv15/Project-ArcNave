@@ -19,6 +19,20 @@ const { withRetry } = require('./retry');
 const { iterateSseLines } = require('./sse');
 
 const REQUEST_TIMEOUT_MS = 30000;
+// Overall wall-clock budget for ONE logical postJson-based call
+// (completeWithMeta/completeWithTools/embed) — covers every retry
+// withRetry performs for it, not just the first attempt. Without this,
+// a run of transient 429/502/503/504 responses could compound
+// withRetry's own MAX_ATTEMPTS=3 x a fresh REQUEST_TIMEOUT_MS each into
+// ~90s+ for what the rest of this codebase treats as "one LLM call" —
+// the same class of risk MAX_TOTAL_STREAM_MS below fixes for the
+// streaming path, and the tool-select call this constant bounds
+// (completeWithTools, askAgent's first LLM call every turn) runs inside
+// the same per-request DB transaction (tenantTransaction.js) as
+// whatever runs after it, so its own worst case eats into the same
+// idle_in_transaction_session_timeout budget (90s, db-role-timeouts.
+// test.js) the streaming call does.
+const MAX_TOTAL_LATENCY_MS = 30000;
 // 'global' — not a real GCP region, Vertex AI's own non-regional
 // endpoint — is where Gemini 3.6/3.7 Flash actually serve from; a
 // regional location like us-central1 404s for these models. Verified
@@ -122,9 +136,17 @@ function buildUserParts(userPrompt, images) {
 
 async function postJson(cfg, url, body) {
   const token = await getAccessToken(cfg);
+  // cfg.maxTotalLatencyMs: test-only override, same escape-hatch
+  // precedent as cfg.accessToken above (avoids waiting out the real
+  // 30s budget just to prove the deadline mechanism itself works).
+  const deadline = Date.now() + (cfg.maxTotalLatencyMs || MAX_TOTAL_LATENCY_MS);
   const response = await withRetry(async () => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      throw new LlmRequestError('Gemini (Vertex AI) request exceeded its overall time budget before a response was received');
+    }
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), Math.min(REQUEST_TIMEOUT_MS, remaining));
     try {
       return await fetch(url, {
         method: 'POST',
@@ -192,11 +214,15 @@ async function complete(cfg, prompts) {
 // chunk to defer in the first place (the loop below only appends when
 // text.length > 0), so a caller retrying a fully-empty attempt never
 // double-emits or emits-then-discards a real delta.
-async function attemptStream(cfg, { systemPrompt, userPrompt, images } = {}) {
+async function attemptStream(cfg, { systemPrompt, userPrompt, images } = {}, deadline) {
   const token = await getAccessToken(cfg);
   const response = await withRetry(async () => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      throw new LlmRequestError('Gemini (Vertex AI) request exceeded its overall time budget before a response was received');
+    }
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), Math.min(REQUEST_TIMEOUT_MS, remaining));
     try {
       return await fetch(`${modelUrl(cfg, model(cfg), 'streamGenerateContent')}?alt=sse`, {
         method: 'POST',
@@ -249,6 +275,23 @@ async function attemptStream(cfg, { systemPrompt, userPrompt, images } = {}) {
 // a resend of the same dead response) before finally giving up.
 const MAX_EMPTY_RETRIES = 2;
 
+// Overall wall-clock budget for the WHOLE completeStream operation —
+// every attempt (up to MAX_EMPTY_RETRIES+1) and every retry withRetry
+// performs inside each one, combined. Live-reproduced root cause of a
+// real incident: 3 empty-thinking-budget attempts x withRetry's own up
+// to 3 sub-attempts x a fresh REQUEST_TIMEOUT_MS each could compound
+// past idle_in_transaction_session_timeout (90s, db-role-timeouts.
+// test.js) — Postgres killed the per-request transaction's checked-out
+// client mid-call, which (before a separate fix to tenantTransaction.js)
+// crashed the whole backend process for every tenant, not just the one
+// slow request. This bounds the same call to well under that, regardless
+// of how many nested retries happen at either level — MAX_EMPTY_RETRIES
+// itself is left unchanged (still worth a couple of fast, genuinely
+// non-deterministic regeneration attempts, per this constant's own
+// comment above) since this deadline, not the retry count, is the real
+// safety backstop against the slow/hanging case.
+const MAX_TOTAL_STREAM_MS = 45000;
+
 // Streaming variant of complete() (P0.5) — see nim.js's own comment
 // for the shared reasoning (only the final answer streams). Vertex
 // AI's streaming path is the same `:streamGenerateContent?alt=sse`
@@ -258,9 +301,13 @@ async function completeStream(cfg, prompts, onDelta) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
   }
 
+  // cfg.maxTotalStreamMs: test-only override, same escape-hatch
+  // precedent as cfg.accessToken/postJson's cfg.maxTotalLatencyMs above.
+  const deadline = Date.now() + (cfg.maxTotalStreamMs || MAX_TOTAL_STREAM_MS);
   for (let attempt = 0; attempt <= MAX_EMPTY_RETRIES; attempt++) {
+    if (Date.now() >= deadline) break;
     // eslint-disable-next-line no-await-in-loop
-    const deltas = await attemptStream(cfg, prompts);
+    const deltas = await attemptStream(cfg, prompts, deadline);
     if (deltas.length > 0) {
       let full = '';
       for (const delta of deltas) {
@@ -270,7 +317,7 @@ async function completeStream(cfg, prompts, onDelta) {
       return full;
     }
   }
-  throw new LlmRequestError(`Gemini streamed no visible answer text after ${MAX_EMPTY_RETRIES + 1} attempts (thinking budget exhausted before any output each time)`);
+  throw new LlmRequestError(`Gemini streamed no visible answer text within ${cfg.maxTotalStreamMs || MAX_TOTAL_STREAM_MS}ms (thinking budget exhausted before any output, or the overall time budget was exceeded)`);
 }
 
 // Gemini's function-calling `parameters` field is a restricted OpenAPI

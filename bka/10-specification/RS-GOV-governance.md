@@ -78,7 +78,7 @@ because it is the input to the Readiness gate
 | **Owner** | `PlatformService` |
 | **Authority** | Platform Admin |
 | **Depends on** | [RS-GOV-001](RS-GOV-governance.md#rs-gov-001) |
-| **Governs** | [RS-GOV-004](RS-GOV-governance.md#rs-gov-004), [RS-GOV-008](RS-GOV-governance.md#rs-gov-008), [RS-GOV-010](RS-GOV-governance.md#rs-gov-010), [RS-GOV-011](RS-GOV-governance.md#rs-gov-011), [RS-GOV-014](RS-GOV-governance.md#rs-gov-014), [RS-CLS-002](RS-CLS-classroom.md#rs-cls-002) |
+| **Governs** | [RS-GOV-004](RS-GOV-governance.md#rs-gov-004), [RS-GOV-008](RS-GOV-governance.md#rs-gov-008), [RS-GOV-010](RS-GOV-governance.md#rs-gov-010), [RS-GOV-011](RS-GOV-governance.md#rs-gov-011), [RS-GOV-014](RS-GOV-governance.md#rs-gov-014), [RS-CLS-002](RS-CLS-classroom.md#rs-cls-002), [RS-GOV-015](RS-GOV-governance.md#rs-gov-015), [RS-GOV-016](RS-GOV-governance.md#rs-gov-016), [RS-GOV-017](RS-GOV-governance.md#rs-gov-017) |
 | **Lifecycle** | Organization: `provisioning → ready` |
 | **Workflow** | None — Platform Admin direct action, audited |
 | **AI** | — |
@@ -307,7 +307,7 @@ to `active`, not a state of its own.
 | **Owner** | `PlatformService` |
 | **Authority** | Platform Admin |
 | **Depends on** | [RS-GOV-003](RS-GOV-governance.md#rs-gov-003), [RS-GOV-011](RS-GOV-governance.md#rs-gov-011) |
-| **Governs** | [RS-GOV-012](RS-GOV-governance.md#rs-gov-012) |
+| **Governs** | [RS-GOV-012](RS-GOV-governance.md#rs-gov-012), [RS-GOV-015](RS-GOV-governance.md#rs-gov-015) |
 | **Lifecycle** | **Organization — canonical definition** |
 | **Workflow** | None — Platform Admin direct actions, all audited |
 | **AI** | Prohibited |
@@ -521,7 +521,7 @@ state, not a dead end requiring a fresh Invite-L1 flow from Organizations.
 | **Owner** | `PlatformService` |
 | **Authority** | Platform Admin |
 | **Depends on** | [RS-GOV-003](RS-GOV-governance.md#rs-gov-003) |
-| **Governs** | — |
+| **Governs** | [RS-GOV-017](RS-GOV-governance.md#rs-gov-017) |
 | **Lifecycle** | **Principal invitation — canonical definition:** `created → (resent ⇄ revoked) → accepted` (revoked and resent may alternate any number of times before acceptance) |
 | **Workflow** | None — Platform Admin direct action, audited |
 | **AI** | Prohibited |

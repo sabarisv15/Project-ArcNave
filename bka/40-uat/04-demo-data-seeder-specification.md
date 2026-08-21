@@ -1,7 +1,7 @@
 # ARCNAVE — Demo Data Seeder Specification
 
 **Status:** describes the existing seeder at
-[`backend/db/seed-test-data.sql`](../../../backend/db/seed-test-data.sql),
+[`backend/db/seed-test-data.sql`](../../backend/db/seed-test-data.sql),
 which already satisfies UAT's data needs. No new seeder is required for
 the UAT round described in this document set — this is a reference
 specification of what it produces and why, so it can be reviewed,

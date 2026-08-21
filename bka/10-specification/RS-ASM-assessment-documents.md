@@ -16,7 +16,7 @@ related documents, PDF-first and versioned.
 
 | | |
 |---|---|
-| **Business Owner** | Examination Management |
+| **Owner** | Examination Management |
 | **Supporting Components** | `DocumentService`, `AcademicService` |
 | **Authority** | **L4**, own class |
 | **Depends on** | [RS-CLS-004](RS-CLS-classroom.md#rs-cls-004) |
@@ -50,7 +50,7 @@ assessment.
 | **Owner** | `AssessmentService` |
 | **Authority** | The assigned Subject Faculty |
 | **Depends on** | [RS-CLS-009](RS-CLS-classroom.md#rs-cls-009), [RS-ACA-009](RS-ACA-academic.md#rs-aca-009) |
-| **Governs** | [RS-ASM-003](RS-ASM-assessment-documents.md#rs-asm-003), [RS-ASM-004](RS-ASM-assessment-documents.md#rs-asm-004) |
+| **Governs** | [RS-ASM-003](RS-ASM-assessment-documents.md#rs-asm-003), [RS-ASM-004](RS-ASM-assessment-documents.md#rs-asm-004), [RS-ASM-012](RS-ASM-assessment-documents.md#rs-asm-012) |
 | **Lifecycle** | **Mark record — canonical definition:** `unrecorded → recorded → (corrected)` |
 | **Workflow** | **None** — direct write, audited |
 | **AI** | L1 direct-write — `assessment_record_mark`, gated by the assigned-faculty assertion, **first-time entry only** |
@@ -83,7 +83,7 @@ first-write-versus-any-write is the natural boundary, not a workaround.
 
 | | |
 |---|---|
-| **Business Owner** | Mark Correction |
+| **Owner** | Mark Correction |
 | **Supporting Components** | `AssessmentService`, `WorkflowService` |
 | **Authority** | Subject Faculty submits · **L4 approves** · L4 may discretionarily escalate |
 | **Depends on** | [RS-DAT-002](RS-DAT-data-integrity.md#rs-dat-002), [RS-ASM-001](RS-ASM-assessment-documents.md#rs-asm-001), [RS-ASM-002](RS-ASM-assessment-documents.md#rs-asm-002) |
@@ -110,7 +110,7 @@ AI MAY flag missing marks or likely data-entry errors as advisory output.
 
 | | |
 |---|---|
-| **Business Owner** | Marks Reporting |
+| **Owner** | Marks Reporting |
 | **Supporting Components** | `AssessmentService`, `ReportService` |
 | **Authority** | Per read scope |
 | **Depends on** | [RS-DAT-008](RS-DAT-data-integrity.md#rs-dat-008), [RS-ASM-002](RS-ASM-assessment-documents.md#rs-asm-002) |
@@ -148,7 +148,7 @@ an institution has selected ([RS-GOV-013](RS-GOV-governance.md#rs-gov-013)).
 | **Owner** | `DocumentService` |
 | **Authority** | System invariant |
 | **Depends on** | [RS-TEN-006](RS-TEN-tenancy-security.md#rs-ten-006), [RS-GOV-013](RS-GOV-governance.md#rs-gov-013), [RS-AIG-002](RS-AIG-ai-governance.md#rs-aig-002) |
-| **Governs** | [RS-DAT-005](RS-DAT-data-integrity.md#rs-dat-005), [RS-ACA-010](RS-ACA-academic.md#rs-aca-010), [RS-ASM-006](RS-ASM-assessment-documents.md#rs-asm-006), [RS-ASM-008](RS-ASM-assessment-documents.md#rs-asm-008), [RS-STU-011](RS-STU-students.md#rs-stu-011) |
+| **Governs** | [RS-DAT-005](RS-DAT-data-integrity.md#rs-dat-005), [RS-ACA-010](RS-ACA-academic.md#rs-aca-010), [RS-ASM-006](RS-ASM-assessment-documents.md#rs-asm-006), [RS-ASM-008](RS-ASM-assessment-documents.md#rs-asm-008), [RS-STU-011](RS-STU-students.md#rs-stu-011), [RS-ADM-003](RS-ADM-admission-wizard.md#rs-adm-003), [RS-ADM-004](RS-ADM-admission-wizard.md#rs-adm-004), [RS-ASM-011](RS-ASM-assessment-documents.md#rs-asm-011) |
 | **Lifecycle** | Document |
 | **Workflow** | — |
 | **AI** | Binding — no AI tool writes a file |
@@ -177,7 +177,7 @@ zero changes to `ReportService`.
 
 | | |
 |---|---|
-| **Business Owner** | Report Generation |
+| **Owner** | Report Generation |
 | **Supporting Components** | `ReportService`, Generator Module |
 | **Authority** | System invariant |
 | **Depends on** | [RS-ASM-005](RS-ASM-assessment-documents.md#rs-asm-005) |
@@ -209,7 +209,7 @@ meaningful change.** A re-upload with no real change sends no alert.
 
 | | |
 |---|---|
-| **Business Owner** | Examination Timetable Revision |
+| **Owner** | Examination Timetable Revision |
 | **Supporting Components** | `DocumentService`, `AcademicService` |
 | **Authority** | **L4**, own class |
 | **Depends on** | [RS-ACA-010](RS-ACA-academic.md#rs-aca-010), [RS-ASM-001](RS-ASM-assessment-documents.md#rs-asm-001), [RS-AIG-012](RS-AIG-ai-governance.md#rs-aig-012) |
@@ -382,7 +382,7 @@ so no row is left permanently unfixable.
 
 | | |
 |---|---|
-| **Business Owner** | Assessment Type Authoring |
+| **Owner** | Assessment Type Authoring |
 | **Supporting Components** | — |
 | **Authority** | Create: any staff member who teaches at least one class. Edit: creator only (Principal, for creator-less legacy rows only) |
 | **Depends on** | [RS-ASM-002](#rs-asm-002) |

@@ -110,7 +110,7 @@ when — is the safety net, not a mandatory second reviewer.
 
 | | |
 |---|---|
-| **Business Owner** | Attendance |
+| **Owner** | Attendance |
 | **Supporting Components** | `AttendanceService`, `WorkflowService` |
 | **Authority** | Subject Faculty submits · **L4 approves** · L4 may discretionarily escalate |
 | **Depends on** | [RS-DAT-002](RS-DAT-data-integrity.md#rs-dat-002), [RS-WFL-001](RS-WFL-workflow.md#rs-wfl-001), [RS-ATT-003](RS-ATT-attendance.md#rs-att-003) |
@@ -237,7 +237,7 @@ automatic system notification to L3 carrying a mandatory review action.**
 
 | | |
 |---|---|
-| **Business Owner** | Absence Monitoring |
+| **Owner** | Absence Monitoring |
 | **Supporting Components** | `AttendanceService`, `NotificationService` |
 | **Authority** | System-generated; L3 closes |
 | **Depends on** | [RS-ATT-007](RS-ATT-attendance.md#rs-att-007) |

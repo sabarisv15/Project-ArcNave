@@ -20,7 +20,7 @@ resolution, kept for history rather than deleted).
 
 **Updated same day, later pass:** the frontend discovery/UAT session added 7
 new rules across three domains (RS-STF-012/013, RS-CLS-012/013, and the new
-RS-PRF domain's 3 rules — see [§7a](#7a-2026-07-26-frontend-discovery-uat-additions))
+RS-PRF domain's 3 rules — see [§7a](#7a-2026-07-26-frontend-discoveryuat-additions))
 for capabilities built in that session's own backend batch (class log,
 substitute duty visibility/acknowledgement, personal notes, activity
 timeline, user preferences, expanded staff profile). All 7 shipped

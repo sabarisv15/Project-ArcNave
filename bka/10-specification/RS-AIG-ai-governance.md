@@ -39,7 +39,7 @@ directly through the normal dashboard is not gated by it.
 | **Owner** | AI Tool Registry |
 | **Authority** | System invariant |
 | **Depends on** | — |
-| **Governs** | [RS-AIG-004](RS-AIG-ai-governance.md#rs-aig-004), [RS-AIG-006](RS-AIG-ai-governance.md#rs-aig-006), [RS-AIG-007](RS-AIG-ai-governance.md#rs-aig-007), [RS-AIG-012](RS-AIG-ai-governance.md#rs-aig-012), [RS-AIG-013](RS-AIG-ai-governance.md#rs-aig-013), [RS-AIG-015](RS-AIG-ai-governance.md#rs-aig-015) |
+| **Governs** | [RS-AIG-004](RS-AIG-ai-governance.md#rs-aig-004), [RS-AIG-006](RS-AIG-ai-governance.md#rs-aig-006), [RS-AIG-007](RS-AIG-ai-governance.md#rs-aig-007), [RS-AIG-012](RS-AIG-ai-governance.md#rs-aig-012), [RS-AIG-013](RS-AIG-ai-governance.md#rs-aig-013), [RS-AIG-015](RS-AIG-ai-governance.md#rs-aig-015), [RS-ANL-002](RS-ANL-analytics-governance.md#rs-anl-002) |
 | **Lifecycle** | — |
 | **Workflow** | L3 → `WorkflowService` |
 | **AI** | Definitional |
@@ -99,7 +99,7 @@ All AI tool outputs → Context Builder → Prompt Safety Layer → LLM
 
 | | |
 |---|---|
-| **Business Owner** | AI Input Safety |
+| **Owner** | AI Input Safety |
 | **Supporting Components** | Context Builder, Prompt Safety Layer |
 | **Authority** | System invariant |
 | **Depends on** | [RS-AIG-002](RS-AIG-ai-governance.md#rs-aig-002) |
@@ -137,7 +137,7 @@ registration-time convention.
 
 | | |
 |---|---|
-| **Business Owner** | AI Action Approval Gate |
+| **Owner** | AI Action Approval Gate |
 | **Supporting Components** | AI Tool Registry, `WorkflowService` |
 | **Authority** | System invariant |
 | **Depends on** | [RS-WFL-001](RS-WFL-workflow.md#rs-wfl-001), [RS-FIN-003](RS-FIN-finance.md#rs-fin-003), [RS-ASM-003](RS-ASM-assessment-documents.md#rs-asm-003), [RS-ATT-004](RS-ATT-attendance.md#rs-att-004), [RS-AIG-001](RS-AIG-ai-governance.md#rs-aig-001) |
@@ -433,7 +433,7 @@ extraction capability.
 | **Owner** | AI Tool Registry |
 | **Authority** | System invariant |
 | **Depends on** | [RS-ACA-010](RS-ACA-academic.md#rs-aca-010), [RS-AIG-001](RS-AIG-ai-governance.md#rs-aig-001) |
-| **Governs** | [RS-ASM-007](RS-ASM-assessment-documents.md#rs-asm-007) |
+| **Governs** | [RS-ASM-007](RS-ASM-assessment-documents.md#rs-asm-007), [RS-ADM-002](RS-ADM-admission-wizard.md#rs-adm-002) |
 | **Lifecycle** | — |
 | **Workflow** | Human verification gate |
 | **AI** | L2 generate ceiling for every extraction tool |
@@ -505,7 +505,7 @@ prerequisites and inherits the limitations registered at
 | **Owner** | AI Tool Registry |
 | **Authority** | Scope boundary |
 | **Depends on** | [RS-ASM-008](RS-ASM-assessment-documents.md#rs-asm-008) |
-| **Governs** | [RS-DAT-009](RS-DAT-data-integrity.md#rs-dat-009) |
+| **Governs** | [RS-DAT-009](RS-DAT-data-integrity.md#rs-dat-009), [RS-ANL-004](RS-ANL-analytics-governance.md#rs-anl-004) |
 | **Lifecycle** | — |
 | **Workflow** | — |
 | **AI** | Definitional |

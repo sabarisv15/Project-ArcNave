@@ -133,7 +133,7 @@ sequenceDiagram
 
 | | |
 |---|---|
-| **Business Owner** | Timetable Approval |
+| **Owner** | Timetable Approval |
 | **Supporting Components** | `AcademicService`, `WorkflowService` |
 | **Authority** | L4 initiates · L3 endorses and locks · **L1 approves** |
 | **Depends on** | [RS-WFL-003](RS-WFL-workflow.md#rs-wfl-003), [RS-CLS-006](RS-CLS-classroom.md#rs-cls-006), [RS-ACA-001](RS-ACA-academic.md#rs-aca-001) |
@@ -296,7 +296,7 @@ syllabus. Extracted data is never published into the ERP unilaterally.
 
 | | |
 |---|---|
-| **Business Owner** | Curriculum Documents |
+| **Owner** | Curriculum Documents |
 | **Supporting Components** | `AcademicService`, `DocumentService` |
 | **Authority** | Human verifier publishes |
 | **Depends on** | [RS-ACA-009](RS-ACA-academic.md#rs-aca-009), [RS-ASM-005](RS-ASM-assessment-documents.md#rs-asm-005) |

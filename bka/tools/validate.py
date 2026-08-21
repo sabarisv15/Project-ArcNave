@@ -34,13 +34,14 @@ from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DOCS = ROOT / "docs"
+DOCS = ROOT
 SPEC = DOCS / "10-specification"
 
 DOMAINS = {
     "GOV", "TEN", "IDN", "STF", "CLS", "ACA",
     "ATT", "STU", "FIN", "ASM", "WFL", "NTF", "AIG", "DAT",
     "ANL", "ADM",  # added 2026-07-25: Analytics Governance, Admission Wizard
+    "PRF",  # added 2026-08-21: Personal Workspace — real domain, was missing from this set
 }
 
 MANDATORY_FIELDS = [

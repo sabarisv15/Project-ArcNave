@@ -31,7 +31,7 @@ individually is not made visible by being averaged.
 
 | | |
 |---|---|
-| **Business Owner** | Analytics Access |
+| **Owner** | Analytics Access |
 | **Supporting Components** | `AnalyticsService`, `visibilityService` |
 | **Authority** | Ownership-derived, same as the underlying data |
 | **Depends on** | [RS-CLS-009](RS-CLS-classroom.md#rs-cls-009) |
@@ -63,7 +63,7 @@ the analytics layer.
 
 | | |
 |---|---|
-| **Business Owner** | Analytics Access |
+| **Owner** | Analytics Access |
 | **Supporting Components** | `AnalyticsService`, AI Tool Registry |
 | **Authority** | System invariant |
 | **Depends on** | [RS-ANL-001](#rs-anl-001), [RS-AIG-001](RS-AIG-ai-governance.md#rs-aig-001) |
@@ -92,7 +92,7 @@ guaranteed structured result just because it now renders as a chart.
 
 | | |
 |---|---|
-| **Business Owner** | Analytics Access |
+| **Owner** | Analytics Access |
 | **Supporting Components** | `AnalyticsService` |
 | **Authority** | System invariant |
 | **Depends on** | [RS-DAT-009](RS-DAT-data-integrity.md#rs-dat-009) |
@@ -121,7 +121,7 @@ future.
 
 | | |
 |---|---|
-| **Business Owner** | Analytics Access |
+| **Owner** | Analytics Access |
 | **Supporting Components** | `AnalyticsService` |
 | **Authority** | Scope boundary |
 | **Depends on** | [RS-AIG-014](RS-AIG-ai-governance.md#rs-aig-014) |

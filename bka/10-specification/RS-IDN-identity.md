@@ -247,7 +247,7 @@ not yet tenant-configurable — a declared gap
 
 | | |
 |---|---|
-| **Business Owner** | Authorization Resolution |
+| **Owner** | Authorization Resolution |
 | **Supporting Components** | `IdentityService`, RBAC middleware |
 | **Authority** | System invariant |
 | **Depends on** | [RS-IDN-006](RS-IDN-identity.md#rs-idn-006) |
@@ -277,7 +277,7 @@ trusted from a Position Account token.
 
 | | |
 |---|---|
-| **Business Owner** | Position Account Session |
+| **Owner** | Position Account Session |
 | **Supporting Components** | `AuthService`, `IdentityService` |
 | **Authority** | System invariant |
 | **Depends on** | [RS-IDN-005](RS-IDN-identity.md#rs-idn-005), [RS-IDN-007](RS-IDN-identity.md#rs-idn-007) |
@@ -386,7 +386,7 @@ query against the Actor returns exactly what one person did.
 
 | | |
 |---|---|
-| **Business Owner** | Audit Identity |
+| **Owner** | Audit Identity |
 | **Supporting Components** | `IdentityService`, audit ledger |
 | **Authority** | System invariant |
 | **Depends on** | [RS-IDN-001](RS-IDN-identity.md#rs-idn-001), [RS-DAT-006](RS-DAT-data-integrity.md#rs-dat-006) |
@@ -486,7 +486,7 @@ tutor field rather than silently accepting it.
 
 | | |
 |---|---|
-| **Business Owner** | Class Tutor Position |
+| **Owner** | Class Tutor Position |
 | **Supporting Components** | `IdentityService`, `StaffService` |
 | **Authority** | L3, own department only |
 | **Depends on** | [RS-IDN-003](RS-IDN-identity.md#rs-idn-003), [RS-IDN-010](RS-IDN-identity.md#rs-idn-010) |

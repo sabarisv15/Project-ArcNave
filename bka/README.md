@@ -14,7 +14,7 @@ Markdown is the source of truth. PDF and DOCX are generated artefacts.
 ## Layout
 
 ```
-docs/
+bka/
   index.md                       Overview, structure, precedence
   00-foundation/                 Conventions · actor model · domain model
   10-specification/              THE CANONICAL RULE SET — authoritative
@@ -88,7 +88,7 @@ hook.
 6. Commit. Never edit a generated PDF or DOCX.
 
 Full procedure:
-[`docs/00-foundation/scope-and-conventions.md`](docs/00-foundation/scope-and-conventions.md).
+[`00-foundation/scope-and-conventions.md`](00-foundation/scope-and-conventions.md).
 
 ## Open decisions
 
@@ -109,5 +109,5 @@ Full procedure:
 | **Total** | **147** |
 
 See
-[`docs/20-matrices/implementation-impact-matrix.md`](docs/20-matrices/implementation-impact-matrix.md)
+[`20-matrices/implementation-impact-matrix.md`](20-matrices/implementation-impact-matrix.md)
 for the full position and the remediation sequence.

@@ -30,11 +30,11 @@ draft has exactly one owner, not a scoped role.
 
 | | |
 |---|---|
-| **Business Owner** | Admission Draft |
+| **Owner** | Admission Draft |
 | **Supporting Components** | `StudentAdmissionDraftService` |
 | **Authority** | The draft's own creator, exclusively |
 | **Depends on** | [RS-CLS-009](RS-CLS-classroom.md#rs-cls-009) |
-| **Governs** | [RS-ADM-002](#rs-adm-002), [RS-ADM-004](#rs-adm-004) |
+| **Governs** | [RS-ADM-002](#rs-adm-002), [RS-ADM-004](#rs-adm-004), [RS-ADM-003](#rs-adm-003) |
 | **Lifecycle** | **Admission draft — canonical definition:** `created → documents uploaded → extraction run → reviewed → completed` |
 | **Workflow** | None — direct personal action, no approval step |
 | **AI** | — |
@@ -64,7 +64,7 @@ complete or confident the extracted result is.
 
 | | |
 |---|---|
-| **Business Owner** | Admission Draft |
+| **Owner** | Admission Draft |
 | **Supporting Components** | `StudentAdmissionDraftService`, `backgroundJobService`, OCR/AI extraction pipeline |
 | **Authority** | The draft's own creator triggers extraction; AI performs it |
 | **Depends on** | [RS-ADM-001](#rs-adm-001), [RS-AIG-012](RS-AIG-ai-governance.md#rs-aig-012) |
@@ -97,10 +97,10 @@ draft-storage copies. The action is fully audited.
 
 | | |
 |---|---|
-| **Business Owner** | Admission Draft |
+| **Owner** | Admission Draft |
 | **Supporting Components** | `StudentAdmissionDraftService`, `StudentService`, `DocumentService` |
 | **Authority** | The draft's own creator, exclusively |
-| **Depends on** | [RS-ADM-001](#rs-adm-001), [RS-ADM-002](#rs-adm-002), [RS-CLS-004](RS-CLS-classroom.md#rs-cls-004), [RS-ASM-005](RS-ASM-assessment-documents.md#rs-asm-005) |
+| **Depends on** | [RS-ADM-001](#rs-adm-001), [RS-ADM-002](#rs-adm-002), [RS-CLS-004](RS-CLS-classroom.md#rs-cls-004), [RS-ASM-005](RS-ASM-assessment-documents.md#rs-asm-005), [RS-ADM-004](#rs-adm-004) |
 | **Governs** | — |
 | **Lifecycle** | Admission draft: `reviewed → completed` (terminal) |
 | **Workflow** | None — direct action, no approval step (matches [RS-CLS-004](RS-CLS-classroom.md#rs-cls-004): plain student creation has never required one) |
@@ -128,12 +128,12 @@ real one.
 
 | | |
 |---|---|
-| **Business Owner** | Admission Draft |
+| **Owner** | Admission Draft |
 | **Supporting Components** | `StudentAdmissionDraftService`, `DocumentService` |
 | **Authority** | The draft's own creator |
 | **Depends on** | [RS-ADM-001](#rs-adm-001), [RS-ASM-005](RS-ASM-assessment-documents.md#rs-asm-005) |
 | **Governs** | [RS-ADM-003](#rs-adm-003) |
-| **Lifecycle** | Draft document: `uploaded → (removed | promoted to real document, then discarded)` |
+| **Lifecycle** | Draft document: `uploaded → (removed \| promoted to real document, then discarded)` |
 | **Workflow** | None — direct write, owner-scoped |
 | **AI** | — |
 | **Modules** | 1, 6 |

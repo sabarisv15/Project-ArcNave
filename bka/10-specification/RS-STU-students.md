@@ -42,7 +42,7 @@ the RAG document pipeline.
 
 | | |
 |---|---|
-| **Business Owner** | Student Identity Compliance |
+| **Owner** | Student Identity Compliance |
 | **Supporting Components** | `StudentService`, `DocumentService` |
 | **Authority** | Statutory |
 | **Depends on** | — |
@@ -224,7 +224,7 @@ visible and reviewable at HOD level in how institutions actually operate.
 
 | | |
 |---|---|
-| **Business Owner** | Student Lifecycle |
+| **Owner** | Student Lifecycle |
 | **Supporting Components** | `StudentService`, `WorkflowService` |
 | **Authority** | L4 proposes · **L3 minimum approver** · chain may extend |
 | **Depends on** | [RS-WFL-003](RS-WFL-workflow.md#rs-wfl-003), [RS-STU-006](RS-STU-students.md#rs-stu-006) |
@@ -255,7 +255,7 @@ semester closures and their promotions have already happened.
 
 | | |
 |---|---|
-| **Business Owner** | Semester Progression |
+| **Owner** | Semester Progression |
 | **Supporting Components** | `AcademicService`, `StudentService` |
 | **Authority** | System-executed on semester closure |
 | **Depends on** | [RS-CLS-002](RS-CLS-classroom.md#rs-cls-002), [RS-ACA-002](RS-ACA-academic.md#rs-aca-002), [RS-STU-006](RS-STU-students.md#rs-stu-006) |
@@ -428,7 +428,7 @@ separate field that could drift from the history.
 
 | | |
 |---|---|
-| **Business Owner** | Student Flag |
+| **Owner** | Student Flag |
 | **Supporting Components** | — |
 | **Authority** | Same as `assertCanViewStudent` — class's own tutor OR subject faculty, HOD's own department, Principal college-wide |
 | **Depends on** | [RS-CLS-009](RS-CLS-classroom.md#rs-cls-009) |

@@ -168,7 +168,7 @@ authorized approval.**
 
 | | |
 |---|---|
-| **Business Owner** | Backup & Disaster Recovery |
+| **Owner** | Backup & Disaster Recovery |
 | **Supporting Components** | Operations, `DocumentService` |
 | **Authority** | Institution agreement |
 | **Depends on** | [RS-DAT-001](RS-DAT-data-integrity.md#rs-dat-001), [RS-ASM-005](RS-ASM-assessment-documents.md#rs-asm-005) |
@@ -214,7 +214,7 @@ history query, added without a second write site to keep in sync.
 | **Owner** | Audit ledger |
 | **Authority** | System invariant |
 | **Depends on** | [RS-TEN-003](RS-TEN-tenancy-security.md#rs-ten-003), [RS-TEN-007](RS-TEN-tenancy-security.md#rs-ten-007) |
-| **Governs** | [RS-IDN-011](RS-IDN-identity.md#rs-idn-011), [RS-GOV-006](RS-GOV-governance.md#rs-gov-006), [RS-GOV-009](RS-GOV-governance.md#rs-gov-009) |
+| **Governs** | [RS-IDN-011](RS-IDN-identity.md#rs-idn-011), [RS-GOV-006](RS-GOV-governance.md#rs-gov-006), [RS-GOV-009](RS-GOV-governance.md#rs-gov-009), [RS-PRF-002](RS-PRF-personal-workspace.md#rs-prf-002) |
 | **Lifecycle** | — |
 | **Workflow** | — |
 | **AI** | L1 read; alteration **Prohibited** |
@@ -317,7 +317,7 @@ requires the underlying limitation to have actually been resolved.
 | **Owner** | All services |
 | **Authority** | Declared limitation register |
 | **Depends on** | [RS-ATT-009](RS-ATT-attendance.md#rs-att-009), [RS-ASM-010](RS-ASM-assessment-documents.md#rs-asm-010), [RS-AIG-006](RS-AIG-ai-governance.md#rs-aig-006), [RS-AIG-014](RS-AIG-ai-governance.md#rs-aig-014) |
-| **Governs** | — |
+| **Governs** | [RS-ANL-003](RS-ANL-analytics-governance.md#rs-anl-003) |
 | **Lifecycle** | — |
 | **Workflow** | — |
 | **AI** | Binding — AI MUST NOT present a soft match as a structured result |

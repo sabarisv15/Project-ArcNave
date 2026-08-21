@@ -69,7 +69,7 @@ recorded for this module
 
 | | |
 |---|---|
-| **Business Owner** | Notification Approval |
+| **Owner** | Notification Approval |
 | **Supporting Components** | `NotificationService`, `WorkflowService` |
 | **Authority** | Per the institution's configured chain |
 | **Depends on** | [RS-WFL-001](RS-WFL-workflow.md#rs-wfl-001), [RS-NTF-001](RS-NTF-notifications.md#rs-ntf-001), [RS-AIG-004](RS-AIG-ai-governance.md#rs-aig-004) |
@@ -228,7 +228,7 @@ member with a `faculty_allocation` row for that class.
 
 | | |
 |---|---|
-| **Business Owner** | Send Alert |
+| **Owner** | Send Alert |
 | **Supporting Components** | `NotificationService`, `AcademicService` |
 | **Authority** | **Any staff timetable-assigned to the class, unilateral, own assigned class only** |
 | **Depends on** | [RS-WFL-004](RS-WFL-workflow.md#rs-wfl-004), [RS-STU-012](RS-STU-students.md#rs-stu-012), [RS-NTF-004](RS-NTF-notifications.md#rs-ntf-004) |

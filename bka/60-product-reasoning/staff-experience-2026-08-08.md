@@ -406,7 +406,7 @@ correctness-affecting conflict found; nothing here required a question.
 | Invite staff button | `CORE` — already built, real working capability, keep |
 | New HOD account button | `CORE` — already built, keep |
 | Pagination | `REQUIRED SUPPORT` — already built, keep |
-| Export | not depicted in mockup or real page | not analyzed — no request implies it |
+| Export | Not depicted in mockup or real page — not analyzed, no request implies it |
 
 ### Product Refinement
 Department/Designation filters are directly depicted in the approved

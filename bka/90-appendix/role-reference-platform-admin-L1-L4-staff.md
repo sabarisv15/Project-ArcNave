@@ -499,7 +499,7 @@ flag/clear widened to subject faculty, not just tutor).
 - `ROLE-COVERAGE.md` §1: Staff capability surface is 100%
   GUI/AI/backend-matched, with three originally-found gaps
   (finance-record-payment over-widening AI, timetable slot-grid-
-  generation over-widening GUI, RS-TTB-001 missing AI tool) all resolved
+  generation over-widening GUI, RS-ACA-005 missing AI tool) all resolved
   in commits `1dbfb8e`/`428d817`.
 
 ---

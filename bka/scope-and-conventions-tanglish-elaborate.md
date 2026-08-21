@@ -211,10 +211,10 @@ Oru rule vera oru rule-a refer panna vendina, fixed format use pannanum:
 
 | Reference Type | Format |
 |---|---|
-| Rule | `[RS-ATT-004](../10-specification/RS-ATT-attendance.md#rs-att-004)` |
-| Decision Ledger entry | `[ADL-007](../30-decisions/ledger.md#adl-007)` |
-| Architecture Decision Record | `[ADR-021](../30-decisions/adr-register.md#adr-021)` |
-| Matrix | `[Lifecycle Matrix](../20-matrices/lifecycle-matrix.md)` |
+| Rule | `[RS-ATT-004](10-specification/RS-ATT-attendance.md#rs-att-004)` |
+| Decision Ledger entry | `[ADL-007](30-decisions/ledger.md#adl-007)` |
+| Architecture Decision Record | `[ADR-021](30-decisions/adr-register.md#adr-021)` |
+| Matrix | `[Lifecycle Matrix](20-matrices/lifecycle-matrix.md)` |
 
 Idhu mukkiyamana rule oru irukku: **oru rule-oda content-a vera oru place-la plain-a repeat panna koodaadhu.** Oru rule vera oru rule-oda subject-a *name* panna mudiyum (refer panna), aana adha *restate* panna koodaadhu (mudhal content-a thirumba solla koodaadhu). Idhu yen important na — same statement rendu place-la irundha, edhu correct-nu confusion varum, oru place update pannina innoru place old-a remain aagum.
 

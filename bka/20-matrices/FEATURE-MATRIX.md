@@ -27,12 +27,27 @@ Source: [`staff-documents-personal.md`](../60-product-reasoning/staff-documents-
 | Staff Documents | Staff | Personal | Upload/save document | Click "Save document", pick folder + file, submit | `SaveDocumentDialog` | `POST /documents/personal` (upload) | `documents` | Owner-scoped | Built | CORE | Create folder (for folder picker) | — |
 | Staff Documents | Staff | Personal | Download document | Click download icon on a row | `DocumentRow` | `documentsApi.download` | `documents` | Owner-scoped | Built | CORE | — | — |
 | Staff Documents | Staff | Personal | List folders/documents, grouped display | Open Personal tab | `PersonalTab` | `GET /documents/personal/folders`, `GET /documents/personal` | `personal_document_folders`, `documents` | Owner-scoped | Built | REQUIRED SUPPORT | — | — |
-| Staff Documents | Staff | Personal | Delete folder | — (no UI) | none | `DELETE /documents/personal/folders/:id` (exists, ownership-checked) | `personal_document_folders` | Owner-scoped (already enforced in service) | Backend built, unwired | EXISTING CAPABILITY / RELATED / UNWIRED | Create folder | — |
-| Staff Documents | Staff | Personal | Rename folder | — | none | none | none | — | Not built | RELATED / FUTURE | Create folder | — |
-| Staff Documents | Staff | Personal | Move document between folders | — | none | none | none | — | Not built | RELATED / FUTURE | Create folder, Upload | — |
-| Staff Documents | Staff | Personal | Copy document | — | none | none | none | — | Not built | RELATED / FUTURE | Upload | — |
-| Staff Documents | Staff | Personal | Rename/delete individual document | — | none | none | `documents` | — | Not built | RELATED / FUTURE | Upload | — |
-| Staff Documents | Staff | Personal | Nested folders | — | none | none | none | — | Not built | FUTURE | Create folder | — |
+| Staff Documents | Staff | Personal | Delete folder | Row menu → Delete (folder node) | `PersonalDocuments.jsx` row menu | `DELETE /documents/personal/folders/:id`, cycle-checked | `personal_document_folders` | Owner-scoped (already enforced in service) | **Built (2026-08-21)** — see below | EXISTING CAPABILITY / RELATED / UNWIRED → **CORE, resolved** | Create folder | — |
+| Staff Documents | Staff | Personal | Rename folder | Row menu → Rename | `PersonalDocuments.jsx`/`RenameNodeDialog` | `PATCH /documents/personal/folders/:id` (rename, cycle-checked) | `personal_document_folders` | Owner-scoped | **Built (2026-08-21)** — see below | RELATED / FUTURE → **CORE, resolved** | Create folder | — |
+| Staff Documents | Staff | Personal | Move document/folder between folders | Row menu → "Move to…" | `PersonalDocuments.jsx` move dialog | `PATCH /documents/personal/folders/:id` / document move route (cycle-checked) | `personal_document_folders`, `documents` | Owner-scoped | **Built (2026-08-21)** — see below | RELATED / FUTURE → **CORE, resolved** | Create folder, Upload | — |
+| Staff Documents | Staff | Personal | Copy document (duplicate) | Row menu → Duplicate (files only) | `PersonalDocuments.jsx` row menu | `documentService`/`personalDocumentFolderService` duplicate path | `documents` | Owner-scoped | **Built (2026-08-21)** — see below | RELATED / FUTURE → **CORE, resolved** | Upload | — |
+| Staff Documents | Staff | Personal | Rename/delete individual document | Row menu → Rename / Delete | `PersonalDocuments.jsx` row menu | Rename route + widened `DELETE /documents/:id` (uploader may delete own personal file; institutional/student/template stay principal-only) | `documents` | Owner-scoped (delete now uploader-scoped, not just principal) | **Built (2026-08-21)** — see below | RELATED / FUTURE → **CORE, resolved** | Upload | — |
+| Staff Documents | Staff | Personal | Nested folders | Breadcrumb navigation, create-inside-folder | `PersonalDocuments.jsx` breadcrumbs/trail | `personal_document_folders.parent_id` (new column) | `personal_document_folders` | Owner-scoped | **Built (2026-08-21)** — see below | FUTURE → **CORE, resolved** | Create folder | — |
+
+**Resolved 2026-08-21** (commit `578dc3f`, "wire Documents module to real
+backend, make AI documents downloadable in chat" — see root `CHANGES.md`
+and `CHECKPOINT.md` round 17): the six rows above were re-verified against
+the actual current frontend (`PersonalDocuments.jsx`'s per-row menu —
+Rename/Move to…/Duplicate/Delete — and breadcrumb trail) and backend
+(`personalDocumentFolderRepository.js`/`personalDocumentFolderService.js`,
+new migration `1762500000000_personal-document-folders-nesting.js`) during
+a documentation-sync pass, not a fresh Product Reasoning pass — the real
+personal-documents API was flat (no nesting/rename/move) against a mock UI
+that already had all three; this closed that gap. New backend test
+coverage: `personal-document-folder-service.test.js`,
+`document-service.test.js`. Not independently browser-verified as part of
+*this* sync pass — see round 17's own checkpoint entry for its
+verification status.
 
 No row above required a Product Refinement question — none met the
 workflow's §12 threshold on their own.
@@ -41,8 +56,8 @@ workflow's §12 threshold on their own.
 
 | Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Staff Documents | Staff | Personal | Search documents | Type in search box | `SearchBar` | none (client-side filter over existing `GET /documents/personal`) | none | Owner-scoped (inherited, no new call) | Not built | CORE | List folders/documents (Pass 1) | — |
-| Staff Documents | Staff | Personal | Hide empty folder-groups while searching | (implicit, follows search) | `PersonalTab` grouping logic | none | none | — | Not built | REQUIRED SUPPORT | Search documents | Resolved — [ADL-033](../30-decisions/ledger.md#adl-033) |
+| Staff Documents | Staff | Personal | Search documents | Type in search box | `SearchPopoverField` | client-side filter, now over the **real** `GET /documents/personal` result set (was mock data when this row was last assessed) | none | Owner-scoped (inherited, no new call) | **Built (2026-08-21)** — real data as of commit `578dc3f` | CORE, resolved | List folders/documents (Pass 1) | — |
+| Staff Documents | Staff | Personal | Hide empty folder-groups while searching | (implicit, follows search) | `PersonalTab` grouping logic | none | none | — | **Built (2026-08-21)** — same real-data dependency as above | REQUIRED SUPPORT, resolved | Search documents | Resolved — [ADL-033](../30-decisions/ledger.md#adl-033) |
 | Staff Documents | Staff | Personal | Search by folder name | — | none | none | none | — | Not built | RELATED / FUTURE | Search documents | — |
 | Staff Documents | Staff | Personal | Combined folder-filter + search | — | none | none | none | — | Not built | RELATED / FUTURE | Search documents | — |
 | Staff Documents | Staff | Personal | AI/RAG semantic document search | — | none | `search_documents` tool exists (RS-ASM-010) | `ai_document_chunks` (pgvector) | Classification-gated | Exists (different mechanism, AI-only) | FUTURE | — | — |
@@ -70,7 +85,7 @@ per notable capability per page, not exhaustive to every checklist item.
 | Home | Staff | — | Greeting + next-teaching-moment subtitle + ask pill + 3 suggestion chips | Land on `/` | `WorkspaceHero` | `GET /workspace/hero` | none new | Authenticated | Built, matches design | CORE | — | — |
 | Home | Staff | — | Multi-moment "what's next today" | — | none | none | none | — | Not built | RELATED / FUTURE | Home hero | — |
 | Documents | Staff | Institutional | Read-only, category-grouped list + download | Open Institutional tab | `InstitutionalTab` | `GET /documents/institutional` | `documents` | Requires-auth read | Built, matches design | CORE | — | — |
-| Documents | Staff | Personal | Create folder / Save document / Download / Search | See [prior pass](#staff-documents--personal-tab) | `PersonalTab` | see prior pass | `personal_document_folders`, `documents` | Owner-scoped | Built | CORE / REQUIRED SUPPORT | — | — |
+| Documents | Staff | Personal | Create folder / Save document / Download / Search | See [prior pass](#staff-documents-personal-tab) | `PersonalTab` | see prior pass | `personal_document_folders`, `documents` | Owner-scoped | Built | CORE / REQUIRED SUPPORT | — | — |
 | Documents | Staff | Personal | Delete/rename folder, move/copy/rename/delete document, nested folders | — | none | partial (delete exists) | `personal_document_folders` | Owner-scoped | Mixed (see prior pass) | EXISTING CAPABILITY / RELATED / UNWIRED, RELATED / FUTURE, FUTURE | Create folder | — |
 | Documents | Principal/HOD | Institutional | Full upload/lifecycle manager (separate page) | Open `/institutional-documents` | `InstitutionalDocumentsPage` | `documents.js` lifecycle routes | `documents` | Permission-gated | Built, out of Staff-persona scope | FUTURE | — | — |
 | Students list | Staff | — | Search/sort/filter/export/bulk-notify/dialogs/pagination | Open `/students` | `StudentsListPage` | `students.js` | `students` + related | Role/ownership-scoped | Built, exceeds mockup | CORE | — | — |

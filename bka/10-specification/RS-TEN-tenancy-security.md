@@ -25,11 +25,11 @@ tenant data.
 
 | | |
 |---|---|
-| **Business Owner** | Tenant Isolation |
+| **Owner** | Tenant Isolation |
 | **Supporting Components** | Data layer, Tenant Middleware |
 | **Authority** | System invariant |
 | **Depends on** | [RS-TEN-002](RS-TEN-tenancy-security.md#rs-ten-002), [RS-TEN-003](RS-TEN-tenancy-security.md#rs-ten-003) |
-| **Governs** | [RS-TEN-004](RS-TEN-tenancy-security.md#rs-ten-004), [RS-IDN-002](RS-IDN-identity.md#rs-idn-002), [RS-STU-001](RS-STU-students.md#rs-stu-001), [RS-AIG-016](RS-AIG-ai-governance.md#rs-aig-016) |
+| **Governs** | [RS-TEN-004](RS-TEN-tenancy-security.md#rs-ten-004), [RS-IDN-002](RS-IDN-identity.md#rs-idn-002), [RS-STU-001](RS-STU-students.md#rs-stu-001), [RS-AIG-016](RS-AIG-ai-governance.md#rs-aig-016), [RS-PRF-001](RS-PRF-personal-workspace.md#rs-prf-001), [RS-PRF-003](RS-PRF-personal-workspace.md#rs-prf-003) |
 | **Lifecycle** | — |
 | **Workflow** | — |
 | **AI** | Applies unchanged to every AI tool |
@@ -240,7 +240,7 @@ no enrollment flow exists yet.
 
 | | |
 |---|---|
-| **Business Owner** | Authentication & Session Policy |
+| **Owner** | Authentication & Session Policy |
 | **Supporting Components** | `AuthService`, `ConfigurationService` |
 | **Authority** | L1 configures; system enforces |
 | **Depends on** | [RS-IDN-009](RS-IDN-identity.md#rs-idn-009) |

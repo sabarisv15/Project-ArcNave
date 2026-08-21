@@ -67,7 +67,7 @@ authority rule changes; only one screen now shows both.
 
 | | |
 |---|---|
-| **Business Owner** | Personal Notes |
+| **Owner** | Personal Notes |
 | **Supporting Components** | — |
 | **Authority** | Creator only |
 | **Depends on** | [RS-TEN-001](RS-TEN-tenancy-security.md#rs-ten-001) |
@@ -98,7 +98,7 @@ not grant.
 
 | | |
 |---|---|
-| **Business Owner** | Activity Timeline |
+| **Owner** | Activity Timeline |
 | **Supporting Components** | — |
 | **Authority** | Self only |
 | **Depends on** | [RS-DAT-006](RS-DAT-data-integrity.md#rs-dat-006) |
@@ -132,7 +132,7 @@ not-yet-built capability of `NotificationService`, not part of this rule.
 
 | | |
 |---|---|
-| **Business Owner** | User Preferences |
+| **Owner** | User Preferences |
 | **Supporting Components** | — |
 | **Authority** | Self only |
 | **Depends on** | [RS-TEN-001](RS-TEN-tenancy-security.md#rs-ten-001) |

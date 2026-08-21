@@ -51,7 +51,7 @@ it has none, they route past it
 
 | | |
 |---|---|
-| **Business Owner** | Approval Chain Configuration |
+| **Owner** | Approval Chain Configuration |
 | **Supporting Components** | `WorkflowService`, `ConfigurationService` |
 | **Authority** | L1 configures |
 | **Depends on** | [RS-IDN-004](RS-IDN-identity.md#rs-idn-004), [RS-WFL-001](RS-WFL-workflow.md#rs-wfl-001), [RS-GOV-004](RS-GOV-governance.md#rs-gov-004), [RS-GOV-014](RS-GOV-governance.md#rs-gov-014) |
@@ -142,7 +142,7 @@ the L4 seat for a given class through the same mechanism.
 
 | | |
 |---|---|
-| **Business Owner** | Approver Resolution |
+| **Owner** | Approver Resolution |
 | **Supporting Components** | `WorkflowService`, `IdentityService` |
 | **Authority** | System invariant |
 | **Depends on** | [RS-IDN-006](RS-IDN-identity.md#rs-idn-006), [RS-IDN-010](RS-IDN-identity.md#rs-idn-010) |

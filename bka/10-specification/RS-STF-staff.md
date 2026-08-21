@@ -55,7 +55,7 @@ identical L1-direct or L1-approved path — never a self-request.
 
 | | |
 |---|---|
-| **Business Owner** | Staff Registration |
+| **Owner** | Staff Registration |
 | **Supporting Components** | `StaffService`, `WorkflowService` |
 | **Authority** | L3, then L2 (if configured), then L1 (mandatory final approver) |
 | **Depends on** | [RS-IDN-004](RS-IDN-identity.md#rs-idn-004), [RS-WFL-002](RS-WFL-workflow.md#rs-wfl-002), [RS-WFL-006](RS-WFL-workflow.md#rs-wfl-006), [RS-STF-001](RS-STF-staff.md#rs-stf-001) |
@@ -83,7 +83,7 @@ mechanism.
 
 | | |
 |---|---|
-| **Business Owner** | Staff & Student Creation Distinction |
+| **Owner** | Staff & Student Creation Distinction |
 | **Supporting Components** | `StaffService`, `StudentService` |
 | **Authority** | L3 (staff) / L4 (student) |
 | **Depends on** | [RS-STF-001](RS-STF-staff.md#rs-stf-001), [RS-CLS-004](RS-CLS-classroom.md#rs-cls-004) |
@@ -166,7 +166,7 @@ one. Seat continuity and the two-separate-actions requirement are governed by
 
 | | |
 |---|---|
-| **Business Owner** | Class Tutor Seat Continuity |
+| **Owner** | Class Tutor Seat Continuity |
 | **Supporting Components** | `IdentityService`, `StaffService` |
 | **Authority** | L3 |
 | **Depends on** | [RS-STF-005](RS-STF-staff.md#rs-stf-005), [RS-CLS-011](RS-CLS-classroom.md#rs-cls-011) |
@@ -205,7 +205,7 @@ where applicable ([RS-WFL-007](RS-WFL-workflow.md#rs-wfl-007)).
 
 | | |
 |---|---|
-| **Business Owner** | HOD Seat Reassignment |
+| **Owner** | HOD Seat Reassignment |
 | **Supporting Components** | `IdentityService`, `StaffService` |
 | **Authority** | L1 approves or acts directly; L3 may initiate |
 | **Depends on** | [RS-IDN-004](RS-IDN-identity.md#rs-idn-004), [RS-IDN-010](RS-IDN-identity.md#rs-idn-010) |
@@ -260,7 +260,7 @@ tie-break applies: the lower level number wins
 
 | | |
 |---|---|
-| **Business Owner** | Staff Position Holding |
+| **Owner** | Staff Position Holding |
 | **Supporting Components** | `StaffService`, `IdentityService` |
 | **Authority** | — |
 | **Depends on** | [RS-IDN-001](RS-IDN-identity.md#rs-idn-001), [RS-IDN-007](RS-IDN-identity.md#rs-idn-007) |
@@ -288,7 +288,7 @@ that rule and MUST NOT be "corrected" to match it.
 
 | | |
 |---|---|
-| **Business Owner** | Staff Credential Bootstrap |
+| **Owner** | Staff Credential Bootstrap |
 | **Supporting Components** | `AuthService`, `StaffService` |
 | **Authority** | System invariant |
 | **Depends on** | [RS-IDN-003](RS-IDN-identity.md#rs-idn-003), [RS-IDN-010](RS-IDN-identity.md#rs-idn-010) |
@@ -318,7 +318,7 @@ department.
 | **Owner** | `StaffService` |
 | **Authority** | L1 |
 | **Depends on** | [RS-CLS-009](RS-CLS-classroom.md#rs-cls-009) |
-| **Governs** | — |
+| **Governs** | [RS-GOV-017](RS-GOV-governance.md#rs-gov-017), [RS-STF-013](#rs-stf-013) |
 | **Lifecycle** | Staff |
 | **Workflow** | None — direct write |
 | **AI** | L1 direct-write — `staff_update_profile`, `principal` only |
@@ -350,7 +350,7 @@ creator may edit or delete it freely; no one else may.
 
 | | |
 |---|---|
-| **Business Owner** | Teaching Journal |
+| **Owner** | Teaching Journal |
 | **Supporting Components** | `visibilityService` |
 | **Authority** | Any staff member visible to the class (create); creator only (edit/delete) |
 | **Depends on** | [RS-CLS-009](RS-CLS-classroom.md#rs-cls-009) |
@@ -389,7 +389,7 @@ inviting L3 per RS-STF-001, never staff-editable), **date of joining**, and
 the payroll-adjacent fields (bank account, IFSC, PF number) — none of these
 were named in the widening, and payroll data specifically stays
 Principal-only on purpose. A profile photo is stored as a reference to a
-`DocumentService`-owned document ([CLAUDE.md rule 2](../../../CLAUDE.md)),
+`DocumentService`-owned document ([CLAUDE.md rule 2](../../CLAUDE.md)),
 never a second, competing storage path. Religion was considered and
 deliberately excluded — no institutional reporting need was identified for
 this product. Principal retains full write access to every field named here
@@ -398,11 +398,11 @@ transfer of authority.
 
 | | |
 |---|---|
-| **Business Owner** | Staff Self-Service Profile |
+| **Owner** | Staff Self-Service Profile |
 | **Supporting Components** | `DocumentService` (photo reference only) |
 | **Authority** | Self, for the self-service field set only (Principal retains override via RS-STF-011) |
 | **Depends on** | [RS-STF-011](#rs-stf-011) |
-| **Governs** | — |
+| **Governs** | [RS-STF-014](#rs-stf-014) |
 | **Lifecycle** | Staff |
 | **Workflow** | None — direct write |
 | **AI** | L1 read/direct-write, same-actor only, self-service fields only — `staff_self_profile_get`, `staff_self_profile_update` |
@@ -436,7 +436,7 @@ institution-meaningful list, not arbitrary text" reasoning
 
 | | |
 |---|---|
-| **Business Owner** | Staff Self-Service Profile |
+| **Owner** | Staff Self-Service Profile |
 | **Supporting Components** | `NotificationService` (WhatsApp send) |
 | **Authority** | Self only |
 | **Depends on** | [RS-STF-013](#rs-stf-013) |
@@ -473,7 +473,7 @@ it does not narrow anyone else's existing access.
 
 | | |
 |---|---|
-| **Business Owner** | Staff Directory |
+| **Owner** | Staff Directory |
 | **Supporting Components** | `visibilityService` |
 | **Authority** | Any staff member (limited fields); HOD/Principal unchanged (full profile, existing scope) |
 | **Depends on** | [RS-CLS-009](RS-CLS-classroom.md#rs-cls-009) |

@@ -86,7 +86,7 @@ technical form of the assignment is governed by
 
 | | |
 |---|---|
-| **Business Owner** | Class Tutor Assignment |
+| **Owner** | Class Tutor Assignment |
 | **Supporting Components** | `IdentityService`, `StaffService` |
 | **Authority** | L3, own department only |
 | **Depends on** | [RS-IDN-010](RS-IDN-identity.md#rs-idn-010), [RS-IDN-014](RS-IDN-identity.md#rs-idn-014), [RS-STF-002](RS-STF-staff.md#rs-stf-002), [RS-CLS-002](RS-CLS-classroom.md#rs-cls-002) |
@@ -130,7 +130,7 @@ specification already uses.
 | **Owner** | `StudentService` |
 | **Authority** | Create: L4, own class only. Edit: L4 (own class) · L3 (own department) · L1 (own college) |
 | **Depends on** | [RS-IDN-014](RS-IDN-identity.md#rs-idn-014), [RS-CLS-003](RS-CLS-classroom.md#rs-cls-003) |
-| **Governs** | [RS-STF-003](RS-STF-staff.md#rs-stf-003), [RS-ASM-001](RS-ASM-assessment-documents.md#rs-asm-001), [RS-STU-001](RS-STU-students.md#rs-stu-001), [RS-FIN-002](RS-FIN-finance.md#rs-fin-002) |
+| **Governs** | [RS-STF-003](RS-STF-staff.md#rs-stf-003), [RS-ASM-001](RS-ASM-assessment-documents.md#rs-asm-001), [RS-STU-001](RS-STU-students.md#rs-stu-001), [RS-FIN-002](RS-FIN-finance.md#rs-fin-002), [RS-ADM-003](RS-ADM-admission-wizard.md#rs-adm-003) |
 | **Lifecycle** | Student |
 | **Workflow** | None — direct write, audited |
 | **AI** | L1 direct-write — `students_update_profile`, gated by the service's own modify assertion; excludes lifecycle status |
@@ -227,7 +227,7 @@ who initiated, who approved.
 | **Owner** | `AcademicService` |
 | **Authority** | Initiate: absent staff / L3 / L4. Approve: **L3 only** |
 | **Depends on** | [RS-CLS-006](RS-CLS-classroom.md#rs-cls-006), [RS-NTF-005](RS-NTF-notifications.md#rs-ntf-005) |
-| **Governs** | [RS-CLS-008](RS-CLS-classroom.md#rs-cls-008), [RS-ACA-008](RS-ACA-academic.md#rs-aca-008) |
+| **Governs** | [RS-CLS-008](RS-CLS-classroom.md#rs-cls-008), [RS-ACA-008](RS-ACA-academic.md#rs-aca-008), [RS-CLS-012](RS-CLS-classroom.md#rs-cls-012), [RS-CLS-013](RS-CLS-classroom.md#rs-cls-013) |
 | **Lifecycle** | Substitute request: `requested → L3 notified → approved → 24h window` |
 | **Workflow** | L3 approval required; automatic system notification, not a drafted one |
 | **AI** | L1 — AI may suggest free faculty; approval remains L3's |
@@ -299,7 +299,7 @@ attendance corrections without owning attendance marking itself.
 | **Owner** | All domain services |
 | **Authority** | Ownership-derived |
 | **Depends on** | [RS-IDN-007](RS-IDN-identity.md#rs-idn-007) |
-| **Governs** | [RS-DAT-002](RS-DAT-data-integrity.md#rs-dat-002), [RS-STF-011](RS-STF-staff.md#rs-stf-011), [RS-ATT-002](RS-ATT-attendance.md#rs-att-002), [RS-ASM-002](RS-ASM-assessment-documents.md#rs-asm-002), [RS-FIN-002](RS-FIN-finance.md#rs-fin-002), [RS-AIG-007](RS-AIG-ai-governance.md#rs-aig-007) |
+| **Governs** | [RS-DAT-002](RS-DAT-data-integrity.md#rs-dat-002), [RS-STF-011](RS-STF-staff.md#rs-stf-011), [RS-ATT-002](RS-ATT-attendance.md#rs-att-002), [RS-ASM-002](RS-ASM-assessment-documents.md#rs-asm-002), [RS-FIN-002](RS-FIN-finance.md#rs-fin-002), [RS-AIG-007](RS-AIG-ai-governance.md#rs-aig-007), [RS-ADM-001](RS-ADM-admission-wizard.md#rs-adm-001), [RS-ANL-001](RS-ANL-analytics-governance.md#rs-anl-001), [RS-STF-012](RS-STF-staff.md#rs-stf-012), [RS-STF-015](RS-STF-staff.md#rs-stf-015), [RS-STU-013](RS-STU-students.md#rs-stu-013) |
 | **Lifecycle** | — |
 | **Workflow** | Determines who may write directly and who must submit |
 | **AI** | Binding — AI edit scope is ownership-derived, never role-derived |
@@ -360,7 +360,7 @@ vacating the seat does not deactivate their personal login.
 
 | | |
 |---|---|
-| **Business Owner** | Class Tutor Seat Continuity |
+| **Owner** | Class Tutor Seat Continuity |
 | **Supporting Components** | `IdentityService`, `StaffService` |
 | **Authority** | L3, own department |
 | **Depends on** | [RS-IDN-010](RS-IDN-identity.md#rs-idn-010), [RS-CLS-003](RS-CLS-classroom.md#rs-cls-003) |
@@ -390,11 +390,11 @@ authority and does not alter RS-CLS-007's own initiate/approve authority.
 
 | | |
 |---|---|
-| **Business Owner** | Substitute Duty Visibility |
+| **Owner** | Substitute Duty Visibility |
 | **Supporting Components** | — |
 | **Authority** | The named substitute, self-scoped only |
 | **Depends on** | [RS-CLS-007](#rs-cls-007) |
-| **Governs** | — |
+| **Governs** | [RS-CLS-013](#rs-cls-013) |
 | **Lifecycle** | Substitute request (read-only view over the existing lifecycle) |
 | **Workflow** | None — direct read |
 | **AI** | L1 read, self-only — `substitute_duties_list` |
@@ -425,7 +425,7 @@ fail the second time.
 
 | | |
 |---|---|
-| **Business Owner** | Substitute Duty Acknowledgement |
+| **Owner** | Substitute Duty Acknowledgement |
 | **Supporting Components** | — |
 | **Authority** | The named substitute only |
 | **Depends on** | [RS-CLS-007](#rs-cls-007), [RS-CLS-012](#rs-cls-012) |

@@ -102,7 +102,7 @@ is ever brought into scope.
 | `POST /documents/personal/folders` | Exists, required — `documents.js:372` |
 | `GET /documents/personal/folders` | Exists, required — `documents.js:387` |
 | `DELETE /documents/personal/folders/:id` | **Exists, not required by this request** — `documents.js:396`, ownership-checked in `personalDocumentFolderService.removeFolder`. Tag: `EXISTING CAPABILITY / RELATED / UNWIRED`. |
-| `PATCH /documents/personal/folders/:id` (rename) | Does not exist | `RELATED / FUTURE` |
+| `PATCH /documents/personal/folders/:id` (rename) | Did not exist as of this pass (2026-08-08), tag `RELATED / FUTURE`. **Built since** (2026-08-21, commit `578dc3f`) — see [FEATURE-MATRIX.md](../20-matrices/FEATURE-MATRIX.md#staff-documents-personal-tab) for current status. |
 
 All routes are `requireAuth` + `requireResolvedTenant`-gated, live under
 `/api/v1/` (rule 5 — confirmed via router mount), and go through

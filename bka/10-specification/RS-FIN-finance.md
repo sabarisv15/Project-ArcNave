@@ -92,7 +92,7 @@ The original value is retained, never silently overwritten.
 
 | | |
 |---|---|
-| **Business Owner** | Fee Status Correction |
+| **Owner** | Fee Status Correction |
 | **Supporting Components** | `FinanceService`, `WorkflowService` |
 | **Authority** | L4 submits · **L3 approves** · L3 may discretionarily escalate |
 | **Depends on** | [RS-DAT-002](RS-DAT-data-integrity.md#rs-dat-002), [RS-WFL-001](RS-WFL-workflow.md#rs-wfl-001), [RS-FIN-002](RS-FIN-finance.md#rs-fin-002) |

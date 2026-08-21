@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Trash2 } from 'lucide-react';
 import { aiMemoryApi } from '@/api/aiMemory';
+import { ConfirmConsequenceDialog } from '../components/ConfirmConsequenceDialog';
 import { cn } from '../lib/utils';
 
 // The kind, description pairs mirror aiMemoryService.js's own
@@ -50,6 +51,7 @@ export function AiMemorySettingsView() {
   const [saving, setSaving] = useState(false);
   const [consented, setConsented] = useState(false);
   const [memories, setMemories] = useState([]);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const load = () => Promise.all([aiMemoryApi.getConsent(), aiMemoryApi.list()]).then(([consent, list]) => {
     setConsented(Boolean(consent.consented));
@@ -62,14 +64,7 @@ export function AiMemorySettingsView() {
       .finally(() => setLoading(false));
   }, []);
 
-  const toggleConsent = async (next) => {
-    if (!next && memories.length > 0) {
-      const ok = window.confirm(
-        `Turning off AI Memory deletes ${memories.length === 1 ? 'the 1 preference' : `all ${memories.length} preferences`} `
-        + 'ArcNave has remembered for you. This cannot be undone. Continue?',
-      );
-      if (!ok) return;
-    }
+  const applyConsent = async (next) => {
     setSaving(true);
     try {
       await aiMemoryApi.setConsent(next);
@@ -80,6 +75,19 @@ export function AiMemorySettingsView() {
     } finally {
       setSaving(false);
     }
+  };
+
+  // Turning AI Memory off is a real, irreversible delete (setConsent(false)
+  // wipes every stored row server-side) — routed through the app's own
+  // AlertDialog-based confirmation, not window.confirm, which some
+  // embedding/automation contexts suppress outright (silently returning
+  // false, as if the user had cancelled every time).
+  const toggleConsent = (next) => {
+    if (!next && memories.length > 0) {
+      setConfirmOpen(true);
+      return;
+    }
+    applyConsent(next);
   };
 
   const forget = async (memoryType) => {
@@ -168,6 +176,24 @@ export function AiMemorySettingsView() {
           </div>
         )}
       </div>
+
+      <ConfirmConsequenceDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Turn off AI Memory?"
+        lede="This deletes everything ArcNave has remembered for you. It cannot be undone."
+        consequences={memories.map((m) => ({
+          key: m.memory_type,
+          title: MEMORY_TYPE_LABELS[m.memory_type] || m.memory_type,
+          detail: m.value,
+        }))}
+        confirmLabel="Turn off and delete"
+        cancelLabel="Keep it on"
+        onConfirm={() => {
+          setConfirmOpen(false);
+          applyConsent(false);
+        }}
+      />
     </div>
   );
 }

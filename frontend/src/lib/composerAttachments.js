@@ -146,6 +146,24 @@ export function attachedAnnouncement(count) {
  * `createObjectURL` at all. An attachment without a preview still uploads,
  * still sends and still lists; it just falls back to the file-type glyph.
  */
+/**
+ * Reads a File/Blob into a raw base64 string (no `data:...;base64,` prefix
+ * — the backend's POST /documents/chat-attachments takes the same bare
+ * base64 shape every other upload route in this app already uses).
+ */
+export function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const commaIndex = result.indexOf(',');
+      resolve(commaIndex === -1 ? result : result.slice(commaIndex + 1));
+    };
+    reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
 function previewUrlFor(file) {
   try {
     return URL.createObjectURL(file);

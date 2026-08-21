@@ -14,6 +14,7 @@ const nim = require('./nim');
 const gemini = require('./gemini');
 const claude = require('./claude');
 const selfHosted = require('./selfHosted');
+const openai = require('./openai');
 const errors = require('./errors');
 
 const ADAPTERS = {
@@ -21,6 +22,7 @@ const ADAPTERS = {
   gemini,
   claude,
   self_hosted: selfHosted,
+  openai,
 };
 
 function getAdapter(provider) {

@@ -23,8 +23,28 @@ const DEFAULT_BASE_URL = 'https://api.anthropic.com';
 const ANTHROPIC_VERSION = '2023-06-01';
 const MAX_TOKENS = 1024;
 
+const supportsVision = true;
+
 function isConfigured(cfg) {
   return Boolean(cfg && cfg.apiKey);
+}
+
+// Builds the user message's `content` — a plain string when no images
+// are attached (unchanged shape every existing caller/test expects),
+// or Anthropic's real multipart vision shape (image blocks first, text
+// block last) when images are present. Real Anthropic Messages API
+// image-block shape: base64 source, not a URL.
+function buildUserContent(userPrompt, images) {
+  if (!images || images.length === 0) {
+    return userPrompt;
+  }
+  return [
+    ...images.map((img) => ({
+      type: 'image',
+      source: { type: 'base64', media_type: img.mimeType, data: img.base64 },
+    })),
+    { type: 'text', text: userPrompt },
+  ];
 }
 
 function baseUrl(cfg) {
@@ -74,7 +94,7 @@ async function postJson(cfg, path, body) {
 // Token/cost telemetry (P1.1) — see nim.js's own comment for the shared
 // reasoning. Claude's usage block uses input_tokens/output_tokens, not
 // the OpenAI-compatible prompt_tokens/completion_tokens naming.
-async function completeWithMeta(cfg, { systemPrompt, userPrompt }) {
+async function completeWithMeta(cfg, { systemPrompt, userPrompt, images } = {}) {
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -83,7 +103,7 @@ async function completeWithMeta(cfg, { systemPrompt, userPrompt }) {
     model: cfg.model,
     max_tokens: MAX_TOKENS,
     system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
+    messages: [{ role: 'user', content: buildUserContent(userPrompt, images) }],
   });
 
   const block = payload && Array.isArray(payload.content) ? payload.content.find((b) => b.type === 'text') : null;
@@ -111,7 +131,7 @@ async function complete(cfg, prompts) {
 // payload's own `type` field, so nothing here needs it), so only
 // `content_block_delta` events with a `text_delta` are real answer
 // text; every other event type is legitimately ignored, not an error.
-async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
+async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, onDelta) {
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -137,7 +157,7 @@ async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
           model: cfg.model,
           max_tokens: MAX_TOKENS,
           system: systemPrompt,
-          messages: [{ role: 'user', content: userPrompt }],
+          messages: [{ role: 'user', content: buildUserContent(userPrompt, images) }],
           stream: true,
         }),
         signal: controller.signal,
@@ -173,7 +193,7 @@ async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
   return full;
 }
 
-async function completeWithTools(cfg, { systemPrompt, userPrompt, tools }) {
+async function completeWithTools(cfg, { systemPrompt, userPrompt, tools, images } = {}) {
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -182,7 +202,7 @@ async function completeWithTools(cfg, { systemPrompt, userPrompt, tools }) {
     model: cfg.model,
     max_tokens: MAX_TOKENS,
     system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
+    messages: [{ role: 'user', content: buildUserContent(userPrompt, images) }],
     // Prompt caching (P1.2): a cache_control breakpoint on the LAST
     // tool caches this entire tools array — the ~10k-token role-
     // filtered tool schema list, unlike the system/user prompt which
@@ -220,6 +240,7 @@ async function embed() {
 
 module.exports = {
   name: 'claude',
+  supportsVision,
   isConfigured,
   complete,
   completeWithMeta,

@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { ComposerProvider, composerScope, useComposer } from '../store/ComposerProvider';
 import { useComposerAttachments } from '../hooks/useComposerAttachments';
+import { aiApi } from '../api/ai';
 
 /**
  * Pasting an image is a second way into the composer, so it is a second way to
@@ -12,8 +13,10 @@ import { useComposerAttachments } from '../hooks/useComposerAttachments';
 
 const wrapper = ({ children }) => <ComposerProvider>{children}</ComposerProvider>;
 
+// A real File (not a plain object) — useComposerAttachments' real upload
+// path reads it via FileReader, which needs an actual Blob/File to work.
 function blob({ size = 1024, type = 'image/png', lastModified = 1 } = {}) {
-  return { size, type, name: '', lastModified };
+  return new File([new Uint8Array(size)], '', { type, lastModified });
 }
 
 /** The shape a real `paste` event hands the composer. */
@@ -207,22 +210,48 @@ describe('pasting an image into a composer', () => {
     expect(result.current.b.attachments).toHaveLength(1);
   });
 
-  it('reaches "ready" once its upload finishes', () => {
+  it('reaches "ready" once its real upload finishes', async () => {
+    // Real timers for this one test — the real upload path (FileReader,
+    // then aiApi.uploadAttachment) settles via genuine async scheduling,
+    // not the old mock's fake-timer-driven progress ticks. beforeEach
+    // re-enables fake timers before the next test regardless.
+    vi.useRealTimers();
+    const uploadSpy = vi
+      .spyOn(aiApi, 'uploadAttachment')
+      .mockResolvedValue({ id: 'server-doc-1', mime_type: 'image/png', size_bytes: 1024 });
+
     const { result } = renderPair(composerScope.home(), composerScope.chat('c1'));
 
-    act(() => {
+    await act(async () => {
       result.current.aFiles.handlePaste(pasteEvent({ items: [blob()] }));
     });
     expect(result.current.a.attachments[0].status).toBe('uploading');
 
-    // Long enough for the stepped mock upload to run to completion.
-    act(() => {
-      vi.advanceTimersByTime(5000);
+    await vi.waitFor(() => {
+      expect(result.current.a.attachments[0].status).toBe('ready');
+    });
+    expect(result.current.a.attachments[0].serverId).toBe('server-doc-1');
+    expect(uploadSpy).toHaveBeenCalledOnce();
+
+    uploadSpy.mockRestore();
+  });
+
+  it('reaches "failed" when the real upload is rejected by the server', async () => {
+    vi.useRealTimers();
+    const uploadSpy = vi.spyOn(aiApi, 'uploadAttachment').mockRejectedValue(new Error('rejected'));
+
+    const { result } = renderPair(composerScope.home(), composerScope.chat('c1'));
+
+    await act(async () => {
+      result.current.aFiles.handlePaste(pasteEvent({ items: [blob()] }));
     });
 
-    // Either it finished or the mock's failure branch fired — both are
-    // terminal, and neither may leave it stuck reporting progress forever.
-    expect(['ready', 'failed']).toContain(result.current.a.attachments[0].status);
+    await vi.waitFor(() => {
+      expect(result.current.a.attachments[0].status).toBe('failed');
+    });
+    expect(result.current.aFiles.announcement).toContain('failed to upload');
+
+    uploadSpy.mockRestore();
   });
 
   it('clears its own scope on reset and leaves the other alone', () => {

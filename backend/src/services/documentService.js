@@ -84,6 +84,15 @@ const VALID_REVIEW_STATUSES = ['verified', 'rejected'];
 // been nullable since 1752800000000).
 const TEMPLATE_DOC_TYPE = 'template';
 
+// An image a user attached directly to an AI chat turn (composer
+// paste/drag-drop) — same reasoning TEMPLATE_DOC_TYPE already
+// documents: a fixed, caller-un-suppliable doc_type keeps this
+// distinguishable from a real student/institutional file at a glance,
+// student_id is always null (belongs to the uploader, not a student
+// record). Kept out of the regular Document Library UI on purpose —
+// see uploadChatAttachment's own comment.
+const CHAT_ATTACHMENT_DOC_TYPE = 'ai_chat_attachment';
+
 // uploadInstitutionalDocument was asked for a categoryId that doesn't
 // resolve to a real document_categories row (bogus id, or a real id
 // from a different tenant — RLS already prevents that read from
@@ -363,6 +372,22 @@ async function uploadTemplate(client, { collegeId, fileName, mimeType, fileBuffe
   return uploadDocument(
     client,
     { collegeId, studentId: null, docType: TEMPLATE_DOC_TYPE, fileName, mimeType, fileBuffer },
+    { actorUserId },
+  );
+}
+
+// Thin wrapper over uploadDocument fixing docType/studentId to the
+// chat-attachment convention above — same "delegates to the one real
+// write path" shape uploadTemplate already establishes. The route
+// layer (routes/documents.js) is responsible for the real,
+// non-trusting validation (malformed-base64 rejection, decoded-size
+// cap, real-content mime sniffing) before fileBuffer/mimeType ever
+// reach here — this function trusts its caller the same way
+// uploadDocument itself trusts every other caller in this file.
+async function uploadChatAttachment(client, { collegeId, fileName, mimeType, fileBuffer }, { actorUserId } = {}) {
+  return uploadDocument(
+    client,
+    { collegeId, studentId: null, docType: CHAT_ATTACHMENT_DOC_TYPE, fileName, mimeType, fileBuffer },
     { actorUserId },
   );
 }
@@ -1196,11 +1221,13 @@ module.exports = {
   readDraftAdmissionDocument,
   discardDraftAdmissionDocument,
   TEMPLATE_DOC_TYPE,
+  CHAT_ATTACHMENT_DOC_TYPE,
   AADHAAR_DOC_TYPE,
   PUBLICATION_STATUSES,
   STAFF_TIER_ROLES,
   uploadDocument,
   uploadTemplate,
+  uploadChatAttachment,
   uploadInstitutionalDocument,
   uploadPersonalDocument,
   mergeTemplate: templateMerger.mergeTemplate,

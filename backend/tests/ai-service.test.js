@@ -31,6 +31,9 @@ const aiActorContext = require('../src/services/aiActorContext');
 const financeService = require('../src/services/financeService');
 const academicService = require('../src/services/academicService');
 const collegeProfileService = require('../src/services/collegeProfileService');
+const documentService = require('../src/services/documentService');
+const configurationService = require('../src/services/configurationService');
+const claudeAdapter = require('../src/services/aiProviders/claude');
 
 function fakeClient() {
   const queries = [];
@@ -759,13 +762,25 @@ test('aiPromptSafetyLayer.renderForLlm: frames the sanitized context + question 
 
 // --- llmProvider (mocked fetch — no real network call, no NIM quota spent) ---
 
+// Every caller of this helper assumes the global fallback provider (no
+// college_ai_config row, exercised via fakeClient's default {rows:[]})
+// resolves to nim — that's what toggling config.nim.apiKey is FOR.
+// Force config.defaultAiProvider to 'nim' for the callback's duration
+// too, regardless of a real dev environment's own DEFAULT_AI_PROVIDER
+// (e.g. a local .env.local.sh set to 'gemini' to run the dev server
+// against a real key) — a real Gemini call escaping into these tests
+// was caught live in ai.test.js: toggling config.nim.apiKey had no
+// effect once the fallback resolved to gemini instead.
 function withNimConfig(apiKey, fn) {
   const original = { ...config.nim };
+  const originalDefaultAiProvider = config.defaultAiProvider;
   config.nim.apiKey = apiKey;
+  config.defaultAiProvider = 'nim';
   return fn().finally(() => {
     config.nim.apiKey = original.apiKey;
     config.nim.baseUrl = original.baseUrl;
     config.nim.model = original.model;
+    config.defaultAiProvider = originalDefaultAiProvider;
   });
 }
 
@@ -2234,4 +2249,142 @@ test('academic_year_complete: humanOnly — excluded from the LLM function-calli
   assert.equal(completeMock.mock.calls[0].arguments[1], 'ay-1');
   resolveMock.mock.restore();
   completeMock.mock.restore();
+});
+
+// --- Real chat-image attachment support: resolveImageAttachments + askAgent wiring ---
+
+const CHAT_DOC_TYPE = documentService.CHAT_ATTACHMENT_DOC_TYPE;
+
+function fakeImageDownload(overrides = {}) {
+  return {
+    document: {
+      doc_type: CHAT_DOC_TYPE,
+      uploaded_by_user_id: 'u1',
+      mime_type: 'image/png',
+      ...overrides,
+    },
+    buffer: Buffer.from('fake-image-bytes'),
+  };
+}
+
+test('resolveImageAttachments: no attachmentIds -> returns [] without touching the DB', async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const images = await aiService.resolveImageAttachments(client, undefined, identityContext);
+  assert.deepEqual(images, []);
+  assert.deepEqual(client.queries, []);
+});
+
+test('resolveImageAttachments: more than 10 ids throws AiServiceValidationError', async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const ids = Array.from({ length: 11 }, (_, i) => `att-${i}`);
+  await assert.rejects(
+    () => aiService.resolveImageAttachments(client, ids, identityContext),
+    aiService.AiServiceValidationError,
+  );
+});
+
+test('resolveImageAttachments: a valid own-upload image id resolves to {mimeType, base64}', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async () => fakeImageDownload());
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const images = await aiService.resolveImageAttachments(client, ['att-1'], identityContext);
+  assert.deepEqual(images, [{ mimeType: 'image/png', base64: Buffer.from('fake-image-bytes').toString('base64') }]);
+});
+
+test('resolveImageAttachments: another user\'s attachment id in the same college is rejected — never reaches the LLM', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async () => fakeImageDownload({ uploaded_by_user_id: 'someone-else' }));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  await assert.rejects(
+    () => aiService.resolveImageAttachments(client, ['att-1'], identityContext),
+    aiService.AiServiceValidationError,
+  );
+});
+
+test('resolveImageAttachments: a cross-tenant id (RLS hides the row -> downloadDocument returns null) is rejected', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async () => null);
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  await assert.rejects(
+    () => aiService.resolveImageAttachments(client, ['att-1'], identityContext),
+    aiService.AiServiceValidationError,
+  );
+});
+
+test('resolveImageAttachments: a non-chat-attachment doc_type (e.g. a real institutional document) is rejected', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async () => fakeImageDownload({ doc_type: 'institutional' }));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  await assert.rejects(
+    () => aiService.resolveImageAttachments(client, ['att-1'], identityContext),
+    aiService.AiServiceValidationError,
+  );
+});
+
+test('resolveImageAttachments: a non-image mime_type is rejected', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async () => fakeImageDownload({ mime_type: 'application/pdf' }));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  await assert.rejects(
+    () => aiService.resolveImageAttachments(client, ['att-1'], identityContext),
+    aiService.AiServiceValidationError,
+  );
+});
+
+test('aiService.askAgent: provider without vision support (nim) -> imageAnalysisUnavailable:true, imageCount:0, and the outbound decision call carries NO image content (never a call pretending to have seen it)', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async () => fakeImageDownload());
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  let capturedBody;
+
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async (url, options) => {
+      capturedBody = JSON.parse(options.body);
+      return mockAnswerResponse('I cannot see the attached image.');
+    }, async () => {
+      const result = await aiService.askAgent(
+        client,
+        'What is the total mark shown in this image?',
+        { identityContext, attachmentIds: ['att-1'] },
+      );
+      assert.equal(result.imageAnalysisUnavailable, true);
+      assert.equal(result.imageCount, 0);
+    });
+  });
+
+  const userMessage = capturedBody.messages.find((m) => m.role === 'user');
+  assert.equal(typeof userMessage.content, 'string', 'no image content block ever reached the provider');
+  const systemMessage = capturedBody.messages.find((m) => m.role === 'system');
+  assert.match(systemMessage.content, /cannot.*view images/);
+});
+
+test('aiService.askAgent: vision-capable provider -> the image actually reaches the provider as the real content block, and imageCount reflects what was sent', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async () => fakeImageDownload());
+  t.mock.method(configurationService, 'getAiConfig', async () => ({
+    provider: 'claude', adapter: claudeAdapter, config: { apiKey: 'k', model: 'claude-x' },
+  }));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  let capturedBody;
+
+  await withMockFetch(async (url, options) => {
+    capturedBody = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ content: [{ type: 'text', text: 'The mark shown is 87.' }] }) };
+  }, async () => {
+    const result = await aiService.askAgent(
+      client,
+      'What is the total mark shown in this image?',
+      { identityContext, attachmentIds: ['att-1'] },
+    );
+    assert.equal(result.imageCount, 1);
+    assert.equal(result.imageAnalysisUnavailable, false);
+    assert.equal(result.answer, 'The mark shown is 87.');
+  });
+
+  const userMessage = capturedBody.messages.find((m) => m.role === 'user');
+  assert.ok(Array.isArray(userMessage.content), 'the real vendor multipart content block reached the provider');
+  assert.equal(userMessage.content[0].type, 'image');
+  assert.equal(userMessage.content[0].source.media_type, 'image/png');
 });

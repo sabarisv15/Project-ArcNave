@@ -335,6 +335,15 @@ export function ChatMessage({ message, selected = false, onSelect, onEdit }) {
               {message.closing && (
                 <p className="mt-[6px] mb-0 text-[14px] leading-[1.48] text-ink-muted">{message.closing}</p>
               )}
+              {/* Deterministic backstop (aiService.askAgent's own comment) —
+                  fires whenever an attached image existed but was never
+                  actually shown to the configured AI model, independent of
+                  whether the answer text above happens to mention it. */}
+              {message.imageAnalysisUnavailable && (
+                <p className="mt-[6px] mb-0 text-[13px] leading-[1.4] text-ink-faint">
+                  The AI model configured for this college can't view images, so the attached photo was not analyzed.
+                </p>
+              )}
             </div>
           )}
           {!message.generating && <ResponseActions message={message} />}

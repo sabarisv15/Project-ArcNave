@@ -18,12 +18,28 @@ const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 // this codebase controlled.
 const MAX_OUTPUT_TOKENS = 1024;
 
+const supportsVision = true;
+
 function isConfigured(cfg) {
   return Boolean(cfg && cfg.apiKey);
 }
 
 function baseUrl(cfg) {
   return cfg.baseUrl || DEFAULT_BASE_URL;
+}
+
+// Builds the user turn's `parts` array — text only when no images are
+// attached (unchanged shape every existing caller/test expects), or
+// Gemini's real inline_data image-part shape (images first, text last)
+// when images are present.
+function buildUserParts(userPrompt, images) {
+  if (!images || images.length === 0) {
+    return [{ text: userPrompt }];
+  }
+  return [
+    ...images.map((img) => ({ inline_data: { mime_type: img.mimeType, data: img.base64 } })),
+    { text: userPrompt },
+  ];
 }
 
 async function postJson(cfg, path, body) {
@@ -61,14 +77,14 @@ async function postJson(cfg, path, body) {
 // candidatesTokenCount), a different field name and shape from every
 // other adapter's `usage` — a real vendor difference, not an
 // inconsistency in this codebase.
-async function completeWithMeta(cfg, { systemPrompt, userPrompt }) {
+async function completeWithMeta(cfg, { systemPrompt, userPrompt, images } = {}) {
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
 
   const payload = await postJson(cfg, `/models/${cfg.model}:generateContent`, {
     systemInstruction: { parts: [{ text: systemPrompt }] },
-    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+    contents: [{ role: 'user', parts: buildUserParts(userPrompt, images) }],
     generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS },
   });
 
@@ -98,7 +114,7 @@ async function complete(cfg, prompts) {
 // compatible adapters — a real, structural difference between vendors
 // (matches round 2's own note that Gemini's caching API is similarly
 // structurally different, not just a details difference).
-async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
+async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, onDelta) {
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -112,7 +128,7 @@ async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
         headers: { 'content-type': 'application/json', 'x-goog-api-key': cfg.apiKey },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: systemPrompt }] },
-          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+          contents: [{ role: 'user', parts: buildUserParts(userPrompt, images) }],
           generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS },
         }),
         signal: controller.signal,
@@ -148,19 +164,44 @@ async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
   return full;
 }
 
-async function completeWithTools(cfg, { systemPrompt, userPrompt, tools }) {
+// Gemini's function-calling `parameters` field is a restricted OpenAPI
+// 3.0 Schema subset, not full JSON Schema — `additionalProperties` is
+// real JSON Schema (every tool in aiToolRegistry.js sets it) but
+// Gemini's API rejects it outright ("Unknown name 'additionalProperties'
+// ... Cannot find field"), a real 400 caught live against the actual
+// endpoint, not a guessed vendor limitation. Stripped recursively (not
+// just at the top level) since a tool's params can nest an object
+// schema inside `properties`/`items`. Claude/OpenAI's own tool schemas
+// accept `additionalProperties` unchanged — this sanitization is
+// Gemini-adapter-local, not a change to the shared tool registry.
+function stripAdditionalProperties(schema) {
+  if (Array.isArray(schema)) {
+    return schema.map(stripAdditionalProperties);
+  }
+  if (schema && typeof schema === 'object') {
+    const { additionalProperties, ...rest } = schema;
+    const cleaned = {};
+    for (const [key, value] of Object.entries(rest)) {
+      cleaned[key] = stripAdditionalProperties(value);
+    }
+    return cleaned;
+  }
+  return schema;
+}
+
+async function completeWithTools(cfg, { systemPrompt, userPrompt, tools, images } = {}) {
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
 
   const payload = await postJson(cfg, `/models/${cfg.model}:generateContent`, {
     systemInstruction: { parts: [{ text: systemPrompt }] },
-    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+    contents: [{ role: 'user', parts: buildUserParts(userPrompt, images) }],
     tools: [{
       functionDeclarations: tools.map((tool) => ({
         name: tool.name,
         description: tool.description,
-        parameters: tool.params,
+        parameters: stripAdditionalProperties(tool.params),
       })),
     }],
     generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS },
@@ -215,6 +256,7 @@ async function embed(cfg, texts, { inputType } = {}) {
 
 module.exports = {
   name: 'gemini',
+  supportsVision,
   isConfigured,
   complete,
   completeWithMeta,

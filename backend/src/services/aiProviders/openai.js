@@ -1,34 +1,40 @@
 'use strict';
 
-// NVIDIA NIM adapter — an OpenAI-compatible /chat/completions +
-// /embeddings API. This is the exact logic services/llmProvider.js
-// used to own directly against the global config.nim.*; moved here
-// unchanged except that every value it needs (apiKey, baseUrl, model,
-// embeddingModel) now comes from the `cfg` argument each function
-// takes, so the same code serves both a per-college row and the
-// global-default fallback (ConfigurationService.getAiConfig builds
-// `cfg` from config.nim.* when no college_ai_config row exists).
+// OpenAI adapter (Chat Completions API). OpenAI's own API IS the
+// OpenAI-compatible convention nim.js/selfHosted.js already speak —
+// this is the closest sibling to copy the request/response shape from,
+// pointed at the real vendor endpoint with a required apiKey (like
+// claude.js/nim.js) instead of a college-supplied baseUrl.
+//
+// NOT live-verified against a real OpenAI API key (none exists in this
+// environment) — the shape is the documented OpenAI Chat Completions/
+// Embeddings convention, not fabricated, but unlike nim.js this hasn't
+// been exercised against a live endpoint.
+//
+// Vision (P0-of-this-pass): supportsVision is exported explicitly so
+// aiService checks a capability flag, never a hardcoded provider-name
+// string — see completeWithImages' own comment for the real OpenAI
+// image_url content-block shape this adapter builds when images are
+// present.
 
 const { LlmNotConfiguredError, LlmRequestError } = require('./errors');
 const { withRetry } = require('./retry');
 const { iterateSseLines } = require('./sse');
 
 const REQUEST_TIMEOUT_MS = 30000;
-const EMBEDDING_DIMENSIONS = 1024;
-// Matches claude.js's own MAX_TOKENS — this adapter previously sent no
-// max_tokens at all, so output length was fully unbounded (relying
-// entirely on the OpenAI-compatible server's own default) with no cost
-// ceiling this codebase controlled.
+const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
+// Matches every other adapter's own MAX_TOKENS — an explicit cost
+// ceiling this codebase controls, never left to the vendor's default.
 const MAX_TOKENS = 1024;
 
-// No vision-capable model is configured for NIM in this codebase
-// (llama-3.1-8b-instruct, text-only) — aiService checks this flag,
-// never a hardcoded provider-name string, before ever attempting to
-// pass image content here.
-const supportsVision = false;
+const supportsVision = true;
 
 function isConfigured(cfg) {
   return Boolean(cfg && cfg.apiKey);
+}
+
+function baseUrl(cfg) {
+  return cfg.baseUrl || DEFAULT_BASE_URL;
 }
 
 async function postJson(cfg, path, body) {
@@ -36,7 +42,7 @@ async function postJson(cfg, path, body) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      return await fetch(`${cfg.baseUrl}${path}`, {
+      return await fetch(`${baseUrl(cfg)}${path}`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -46,7 +52,7 @@ async function postJson(cfg, path, body) {
         signal: controller.signal,
       });
     } catch (err) {
-      throw new LlmRequestError(`request to LLM provider failed: ${err.message}`);
+      throw new LlmRequestError(`request to OpenAI failed: ${err.message}`);
     } finally {
       clearTimeout(timeout);
     }
@@ -54,22 +60,40 @@ async function postJson(cfg, path, body) {
 
   if (!response.ok) {
     const bodyText = await response.text().catch(() => '');
-    throw new LlmRequestError(`LLM provider returned ${response.status}: ${bodyText.slice(0, 500)}`);
+    throw new LlmRequestError(`OpenAI returned ${response.status}: ${bodyText.slice(0, 500)}`);
   }
 
   try {
     return await response.json();
   } catch (err) {
-    throw new LlmRequestError(`LLM provider returned a non-JSON response: ${err.message}`);
+    throw new LlmRequestError(`OpenAI returned a non-JSON response: ${err.message}`);
   }
 }
 
-// Token/cost telemetry (P1.1) — complete() itself stays byte-for-byte
-// unchanged (every existing caller/test expects a plain string back);
-// completeWithMeta is the one place that also reads the raw response's
-// own `usage` block, so aiService's completeMaybeStreaming can log real
-// token counts without any adapter needing a second request shape.
-async function completeWithMeta(cfg, { systemPrompt, userPrompt }) {
+// Builds the user message's `content` — a plain string when no images
+// are attached (unchanged shape every existing caller/test expects),
+// or OpenAI's real multipart vision shape (an array of {type:'text'}/
+// {type:'image_url'} blocks) when images are present. Real OpenAI
+// vision convention: a base64 image is passed as a data: URI inside
+// image_url.url, not a separate top-level field.
+function buildUserContent(userPrompt, images) {
+  if (!images || images.length === 0) {
+    return userPrompt;
+  }
+  return [
+    { type: 'text', text: userPrompt },
+    ...images.map((img) => ({
+      type: 'image_url',
+      image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
+    })),
+  ];
+}
+
+// Token/cost telemetry (P1.1) — see nim.js's own comment for the
+// shared reasoning. Same OpenAI-compatible `usage` block (prompt_tokens/
+// completion_tokens) nim.js/selfHosted.js already read, since this
+// adapter targets the real vendor those two imitate.
+async function completeWithMeta(cfg, { systemPrompt, userPrompt, images } = {}) {
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -78,7 +102,7 @@ async function completeWithMeta(cfg, { systemPrompt, userPrompt }) {
     model: cfg.model,
     messages: [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
+      { role: 'user', content: buildUserContent(userPrompt, images) },
     ],
     max_tokens: MAX_TOKENS,
     temperature: 0.2,
@@ -87,7 +111,7 @@ async function completeWithMeta(cfg, { systemPrompt, userPrompt }) {
   const choice = payload && Array.isArray(payload.choices) ? payload.choices[0] : null;
   const answer = choice && choice.message ? choice.message.content : undefined;
   if (typeof answer !== 'string') {
-    throw new LlmRequestError('LLM provider response did not contain choices[0].message.content');
+    throw new LlmRequestError('OpenAI response did not contain choices[0].message.content');
   }
 
   const usage = payload && payload.usage
@@ -101,18 +125,12 @@ async function complete(cfg, prompts) {
   return text;
 }
 
-// Streaming variant of complete() (P0.5) — only for the final natural-
-// language answer, never the tool-select call (that needs the whole
-// structured decision before anything downstream can run, so there is
-// nothing meaningful to stream). `onDelta` is called once per text
-// chunk as it arrives; the full concatenated text is still returned at
-// the end so a caller that doesn't care about incremental output can
-// treat this exactly like complete(). Retries (withRetry) only ever
-// apply to the initial connection attempt, before any chunk has been
-// read — once streaming starts, a transient failure surfaces as
-// whatever's already been streamed plus a thrown error, never a silent
-// retry after partial output already reached the caller.
-async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
+// Streaming variant of complete() (P0.5) — see nim.js's own comment
+// for the shared reasoning (only the final answer streams, retries
+// only cover the initial connection). Same OpenAI-compatible SSE shape
+// nim.js/selfHosted.js speak, since this adapter targets the real
+// vendor those two imitate.
+async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, onDelta) {
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -121,7 +139,7 @@ async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      return await fetch(`${cfg.baseUrl}/chat/completions`, {
+      return await fetch(`${baseUrl(cfg)}/chat/completions`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -131,7 +149,7 @@ async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
           model: cfg.model,
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
+            { role: 'user', content: buildUserContent(userPrompt, images) },
           ],
           max_tokens: MAX_TOKENS,
           temperature: 0.2,
@@ -140,7 +158,7 @@ async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
         signal: controller.signal,
       });
     } catch (err) {
-      throw new LlmRequestError(`request to LLM provider failed: ${err.message}`);
+      throw new LlmRequestError(`request to OpenAI failed: ${err.message}`);
     } finally {
       clearTimeout(timeout);
     }
@@ -148,7 +166,7 @@ async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
 
   if (!response.ok) {
     const bodyText = await response.text().catch(() => '');
-    throw new LlmRequestError(`LLM provider returned ${response.status}: ${bodyText.slice(0, 500)}`);
+    throw new LlmRequestError(`OpenAI returned ${response.status}: ${bodyText.slice(0, 500)}`);
   }
 
   let full = '';
@@ -169,7 +187,7 @@ async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
   return full;
 }
 
-async function completeWithTools(cfg, { systemPrompt, userPrompt, tools }) {
+async function completeWithTools(cfg, { systemPrompt, userPrompt, tools, images } = {}) {
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -178,15 +196,11 @@ async function completeWithTools(cfg, { systemPrompt, userPrompt, tools }) {
     model: cfg.model,
     messages: [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
+      { role: 'user', content: buildUserContent(userPrompt, images) },
     ],
     tools: tools.map((tool) => ({
       type: 'function',
-      function: {
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.params,
-      },
+      function: { name: tool.name, description: tool.description, parameters: tool.params },
     })),
     tool_choice: 'auto',
     max_tokens: MAX_TOKENS,
@@ -196,7 +210,7 @@ async function completeWithTools(cfg, { systemPrompt, userPrompt, tools }) {
   const choice = payload && Array.isArray(payload.choices) ? payload.choices[0] : null;
   const message = choice ? choice.message : null;
   if (!message) {
-    throw new LlmRequestError('LLM provider response did not contain choices[0].message');
+    throw new LlmRequestError('OpenAI response did not contain choices[0].message');
   }
 
   const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
@@ -206,38 +220,36 @@ async function completeWithTools(cfg, { systemPrompt, userPrompt, tools }) {
     try {
       toolArguments = fn.arguments ? JSON.parse(fn.arguments) : {};
     } catch (err) {
-      throw new LlmRequestError(`LLM tool call arguments were not valid JSON: ${err.message}`);
+      throw new LlmRequestError(`OpenAI tool call arguments were not valid JSON: ${err.message}`);
     }
     return { type: 'tool_call', toolName: fn.name, arguments: toolArguments };
   }
 
   if (typeof message.content !== 'string') {
-    throw new LlmRequestError('LLM provider response contained neither a tool call nor message content');
+    throw new LlmRequestError('OpenAI response contained neither a tool call nor message content');
   }
   return { type: 'answer', text: message.content };
 }
 
-async function embed(cfg, texts, { inputType } = {}) {
+// OpenAI's real embeddings endpoint has no input_type/asymmetric
+// query-vs-passage concept (unlike nim.js's strict requirement) — same
+// permissive shape as selfHosted.embed(), not fabricated leniency.
+async function embed(cfg, texts) {
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
   if (!Array.isArray(texts) || texts.length === 0) {
     throw new LlmRequestError('embed() requires a non-empty array of texts');
   }
-  if (inputType !== 'query' && inputType !== 'passage') {
-    throw new LlmRequestError(`embed() inputType must be 'query' or 'passage', got ${JSON.stringify(inputType)}`);
-  }
 
   const payload = await postJson(cfg, '/embeddings', {
     model: cfg.embeddingModel,
     input: texts,
-    input_type: inputType,
-    truncate: 'END',
   });
 
   const data = Array.isArray(payload && payload.data) ? payload.data : null;
   if (!data || data.length !== texts.length) {
-    throw new LlmRequestError('LLM embeddings provider response did not contain one embedding per input text');
+    throw new LlmRequestError('OpenAI embeddings response did not contain one embedding per input text');
   }
 
   return data
@@ -247,8 +259,7 @@ async function embed(cfg, texts, { inputType } = {}) {
 }
 
 module.exports = {
-  name: 'nim',
-  EMBEDDING_DIMENSIONS,
+  name: 'openai',
   supportsVision,
   isConfigured,
   complete,
@@ -256,9 +267,4 @@ module.exports = {
   completeStream,
   completeWithTools,
   embed,
-  // Back-compat aliases — existing tests/callers reference these off
-  // the module directly (same identity as ./errors', re-exported here
-  // rather than duplicated).
-  LlmNotConfiguredError,
-  LlmRequestError,
 };

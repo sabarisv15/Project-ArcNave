@@ -13,6 +13,7 @@ const nimAdapter = require('../src/services/aiProviders/nim');
 const selfHostedAdapter = require('../src/services/aiProviders/selfHosted');
 const claudeAdapter = require('../src/services/aiProviders/claude');
 const geminiAdapter = require('../src/services/aiProviders/gemini');
+const openaiAdapter = require('../src/services/aiProviders/openai');
 const { LlmRequestError, LlmNotConfiguredError } = require('../src/services/aiProviders/errors');
 
 function fakeSseResponse(lines, { ok = true, status } = {}) {
@@ -63,6 +64,7 @@ test('iterateSseLines: non-data lines (event:, blank lines) are ignored', async 
 for (const [label, adapter, cfg] of [
   ['nim', nimAdapter, { apiKey: 'k', baseUrl: 'https://nim.example', model: 'test-model' }],
   ['selfHosted', selfHostedAdapter, { baseUrl: 'https://self-hosted.example', model: 'test-model' }],
+  ['openai', openaiAdapter, { apiKey: 'k', model: 'test-model' }],
 ]) {
   test(`${label} adapter.completeStream: streams each delta and returns the full concatenated text`, async () => {
     const deltas = [];

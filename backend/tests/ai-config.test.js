@@ -116,7 +116,16 @@ test('ai-config API', async (t) => {
   const collegeA = await seedTenant(adminPool, 'a');
   const collegeB = await seedTenant(adminPool, 'b');
 
+  // This file asserts a no-row college's provider reads back as 'nim'
+  // (the pre-existing global default) — force it regardless of a real
+  // dev/deployment environment's own DEFAULT_AI_PROVIDER override (e.g.
+  // a local .env.local.sh set to 'gemini' to run the dev server against
+  // a real key). Same fix as ai.test.js/ai-service.test.js.
+  const originalDefaultAiProvider = globalConfig.defaultAiProvider;
+  globalConfig.defaultAiProvider = 'nim';
+
   t.after(async () => {
+    globalConfig.defaultAiProvider = originalDefaultAiProvider;
     await stopServer(server);
     await cleanupTenant(adminPool, collegeA);
     await cleanupTenant(adminPool, collegeB);

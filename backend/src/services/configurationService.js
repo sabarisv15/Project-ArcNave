@@ -101,14 +101,12 @@ async function setConfiguration(client, { collegeId, category, configuration, ex
 class AiConfigValidationError extends Error {}
 
 // No per-college row is not an error — it means this college hasn't
-// opted into its own provider yet, and still gets the same global NIM
-// config every college used before college_ai_config existed. This
-// default is deliberately the literal 'nim' + config.nim.* (this
-// codebase's own pre-existing global behavior), never silently
-// changed, so a college with no row sees zero behavior change from
-// before this table existed.
-const DEFAULT_AI_PROVIDER = 'nim';
-
+// opted into its own provider yet, and still gets whichever provider
+// config.defaultAiProvider names (env DEFAULT_AI_PROVIDER, defaults to
+// 'nim' — this codebase's own pre-existing global behavior, never
+// silently changed for a deployment that hasn't set that var, so a
+// college with no row sees zero behavior change from before this table
+// existed).
 function globalNimConfig() {
   return {
     apiKey: globalConfig.nim.apiKey,
@@ -119,16 +117,45 @@ function globalNimConfig() {
   };
 }
 
+function globalGeminiConfig() {
+  return {
+    apiKey: globalConfig.gemini.apiKey,
+    baseUrl: globalConfig.gemini.baseUrl,
+    model: globalConfig.gemini.model,
+    embeddingModel: globalConfig.gemini.embeddingModel,
+    fastModel: globalConfig.gemini.fastModel,
+  };
+}
+
+// Only providers with a real env-backed global block (config.js) can
+// be a global default — claude/self_hosted/openai are per-college-only
+// by design (no global fallback makes sense for a self-hosted baseUrl
+// or a provider this codebase never shipped a global block for).
+const GLOBAL_CONFIG_BUILDERS = {
+  nim: globalNimConfig,
+  gemini: globalGeminiConfig,
+};
+
+// An unrecognized config.defaultAiProvider (typo, or a provider with
+// no global block) falls back to nim rather than throwing at request
+// time — same "never a startup failure over an optional value" caution
+// every other optional global config in this codebase already follows.
+function resolveDefaultProvider() {
+  const configured = globalConfig.defaultAiProvider;
+  return GLOBAL_CONFIG_BUILDERS[configured] ? configured : 'nim';
+}
+
 // Returns { provider, config, adapter } — config is plain, decrypted
 // (apiKey already usable), never a caller's concern to decrypt itself.
 // adapter is the real module from aiProviders/ (nim.js/gemini.js/
-// claude.js/selfHosted.js), already resolved so callers never branch
-// on provider name themselves.
+// claude.js/selfHosted.js/openai.js), already resolved so callers
+// never branch on provider name themselves.
 async function getAiConfig(client, collegeId) {
   const row = await aiConfigRepository.findByCollegeId(client, collegeId);
 
   if (row === null) {
-    return { provider: DEFAULT_AI_PROVIDER, config: globalNimConfig(), adapter: aiProviders.getAdapter(DEFAULT_AI_PROVIDER) };
+    const provider = resolveDefaultProvider();
+    return { provider, config: GLOBAL_CONFIG_BUILDERS[provider](), adapter: aiProviders.getAdapter(provider) };
   }
 
   const config = {

@@ -91,4 +91,15 @@ export const aiApi = {
   executeWorkflow: (body) => api.post('/ai/workflow/execute', body),
   /** POST /ai/tools/:name/invoke — a single confirmed tool call (L3/bulk-guard confirmation). */
   invokeTool: (name, body) => api.post(`/ai/tools/${encodeURIComponent(name)}/invoke`, body),
+  /**
+   * POST /documents/chat-attachments — the real upload behind the composer's
+   * image attachments (useComposerAttachments.js's own real runUpload).
+   * Routed through DocumentService on the backend (RS-ASM-005), not a
+   * separate chat-only storage path. Returns { id, mime_type, size_bytes } —
+   * `id` is what later gets sent as an `attachment_ids` entry to
+   * /ai/ask(/stream), never the composer's own local `att-...` id.
+   */
+  uploadAttachment: ({ fileBase64, fileName, mimeType }) => api.post('/documents/chat-attachments', {
+    file_base64: fileBase64, file_name: fileName, mime_type: mimeType,
+  }),
 };

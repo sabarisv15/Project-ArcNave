@@ -36,6 +36,50 @@ const REVIEW_BODY_FIELDS = [
   ['remarks', 'remarks'],
 ];
 
+// Mirrors frontend/src/lib/composerAttachments.js's own
+// MAX_ATTACHMENT_BYTES — checked against the DECODED buffer below, not
+// the base64 string's own (~33% larger) length.
+const MAX_CHAT_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+// Node's Buffer.from(str, 'base64') silently drops invalid characters
+// rather than throwing — a malformed payload decodes "successfully"
+// into garbage instead of failing loudly. Round-tripping back to
+// base64 and comparing (padding-insensitive) is the real way to catch
+// that, since a corrupted input can never re-encode to itself.
+function decodeStrictBase64(value) {
+  const buffer = Buffer.from(value, 'base64');
+  const roundTripped = buffer.toString('base64').replace(/=+$/, '');
+  if (roundTripped !== value.replace(/=+$/, '')) {
+    return null;
+  }
+  return buffer;
+}
+
+// Real file-content sniffing (magic bytes) — never trusts a caller's
+// declared mime_type. Covers exactly the 4 types the composer's own
+// ACCEPTED_IMAGE_TYPES accepts (composerAttachments.js): PNG, JPEG,
+// GIF, WEBP. Returns null (not a fallback/guess) for anything else, so
+// a mislabeled or spoofed upload is rejected rather than silently
+// stored under a wrong or fabricated type.
+function sniffImageMimeType(buffer) {
+  if (buffer.length >= 4 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+    return 'image/png';
+  }
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (buffer.length >= 6) {
+    const header = buffer.toString('ascii', 0, 6);
+    if (header === 'GIF87a' || header === 'GIF89a') {
+      return 'image/gif';
+    }
+  }
+  if (buffer.length >= 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') {
+    return 'image/webp';
+  }
+  return null;
+}
+
 function bodyToFields(body, fieldMap) {
   const fields = {};
   for (const [snakeKey, camelKey] of fieldMap) {
@@ -360,6 +404,65 @@ function createDocumentsRouter() {
         { actorUserId: identityService.resolveActorUserId(req.capabilities) },
       );
       res.status(201).json(document);
+    } catch (err) {
+      if (mapDocumentServiceError(err, res)) return;
+      throw err;
+    }
+  }));
+
+  // An image the current user pasted/dragged into an AI chat composer
+  // (frontend/src/hooks/useComposerAttachments.js's real upload, not
+  // its own client-side courtesy validation). requireAuth, not a
+  // documents.* permission gate — any authenticated user uploads their
+  // own chat image, same reasoning POST /documents/personal above
+  // uses. Goes through DocumentService (documentService.
+  // uploadChatAttachment, RS-ASM-005 — "DocumentService is the sole
+  // owner of every file in the system") like every other upload on
+  // this router, tagged doc_type='ai_chat_attachment' so it never
+  // surfaces in the regular student/institutional document lists.
+  // Placed under the '/documents' path prefix specifically so it falls
+  // under tenantApp.js's path-scoped express.json({limit:'15mb'}) —
+  // a route under a different prefix would silently hit the app-wide
+  // 100kb default parser (the exact bug already fixed once for the
+  // rest of this router's uploads).
+  router.post('/documents/chat-attachments', requireAuth, asyncHandler(async (req, res) => {
+    if (!requireResolvedTenant(req, res)) return;
+    const { file_base64: fileBase64, file_name: fileName } = req.body || {};
+    if (typeof fileBase64 !== 'string' || fileBase64.length === 0) {
+      res.status(400).json({ detail: 'file_base64 is required' });
+      return;
+    }
+
+    const fileBuffer = decodeStrictBase64(fileBase64);
+    if (!fileBuffer) {
+      res.status(400).json({ detail: 'file_base64 is not valid base64' });
+      return;
+    }
+    if (fileBuffer.length > MAX_CHAT_ATTACHMENT_BYTES) {
+      res.status(400).json({ detail: `attachment exceeds the ${MAX_CHAT_ATTACHMENT_BYTES}-byte limit` });
+      return;
+    }
+    // The client's declared mime_type is never trusted (composerAttachments.js's own
+    // "server still authorizes and re-validates every upload" comment) — the sniffed
+    // type from the real bytes is what's stored and later sent to a vision provider.
+    const sniffedMimeType = sniffImageMimeType(fileBuffer);
+    if (!sniffedMimeType) {
+      res.status(400).json({ detail: 'file content is not a supported image type (png, jpeg, gif, webp)' });
+      return;
+    }
+
+    try {
+      const document = await documentService.uploadChatAttachment(
+        req.dbClient,
+        {
+          collegeId: req.collegeId,
+          fileName: typeof fileName === 'string' && fileName ? fileName : 'attachment',
+          mimeType: sniffedMimeType,
+          fileBuffer,
+        },
+        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+      );
+      res.status(201).json({ id: document.id, mime_type: document.mime_type, size_bytes: document.file_size_bytes });
     } catch (err) {
       if (mapDocumentServiceError(err, res)) return;
       throw err;

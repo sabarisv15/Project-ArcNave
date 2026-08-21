@@ -16,6 +16,13 @@ const configurationService = require('../src/services/configurationService');
 test('getAiConfig: no per-college row falls back to the global nim default, unchanged from pre-existing behavior', async (t) => {
   const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async () => null);
   t.after(() => findMock.mock.restore());
+  // This test is specifically about the pre-existing nim default — force
+  // it regardless of a real dev/deployment environment's own
+  // DEFAULT_AI_PROVIDER override (e.g. a local .env.local.sh set to
+  // 'gemini' to run the dev server against a real key).
+  const originalDefaultAiProvider = globalConfig.defaultAiProvider;
+  globalConfig.defaultAiProvider = 'nim';
+  t.after(() => { globalConfig.defaultAiProvider = originalDefaultAiProvider; });
 
   const result = await configurationService.getAiConfig({}, 'college-with-no-row');
 
@@ -47,6 +54,11 @@ test('getAiConfig: switching one college to a different provider never touches a
   };
   const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async (client, collegeId) => rows[collegeId] || null);
   t.after(() => findMock.mock.restore());
+  // See the previous test's own comment — this test asserts college-b
+  // falls back to nim specifically.
+  const originalDefaultAiProvider = globalConfig.defaultAiProvider;
+  globalConfig.defaultAiProvider = 'nim';
+  t.after(() => { globalConfig.defaultAiProvider = originalDefaultAiProvider; });
 
   const a = await configurationService.getAiConfig({}, 'college-a');
   const b = await configurationService.getAiConfig({}, 'college-b');
@@ -55,6 +67,41 @@ test('getAiConfig: switching one college to a different provider never touches a
   assert.equal(a.config.apiKey, 'a-key');
   assert.equal(b.provider, 'nim');
   assert.equal(b.config.apiKey, globalConfig.nim.apiKey);
+});
+
+test('getAiConfig: DEFAULT_AI_PROVIDER=gemini routes a no-row college to the global gemini config instead of nim', async (t) => {
+  const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async () => null);
+  t.after(() => findMock.mock.restore());
+  const originalDefaultAiProvider = globalConfig.defaultAiProvider;
+  const originalGeminiApiKey = globalConfig.gemini.apiKey;
+  const originalGeminiModel = globalConfig.gemini.model;
+  globalConfig.defaultAiProvider = 'gemini';
+  globalConfig.gemini.apiKey = 'gemini-real-key';
+  globalConfig.gemini.model = 'gemini-3.7-flash';
+  t.after(() => {
+    globalConfig.defaultAiProvider = originalDefaultAiProvider;
+    globalConfig.gemini.apiKey = originalGeminiApiKey;
+    globalConfig.gemini.model = originalGeminiModel;
+  });
+
+  const result = await configurationService.getAiConfig({}, 'college-with-no-row');
+
+  assert.equal(result.provider, 'gemini');
+  assert.equal(result.adapter.name, 'gemini');
+  assert.equal(result.config.apiKey, 'gemini-real-key');
+  assert.equal(result.config.model, 'gemini-3.7-flash');
+});
+
+test('getAiConfig: an unrecognized DEFAULT_AI_PROVIDER (typo, or a provider with no global block) falls back to nim rather than throwing', async (t) => {
+  const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async () => null);
+  t.after(() => findMock.mock.restore());
+  const originalDefaultAiProvider = globalConfig.defaultAiProvider;
+  globalConfig.defaultAiProvider = 'claude'; // claude has no global env-backed block
+  t.after(() => { globalConfig.defaultAiProvider = originalDefaultAiProvider; });
+
+  const result = await configurationService.getAiConfig({}, 'college-with-no-row');
+
+  assert.equal(result.provider, 'nim');
 });
 
 test('setAiConfig: rejects an unknown provider before any DB write', async (t) => {

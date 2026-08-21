@@ -376,6 +376,7 @@ function createAiRouter() {
     const identityContext = buildAiIdentityContext(req);
     const {
       question, focusContext, project_id: projectId, conversation_id: conversationId,
+      attachment_ids: attachmentIds,
     } = req.body || {};
     let projectContext;
     if (projectId) {
@@ -405,18 +406,18 @@ function createAiRouter() {
       }
     }
     return {
-      question, identityContext, focusContext, projectContext, history,
+      question, identityContext, focusContext, projectContext, history, attachmentIds,
     };
   }
 
   router.post('/ai/ask', requireAuth, asyncHandler(async (req, res) => {
     if (!requireResolvedTenant(req, res)) return;
     const {
-      question, identityContext, focusContext, projectContext, history,
+      question, identityContext, focusContext, projectContext, history, attachmentIds,
     } = await resolveAskContext(req);
     try {
       const result = await aiService.askAgent(req.dbClient, question, {
-        identityContext, focusContext, projectContext, history,
+        identityContext, focusContext, projectContext, history, attachmentIds,
       });
       res.json(result);
     } catch (err) {
@@ -437,7 +438,7 @@ function createAiRouter() {
   router.post('/ai/ask/stream', requireAuth, asyncHandler(async (req, res) => {
     if (!requireResolvedTenant(req, res)) return;
     const {
-      question, identityContext, focusContext, projectContext, history,
+      question, identityContext, focusContext, projectContext, history, attachmentIds,
     } = await resolveAskContext(req);
 
     res.writeHead(200, {
@@ -451,7 +452,7 @@ function createAiRouter() {
 
     try {
       const result = await aiService.askAgent(req.dbClient, question, {
-        identityContext, focusContext, projectContext, history,
+        identityContext, focusContext, projectContext, history, attachmentIds,
       }, (delta) => writeEvent('delta', { delta }));
       writeEvent('done', result);
     } catch (err) {

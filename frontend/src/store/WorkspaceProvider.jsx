@@ -178,7 +178,7 @@ export function WorkspaceProvider({ children }) {
    * kept running after send() returned.
    */
   const runAiTurn = useCallback(
-    async (id, { scope, projectId, body, aiId }) => {
+    async (id, { scope, projectId, body, aiId, attachmentIds }) => {
       const patchAiMessage = (patch) => {
         setThreads((prev) => ({
           ...prev,
@@ -189,7 +189,12 @@ export function WorkspaceProvider({ children }) {
       let streamedText = '';
       try {
         const result = await aiApi.askStream(
-          { question: body, conversation_id: id, project_id: scope === 'project' ? projectId : undefined },
+          {
+            question: body,
+            conversation_id: id,
+            project_id: scope === 'project' ? projectId : undefined,
+            attachment_ids: attachmentIds && attachmentIds.length ? attachmentIds : undefined,
+          },
           (event) => {
             if (event.type === 'delta') {
               streamedText += event.delta;
@@ -223,6 +228,12 @@ export function WorkspaceProvider({ children }) {
           evidenceTrail: result.evidenceTrail,
           verification: result.verification,
           pendingConfirmation: result.pendingConfirmation,
+          // Deterministic signal (aiService.askAgent's own comment on why
+          // this is never inferred from the model's text alone) that an
+          // attached image was never actually shown to the configured AI
+          // model — surfaced regardless of whether the answer text itself
+          // mentions it.
+          imageAnalysisUnavailable: result.imageAnalysisUnavailable,
           createdAt: new Date().toISOString(),
         });
 
@@ -311,8 +322,17 @@ export function WorkspaceProvider({ children }) {
         .addMessage(id, { role: 'user', content: body })
         .catch(() => {});
 
+      // Only the backend-issued serverId is ever sent to the AI turn — the
+      // local att-... id (`a.id`) is a React key/removal handle only, never
+      // a valid attachment reference on the server (useComposerAttachments'
+      // own comment on runUpload). An attachment that finished uploading
+      // always has a serverId by the time it reaches 'ready' — filtering
+      // again here is just defense against a shape this codebase doesn't
+      // currently produce, not a real expected case.
+      const attachmentIds = sent.map((a) => a.serverId).filter(Boolean);
+
       // Deliberately not awaited — see this function's own comment above.
-      runAiTurn(id, { scope, projectId, body, aiId });
+      runAiTurn(id, { scope, projectId, body, aiId, attachmentIds });
 
       return id;
     },

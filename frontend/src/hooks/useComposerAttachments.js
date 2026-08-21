@@ -4,8 +4,10 @@ import {
   buildAttachment,
   clipboardHasText,
   imagesFromClipboard,
+  readFileAsBase64,
   releasePreview,
 } from '../lib/composerAttachments';
+import { aiApi } from '../api/ai';
 
 /**
  * The upload pipeline behind every composer attachment.
@@ -19,15 +21,17 @@ import {
  * several uploads report progress on their own timers and two landing in the
  * same tick with captured copies of the array would drop one.
  *
- * The upload is the mock the rest of this build uses: stepped progress that
- * occasionally fails, so the failed/retry path is genuinely reachable rather
- * than theoretical. Swapping in the real endpoint means replacing `runUpload`
- * and nothing else — the record shape, retry, announcements and draft
- * behaviour all stay put.
+ * runUpload is real: base64-encode the file, POST it to
+ * aiApi.uploadAttachment (routes to DocumentService via
+ * POST /documents/chat-attachments), and record the backend-issued
+ * `serverId` on the attachment once it lands — that id, never the
+ * locally-minted `att-...` one, is what a later send() forwards as an
+ * `attachment_ids` entry. A rejected upload (oversized, malformed,
+ * content that doesn't sniff as a real image) surfaces the server's own
+ * `detail` message through the same failed/retry path the old mock
+ * exercised, so that affordance stays genuinely reachable, not just
+ * simulated.
  */
-
-const TICK_MS = 140;
-const FAILURE_RATE = 0.08;
 
 export function useComposerAttachments(composer) {
   const attachments = composer?.attachments ?? [];
@@ -38,7 +42,12 @@ export function useComposerAttachments(composer) {
   // paste would be noise in a long prompt.
   const [announcement, setAnnouncement] = useState('');
 
-  const timers = useRef(new Map());
+  // Attachment ids to ignore once their in-flight upload settles — a route
+  // change (or a manual remove()) can outlive the real network request, and
+  // this is what stops a late resolve/reject from writing into a scope
+  // nobody is looking at anymore (the real-upload equivalent of the old
+  // mock's clearInterval-on-unmount).
+  const cancelled = useRef(new Set());
   // Every object URL this composer minted, so none survives the composer.
   const previews = useRef(new Set());
   // The live list, readable from a callback without making it a dependency.
@@ -54,42 +63,36 @@ export function useComposerAttachments(composer) {
 
   const runUpload = useCallback(
     (attachment) => {
-      let progress = 0;
-      const failAt = Math.random() < FAILURE_RATE ? 0.3 + Math.random() * 0.5 : null;
-
-      const timer = setInterval(() => {
-        progress = Math.min(1, progress + 0.12 + Math.random() * 0.1);
-
-        if (failAt !== null && progress >= failAt) {
-          clearInterval(timer);
-          timers.current.delete(attachment.id);
+      cancelled.current.delete(attachment.id);
+      (async () => {
+        try {
+          const fileBase64 = await readFileAsBase64(attachment.file);
+          const uploaded = await aiApi.uploadAttachment({
+            fileBase64, fileName: attachment.name, mimeType: attachment.type,
+          });
+          if (cancelled.current.has(attachment.id)) return;
+          // serverId is the backend-issued document id — the one a later
+          // send() forwards as an attachment_ids entry; the local att-...
+          // id stays the React key/removal handle and is never sent.
+          patchOne(attachment.id, { status: 'ready', progress: 1, serverId: uploaded.id });
+        } catch (err) {
+          if (cancelled.current.has(attachment.id)) return;
           patchOne(attachment.id, { status: 'failed', progress: 0 });
-          setAnnouncement(`${attachment.name} failed to upload.`);
-          return;
+          setAnnouncement(`${attachment.name} failed to upload.${err?.detail ? ` ${err.detail}` : ''}`);
         }
-        if (progress >= 1) {
-          clearInterval(timer);
-          timers.current.delete(attachment.id);
-          patchOne(attachment.id, { status: 'ready', progress: 1 });
-          return;
-        }
-        patchOne(attachment.id, { progress });
-      }, TICK_MS);
-
-      timers.current.set(attachment.id, timer);
+      })();
     },
     [patchOne]
   );
 
-  // A route change unmounts the composer, possibly mid-upload. The intervals
-  // must not outlive it and keep writing into a scope nobody is looking at,
-  // and the preview URLs must not outlive it either.
+  // A route change unmounts the composer, possibly mid-upload. In-flight
+  // uploads must not keep writing into a scope nobody is looking at, and
+  // the preview URLs must not outlive it either.
   useEffect(() => {
-    const running = timers.current;
+    const cancelledSet = cancelled.current;
     const urls = previews.current;
     return () => {
-      running.forEach((t) => clearInterval(t));
-      running.clear();
+      current.current.forEach((a) => cancelledSet.add(a.id));
       urls.forEach((url) => releasePreview({ previewUrl: url }));
       urls.clear();
     };
@@ -155,11 +158,7 @@ export function useComposerAttachments(composer) {
 
   const remove = useCallback(
     (id) => {
-      const timer = timers.current.get(id);
-      if (timer) {
-        clearInterval(timer);
-        timers.current.delete(id);
-      }
+      cancelled.current.add(id);
       const target = current.current.find((a) => a.id === id);
       if (target) {
         releasePreview(target);

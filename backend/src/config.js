@@ -188,4 +188,29 @@ module.exports = {
     // model behavior as before this existed.
     fastModel: process.env.NIM_FAST_MODEL || null,
   },
+
+  // Google Gemini — a second, optional global-default provider
+  // (configurationService.js's own comment on GLOBAL_CONFIG_BUILDERS).
+  // Same "unset means unavailable, never a startup failure" reasoning
+  // as nim above — this app must keep running whether or not a Gemini
+  // key exists. baseUrl has no default here (gemini.js's own
+  // DEFAULT_BASE_URL applies when this is null); embeddingModel is
+  // null by default since Gemini's embedContent isn't why a college
+  // would set this — chat/vision is.
+  gemini: {
+    apiKey: process.env.GEMINI_API_KEY || null,
+    baseUrl: process.env.GEMINI_BASE_URL || null,
+    model: process.env.GEMINI_MODEL || null,
+    embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || null,
+    fastModel: process.env.GEMINI_FAST_MODEL || null,
+  },
+
+  // Which provider a college with no college_ai_config row of its own
+  // falls back to (configurationService.getAiConfig). Defaults to
+  // 'nim' — this app's pre-existing global behavior, unchanged unless
+  // a deployment explicitly opts a different provider in. Setting this
+  // to 'gemini' with the block above populated is enough to make every
+  // college with no per-college override use Gemini, with no DB write
+  // required.
+  defaultAiProvider: process.env.DEFAULT_AI_PROVIDER || 'nim',
 };

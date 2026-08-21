@@ -30,6 +30,11 @@ const REQUEST_TIMEOUT_MS = 30000;
 // ceiling this codebase controlled.
 const MAX_TOKENS = 1024;
 
+// A self-hosted deployment's model is whatever the college's own
+// operator configured — no vision-capable convention is assumed here,
+// same "dev-only, not part of the production 3" reasoning as nim.js.
+const supportsVision = false;
+
 function isConfigured(cfg) {
   return Boolean(cfg && cfg.baseUrl);
 }
@@ -234,6 +239,7 @@ async function embed(cfg, texts, { inputType } = {}) {
 
 module.exports = {
   name: 'self_hosted',
+  supportsVision,
   isConfigured,
   complete,
   completeWithMeta,

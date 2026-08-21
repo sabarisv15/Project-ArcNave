@@ -20,6 +20,7 @@ const createApp = require('../src/app');
 const security = require('../src/security');
 const { seedClassTutorPosition, cleanupPositionRows } = require('./helpers/positionFixtures');
 const nim = require('../src/services/aiProviders/nim');
+const globalConfig = require('../src/config');
 
 const MIGRATION_DATABASE_URL = process.env.MIGRATION_DATABASE_URL;
 const PASSWORD = 'AdmissionDraftTestPass123!';
@@ -128,6 +129,18 @@ async function cleanupTenant(adminPool, college) {
 }
 
 test('admission drafts', async (t) => {
+  // This file monkey-patches nim.complete directly, relying on
+  // configurationService.getAiConfig resolving the adapter for a
+  // no-row college to that exact same shared nim module instance —
+  // force the global default regardless of a real dev/deployment
+  // environment's own DEFAULT_AI_PROVIDER override (e.g. a local
+  // .env.local.sh set to 'gemini' to run the dev server against a real
+  // key), or the real gemini adapter escapes into this test and makes
+  // real, unmocked network calls instead.
+  const originalDefaultAiProvider = globalConfig.defaultAiProvider;
+  globalConfig.defaultAiProvider = 'nim';
+  t.after(() => { globalConfig.defaultAiProvider = originalDefaultAiProvider; });
+
   const originalComplete = nim.complete;
   nim.complete = async (cfg, { systemPrompt }) => {
     if (systemPrompt.includes('classif')) {

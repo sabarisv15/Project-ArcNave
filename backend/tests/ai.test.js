@@ -172,7 +172,21 @@ test('ai', async (t) => {
   const collegeA = await seedTenant(adminPool, 'a');
   const collegeB = await seedTenant(adminPool, 'b');
 
+  // This whole file assumes the global fallback provider (no
+  // college_ai_config row) is nim — every test below toggles
+  // config.nim.apiKey directly to control whether that fallback is
+  // "configured." Force that regardless of a real deployment/dev
+  // environment's own DEFAULT_AI_PROVIDER (e.g. a local .env.local.sh
+  // set to 'gemini' to run the dev server against a real key) — a real
+  // Gemini call escaping into these tests was caught live: toggling
+  // config.nim.apiKey had no effect once the fallback resolved to
+  // gemini instead, and the tests hit the real API with unmocked
+  // responses.
+  const originalDefaultAiProvider = config.defaultAiProvider;
+  config.defaultAiProvider = 'nim';
+
   t.after(async () => {
+    config.defaultAiProvider = originalDefaultAiProvider;
     await stopServer(server);
     await cleanupTenant(adminPool, collegeA);
     await cleanupTenant(adminPool, collegeB);

@@ -2090,3 +2090,229 @@ identity-masking instruction as the Curriculum-mode prompt and states
 explicitly that this mode has no access to the college's own data.
 
 **Status.** Resolved — implemented, 2026-08-21 (round 18).
+
+---
+
+## ADL-041
+
+### Attendance re-mark protected by the platform's existing optimistic-concurrency mechanism
+
+**Decision.** A re-mark of an already-marked, still-unlocked attendance
+session is now version-checked, reusing the exact
+[RS-GOV-009](../10-specification/RS-GOV-governance.md#rs-gov-009)
+pattern (a `version` column bumped on write, paired with an `audit_log`
+row) `colleges`/`departments` already use — not a second mechanism.
+
+**Superseded position.** None directly — this closes a real gap round 10's
+audit flagged and round 11 deliberately deferred (P2, not P0/P1): the
+first write for an hour was always a safe `INSERT` (nothing to race), but
+a re-mark was a plain `UPDATE` with no version check at all, so two
+concurrent re-marks of the same period silently resolved last-write-wins.
+
+**Rationale.** A live-caught implementation detail changed the design
+mid-pass: the first draft compared on `updated_at` (reasoning that this
+table already bumps it on every write, so no new column was needed) —
+live testing of a genuine, *non-concurrent, sequential* re-mark caught
+this as broken. Postgres's `timestamp with time zone` has microsecond
+precision; the `pg` driver deserializes it into a JS `Date`, which only
+holds millisecond precision — round-tripping that value back out as a
+query parameter for the version-check `WHERE` clause silently truncates
+the sub-millisecond remainder, so the comparison almost never matched the
+real stored value, regardless of whether a genuine race occurred. Fixed
+by adding a real integer `version` column instead, matching
+[RS-GOV-009](../10-specification/RS-GOV-governance.md#rs-gov-009)'s
+already-proven pattern rather than reasoning about timestamp precision
+from scratch.
+
+**Affected artefacts.**
+[RS-ATT-010](../10-specification/RS-ATT-attendance.md#rs-att-010) (new);
+[RS-GOV-009](../10-specification/RS-GOV-governance.md#rs-gov-009)
+(`Governs` cross-reference added, no rule text changed).
+
+**Migration impact.** `1762800000000_attendance-sessions-version` adds
+`attendance_sessions.version integer NOT NULL DEFAULT 1`. Reversible
+(`DROP COLUMN`).
+
+**Implementation notes.** `attendanceRepository.updateWithVersionCheck`
+(new — `WHERE id = $1 AND deleted_at IS NULL AND version = $2`, sets
+`version = version + 1`); `attendanceService.markAttendance`'s re-mark
+branch now calls it with `existing.version`, throwing the new
+`AttendanceReMarkConflictError` (409, mapped in `routes/attendance.js`
+and `routes/ai.js`) when the version has moved. A losing caller's write
+is never silently discarded — it gets a clean, actionable conflict
+instead.
+
+**Status.** Resolved — implemented, 2026-08-21 (round 22).
+
+---
+
+## ADL-042
+
+### `marksObtained` range validation (non-negative, bounded by `max_marks`)
+
+**Decision.** `recordMark`/`updateMark` now reject a negative
+`marksObtained` unconditionally, and reject one exceeding the assessment
+type's own `max_marks` whenever that value is actually set.
+
+**Superseded position.** None directly — round 10's audit found no
+range/sanity check existed at all, distinct from
+[RS-ASM-002](../10-specification/RS-ASM-assessment-documents.md#rs-asm-002)'s
+"no grade/weightage calculation" rule (that rule is about not *deriving* a
+second number from `marksObtained`, never about accepting an impossible
+one).
+
+**Rationale.** `max_marks` is genuinely optional at the schema level
+([RS-ASM-012](../10-specification/RS-ASM-assessment-documents.md#rs-asm-012):
+an assessment type may have none), so a hard cross-field CHECK constraint
+at the database level cannot express the upper bound generically — CHECK
+constraints are single-table. Split accordingly: the non-negative floor
+(which has no such exception) is a real, un-bypassable DB constraint; the
+`max_marks` ceiling is an application-level check, run once
+`assessmentTypeRepository.findById` resolves whether one exists. Checked
+*after* the existing batch-editable gate (`assertBatchDraft`), not
+before, so a batch that cannot be directly edited at all still rejects on
+that state — value validation never masks a state-conflict error.
+
+**Affected artefacts.**
+[RS-ASM-013](../10-specification/RS-ASM-assessment-documents.md#rs-asm-013)
+(new). Also surfaced, not resolved: the batch draft/lock/submit lifecycle
+`updateMark` itself belongs to has no dedicated `RS-ASM` rule at all —
+flagged in RS-ASM-013's own text as a real, pre-existing documentation
+gap, materially larger than this decision's own scope.
+
+**Migration impact.**
+`1762600000000_assessment-marks-non-negative-check` adds
+`CHECK (marks_obtained >= 0)` to `assessment_marks`. Verified against the
+real table first (zero existing negative rows) before writing the
+migration, not assumed. Reversible (`DROP CONSTRAINT`).
+
+**Implementation notes.** `assessmentService.assertMarksInRange`, called
+from both `recordMark` (after `findBatchStatus`/`assertBatchDraft`) and
+`updateMark` (same ordering). New tests mock
+`assessmentTypeRepository.findById` explicitly rather than relying on
+whatever it happened to resolve to from an earlier test's own mock —
+codebase's `t.mock.method`/`t.after()` restore pattern is per-subtest,
+but a test that never mocks a dependency its own call path now reaches
+is exposed to whatever the *previous* test in file order left behind;
+made explicit here to avoid that class of flakiness.
+
+**Status.** Resolved — implemented, 2026-08-21 (round 22).
+
+---
+
+## ADL-043
+
+### DocumentService upload: compensating cleanup on both immediate and deferred failure
+
+**Decision.** `documentService.uploadDocument`'s disk write is now
+compensated in both failure windows: the row's own `INSERT` failing
+immediately (synchronous cleanup, same call), and a *later*, unrelated
+statement in the same request's transaction failing and rolling
+everything back after the row appeared to succeed (deferred cleanup, via
+a new `registerAfterRollback` mechanism).
+
+**Superseded position.** None directly — round 10's audit found the
+second window entirely unhandled: the immediate-failure case already had
+a `try`/`catch` around `documentRepository.create`, but nothing existed
+for a rollback caused by a statement *after* `uploadDocument` itself had
+already returned.
+
+**Rationale.** The existing `registerAfterCommit`
+(`db/tenantTransaction.js`, built round 11 for
+`backgroundJobService.enqueue`'s worker trigger) is the established
+precedent for "defer work until this request's transaction has actually
+settled" — but it fires on the opposite outcome (commit, not rollback)
+and, critically, must be *discarded* rather than fired if the OTHER
+outcome happens, which `registerAfterCommit` itself has no need to do
+(nothing was ever queued for the opposite case there). `registerAfterCommit`
+also falls back to firing immediately with no request context (safe,
+since "no context" there means "nothing to defer against, run now"); the
+mirror-image fallback for rollback would mean the opposite — unconditionally
+deleting a file this function has no way to know will actually need
+deleting — so `registerAfterRollback` deliberately does NOT fire when
+there is no request context; a caller outside the normal HTTP/transaction
+lifecycle is expected to manage its own cleanup.
+
+**Affected artefacts.**
+[RS-ASM-014](../10-specification/RS-ASM-assessment-documents.md#rs-asm-014)
+(new); [RS-ASM-005](../10-specification/RS-ASM-assessment-documents.md#rs-asm-005)
+(`Governs` cross-reference added, no rule text changed).
+
+**Migration impact.** None — no schema change.
+
+**Implementation notes.** `logging/context.js`'s new
+`AFTER_ROLLBACK_CALLBACKS` Symbol (mirrors `AFTER_COMMIT_CALLBACKS`, same
+reasoning for staying a Symbol key — kept out of the generic per-request
+log payload); `middleware/requestContext.js`'s initial store now seeds
+both; `db/tenantTransaction.js`'s `commitAndRelease` discards the queue
+(never fires it) on a successful commit, `rollbackAndRelease` drains and
+fires it, each callback isolated in its own try/catch, only once
+`ROLLBACK` has actually completed. `documentService.uploadDocument`
+registers the cleanup right after the row commits to this request's
+still-open transaction — a no-op once the transaction actually commits.
+
+**Status.** Resolved — implemented, 2026-08-21 (round 22).
+
+---
+
+## ADL-044
+
+### AI tool invocation audit trail: handler failures, provider/model, workflow-request linkage
+
+**Decision.** Every AI tool invocation attempt now writes exactly one
+audit row regardless of outcome — a genuine Business Service failure
+(new `ai_tool_handler_failed` action) is audited exactly as a Policy Gate
+rejection (`ai_tool_denied`) and a success (`ai_tool_invoked`) already
+were. Separately, a successful `ai_tool_invoked` row now also records
+`provider`/`model` (when the calling context is LLM-mediated) and, for an
+L3 result, the `workflow_requests` row it produced.
+
+**Superseded position.** None directly — round 10's audit found both gaps
+real and unaddressed: `aiToolRegistry.js`'s `invokeTool` had a try/catch
+around the L3-bypass backstop check but none around `tool.handler` itself;
+`aiService.js`'s `invokeTool` metadata carried only
+`toolName`/`estimatedAffectedRows`.
+
+**Rationale.** The handler-failure gap is closed with the same
+audit-then-rethrow shape already established for Policy Gate rejections
+in the same function — `ai_tool_handler_failed` is a distinct action name
+specifically so it is never conflated with `ai_tool_denied` (an
+authorization outcome, not an execution failure). The metadata gap is
+closed additively, threading already-resolved values rather than
+re-deriving them: `provider`/`model` come from whichever adapter/config
+the calling context (`askAgent`, `askAboutTool`, each
+`executeWorkflowPlan` step) had already resolved for its own LLM call —
+`executeWorkflowPlan` itself was reordered so that resolution happens
+*before* the step loop instead of after it, purely a config read with no
+dependency on step results, so nothing about execution order changes.
+`workflowRequestId` is read directly off the handler's own returned
+result (`result.workflow_request_id`) rather than a second query — every
+L3 handler in this registry already returns the entity row it just
+updated, and that row already carries the FK as a plain column
+(`notificationService.submitForApproval` and its siblings). The one call
+site that never gets `provider`/`model` — `invokeToolIdempotent`,
+`POST /ai/tools/:name/invoke` — is correct as-is: no LLM chose that
+call, so there is nothing to record; the fields are simply omitted, never
+recorded as `null`.
+
+**Affected artefacts.**
+[RS-AIG-024](../10-specification/RS-AIG-ai-governance.md#rs-aig-024)
+(new); [RS-AIG-001](../10-specification/RS-AIG-ai-governance.md#rs-aig-001),
+[RS-AIG-022](../10-specification/RS-AIG-ai-governance.md#rs-aig-022)
+(`Governs` cross-references added, no rule text changed).
+
+**Migration impact.** None — additive JSONB metadata on the existing
+`audit_log` table, no schema change.
+
+**Implementation notes.** `aiToolRegistry.js`'s `invokeTool` wraps
+`tool.handler(...)` in try/catch (`ai_tool_handler_failed`, metadata
+`{toolName, errorName, reason}`, rethrows after logging).
+`aiService.js`'s `invokeTool` gains optional `provider`/`model` params;
+callers: `askAboutTool` (aiConfig resolution moved before the
+`invokeTool` call — a config read, not the LLM call itself, so the
+existing "tool call audited regardless of downstream LLM failure"
+ordering is unaffected), `askAgent`'s direct tool-call branch (adapter
+already resolved earlier in the function), `runPlanStep` (new
+`adapter`/`aiConfig` params, threaded from `executeWorkflowPlan`).
+
+**Status.** Resolved — implemented, 2026-08-21 (round 22).

@@ -23,7 +23,7 @@ attendance cannot be marked until its timetable status is `Approved`.**
 | **Owner** | `AttendanceService` |
 | **Authority** | Per [RS-ATT-002](#rs-att-002) |
 | **Depends on** | [RS-ACA-001](RS-ACA-academic.md#rs-aca-001), [RS-ACA-004](RS-ACA-academic.md#rs-aca-004), [RS-ACA-006](RS-ACA-academic.md#rs-aca-006) |
-| **Governs** | [RS-CLS-008](RS-CLS-classroom.md#rs-cls-008), [RS-ATT-003](RS-ATT-attendance.md#rs-att-003), [RS-ATT-005](RS-ATT-attendance.md#rs-att-005), [RS-ATT-006](RS-ATT-attendance.md#rs-att-006), [RS-ATT-007](RS-ATT-attendance.md#rs-att-007) |
+| **Governs** | [RS-CLS-008](RS-CLS-classroom.md#rs-cls-008), [RS-ATT-003](RS-ATT-attendance.md#rs-att-003), [RS-ATT-005](RS-ATT-attendance.md#rs-att-005), [RS-ATT-006](RS-ATT-attendance.md#rs-att-006), [RS-ATT-007](RS-ATT-attendance.md#rs-att-007), [RS-ATT-010](RS-ATT-attendance.md#rs-att-010) |
 | **Lifecycle** | **Attendance record — canonical definition:** `unmarked → marked → locked → (corrected)` |
 | **Workflow** | None for first marking |
 | **AI** | L1 read; L1 direct-write within the marker's own eligibility ([RS-ATT-005](#rs-att-005)) |
@@ -277,3 +277,35 @@ imprecision until a dedicated field is added.
 | **Implementation** | No structured field exists |
 | **Conformance** | Conformant — the limitation is correctly declared |
 | **Decisions** | — |
+
+---
+
+## RS-ATT-010
+
+**A re-mark of an existing attendance session is protected by the
+platform's existing optimistic-concurrency mechanism
+([RS-GOV-009](RS-GOV-governance.md#rs-gov-009)) — the same version-bump
+pattern, applied to `attendance_sessions`, not a second mechanism.**
+
+The first write for an hour (`unmarked → marked`, [RS-ATT-001](#rs-att-001))
+is a plain `INSERT`, with no prior state to race against. Every re-mark of
+an *already-marked, still-unlocked* session (still `marked`, per
+[RS-ATT-001](#rs-att-001)'s lifecycle — this never applies once `locked`)
+reads the row's current version and writes back only if that version is
+unchanged. A caller that loses the race — someone else re-marked the same
+period first — gets a clean conflict, never a silently discarded write.
+
+| | |
+|---|---|
+| **Owner** | `AttendanceService` |
+| **Authority** | Per [RS-ATT-002](#rs-att-002) — this rule changes nothing about *who* may re-mark, only how two simultaneous re-marks by eligible actors are resolved |
+| **Depends on** | [RS-ATT-001](#rs-att-001), [RS-GOV-009](RS-GOV-governance.md#rs-gov-009) |
+| **Governs** | — |
+| **Lifecycle** | Attendance record — the `marked → marked` (re-mark) transition only |
+| **Workflow** | None — resolved synchronously on write, never an approval flow |
+| **AI** | Binding — `mark_attendance_nl`'s re-mark path goes through the same `markAttendance`, unchanged |
+| **Modules** | 4 |
+| **Data effect** | Supersedes with version check |
+| **Implementation** | `attendance_sessions.version` (`1762800000000_attendance-sessions-version`); `attendanceRepository.updateWithVersionCheck`; `attendanceService.markAttendance`'s re-mark branch; `AttendanceReMarkConflictError` → 409 |
+| **Conformance** | Conformant |
+| **Decisions** | [ADL-041](../30-decisions/ledger.md#adl-041) |

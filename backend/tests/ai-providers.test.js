@@ -291,3 +291,47 @@ test('openai adapter.complete: with no images, content stays a plain string (unc
   ).catch(() => {}));
   assert.equal(body.messages[1].content, 'u');
 });
+
+// Round 10 P2/P3 finding: the round-8 output-token-bound fix (each
+// adapter's own MAX_TOKENS/MAX_OUTPUT_TOKENS = 1024, closing what used
+// to be a fully-unbounded response on 3 of 4 adapters) had a real
+// asymmetry in coverage — every adapter's shared request-shape tests
+// above happen to exercise nim/gemini/selfHosted/claude/openai's
+// request bodies for OTHER reasons (images, tool schemas, caching), but
+// none of them actually assert the token-bound field/value survives on
+// the wire, and only through incidental body inspection, not a named
+// assertion — so a regression (e.g. a future refactor accidentally
+// dropping max_tokens from one adapter but not the others) would pass
+// silently. One assertion per adapter, same capturedRequestBody helper
+// every other request-shape test in this file already uses.
+test('every provider adapter sends an explicit output-token bound on the wire (round 8 fix, previously only informally exercised)', async () => {
+  const nimBody = await capturedRequestBody(() => aiProviders.getAdapter('nim').completeWithMeta(
+    { apiKey: 'k', baseUrl: 'http://localhost:1', model: 'nim-x' },
+    { systemPrompt: 's', userPrompt: 'u' },
+  ).catch(() => {}));
+  assert.equal(nimBody.max_tokens, 1024);
+
+  const geminiBody = await capturedRequestBody(() => aiProviders.getAdapter('gemini').completeWithMeta(
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+    { systemPrompt: 's', userPrompt: 'u' },
+  ).catch(() => {}));
+  assert.equal(geminiBody.generationConfig.maxOutputTokens, 1024);
+
+  const selfHostedBody = await capturedRequestBody(() => aiProviders.getAdapter('self_hosted').completeWithMeta(
+    { baseUrl: 'http://localhost:1', model: 'sh-x' },
+    { systemPrompt: 's', userPrompt: 'u' },
+  ).catch(() => {}));
+  assert.equal(selfHostedBody.max_tokens, 1024);
+
+  const openaiBody = await capturedRequestBody(() => aiProviders.getAdapter('openai').completeWithMeta(
+    { apiKey: 'k', model: 'gpt-x' },
+    { systemPrompt: 's', userPrompt: 'u' },
+  ).catch(() => {}));
+  assert.equal(openaiBody.max_tokens, 1024);
+
+  const claudeBody = await capturedRequestBody(() => aiProviders.getAdapter('claude').completeWithMeta(
+    { apiKey: 'k', model: 'claude-x' },
+    { systemPrompt: 's', userPrompt: 'u' },
+  ).catch(() => {}));
+  assert.equal(claudeBody.max_tokens, 1024);
+});

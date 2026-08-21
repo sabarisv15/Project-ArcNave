@@ -93,6 +93,12 @@ class AttendanceLockedError extends Error {}
 // for mapping its own rare-but-real constraint violations.
 class AttendanceSessionConflictError extends Error {}
 
+// Round 10 P2/P3 finding: markAttendance's re-mark branch (existing
+// session, not creation) had no version check — see
+// attendanceRepository.updateWithVersionCheck's own comment for the
+// full race and why `updated_at` is the optimistic-lock token.
+class AttendanceReMarkConflictError extends Error {}
+
 // requestAttendanceCorrection given a session id with no matching row.
 class AttendanceSessionNotFoundError extends Error {}
 
@@ -339,7 +345,12 @@ async function markAttendance(
     if (existing.locked_at !== null) {
       throw new AttendanceLockedError(`attendance session ${existing.id} is locked and cannot be modified`);
     }
-    session = await attendanceRepository.update(client, existing.id, patch);
+    session = await attendanceRepository.updateWithVersionCheck(client, existing.id, patch, existing.version);
+    if (session === null) {
+      throw new AttendanceReMarkConflictError(
+        `attendance session ${existing.id} was just re-marked by someone else — reload and try again`,
+      );
+    }
     wasUpdate = true;
   } else {
     try {
@@ -1017,6 +1028,7 @@ module.exports = {
   AttendanceForbiddenError,
   AttendanceLockedError,
   AttendanceSessionConflictError,
+  AttendanceReMarkConflictError,
   AttendanceSessionNotFoundError,
   AttendanceNotLockedError,
   AttendanceCorrectionValidationError,

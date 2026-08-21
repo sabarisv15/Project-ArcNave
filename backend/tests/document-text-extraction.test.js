@@ -1,0 +1,113 @@
+'use strict';
+
+// Unit tests for documentTextExtractionService.js — real extraction against
+// real, minimal PDF/DOCX/XLSX buffers generated in-test (via pdfkit/docx/
+// exceljs, all already dependencies), never live HTTP/DB. Focused on:
+// correction 1 (PDF text-first, OCR fallback only for a genuinely empty text
+// layer, mocked so no real Tesseract run is needed here), the per-format
+// dispatch, and the unsupported-type rejection.
+
+const test = require('node:test');
+const { mock } = require('node:test');
+const assert = require('node:assert/strict');
+const PDFDocument = require('pdfkit');
+const { Document, Packer, Paragraph } = require('docx');
+const ExcelJS = require('exceljs');
+const documentTextExtractionService = require('../src/services/documentTextExtractionService');
+const documentExtractionService = require('../src/services/documentExtractionService');
+
+function buildPdfBuffer(text) {
+  return new Promise((resolve) => {
+    const chunks = [];
+    const doc = new PDFDocument();
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    if (text) doc.text(text);
+    doc.end();
+  });
+}
+
+async function buildDocxBuffer(text) {
+  const doc = new Document({ sections: [{ children: [new Paragraph(text)] }] });
+  return Packer.toBuffer(doc);
+}
+
+async function buildXlsxBuffer(rows) {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Sheet1');
+  rows.forEach((row) => worksheet.addRow(row));
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+test('extractPlainText: an ordinary text-layer PDF is extracted via the fast text_layer path, never touching OCR', async (t) => {
+  const runOcrMock = t.mock.method(documentExtractionService, 'runOcr', async () => {
+    throw new Error('runOcr must never be called for a real text-layer PDF');
+  });
+  const buffer = await buildPdfBuffer('This is a real text-layer PDF with plenty of readable characters per page.');
+  const result = await documentTextExtractionService.extractPlainText(buffer, documentTextExtractionService.PDF_MIME_TYPE);
+  assert.equal(result.method, 'text_layer');
+  assert.match(result.text, /real text-layer PDF/);
+  assert.equal(runOcrMock.mock.calls.length, 0);
+});
+
+test('extractPlainText: correction 1 — a PDF with an empty/near-empty text layer (e.g. scanned) falls back to OCR, mocked here to avoid a real Tesseract run', async (t) => {
+  t.mock.method(documentExtractionService, 'runOcr', async () => ({ text: 'OCR-recovered text.', ocrConfidence: 91 }));
+  const blankBuffer = await buildPdfBuffer(null); // no .text() call -> empty embedded text layer
+  const result = await documentTextExtractionService.extractPlainText(blankBuffer, documentTextExtractionService.PDF_MIME_TYPE);
+  assert.equal(result.method, 'ocr_fallback');
+  assert.equal(result.text, 'OCR-recovered text.');
+});
+
+test('extractPlainText: a corrupt/non-PDF buffer claimed as application/pdf degrades to corrupt_or_unreadable, never throws', async () => {
+  const result = await documentTextExtractionService.extractPlainText(Buffer.from('not a real pdf'), documentTextExtractionService.PDF_MIME_TYPE);
+  assert.equal(result.text, null);
+  assert.equal(result.failureReason, 'corrupt_or_unreadable');
+});
+
+test('extractPlainText: a real DOCX is extracted via mammoth', async () => {
+  const buffer = await buildDocxBuffer('Hello from a real docx document.');
+  const result = await documentTextExtractionService.extractPlainText(buffer, documentTextExtractionService.DOCX_MIME_TYPE);
+  assert.equal(result.method, 'mammoth');
+  assert.equal(result.text, 'Hello from a real docx document.');
+});
+
+test('extractPlainText: a corrupt DOCX degrades to corrupt_or_unreadable, never throws', async () => {
+  const result = await documentTextExtractionService.extractPlainText(Buffer.from('not a real docx'), documentTextExtractionService.DOCX_MIME_TYPE);
+  assert.equal(result.text, null);
+  assert.equal(result.failureReason, 'corrupt_or_unreadable');
+});
+
+test('extractPlainText: a real XLSX is extracted via exceljs, sheet name + cells joined into readable lines', async () => {
+  const buffer = await buildXlsxBuffer([['name', 'marks'], ['Ravi', 92], ['Meena', 88]]);
+  const result = await documentTextExtractionService.extractPlainText(buffer, documentTextExtractionService.XLSX_MIME_TYPE);
+  assert.equal(result.method, 'exceljs');
+  assert.match(result.text, /Sheet1/);
+  assert.match(result.text, /Ravi \| 92/);
+  assert.match(result.text, /Meena \| 88/);
+});
+
+test('extractPlainText: a corrupt XLSX degrades to corrupt_or_unreadable, never throws', async () => {
+  const result = await documentTextExtractionService.extractPlainText(Buffer.from('not a real xlsx'), documentTextExtractionService.XLSX_MIME_TYPE);
+  assert.equal(result.text, null);
+  assert.equal(result.failureReason, 'corrupt_or_unreadable');
+});
+
+test('extractPlainText: markdown/plain/csv all pass through as direct UTF-8 text, no library involved', async () => {
+  for (const mimeType of documentTextExtractionService.PLAIN_TEXT_MIME_TYPES) {
+    // eslint-disable-next-line no-await-in-loop
+    const result = await documentTextExtractionService.extractPlainText(Buffer.from('raw content here', 'utf8'), mimeType);
+    assert.equal(result.method, 'direct_text');
+    assert.equal(result.text, 'raw content here');
+  }
+});
+
+test('extractPlainText: an unsupported mime type throws DocumentTextExtractionUnsupportedTypeError', async () => {
+  await assert.rejects(
+    () => documentTextExtractionService.extractPlainText(Buffer.from('x'), 'application/zip'),
+    documentTextExtractionService.DocumentTextExtractionUnsupportedTypeError,
+  );
+});
+
+test.after(() => {
+  mock.restoreAll();
+});

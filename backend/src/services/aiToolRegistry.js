@@ -596,7 +596,27 @@ async function invokeTool(name, { client, identityContext, params } = {}) {
   // only a handler that explicitly adds a 4th parameter (see
   // request_notification_send below) actually receives and forwards it.
   const manifest = tool.level === 'L3' ? buildActionManifest(tool, identityContext, safeParams) : undefined;
-  const result = await tool.handler(client, safeParams, identityContext, manifest);
+  let result;
+  try {
+    result = await tool.handler(client, safeParams, identityContext, manifest);
+  } catch (err) {
+    // Round 10 P2/P3 finding: a handler throwing mid-invokeTool (a real
+    // Business Service failure — NotFound, a DB constraint, a domain
+    // validation error) previously left no audit trail at all — only
+    // Policy Gate rejections (ai_tool_denied, above) and successes
+    // (ai_tool_invoked, aiService.js's invokeTool) were ever recorded.
+    // Logged distinctly from ai_tool_denied: this is an execution
+    // failure, not an authorization outcome.
+    await auditLogRepository.createAuditLogEntry(client, {
+      collegeId: identityContext.collegeId,
+      userId: identityContext.userId,
+      action: 'ai_tool_handler_failed',
+      entity: 'ai_tools',
+      entityId: null,
+      metadata: { toolName: name, errorName: err.name, reason: err.message },
+    });
+    throw err;
+  }
 
   // The runtime backstop — see AiToolL3BypassError's own comment.
   // Only meaningful for L3 (submission-only) tools; L1/L2 handlers are

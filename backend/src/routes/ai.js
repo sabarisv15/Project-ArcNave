@@ -299,6 +299,7 @@ function mapAiToolError(err, res) {
     || err instanceof attendanceService.AttendanceTimetableNotApprovedError
     || err instanceof attendanceService.AttendanceLockedError
     || err instanceof attendanceService.AttendanceSessionConflictError
+    || err instanceof attendanceService.AttendanceReMarkConflictError
     || err instanceof attendanceService.AttendanceNotLockedError
     || err instanceof attendanceService.AttendanceCorrectionNoPendingRequestError
     || err instanceof projectService.ProjectDocumentAlreadyAttachedError

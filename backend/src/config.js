@@ -44,14 +44,32 @@ module.exports = {
   // the negative control) — never by application routes.
   migrationDatabaseUrl: required('MIGRATION_DATABASE_URL'),
 
-  // Pool sizing/timeouts shared by both db/pool.js Pools. Defaults are
-  // pg's own recommended starting point for a single-instance app, not
-  // tuned against real traffic — safe to override per-environment
-  // without a code change once real load data exists. statement_timeout
-  // is deliberately not here — that's set at the DB role level (see
-  // db/pool.js's own comment).
+  // Pool sizing/timeouts shared by both db/pool.js Pools. `max` was
+  // pg's own library default (10), carried over with no reasoning of
+  // its own — a real gap under this app's transaction model: every
+  // request holds ONE client for its WHOLE lifetime (db/tenantTransaction.js
+  // opens the transaction at request start, releases at res.end), not
+  // just per-query, and that lifetime can legitimately run several
+  // seconds when an LLM call happens inside it (bounded well under the
+  // DB role's own idle_in_transaction_session_timeout=90s — see
+  // db/pool.js's comment and 1762100000000_arcnave-app-role-timeouts —
+  // but not near-zero). At max=10, an 11th concurrent request across
+  // the ENTIRE app (every tenant, not per-college) simply queues for a
+  // free connection regardless of how idle Postgres itself is — a real
+  // throughput ceiling for a multi-tenant app, not a style nit. Raised
+  // to 20: Postgres's own default max_connections is 100, and this
+  // value is shared by BOTH appPool and platformPool (db/pool.js), so
+  // 20+20=40 leaves comfortable headroom below 100 for the separate
+  // migration-owner connection and manual/psql access, while roughly
+  // doubling this app's own concurrent-request ceiling versus the
+  // unexamined default. Revisit with real concurrent-tenant load data
+  // once it exists (CHECKPOINT.md's staged-infra principle — this is
+  // an interface-level default, cheap to override per-environment via
+  // DB_POOL_MAX without a code change, not a load-bearing architecture
+  // decision). statement_timeout is deliberately not here — that's set
+  // at the DB role level (see db/pool.js's own comment).
   dbPool: {
-    max: Number(process.env.DB_POOL_MAX) || 10,
+    max: Number(process.env.DB_POOL_MAX) || 20,
     min: Number(process.env.DB_POOL_MIN) || 0,
     idleTimeoutMillis: Number(process.env.DB_POOL_IDLE_TIMEOUT_MS) || 30000,
     connectionTimeoutMillis: Number(process.env.DB_POOL_CONNECTION_TIMEOUT_MS) || 5000,

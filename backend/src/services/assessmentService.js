@@ -266,6 +266,27 @@ function assertBatchDraft(batch) {
   }
 }
 
+// Round 10 P2/P3 finding: marksObtained had no range/sanity check at
+// all — a negative value or one exceeding the assessment type's own
+// max_marks would be stored exactly as given, same as any legitimate
+// value. Distinct from this file's own "no grade/weightage calculation"
+// rule above (BusinessRules.md) — that rule is about not deriving a
+// SECOND number from marksObtained, not about accepting an impossible
+// one. maxMarks is genuinely optional at the schema level
+// (assessment_types.max_marks is nullable — an institution may not have
+// set one yet), so the upper-bound half of this check only applies once
+// a real max_marks exists; the non-negative half always applies.
+function assertMarksInRange(marksObtained, maxMarks) {
+  if (Number(marksObtained) < 0) {
+    throw new AssessmentMarkValidationError(`marksObtained (${marksObtained}) cannot be negative`);
+  }
+  if (maxMarks !== null && maxMarks !== undefined && Number(marksObtained) > Number(maxMarks)) {
+    throw new AssessmentMarkValidationError(
+      `marksObtained (${marksObtained}) cannot exceed this assessment type's max_marks (${maxMarks})`,
+    );
+  }
+}
+
 // RS-ASM-002 (D7, ADL-014): first-time entry ONLY — a direct, audited
 // write by the assigned Subject Faculty, allowed only while the batch
 // is still 'draft' (assertBatchDraft). Refuses outright
@@ -292,6 +313,15 @@ async function recordMark(client, {
     academicYear, classId, subject, assessmentTypeId,
   });
   assertBatchDraft(batch);
+
+  // Checked after assertBatchDraft, not before: a batch that can't be
+  // directly edited at all should reject on THAT state, not on the
+  // proposed value's range — same "state gate before value validation"
+  // ordering the rest of this function already uses (class exists,
+  // then faculty-assigned, then batch-editable, then value-specific
+  // checks).
+  const assessmentType = await assessmentTypeRepository.findById(client, assessmentTypeId);
+  assertMarksInRange(marksObtained, assessmentType ? assessmentType.max_marks : null);
 
   const existing = await assessmentMarkRepository.findOne(client, {
     studentId, assessmentTypeId, classId, subject,
@@ -337,6 +367,11 @@ async function updateMark(client, markId, { marksObtained } = {}, { actorUserId 
     academicYear: mark.academic_year, classId: mark.class_id, subject: mark.subject, assessmentTypeId: mark.assessment_type_id,
   });
   assertBatchDraft(batch);
+
+  // Same "state gate before value validation" ordering recordMark uses
+  // — see its own comment.
+  const assessmentType = await assessmentTypeRepository.findById(client, mark.assessment_type_id);
+  assertMarksInRange(marksObtained, assessmentType ? assessmentType.max_marks : null);
 
   const updated = await assessmentMarkRepository.update(client, markId, { marksObtained });
 

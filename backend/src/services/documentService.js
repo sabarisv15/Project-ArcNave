@@ -32,6 +32,8 @@ const auditLogRepository = require('../repositories/auditLogRepository');
 const collegeProfileRepository = require('../repositories/collegeProfileRepository');
 const fileStorage = require('../storage/fileStorage');
 const storageProviderRegistry = require('../storage/storageProviderRegistry');
+const { registerAfterRollback } = require('../db/tenantTransaction');
+const { logError } = require('../logging/logger');
 const templateMerger = require('../generators/templateMerger');
 const visibilityService = require('./visibilityService');
 const documentCategoryService = require('./documentCategoryService');
@@ -294,11 +296,31 @@ async function uploadDocument(client, {
       uploadedByUserId: actorUserId,
     });
   } catch (err) {
+    // Round 10 P2/P3 finding: the row creation just failed, so no
+    // document will ever reference this path — clean it up
+    // synchronously rather than leaving an orphan invisible to quota
+    // accounting (assertWithinStorageQuota above only ever counted the
+    // rows that exist, never orphaned bytes with no row).
+    await fileStorage.deleteFile(storagePath, { providerName }).catch((cleanupErr) => {
+      logError('document_upload_orphan_cleanup_failed', { storagePath, error: cleanupErr.message });
+    });
     if (err.code === '23503' && err.constraint === 'documents_student_id_fkey') {
       throw new DocumentStudentNotFoundError(`studentId ${JSON.stringify(studentId)} does not exist`);
     }
     throw err;
   }
+
+  // The row above only committed to THIS request's still-open
+  // transaction — a later statement in the same transaction can still
+  // fail and roll everything back, leaving the same orphan the catch
+  // above just avoided for the immediate-failure case. Same cleanup,
+  // deferred until we actually know a rollback happened; a no-op once
+  // the transaction commits (registerAfterRollback's own comment).
+  registerAfterRollback(() => {
+    fileStorage.deleteFile(storagePath, { providerName }).catch((cleanupErr) => {
+      logError('document_upload_orphan_cleanup_failed', { storagePath, error: cleanupErr.message });
+    });
+  });
 
   await auditLogRepository.createAuditLogEntry(client, {
     collegeId,

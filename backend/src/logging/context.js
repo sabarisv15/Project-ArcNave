@@ -53,4 +53,16 @@ function getRequestContext() {
 // commitAndRelease) without ever leaking into logs.
 const AFTER_COMMIT_CALLBACKS = Symbol('afterCommitCallbacks');
 
-module.exports = { runWithRequestContext, getRequestContext, AFTER_COMMIT_CALLBACKS };
+// Same reasoning as AFTER_COMMIT_CALLBACKS, mirrored for the opposite
+// outcome — round 10 P2/P3 finding: documentService.uploadDocument
+// writes to disk before its DB row's transaction commits, with no
+// compensating cleanup if that transaction later rolls back (a later
+// statement in the same request failing). db/tenantTransaction.js's
+// registerAfterRollback/rollbackAndRelease is the mechanism; this is
+// just its request-scoped queue, kept a Symbol key for the same
+// leak-into-every-log-line reason.
+const AFTER_ROLLBACK_CALLBACKS = Symbol('afterRollbackCallbacks');
+
+module.exports = {
+  runWithRequestContext, getRequestContext, AFTER_COMMIT_CALLBACKS, AFTER_ROLLBACK_CALLBACKS,
+};

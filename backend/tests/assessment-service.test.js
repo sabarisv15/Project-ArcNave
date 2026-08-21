@@ -245,6 +245,92 @@ test('recordMark', async (t) => {
       assessmentService.AssessmentBatchNotEditableError,
     );
   });
+
+  // Round 10 P2/P3 finding: marks_obtained had no range/sanity check at
+  // all — negative and out-of-band values before this were stored
+  // exactly like a legitimate one. assessmentTypeRepository.findById is
+  // mocked explicitly (rather than relying on the batch-status/existing-
+  // mark mocks above) so this test proves the bound is enforced BEFORE
+  // any write is attempted, not just that some later step happens to
+  // reject the request for an unrelated reason.
+  await t.test('rejects a negative marksObtained', async () => {
+    const findClassMock = t.mock.method(classRepository, 'findById', async () => ({ id: 'class-1', college_id: 'c1' }));
+    const findAllocMock = t.mock.method(facultyAllocationRepository, 'findByClassId', async () => [
+      { subject: 'DBMS', staff_user_id: 'faculty-1' },
+    ]);
+    const findBatchMock = t.mock.method(assessmentSubmissionRepository, 'findOne', async () => null);
+    const findTypeMock = t.mock.method(assessmentTypeRepository, 'findById', async () => ({ id: 'type-1', max_marks: 100 }));
+    const createMock = t.mock.method(assessmentMarkRepository, 'create');
+    t.after(() => {
+      findClassMock.mock.restore();
+      findAllocMock.mock.restore();
+      findBatchMock.mock.restore();
+      findTypeMock.mock.restore();
+      createMock.mock.restore();
+    });
+
+    await assert.rejects(
+      () => assessmentService.recordMark({}, {
+        academicYear: '2026-2027', classId: 'class-1', subject: 'DBMS', assessmentTypeId: 'type-1', studentId: 's1', marksObtained: -5,
+      }, { actorUserId: 'faculty-1' }),
+      assessmentService.AssessmentMarkValidationError,
+    );
+    assert.equal(createMock.mock.callCount(), 0);
+  });
+
+  await t.test('rejects marksObtained exceeding the assessment type\'s max_marks', async () => {
+    const findClassMock = t.mock.method(classRepository, 'findById', async () => ({ id: 'class-1', college_id: 'c1' }));
+    const findAllocMock = t.mock.method(facultyAllocationRepository, 'findByClassId', async () => [
+      { subject: 'DBMS', staff_user_id: 'faculty-1' },
+    ]);
+    const findBatchMock = t.mock.method(assessmentSubmissionRepository, 'findOne', async () => null);
+    const findTypeMock = t.mock.method(assessmentTypeRepository, 'findById', async () => ({ id: 'type-1', max_marks: 50 }));
+    const createMock = t.mock.method(assessmentMarkRepository, 'create');
+    t.after(() => {
+      findClassMock.mock.restore();
+      findAllocMock.mock.restore();
+      findBatchMock.mock.restore();
+      findTypeMock.mock.restore();
+      createMock.mock.restore();
+    });
+
+    await assert.rejects(
+      () => assessmentService.recordMark({}, {
+        academicYear: '2026-2027', classId: 'class-1', subject: 'DBMS', assessmentTypeId: 'type-1', studentId: 's1', marksObtained: 51,
+      }, { actorUserId: 'faculty-1' }),
+      assessmentService.AssessmentMarkValidationError,
+    );
+    assert.equal(createMock.mock.callCount(), 0);
+  });
+
+  // max_marks is nullable at the schema level (assessment_types.max_marks
+  // has no NOT NULL) — an assessment type with none set yet must not
+  // block an otherwise-valid, non-negative mark.
+  await t.test('allows any non-negative marksObtained when the assessment type has no max_marks set', async () => {
+    const findClassMock = t.mock.method(classRepository, 'findById', async () => ({ id: 'class-1', college_id: 'c1' }));
+    const findAllocMock = t.mock.method(facultyAllocationRepository, 'findByClassId', async () => [
+      { subject: 'DBMS', staff_user_id: 'faculty-1' },
+    ]);
+    const findTypeMock = t.mock.method(assessmentTypeRepository, 'findById', async () => ({ id: 'type-1', max_marks: null }));
+    const findBatchMock = t.mock.method(assessmentSubmissionRepository, 'findOne', async () => null);
+    const findOneMock = t.mock.method(assessmentMarkRepository, 'findOne', async () => null);
+    const createMock = t.mock.method(assessmentMarkRepository, 'create', async (client, fields) => ({ id: 'mark-1', ...fields }));
+    const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
+    t.after(() => {
+      findClassMock.mock.restore();
+      findAllocMock.mock.restore();
+      findTypeMock.mock.restore();
+      findBatchMock.mock.restore();
+      findOneMock.mock.restore();
+      createMock.mock.restore();
+      auditMock.mock.restore();
+    });
+
+    const result = await assessmentService.recordMark({}, {
+      academicYear: '2026-2027', classId: 'class-1', subject: 'DBMS', assessmentTypeId: 'type-1', studentId: 's1', marksObtained: 9999,
+    }, { actorUserId: 'faculty-1' });
+    assert.equal(result.id, 'mark-1');
+  });
 });
 
 test('updateMark', async (t) => {
@@ -256,12 +342,14 @@ test('updateMark', async (t) => {
       { subject: 'DBMS', staff_user_id: 'faculty-1' },
     ]);
     const findBatchMock = t.mock.method(assessmentSubmissionRepository, 'findOne', async () => null);
+    const findTypeMock = t.mock.method(assessmentTypeRepository, 'findById', async () => ({ id: 'type-1', max_marks: 100 }));
     const updateMock = t.mock.method(assessmentMarkRepository, 'update', async (client, id, fields) => ({ id, ...fields }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
       findMarkMock.mock.restore();
       findAllocMock.mock.restore();
       findBatchMock.mock.restore();
+      findTypeMock.mock.restore();
       updateMock.mock.restore();
       auditMock.mock.restore();
     });
@@ -289,6 +377,35 @@ test('updateMark', async (t) => {
       () => assessmentService.updateMark({}, 'mark-1', { marksObtained: 60 }, { actorUserId: 'faculty-1' }),
       assessmentService.AssessmentBatchNotEditableError,
     );
+  });
+
+  // Round 10 P2/P3 finding, updateMark's own side of the same gap
+  // recordMark's tests above cover — resolves the assessment type via
+  // mark.assessment_type_id (the existing row), not a caller-supplied
+  // assessmentTypeId (updateMark never takes one).
+  await t.test('rejects a marksObtained edit that exceeds the assessment type\'s max_marks', async () => {
+    const findMarkMock = t.mock.method(assessmentMarkRepository, 'findById', async () => ({
+      id: 'mark-1', college_id: 'c1', class_id: 'class-1', subject: 'DBMS', academic_year: '2026-2027', assessment_type_id: 'type-1',
+    }));
+    const findAllocMock = t.mock.method(facultyAllocationRepository, 'findByClassId', async () => [
+      { subject: 'DBMS', staff_user_id: 'faculty-1' },
+    ]);
+    const findBatchMock = t.mock.method(assessmentSubmissionRepository, 'findOne', async () => null);
+    const findTypeMock = t.mock.method(assessmentTypeRepository, 'findById', async () => ({ id: 'type-1', max_marks: 50 }));
+    const updateMock = t.mock.method(assessmentMarkRepository, 'update');
+    t.after(() => {
+      findMarkMock.mock.restore();
+      findAllocMock.mock.restore();
+      findBatchMock.mock.restore();
+      findTypeMock.mock.restore();
+      updateMock.mock.restore();
+    });
+
+    await assert.rejects(
+      () => assessmentService.updateMark({}, 'mark-1', { marksObtained: 51 }, { actorUserId: 'faculty-1' }),
+      assessmentService.AssessmentMarkValidationError,
+    );
+    assert.equal(updateMock.mock.callCount(), 0);
   });
 });
 

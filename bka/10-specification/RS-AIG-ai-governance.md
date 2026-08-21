@@ -39,7 +39,7 @@ directly through the normal dashboard is not gated by it.
 | **Owner** | AI Tool Registry |
 | **Authority** | System invariant |
 | **Depends on** | — |
-| **Governs** | [RS-AIG-004](RS-AIG-ai-governance.md#rs-aig-004), [RS-AIG-006](RS-AIG-ai-governance.md#rs-aig-006), [RS-AIG-007](RS-AIG-ai-governance.md#rs-aig-007), [RS-AIG-012](RS-AIG-ai-governance.md#rs-aig-012), [RS-AIG-013](RS-AIG-ai-governance.md#rs-aig-013), [RS-AIG-015](RS-AIG-ai-governance.md#rs-aig-015), [RS-ANL-002](RS-ANL-analytics-governance.md#rs-anl-002), [RS-AIG-018](#rs-aig-018), [RS-AIG-021](#rs-aig-021), [RS-AIG-022](#rs-aig-022), [RS-AIG-023](#rs-aig-023) |
+| **Governs** | [RS-AIG-004](RS-AIG-ai-governance.md#rs-aig-004), [RS-AIG-006](RS-AIG-ai-governance.md#rs-aig-006), [RS-AIG-007](RS-AIG-ai-governance.md#rs-aig-007), [RS-AIG-012](RS-AIG-ai-governance.md#rs-aig-012), [RS-AIG-013](RS-AIG-ai-governance.md#rs-aig-013), [RS-AIG-015](RS-AIG-ai-governance.md#rs-aig-015), [RS-ANL-002](RS-ANL-analytics-governance.md#rs-anl-002), [RS-AIG-018](#rs-aig-018), [RS-AIG-021](#rs-aig-021), [RS-AIG-022](#rs-aig-022), [RS-AIG-023](#rs-aig-023), [RS-AIG-024](#rs-aig-024) |
 | **Lifecycle** | — |
 | **Workflow** | L3 → `WorkflowService` |
 | **AI** | Definitional |
@@ -816,7 +816,7 @@ which has no code path that reads which model produced the request.
 | **Owner** | LLM provider adapter |
 | **Authority** | System invariant |
 | **Depends on** | [RS-AIG-001](#rs-aig-001), [RS-AIG-008](#rs-aig-008) |
-| **Governs** | — |
+| **Governs** | [RS-AIG-024](#rs-aig-024) |
 | **Lifecycle** | — |
 | **Workflow** | — |
 | **AI** | Definitional |
@@ -866,3 +866,48 @@ for any caller that has not adopted the new parameter.
 | **Implementation** | `routes/ai.js`'s `mode` passthrough; `aiService.js`'s `askAgent` branch (`mode === 'general'` → `askGeneralChat`, using `completeMaybeStreaming` — never `completeWithTools`); `GENERAL_CHAT_SYSTEM_PROMPT` |
 | **Conformance** | Conformant |
 | **Decisions** | [ADL-040](../30-decisions/ledger.md#adl-040) |
+
+---
+
+## RS-AIG-024
+
+**Every AI tool invocation attempt writes exactly one audit row, and that
+row is complete enough to answer "which provider/model decided this, and
+what did it produce" without a second query — a Policy Gate rejection, a
+Business Service failure, and a success are three distinct, equally
+audited outcomes, never two audited and one silent.**
+
+Before this rule, a genuine handler failure (a Business Service throwing
+mid-`invokeTool` — NotFound, a domain validation error, a DB constraint —
+distinct from a Policy Gate *rejection*, which was already audited) left
+no trace at all. Fixed as its own action, `ai_tool_handler_failed`,
+audited before the error propagates — never conflated with
+`ai_tool_denied` (an authorization outcome) or silently swallowed.
+
+Separately, a successful `ai_tool_invoked` row previously recorded only
+`toolName`/`estimatedAffectedRows` — never which provider/model an LLM
+call was routed to ([RS-AIG-022](#rs-aig-022) already lets that vary per
+call), nor, for an L3 submission, which `workflow_requests` row it
+produced. Both are now included whenever the calling context actually
+knows them: `provider`/`model` are threaded from every LLM-mediated call
+site (the direct-invoke route, `POST /ai/tools/:name/invoke`, has neither
+— no LLM chose that call, so nothing is fabricated); `workflowRequestId`
+is read straight off the handler's own already-returned result (every L3
+handler in this registry returns the entity row it just updated, carrying
+`workflow_request_id` as a plain column) — never a second query for a
+fact the response already carries.
+
+| | |
+|---|---|
+| **Owner** | AI Tool Registry |
+| **Authority** | System invariant |
+| **Depends on** | [RS-AIG-001](#rs-aig-001), [RS-AIG-022](#rs-aig-022) |
+| **Governs** | — |
+| **Lifecycle** | — |
+| **Workflow** | — |
+| **AI** | Definitional — this rule constrains the audit trail every AI action already produces, not what the AI may do |
+| **Modules** | 9 |
+| **Data effect** | Creates one `audit_log` row per invocation attempt |
+| **Implementation** | `aiToolRegistry.js`'s `invokeTool` (try/catch around `tool.handler`, new `ai_tool_handler_failed` action); `aiService.js`'s `invokeTool` (`provider`/`model`/`workflowRequestId` in `ai_tool_invoked` metadata, threaded from `askAgent`/`askAboutTool`/`executeWorkflowPlan`'s already-resolved adapter/config) |
+| **Conformance** | Conformant |
+| **Decisions** | [ADL-044](../30-decisions/ledger.md#adl-044) |

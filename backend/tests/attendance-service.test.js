@@ -329,8 +329,8 @@ test('AttendanceService validation, authorization, and audit logging (no DB)', a
   await t.test('markAttendance re-marks an existing, unlocked session instead of creating a new one', async () => {
     const getClassMock = t.mock.method(academicService, 'getClass', async () => APPROVED_CLASS);
     mockTutor(t, 'tutor-user');
-    const findMock = t.mock.method(attendanceRepository, 'findByClassSessionAndHour', async () => ({ id: 'session-4', locked_at: null }));
-    const updateMock = t.mock.method(attendanceRepository, 'update', async (client, id, fields) => ({ id, ...fields }));
+    const findMock = t.mock.method(attendanceRepository, 'findByClassSessionAndHour', async () => ({ id: 'session-4', locked_at: null, version: 1 }));
+    const updateMock = t.mock.method(attendanceRepository, 'updateWithVersionCheck', async (client, id, fields) => ({ id, ...fields }));
     const createMock = t.mock.method(attendanceRepository, 'create');
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     const findRangeMock = t.mock.method(attendanceRepository, 'findByClassAndDateRange', async () => []);

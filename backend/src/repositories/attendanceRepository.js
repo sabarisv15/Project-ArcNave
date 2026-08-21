@@ -132,6 +132,40 @@ async function update(client, id, fields) {
   return result.rows[0] || null;
 }
 
+// Round 10 P2/P3 finding: a re-mark (an UPDATE against an *existing*
+// session row) had no version check — two concurrent re-marks of the
+// same period both read the same `existing` row in
+// attendanceService.markAttendance, both then ran a plain `update`,
+// last write silently winning with no signal to either caller that the
+// other one's change was clobbered. `version` (1762800000000_attendance-
+// sessions-version) is the optimistic-lock token, same
+// configurationRepository.upsertConfiguration's own `expectedVersion`
+// pattern already uses elsewhere in this codebase — NOT `updated_at`:
+// an earlier draft of this fix compared on that instead and was caught
+// live as genuinely broken (pg's timestamptz->JS Date round-trip loses
+// sub-millisecond precision, so the comparison almost never matched
+// even for a plain sequential re-mark, not just a concurrent one — see
+// the migration's own comment). The extra WHERE clause below only
+// matches when nothing has written this row since the caller's own
+// read, and the UPDATE's row lock (not a separate `SELECT ... FOR
+// UPDATE`) is what serializes two concurrent callers racing for it. A
+// caller that loses the race gets `null` back (RETURNING produces no
+// row), same "0 rows == someone else already won" contract
+// workflowRepository.updatePendingStatus already established.
+async function updateWithVersionCheck(client, id, fields, expectedVersion) {
+  const entries = COLUMNS.filter(([key]) => fields[key] !== undefined);
+  const setClauses = entries.map(([, column], i) => `${column} = $${i + 3}`);
+  const values = entries.map(([key]) => fields[key]);
+
+  const result = await client.query(
+    `UPDATE attendance_sessions SET ${setClauses.length > 0 ? `${setClauses.join(', ')}, ` : ''}updated_at = now(), version = version + 1
+     WHERE id = $1 AND deleted_at IS NULL AND version = $2
+     RETURNING *`,
+    [id, expectedVersion, ...values],
+  );
+  return result.rows[0] || null;
+}
+
 // Sets deleted_at rather than issuing a DELETE — see the file-level
 // comment. Idempotent against an already-deleted or missing id: the
 // WHERE guard means a second call simply matches no row.
@@ -162,6 +196,7 @@ module.exports = {
   findByClassAndDate,
   findByClassAndDateRange,
   update,
+  updateWithVersionCheck,
   softDelete,
   list,
 };

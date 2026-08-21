@@ -255,6 +255,70 @@ test('admission drafts', async (t) => {
     assert.equal(documentsResp.body[0].student_id, studentId);
   });
 
+  // Round 10 P2/P3 finding: the round-8 fix added ROLLBACK to
+  // buildExtractionHandler's three separate BEGIN/COMMIT blocks — before
+  // that fix, an error inside any of them released the client back to
+  // appPool with the transaction still aborted at the Postgres protocol
+  // level, so the NEXT request to borrow that exact connection would
+  // fail its own, unrelated query with "current transaction is
+  // aborted" — but no test ever actually forced that error path.
+  // documentTypeRegistryRepository.findByModule (the statement right
+  // after findByDraftId inside the handler's FIRST transaction block)
+  // is monkey-patched to throw once, forcing that block's catch/
+  // ROLLBACK to run for real against real Postgres, then an immediate,
+  // completely unrelated request proves the pool came back healthy —
+  // not just that this one job recorded 'failed' (finishClient, which
+  // marks the job failed, is a SEPARATE connect() call and would
+  // succeed either way, so job-status alone would not have caught a
+  // regression here).
+  await t.test('a real failure inside buildExtractionHandler\'s first transaction rolls back cleanly — the pool stays healthy for the very next unrelated request (round 8 fix regression)', async () => {
+    const token = await loginTutor();
+    const auth = headersFor(token);
+
+    const created = await requestRaw(baseUrl, '/api/v1/students/admission-drafts', 'POST', { headers: auth, body: {} });
+    assert.equal(created.status, 201);
+    const draftId = created.body.id;
+
+    const { body: mpBody, contentType } = buildMultipart({ docType: 'marksheet_10th' }, 'file', 'marksheet.png', TINY_PNG, 'image/png');
+    const uploadResp = await requestRaw(baseUrl, `/api/v1/students/admission-drafts/${draftId}/documents`, 'POST', {
+      headers: { ...auth, 'content-type': contentType }, body: mpBody, isJson: false,
+    });
+    assert.equal(uploadResp.status, 201);
+
+    // eslint-disable-next-line global-require
+    const documentTypeRegistryRepository = require('../src/repositories/documentTypeRegistryRepository');
+    const originalFindByModule = documentTypeRegistryRepository.findByModule;
+    let forcedFailureCalls = 0;
+    documentTypeRegistryRepository.findByModule = async () => {
+      forcedFailureCalls += 1;
+      throw new Error('forced failure for round 8 rollback regression test');
+    };
+
+    let state = null;
+    try {
+      const extractResp = await requestRaw(baseUrl, `/api/v1/students/admission-drafts/${draftId}/extract`, 'POST', { headers: auth, body: {} });
+      assert.equal(extractResp.status, 202);
+
+      for (let i = 0; i < 40; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => { setTimeout(resolve, 100); });
+        // eslint-disable-next-line no-await-in-loop
+        const poll = await requestRaw(baseUrl, `/api/v1/students/admission-drafts/${draftId}`, 'GET', { headers: auth });
+        state = poll.body;
+        if (state.extractionJob && state.extractionJob.status !== 'pending' && state.extractionJob.status !== 'running') break;
+      }
+    } finally {
+      documentTypeRegistryRepository.findByModule = originalFindByModule;
+    }
+
+    assert.equal(forcedFailureCalls, 1, 'the forced failure should have actually fired inside the handler, not been bypassed');
+    assert.ok(state.extractionJob);
+    assert.equal(state.extractionJob.status, 'failed');
+
+    const sanityResp = await requestRaw(baseUrl, `/api/v1/students/admission-drafts/${draftId}`, 'GET', { headers: auth });
+    assert.equal(sanityResp.status, 200);
+  });
+
   // 4-login authorization architecture (2026-08-09) — the critical
   // regression case: tutoruser genuinely occupies the class's L4 seat
   // (seedTenant's seedClassTutorPosition fixture), but this request

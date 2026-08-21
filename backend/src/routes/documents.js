@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const PizZip = require('pizzip');
 const asyncHandler = require('../middleware/asyncHandler');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const { roleHasPermission } = require('../middleware/permissions');
@@ -79,6 +80,79 @@ function sniffImageMimeType(buffer) {
     return 'image/webp';
   }
   return null;
+}
+
+// PDF/DOCX/XLSX magic-byte sniffing, extending sniffImageMimeType above with
+// the same "never trust the client's declared type" discipline — see the
+// documentTextExtractionService.js file comment for why chat attachments
+// support these formats. DOCX/XLSX share the ZIP container magic
+// (50 4B 03 04); PizZip (already a dependency — see
+// documentService.assertValidDocxTemplate's identical technique) is opened to
+// check which real OpenXML part is inside, so a bare .zip or a renamed .pptx
+// (ZIP magic, but neither word/document.xml nor xl/workbook.xml) is rejected
+// by construction, not by a separate deny-list.
+function sniffOfficeOpenXmlMimeType(buffer) {
+  const isZip = buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04;
+  if (!isZip) return null;
+  let zip;
+  try {
+    zip = new PizZip(buffer);
+  } catch {
+    return null;
+  }
+  if (zip.file('word/document.xml')) {
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  }
+  if (zip.file('xl/workbook.xml')) {
+    return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  }
+  return null;
+}
+
+function sniffPdfMimeType(buffer) {
+  return (buffer.length >= 4 && buffer.toString('ascii', 0, 4) === '%PDF') ? 'application/pdf' : null;
+}
+
+// CSV/MD/TXT have no magic-byte signature at all — they're just UTF-8 text.
+// The closest equivalent to "never trust the client" here is a content-shape
+// check: reject anything containing a NUL byte or invalid UTF-8 (Node's
+// toString('utf8') silently substitutes U+FFFD for invalid sequences rather
+// than throwing, so that substitution is the actual signal to check for), and
+// require a high printable/whitespace ratio so a binary file that happens to
+// avoid NUL bytes still gets rejected. The declared file_name's extension is
+// then used ONLY to pick which of the three text mime types to label it as —
+// never as the security check itself.
+const PLAIN_TEXT_EXTENSION_MIME_TYPES = { '.md': 'text/markdown', '.txt': 'text/plain', '.csv': 'text/csv' };
+const PLAIN_TEXT_SNIFF_SAMPLE_BYTES = 65536;
+
+function looksLikePlainText(buffer) {
+  if (buffer.length === 0) return true;
+  const sample = buffer.length > PLAIN_TEXT_SNIFF_SAMPLE_BYTES ? buffer.subarray(0, PLAIN_TEXT_SNIFF_SAMPLE_BYTES) : buffer;
+  if (sample.includes(0)) return false;
+  const text = sample.toString('utf8');
+  if (text.includes('�')) return false;
+  let printable = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127)) printable += 1;
+  }
+  return printable / text.length >= 0.95;
+}
+
+function sniffPlainTextMimeType(buffer, fileName) {
+  if (!looksLikePlainText(buffer)) return null;
+  const match = typeof fileName === 'string' ? fileName.toLowerCase().match(/\.[a-z0-9]+$/) : null;
+  return (match && PLAIN_TEXT_EXTENSION_MIME_TYPES[match[0]]) || null;
+}
+
+// The combined sniff used by POST /documents/chat-attachments below —
+// images (unchanged) first, then documents, in cheapest-check-first order.
+function sniffChatAttachmentMimeType(buffer, fileName) {
+  return sniffImageMimeType(buffer)
+    || sniffPdfMimeType(buffer)
+    || sniffOfficeOpenXmlMimeType(buffer)
+    || sniffPlainTextMimeType(buffer, fileName)
+    || null;
 }
 
 function bodyToFields(body, fieldMap) {
@@ -453,10 +527,16 @@ function createDocumentsRouter() {
     }
     // The client's declared mime_type is never trusted (composerAttachments.js's own
     // "server still authorizes and re-validates every upload" comment) — the sniffed
-    // type from the real bytes is what's stored and later sent to a vision provider.
-    const sniffedMimeType = sniffImageMimeType(fileBuffer);
+    // type from the real bytes is what's stored and later sent to a vision provider
+    // or through documentTextExtractionService, depending on type. PPTX/ODT/ODS,
+    // bare ZIP, and executable/script content are all rejected here — either they
+    // fail every sniff check outright (no matching magic bytes/internal manifest/
+    // plain-text shape) or they're simply not in the allowlist.
+    const sniffedMimeType = sniffChatAttachmentMimeType(fileBuffer, fileName);
     if (!sniffedMimeType) {
-      res.status(400).json({ detail: 'file content is not a supported image type (png, jpeg, gif, webp)' });
+      res.status(400).json({
+        detail: 'file content is not a supported attachment type (png, jpeg, gif, webp, pdf, docx, xlsx, md, txt, csv)',
+      });
       return;
     }
 

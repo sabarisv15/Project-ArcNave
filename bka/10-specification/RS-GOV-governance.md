@@ -257,7 +257,7 @@ fields; it is not a new mechanism.
 | **Owner** | `ConfigurationService` |
 | **Authority** | Platform Admin / L1 |
 | **Depends on** | [RS-DAT-006](RS-DAT-data-integrity.md#rs-dat-006), [RS-GOV-008](RS-GOV-governance.md#rs-gov-008) |
-| **Governs** | — |
+| **Governs** | [RS-ATT-010](RS-ATT-attendance.md#rs-att-010) |
 | **Lifecycle** | Organization |
 | **Workflow** | — |
 | **AI** | — |

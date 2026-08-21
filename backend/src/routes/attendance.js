@@ -71,6 +71,10 @@ function mapAttendanceServiceError(err, res) {
     res.status(409).json({ detail: err.message });
     return true;
   }
+  if (err instanceof attendanceService.AttendanceReMarkConflictError) {
+    res.status(409).json({ detail: err.message });
+    return true;
+  }
   // Authenticated but not permitted to mark *this* class's attendance
   // — the same 403 rbac.js's requireRole already uses for "wrong
   // role," extended here to a per-row authorization decision

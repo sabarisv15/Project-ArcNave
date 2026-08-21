@@ -18,6 +18,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { Pool } = require('pg');
+const PizZip = require('pizzip');
 const createApp = require('../src/app');
 const security = require('../src/security');
 const config = require('../src/config');
@@ -113,6 +114,35 @@ const ONE_PIXEL_PNG = Buffer.from(
   'base64',
 );
 
+// Real `%PDF` magic bytes — enough for the route's own sniff to accept it
+// (extraction correctness is documentTextExtractionService's own unit tests,
+// mocked separately — this file proves the upload/sniff boundary only).
+const FAKE_PDF = Buffer.from('%PDF-1.4\n%fake pdf content for the chat-attachments sniff test\n%%EOF');
+
+// A minimal, real ZIP container carrying only the one internal part
+// sniffOfficeOpenXmlMimeType actually checks for — not a fully valid Office
+// document (no styles/content types), but the same "the sniff only proves
+// the container shape, not full document validity" scope the extraction
+// unit tests already cover separately.
+function fakeDocxBuffer() {
+  const zip = new PizZip();
+  zip.file('word/document.xml', '<w:document/>');
+  return zip.generate({ type: 'nodebuffer' });
+}
+function fakeXlsxBuffer() {
+  const zip = new PizZip();
+  zip.file('xl/workbook.xml', '<workbook/>');
+  return zip.generate({ type: 'nodebuffer' });
+}
+// A real ZIP container with neither expected internal part — same magic
+// bytes as a docx/xlsx, deliberately used to prove a bare .zip (or a
+// renamed .pptx) is rejected by construction, not by a separate deny-list.
+function fakeUnrelatedZipBuffer() {
+  const zip = new PizZip();
+  zip.file('ppt/presentation.xml', '<presentation/>');
+  return zip.generate({ type: 'nodebuffer' });
+}
+
 test('documents chat-attachments', async (t) => {
   const app = createApp();
   const server = await startServer(app);
@@ -204,6 +234,82 @@ test('documents chat-attachments', async (t) => {
       file_name: 'empty.png',
       mime_type: 'image/png',
       file_base64: '',
+    });
+    assert.equal(resp.status, 400);
+  });
+
+  await t.test('a real PDF upload succeeds and is sniffed as application/pdf', async () => {
+    const token = await login('userone');
+    const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
+      file_name: 'report.pdf',
+      file_base64: FAKE_PDF.toString('base64'),
+    });
+    assert.equal(resp.status, 201);
+    assert.equal(resp.body.mime_type, 'application/pdf');
+  });
+
+  await t.test('a real DOCX upload succeeds and is sniffed as the openxml wordprocessing type', async () => {
+    const token = await login('userone');
+    const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
+      file_name: 'notes.docx',
+      file_base64: fakeDocxBuffer().toString('base64'),
+    });
+    assert.equal(resp.status, 201);
+    assert.equal(resp.body.mime_type, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  });
+
+  await t.test('a real XLSX upload succeeds and is sniffed as the openxml spreadsheet type', async () => {
+    const token = await login('userone');
+    const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
+      file_name: 'marks.xlsx',
+      file_base64: fakeXlsxBuffer().toString('base64'),
+    });
+    assert.equal(resp.status, 201);
+    assert.equal(resp.body.mime_type, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  });
+
+  await t.test('a bare zip / renamed pptx (ZIP magic, but neither word/document.xml nor xl/workbook.xml inside) is rejected', async () => {
+    const token = await login('userone');
+    const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
+      file_name: 'slides.pptx',
+      file_base64: fakeUnrelatedZipBuffer().toString('base64'),
+    });
+    assert.equal(resp.status, 400);
+  });
+
+  await t.test('md/txt/csv uploads succeed and are sniffed by content shape + the declared extension', async () => {
+    const token = await login('userone');
+    const cases = [
+      ['readme.md', 'text/markdown', '# Notes\n\nSome markdown content.'],
+      ['plain.txt', 'text/plain', 'Just plain readable text.'],
+      ['roster.csv', 'text/csv', 'name,roll_number\nRavi,1\nMeena,2'],
+    ];
+    for (const [fileName, expectedMime, content] of cases) {
+      // eslint-disable-next-line no-await-in-loop
+      const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
+        file_name: fileName,
+        file_base64: Buffer.from(content, 'utf8').toString('base64'),
+      });
+      assert.equal(resp.status, 201, `${fileName} should be accepted`);
+      assert.equal(resp.body.mime_type, expectedMime);
+    }
+  });
+
+  await t.test('binary-looking content with a .txt extension (a NUL byte present) is rejected — the content heuristic is the real gate, not the extension', async () => {
+    const token = await login('userone');
+    const binaryLooking = Buffer.from([0x00, 0x01, 0x02, 0xff, 0xfe, 0x00, 0x10, 0x20]);
+    const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
+      file_name: 'disguised.txt',
+      file_base64: binaryLooking.toString('base64'),
+    });
+    assert.equal(resp.status, 400);
+  });
+
+  await t.test('plain text content with no recognized extension is rejected rather than guessed', async () => {
+    const token = await login('userone');
+    const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
+      file_name: 'notes.rtf',
+      file_base64: Buffer.from('some readable text with no supported extension', 'utf8').toString('base64'),
     });
     assert.equal(resp.status, 400);
   });

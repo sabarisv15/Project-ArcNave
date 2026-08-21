@@ -1,7 +1,7 @@
 'use strict';
 
 const { appPool } = require('./pool');
-const { getRequestContext, AFTER_COMMIT_CALLBACKS } = require('../logging/context');
+const { getRequestContext, AFTER_COMMIT_CALLBACKS, AFTER_ROLLBACK_CALLBACKS } = require('../logging/context');
 const { logError } = require('../logging/logger');
 
 // The shared "open a transaction, set_config, wire up commit-on-
@@ -97,6 +97,15 @@ async function openTenantTransaction(req, res, collegeId) {
         }
       }
     }
+
+    // A successful commit means nothing this request queued for
+    // registerAfterRollback should ever fire — discarded here rather
+    // than left to rollbackAndRelease's own `settled` guard, since that
+    // guard exists to stop a double COMMIT/ROLLBACK, not to express
+    // "this queue is now moot."
+    if (context && context[AFTER_ROLLBACK_CALLBACKS]) {
+      context[AFTER_ROLLBACK_CALLBACKS] = [];
+    }
   };
 
   const rollbackAndRelease = async () => {
@@ -106,6 +115,30 @@ async function openTenantTransaction(req, res, collegeId) {
       await client.query('ROLLBACK');
     } finally {
       client.release();
+    }
+
+    // Mirrors commitAndRelease's own callback draining, only reached
+    // once ROLLBACK has actually completed — see registerAfterRollback's
+    // own comment for the real bug this exists to fix (documentService.
+    // uploadDocument writing to disk before its row's transaction
+    // commits, with no cleanup if that transaction later rolls back).
+    // Same `context` closure commitAndRelease uses (defined below, once
+    // per request) — not re-fetched, so both settle against the
+    // identical AsyncLocalStorage store.
+    const callbacks = context ? context[AFTER_ROLLBACK_CALLBACKS] : null;
+    if (callbacks && callbacks.length > 0) {
+      context[AFTER_ROLLBACK_CALLBACKS] = [];
+      for (const fn of callbacks) {
+        try {
+          fn();
+        } catch (err) {
+          logError('after_rollback_callback_failed', {
+            requestId: req.requestId,
+            collegeId: req.collegeId,
+            error: err.message,
+          });
+        }
+      }
     }
   };
 
@@ -187,4 +220,30 @@ function registerAfterCommit(fn) {
   context[AFTER_COMMIT_CALLBACKS].push(fn);
 }
 
-module.exports = { openTenantTransaction, registerAfterCommit };
+// Round 10 P2/P3 finding: documentService.uploadDocument (and any
+// future caller with the same "write to disk, then write the DB row
+// that references it" shape) had no way to undo the disk write if the
+// SAME request's transaction later rolled back — an orphaned file,
+// invisible to quota accounting, on any later statement's failure. The
+// mirror image of registerAfterCommit above: `fn` fires only if THIS
+// request's transaction actually rolls back, never if it commits
+// (commitAndRelease discards the queue instead of running it).
+//
+// Deliberately does NOT fall back to firing `fn` immediately when
+// there's no request context (registerAfterCommit's own fallback is
+// safe because "no context" there means "nothing to defer against, run
+// now"; here it would mean the opposite — unconditionally deleting a
+// file this function has no way to know will actually need deleting).
+// A caller outside the normal HTTP/transaction lifecycle (e.g. a test
+// driving documentService directly against its own manually-managed
+// transaction) is expected to manage its own file cleanup instead.
+function registerAfterRollback(fn) {
+  const context = getRequestContext();
+  if (!context) {
+    return;
+  }
+  if (!context[AFTER_ROLLBACK_CALLBACKS]) context[AFTER_ROLLBACK_CALLBACKS] = [];
+  context[AFTER_ROLLBACK_CALLBACKS].push(fn);
+}
+
+module.exports = { openTenantTransaction, registerAfterCommit, registerAfterRollback };

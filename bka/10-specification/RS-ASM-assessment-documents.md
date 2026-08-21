@@ -50,7 +50,7 @@ assessment.
 | **Owner** | `AssessmentService` |
 | **Authority** | The assigned Subject Faculty |
 | **Depends on** | [RS-CLS-009](RS-CLS-classroom.md#rs-cls-009), [RS-ACA-009](RS-ACA-academic.md#rs-aca-009) |
-| **Governs** | [RS-ASM-003](RS-ASM-assessment-documents.md#rs-asm-003), [RS-ASM-004](RS-ASM-assessment-documents.md#rs-asm-004), [RS-ASM-012](RS-ASM-assessment-documents.md#rs-asm-012) |
+| **Governs** | [RS-ASM-003](RS-ASM-assessment-documents.md#rs-asm-003), [RS-ASM-004](RS-ASM-assessment-documents.md#rs-asm-004), [RS-ASM-012](RS-ASM-assessment-documents.md#rs-asm-012), [RS-ASM-013](RS-ASM-assessment-documents.md#rs-asm-013) |
 | **Lifecycle** | **Mark record — canonical definition:** `unrecorded → recorded → (corrected)` |
 | **Workflow** | **None** — direct write, audited |
 | **AI** | L1 direct-write — `assessment_record_mark`, gated by the assigned-faculty assertion, **first-time entry only** |
@@ -148,7 +148,7 @@ an institution has selected ([RS-GOV-013](RS-GOV-governance.md#rs-gov-013)).
 | **Owner** | `DocumentService` |
 | **Authority** | System invariant |
 | **Depends on** | [RS-TEN-006](RS-TEN-tenancy-security.md#rs-ten-006), [RS-GOV-013](RS-GOV-governance.md#rs-gov-013), [RS-AIG-002](RS-AIG-ai-governance.md#rs-aig-002) |
-| **Governs** | [RS-DAT-005](RS-DAT-data-integrity.md#rs-dat-005), [RS-ACA-010](RS-ACA-academic.md#rs-aca-010), [RS-ASM-006](RS-ASM-assessment-documents.md#rs-asm-006), [RS-ASM-008](RS-ASM-assessment-documents.md#rs-asm-008), [RS-STU-011](RS-STU-students.md#rs-stu-011), [RS-ADM-003](RS-ADM-admission-wizard.md#rs-adm-003), [RS-ADM-004](RS-ADM-admission-wizard.md#rs-adm-004), [RS-ASM-011](RS-ASM-assessment-documents.md#rs-asm-011) |
+| **Governs** | [RS-DAT-005](RS-DAT-data-integrity.md#rs-dat-005), [RS-ACA-010](RS-ACA-academic.md#rs-aca-010), [RS-ASM-006](RS-ASM-assessment-documents.md#rs-asm-006), [RS-ASM-008](RS-ASM-assessment-documents.md#rs-asm-008), [RS-STU-011](RS-STU-students.md#rs-stu-011), [RS-ADM-003](RS-ADM-admission-wizard.md#rs-adm-003), [RS-ADM-004](RS-ADM-admission-wizard.md#rs-adm-004), [RS-ASM-011](RS-ASM-assessment-documents.md#rs-asm-011), [RS-ASM-014](RS-ASM-assessment-documents.md#rs-asm-014) |
 | **Lifecycle** | Document |
 | **Workflow** | — |
 | **AI** | Binding — no AI tool writes a file |
@@ -386,7 +386,7 @@ so no row is left permanently unfixable.
 | **Supporting Components** | — |
 | **Authority** | Create: any staff member who teaches at least one class. Edit: creator only (Principal, for creator-less legacy rows only) |
 | **Depends on** | [RS-ASM-002](#rs-asm-002) |
-| **Governs** | — |
+| **Governs** | [RS-ASM-013](#rs-asm-013) |
 | **Lifecycle** | Assessment type: created → (edited by creator only) |
 | **Workflow** | None — direct write |
 | **AI** | L1 direct-write, same authority as the GUI — `assessment_type_create`, `assessment_type_update` |
@@ -395,3 +395,76 @@ so no row is left permanently unfixable.
 | **Implementation** | `assessmentService.createAssessmentType`/`updateAssessmentType`, `POST`/`PUT /assessment-types` |
 | **Conformance** | Conformant |
 | **Decisions** | [ADL-030](../30-decisions/ledger.md#adl-030) |
+
+---
+
+## RS-ASM-013
+
+**`marksObtained` must be non-negative, and — when the assessment type
+has a `max_marks` set ([RS-ASM-012](#rs-asm-012)) — may not exceed it.**
+
+"The system stores marks exactly as entered" ([RS-ASM-002](#rs-asm-002))
+governs *calculation* (no grade/best-of/weightage derivation), never
+*plausibility* — those are separate concerns. `max_marks` is optional at
+assessment-type level ([RS-ASM-012](#rs-asm-012): "choosing its own
+max-marks value" — a type may have none), so the upper bound only applies
+once a real value exists; the non-negative floor always applies. Checked
+on first-time entry ([RS-ASM-002](#rs-asm-002)) and on a same-slot direct
+edit while the batch is still open for direct editing (`updateMark`) —
+after that batch-editable gate, never before, so a batch that cannot be
+directly edited at all rejects on that state, not the proposed value.
+**The batch draft/lock/submit lifecycle `updateMark` belongs to has no
+dedicated `RS-ASM` rule of its own yet** — a real, pre-existing
+documentation gap this pass found but did not take on closing (a
+materially larger task than this rule); this rule's own `Depends on`
+below cites only what is actually documented today.
+
+| | |
+|---|---|
+| **Owner** | `AssessmentService` |
+| **Authority** | Same as the write it accompanies — [RS-ASM-002](#rs-asm-002) for first-time entry, `updateMark`'s undocumented batch-draft gate for a direct edit |
+| **Depends on** | [RS-ASM-002](#rs-asm-002), [RS-ASM-012](#rs-asm-012) |
+| **Governs** | — |
+| **Lifecycle** | Mark record — value validation only, no new state |
+| **Workflow** | None — rejected synchronously, same call as the write it would otherwise complete |
+| **AI** | Binding — `assessment_record_mark` inherits this check unchanged |
+| **Modules** | 6, 9 |
+| **Data effect** | — |
+| **Implementation** | DB floor: `assessment_marks_marks_obtained_non_negative_check` (`1762600000000_assessment-marks-non-negative-check`); app-level ceiling: `assessmentService.assertMarksInRange`, called from `recordMark`/`updateMark` |
+| **Conformance** | Conformant |
+| **Decisions** | [ADL-042](../30-decisions/ledger.md#adl-042) |
+
+---
+
+## RS-ASM-014
+
+**A file `DocumentService` writes to storage is compensated if the row
+that references it never durably commits — never an orphan, invisible
+to quota accounting, with bytes on disk and no matching row.**
+
+Sibling to [RS-DAT-005](RS-DAT-data-integrity.md#rs-dat-005) (which
+states the same "storage-path rows and bytes on disk must agree"
+invariant for backups) — this is the same invariant at write time, not
+backup time. Two failure windows, both closed: the row's own `INSERT`
+failing immediately (cleaned up synchronously, in the same call), and a
+*later*, unrelated statement in the same request's transaction failing
+and rolling everything back after the row appeared to succeed (cleaned
+up once the rollback actually happens, never speculatively). Neither
+path is a second storage-owning mechanism — both call the same
+`DocumentService`-owned delete [RS-ASM-005](#rs-asm-005) already
+reserves solely to it.
+
+| | |
+|---|---|
+| **Owner** | `DocumentService` |
+| **Authority** | System invariant |
+| **Depends on** | [RS-ASM-005](#rs-asm-005) |
+| **Governs** | — |
+| **Lifecycle** | Document — a failed/rolled-back upload leaves no trace, neither row nor bytes |
+| **Workflow** | None — compensated synchronously (immediate failure) or on rollback (deferred failure), never an approval flow |
+| **AI** | Binding — every AI upload path (`generate_document`, `export_artifact`, chat attachments) goes through the same `uploadDocument`, unchanged |
+| **Modules** | 6 |
+| **Data effect** | — |
+| **Implementation** | Immediate-failure cleanup: `documentService.uploadDocument`'s own catch around `documentRepository.create`. Deferred-failure cleanup: `db/tenantTransaction.js`'s new `registerAfterRollback` (mirrors the existing `registerAfterCommit`) — fires only if the request's transaction actually rolls back, discarded on commit |
+| **Conformance** | Conformant |
+| **Decisions** | [ADL-043](../30-decisions/ledger.md#adl-043) |

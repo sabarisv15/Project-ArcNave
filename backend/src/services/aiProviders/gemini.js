@@ -36,6 +36,20 @@ const DEFAULT_MODEL = 'gemini-3.7-flash';
 const MAX_OUTPUT_TOKENS = 1024;
 const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 
+// Gemini 3.x's hybrid reasoning defaults to a HIGH thinking level for
+// Flash models — real live cost caught it: a tool-result-summarization
+// call spent 407 "thinking" tokens reasoning about a rendering task
+// that needs none, and in one production case (a longer prompt) it
+// spent the ENTIRE MAX_OUTPUT_TOKENS budget thinking and emitted zero
+// visible answer text before hitting STOP — a silent empty "success"
+// (see completeStream's own comment on why that's now impossible).
+// LOW (not MINIMAL — Vertex rejects THINKING_LEVEL_MINIMAL for this
+// model with a 400, caught live) cut that same call's thinking tokens
+// from 407 to 171 while still answering correctly. None of this app's
+// calls (tool selection, tool-result phrasing, direct chat) are the
+// kind of deep multi-step reasoning task a higher level exists for.
+const GENERATION_CONFIG = { maxOutputTokens: MAX_OUTPUT_TOKENS, thinkingConfig: { thinkingLevel: 'LOW' } };
+
 const supportsVision = true;
 
 function isConfigured(cfg) {
@@ -150,7 +164,7 @@ async function completeWithMeta(cfg, { systemPrompt, userPrompt, images } = {}) 
   const payload = await postJson(cfg, modelUrl(cfg, model(cfg), 'generateContent'), {
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents: [{ role: 'user', parts: buildUserParts(userPrompt, images) }],
-    generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS },
+    generationConfig: GENERATION_CONFIG,
   });
 
   const parts = payload && payload.candidates && payload.candidates[0]
@@ -171,16 +185,14 @@ async function complete(cfg, prompts) {
   return text;
 }
 
-// Streaming variant of complete() (P0.5) — see nim.js's own comment
-// for the shared reasoning (only the final answer streams, retries
-// only cover the initial connection). Vertex AI's streaming path is
-// the same `:streamGenerateContent?alt=sse` shape the public Gemini
-// API uses — only the host/auth above differ.
-async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, onDelta) {
-  if (!isConfigured(cfg)) {
-    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
-  }
-
+// One streamGenerateContent HTTP call, collected into a single string.
+// Never calls onDelta until the CALLER decides the attempt is worth
+// keeping (see completeStream below) — safe to do because an attempt
+// that ends up empty by construction never accumulated any non-empty
+// chunk to defer in the first place (the loop below only appends when
+// text.length > 0), so a caller retrying a fully-empty attempt never
+// double-emits or emits-then-discards a real delta.
+async function attemptStream(cfg, { systemPrompt, userPrompt, images } = {}) {
   const token = await getAccessToken(cfg);
   const response = await withRetry(async () => {
     const controller = new AbortController();
@@ -192,7 +204,7 @@ async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, on
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: systemPrompt }] },
           contents: [{ role: 'user', parts: buildUserParts(userPrompt, images) }],
-          generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS },
+          generationConfig: GENERATION_CONFIG,
         }),
         signal: controller.signal,
       });
@@ -208,7 +220,7 @@ async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, on
     throw new LlmRequestError(`Gemini (Vertex AI) returned ${response.status}: ${bodyText.slice(0, 500)}`);
   }
 
-  let full = '';
+  const deltas = [];
   for await (const payload of iterateSseLines(response)) {
     let event;
     try {
@@ -219,12 +231,46 @@ async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, on
     const parts = event && event.candidates && event.candidates[0]
       && event.candidates[0].content && event.candidates[0].content.parts;
     const text = Array.isArray(parts) ? parts.map((p) => p.text).filter(Boolean).join('') : '';
-    if (text.length > 0) {
-      full += text;
-      onDelta(text);
+    if (text.length > 0) deltas.push(text);
+  }
+  return deltas;
+}
+
+// A real, live-caught failure mode: Gemini's hybrid reasoning can spend
+// its ENTIRE token budget "thinking" (a final SSE chunk with `parts:
+// [{ text: "", thoughtSignature: "..." }]`, finishReason STOP) and
+// stream zero visible text — an HTTP 200 with a well-formed SSE body,
+// no error to catch, yet nothing was ever said. Confirmed live to be
+// genuinely non-deterministic — the identical request/config can
+// succeed or empty-out from one call to the next (LLM sampling
+// variance, not a fixed prompt-size cliff) — so unlike a 4xx/5xx this
+// is worth an automatic regeneration, not just surfacing the error:
+// MAX_EMPTY_RETRIES extra full attempts (fresh HTTP call each time, not
+// a resend of the same dead response) before finally giving up.
+const MAX_EMPTY_RETRIES = 2;
+
+// Streaming variant of complete() (P0.5) — see nim.js's own comment
+// for the shared reasoning (only the final answer streams). Vertex
+// AI's streaming path is the same `:streamGenerateContent?alt=sse`
+// shape the public Gemini API uses — only the host/auth above differ.
+async function completeStream(cfg, prompts, onDelta) {
+  if (!isConfigured(cfg)) {
+    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
+  }
+
+  for (let attempt = 0; attempt <= MAX_EMPTY_RETRIES; attempt++) {
+    // eslint-disable-next-line no-await-in-loop
+    const deltas = await attemptStream(cfg, prompts);
+    if (deltas.length > 0) {
+      let full = '';
+      for (const delta of deltas) {
+        full += delta;
+        onDelta(delta);
+      }
+      return full;
     }
   }
-  return full;
+  throw new LlmRequestError(`Gemini streamed no visible answer text after ${MAX_EMPTY_RETRIES + 1} attempts (thinking budget exhausted before any output each time)`);
 }
 
 // Gemini's function-calling `parameters` field is a restricted OpenAPI
@@ -267,7 +313,7 @@ async function completeWithTools(cfg, { systemPrompt, userPrompt, tools, images 
         parameters: stripAdditionalProperties(tool.params),
       })),
     }],
-    generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS },
+    generationConfig: GENERATION_CONFIG,
   });
 
   const parts = payload && payload.candidates && payload.candidates[0]

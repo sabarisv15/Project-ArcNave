@@ -3,7 +3,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   fetchContextFiles,
-  generateReply,
   queryKeys,
 } from '../lib/mockApi';
 import { fetchChatsReal, fetchProjectsReal, fetchArtifactsReal } from '../lib/realWorkspaceApi';
@@ -14,7 +13,6 @@ import { artifactsApi } from '@/api/artifacts';
 import { CHAT_FILES } from '../lib/mockData';
 import { formatBytes } from '../lib/composerAttachments';
 import { titleFromPrompt } from '../lib/utils';
-import { metaToTimestamp } from '../lib/messageTime';
 
 /** "PNG image", "JPEG image" — the label a file row shows beside its size. */
 function imageKind(type) {
@@ -118,37 +116,44 @@ export function WorkspaceProvider({ children }) {
     [qc]
   );
 
+  /**
+   * Loads a chat's REAL transcript from the backend (conversationsApi.
+   * listMessages) — every `chat` this is ever called with (ChatRoute,
+   * Recents' hover-prefetch) already came from fetchChatsReal, the real
+   * `GET /conversations` list, so it always already exists server-side;
+   * there is no legitimate case here where fabricating a reply was ever
+   * correct. `threads` (react-query's in-memory cache) is wiped by a
+   * full page reload, and until this fix that meant every reload — not
+   * just a first visit — refired the OLD prototype seeding below and
+   * replaced a real multi-turn conversation with one fake title-based
+   * Q&A pair. The `current[chat.id]` guard is kept unchanged: a chat
+   * whose thread is already populated (mid-stream from sendMessage, or
+   * already fetched this session) is never re-fetched or clobbered.
+   */
   const seedThread = useCallback(
     (chat) => {
       const current = qc.getQueryData(queryKeys.threads) || {};
       if (current[chat.id]) return;
-      const reply = generateReply(chat.title, chat.kind);
-      /*
-       * A seeded conversation was never actually sent, so it has no clock of
-       * its own — but the Recents row it came from already carries a human
-       * age ("2 hours ago", "Last week"), and that is the honest instant to
-       * date its messages from. Without this every seeded message would read
-       * "Just now" the moment the thread is opened, which is the one thing a
-       * timestamp must never be wrong about. The reply lands a few seconds
-       * after the question, as it would have.
-       */
-      const askedAt = metaToTimestamp(chat.meta);
-      const repliedAt = new Date(new Date(askedAt).getTime() + 4000).toISOString();
-      setThreads((prev) => ({
-        ...prev,
-        [chat.id]: [
-          { id: chat.id + 'u', role: 'user', text: chat.title, createdAt: askedAt },
-          {
-            id: chat.id + 'a',
-            role: 'ai',
-            generating: false,
-            body: reply.body,
-            closing: reply.closing,
-            sources: reply.sources ?? [],
-            createdAt: repliedAt,
-          },
-        ],
-      }));
+      conversationsApi
+        .listMessages(chat.id)
+        .then((rows) => {
+          const list = Array.isArray(rows) ? rows : (rows?.messages ?? []);
+          const messages = list.map((m) => (
+            m.role === 'user'
+              ? { id: String(m.id), role: 'user', text: m.content, createdAt: m.created_at }
+              : {
+                id: String(m.id), role: 'ai', generating: false, body: m.content, createdAt: m.created_at,
+              }
+          ));
+          setThreads((prev) => ({ ...prev, [chat.id]: messages }));
+        })
+        .catch(() => {
+          // Best-effort, same restraint runAiTurn's own addMessage call
+          // already applies to a background persistence failure — a
+          // chat that fails to load here just stays empty rather than
+          // crashing the workspace; ChatView already renders an empty
+          // transcript correctly (a real new conversation looks the same).
+        });
     },
     [qc, setThreads]
   );

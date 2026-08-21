@@ -125,6 +125,30 @@ test('gemini adapter.completeStream: streams candidates[0].content.parts[].text 
   });
 });
 
+// Real live-caught bug (2026-08-21): Gemini 3.7 Flash's hybrid
+// reasoning can spend its entire thinking budget and stream a final
+// chunk shaped `{ parts: [{ text: "", thoughtSignature: "..." }],
+// finishReason: "STOP" }` — a well-formed 200 SSE response with zero
+// visible answer text. Before this guard, completeStream returned ''
+// as a false "success", which the caller (aiService.js) persisted as
+// if it were a real (empty) answer, and the frontend then displayed a
+// generic fallback string as though the AI itself had said it —
+// completeWithMeta already refused an empty text; streaming needed the
+// identical guard.
+test('gemini adapter.completeStream: a well-formed response with zero visible text (thinking budget exhausted) throws LlmRequestError, never a false empty success', async () => {
+  const response = fakeSseResponse([
+    'data: {"candidates":[{"content":{"parts":[{"text":"","thoughtSignature":"abc"}]},"finishReason":"STOP"}]}\n\n',
+  ]);
+  let deltaCalled = false;
+  await withMockFetch(async () => response, async () => {
+    await assert.rejects(
+      () => geminiAdapter.completeStream({ projectId: 'p', accessToken: 't' }, { systemPrompt: 's', userPrompt: 'u' }, () => { deltaCalled = true; }),
+      LlmRequestError,
+    );
+  });
+  assert.equal(deltaCalled, false);
+});
+
 test('gemini adapter.completeStream: unconfigured (no projectId) throws LlmNotConfiguredError, no fetch attempted', async () => {
   let fetchCalled = false;
   await withMockFetch(async () => { fetchCalled = true; }, async () => {

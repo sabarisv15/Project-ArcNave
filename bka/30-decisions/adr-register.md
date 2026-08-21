@@ -254,12 +254,31 @@ action would need two write sites kept in sync by hand), a materialized view
 
 ### ADR-028
 **Production LLM provider.** NVIDIA NIM, reached through an OpenAI-compatible
-completions endpoint, with embeddings from the same provider. This ADR is the
-**only** artefact permitted to name the production provider; every other
-artefact treats the provider as configurable
+completions endpoint, with embeddings from the same provider, remains the
+**zero-configuration default** — a college with no `college_ai_config` row
+and no `DEFAULT_AI_PROVIDER` override gets NIM. This ADR is the **only**
+artefact permitted to name the production provider; every other artefact
+treats the provider as configurable
 ([RS-AIG-008](../10-specification/RS-AIG-ai-governance.md#rs-aig-008)).
 Supersedes [ADR-012](#adr-012)'s implied provider naming. See
 [ADL-002](ledger.md#adl-002).
+
+**Amendment 1 (2026-08-21).** Per-college provider selection, anticipated
+by RS-AIG-008's original "per tenant if ever needed" wording, is now real
+and wired: `claude`, `openai`, `self_hosted`, and `gemini` (the last via
+Vertex AI + Application Default Credentials, not an API key) are each
+selectable via a college's own `college_ai_config` row; `gemini` alone also
+has a global, env-configured fallback block (`DEFAULT_AI_PROVIDER=gemini`),
+letting a whole deployment default off NIM without a DB write, while NIM
+itself remains the unconditional default when neither a college row nor
+that env var says otherwise. "The production provider" is therefore no
+longer a single fact this ADR can state in isolation — it now reads as
+"NIM by default, real per-college override for 4 alternatives, real
+per-deployment override for one of them (Gemini)." This amendment
+reconciles that reality; it does not change which provider a
+never-configured college gets. See
+[ADL-035 through ADL-040](ledger.md#adl-035) for the AI capability
+surface this session's work otherwise reconciled alongside this.
 
 ---
 

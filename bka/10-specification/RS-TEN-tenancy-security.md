@@ -29,7 +29,7 @@ tenant data.
 | **Supporting Components** | Data layer, Tenant Middleware |
 | **Authority** | System invariant |
 | **Depends on** | [RS-TEN-002](RS-TEN-tenancy-security.md#rs-ten-002), [RS-TEN-003](RS-TEN-tenancy-security.md#rs-ten-003) |
-| **Governs** | [RS-TEN-004](RS-TEN-tenancy-security.md#rs-ten-004), [RS-IDN-002](RS-IDN-identity.md#rs-idn-002), [RS-STU-001](RS-STU-students.md#rs-stu-001), [RS-AIG-016](RS-AIG-ai-governance.md#rs-aig-016), [RS-PRF-001](RS-PRF-personal-workspace.md#rs-prf-001), [RS-PRF-003](RS-PRF-personal-workspace.md#rs-prf-003) |
+| **Governs** | [RS-TEN-004](RS-TEN-tenancy-security.md#rs-ten-004), [RS-IDN-002](RS-IDN-identity.md#rs-idn-002), [RS-STU-001](RS-STU-students.md#rs-stu-001), [RS-AIG-016](RS-AIG-ai-governance.md#rs-aig-016), [RS-PRF-001](RS-PRF-personal-workspace.md#rs-prf-001), [RS-PRF-003](RS-PRF-personal-workspace.md#rs-prf-003), [RS-AIG-017](RS-AIG-ai-governance.md#rs-aig-017), [RS-AIG-021](RS-AIG-ai-governance.md#rs-aig-021) |
 | **Lifecycle** | — |
 | **Workflow** | — |
 | **AI** | Applies unchanged to every AI tool |

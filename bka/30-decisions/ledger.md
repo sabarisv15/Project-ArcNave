@@ -1806,3 +1806,287 @@ reference, updated in the same pass).
 correction to match already-shipped, already-Conformant behavior.
 
 **Status.** Resolved — spec corrected to match shipped code, 2026-08-16.
+
+---
+
+## ADL-035
+
+### Short-session conversation memory, scoped to one conversation
+
+**Decision.** `askAgent`/`askAboutTool` may now be given the last 10
+messages of the single conversation the current request already names —
+never a broader history, never persisted as a new memory concept, never
+cross-conversation or cross-session.
+
+**Superseded position.** `aiService.js`'s own prior comment stated "every
+`/ai/ask` call remains fully independent... takes no history parameter" —
+a deliberate round-3 trade-off for a multi-tenant ERP (reject unbounded
+persistent memory), not an oversight.
+
+**Rationale.** Round 3 itself already recommended this narrow fix, not
+"leave it stateless forever" — the concrete cost of full statelessness was
+a chat *shell* that couldn't hold a follow-up question. Bounding by
+message count (10) and by ownership (the same RLS-plus-actor-id check any
+conversation read already uses) keeps the relaxation narrow: this is
+"remember the last few turns of this one thread," not "remember this
+user."
+
+**Affected artefacts.**
+[RS-AIG-017](../10-specification/RS-AIG-ai-governance.md#rs-aig-017)
+(new).
+
+**Migration impact.** None — additive read of already-stored conversation
+messages, no schema change.
+
+**Implementation notes.** `routes/ai.js`'s `resolveAskContext`
+(`HISTORY_LIMIT = 10`) resolves the conversation through
+`conversationService.resolveOwnConversation`'s existing ownership check
+before slicing history; `aiService.js`'s `buildHistoryHint` renders it as
+labelled background text explicitly marked superseded by the current
+question, not as a structured multi-turn message array — the 4 provider
+adapters' `complete()`/`completeWithTools()` interface only takes one
+system/user prompt pair each, and widening that shape was out of scope
+for this change.
+
+**Status.** Resolved — implemented, 2026-08-21 (round 13).
+
+---
+
+## ADL-036
+
+### Bounded multi-step workflow plan (`run_workflow_plan`)
+
+**Decision.** One AI turn may span up to 6 tool calls via a single
+proposed plan, each step re-entering the exact same Policy Gate a
+standalone call uses, with one confirmation covering the whole plan.
+
+**Superseded position.**
+[RS-AIG-009](../10-specification/RS-AIG-ai-governance.md#rs-aig-009)
+previously stated the agent selects exactly one tool per question and
+that compound questions were unsupported, "requires its own scoped
+decision" — this is that decision.
+
+**Rationale.** Round 6/7's own design (a bounded engine: fixed tool set,
+hard step cap, no recursive plan creation, per-step Policy Gate re-fire
+via the existing `invokeTool` path rather than a new gate) was flagged in
+round 10's audit as designed but never actually implemented — `askAgent`
+invoked at most one tool per request. Implementing it exactly as designed
+closes that doc/code divergence rather than reopening the design
+question. The plan mechanism is also the concrete, load-bearing example of
+why this codebase excludes arbitrary code execution: a plan step is
+always one of the same GUI-parity Business Service tools, never free-form
+code — the "no `run_any_code()`" boundary was previously stated only in
+session narrative (`CHECKPOINT.md`), never in `bka/` itself.
+
+**Affected artefacts.**
+[RS-AIG-018](../10-specification/RS-AIG-ai-governance.md#rs-aig-018)
+(new); [RS-AIG-009](../10-specification/RS-AIG-ai-governance.md#rs-aig-009)
+(superseded declared limitation, corrected in place, same rule).
+
+**Migration impact.** None — no schema change; `run_workflow_plan` is a
+per-call construct, never a registered/stored tool.
+
+**Implementation notes.** `aiService.js`: `buildPlanMetaTool`
+(constructs the meta-tool per call, offered only alongside that turn's
+already role/relevance-filtered real tools — never a superset),
+`validatePlanSteps` (`MAX_PLAN_STEPS = 6`; rejects any step naming a tool
+outside that same filtered set — the plan tool itself is never in that
+set, so a step cannot name itself, making recursion structurally
+impossible rather than merely disallowed), `resolvePlanSteps` (resolves
+every step's preconditions before anything executes; one combined
+confirmation if any step needs it), `executeWorkflowPlan` (fail-transparent
+— a failed step is reported to the synthesis call, never silently
+dropped), `groupStepsByParallelizability` (consecutive read-only,
+low-risk steps only).
+
+**Status.** Resolved — implemented, 2026-08-21 (round 13).
+
+---
+
+## ADL-037
+
+### Numeric-claim verification is deterministic, advisory, and reuses already-fetched data
+
+**Decision.** A numeric claim in an AI answer is checked against the same
+sanitized tool-result data the answer was generated from — never a fresh
+Business Service re-query, never a second model call — and the outcome
+(`PASS`/`CONFLICT`/`INSUFFICIENT_EVIDENCE`) is surfaced to the caller,
+never used to silently edit or block the answer.
+
+**Superseded position.** An earlier design pass (recorded only in session
+narrative, not in `bka/`) described this as "deterministic DB/tool
+re-query, compare against the LLM's claim" — the real implementation
+re-parses data already retrieved for the same request instead of issuing
+a fresh query. Recorded here so the spec matches what actually shipped,
+not the earlier design sketch.
+
+**Rationale.** Re-parsing already-fetched data is strictly cheaper than a
+second query and carries the identical guarantee for this specific
+purpose (catching a claim that contradicts data already in hand) without
+a second round-trip. Keeping the outcome advisory-only (never
+auto-correcting or blocking) avoids a new, opaque failure mode where the
+AI silently rewrites its own answer.
+
+**Affected artefacts.**
+[RS-AIG-019](../10-specification/RS-AIG-ai-governance.md#rs-aig-019)
+(new).
+
+**Migration impact.** None.
+
+**Implementation notes.** `aiService.js`: `buildEvidence` (re-parses the
+same `aiPromptSafetyLayer`-sanitized payload already produced for this
+request), `buildEvidenceTrail` (renders it as a human-readable
+source/count/timestamp trail), `verifyNumericClaims` (narrow
+`COUNT_CLAIM_PATTERN` regex — deliberately narrow to avoid false
+positives on years/roll numbers/percentages — compares claimed counts
+against known, already-fetched record counts).
+
+**Status.** Resolved — implemented, 2026-08-21 (round 13).
+
+---
+
+## ADL-038
+
+### Trusted Web Retrieval: single SSRF-hardened tool, opt-in, domain-allowlisted, no search capability
+
+**Decision.** One tool (`fetch_trusted_web_page`) fetches a single,
+already-known `https://` URL against a per-college domain allowlist
+(platform-default regulatory domains, non-removable, plus per-college
+additions), opt-in per college, SSRF-hardened (https-only, no embedded
+credentials, no IP literals, no redirects followed, bounded time/size),
+result flowing through the same untrusted-data boundary every tool result
+already carries.
+
+**Superseded position.** None — this is a genuinely new capability, not a
+correction. It closes P2.3 of the AI capability roadmap.
+
+**Rationale.** No search API is configured anywhere in this codebase — a
+retrieval tool against a known, already-trusted-domain URL is a bounded,
+auditable capability; an open-ended search is a categorically different
+(and much larger) trust surface this decision deliberately does not
+grant. Web content, once fetched, is data like any other tool output —
+[RS-AIG-003](../10-specification/RS-AIG-ai-governance.md#rs-aig-003)'s
+existing untrusted-data boundary already covers it without needing a
+special case; this decision is about *how a page may be reached*, not
+about weakening what happens to it once reached.
+
+**Affected artefacts.**
+[RS-AIG-020](../10-specification/RS-AIG-ai-governance.md#rs-aig-020)
+(new).
+
+**Migration impact.** New per-college configuration category
+(`web_retrieval`) on the existing generic `configurations` table — no new
+table.
+
+**Implementation notes.** `webRetrievalService.js`: `assertSafeUrl`
+(https-only; rejects userinfo-embedded URLs; rejects IPv4/IPv6 literal
+hostnames; `fetch(..., { redirect: 'error' })` never follows a redirect;
+checked *before* the allowlist comparison so an attacker-controlled
+hostname string never reaches that comparison in a form that could
+confuse it), `hostnameIsAllowed` (exact-or-subdomain match only — guards
+against a `ugc.gov.in.evil.com`-shaped bypass of a naive substring
+check), `getWebRetrievalConfig` (opt-in `enabled` flag per college; a
+10-second fetch timeout; a 2MB response-size expectation checked against
+the `content-length` header — noted in the rule itself as checked
+pre-body-read against the declared header, not a streamed byte count, a
+minor known characteristic rather than a gap this decision treats as
+unresolved); a 20,000-character extracted-text cap after HTML
+stripping.
+
+**Status.** Resolved — implemented, 2026-08-21 (round 13).
+
+---
+
+## ADL-039
+
+### Scoped preference memory: AI tool restricted to 3 explicit keys, enforced in the handler
+
+**Decision.** The `user_preferences_set` AI tool may only write
+`report_format`, `default_chart`, or `language` — enforced by an explicit
+allowlist check inside the tool's own handler, not only declared as a
+JSON-schema `enum` hint.
+
+**Superseded position.** The underlying `user_preferences_set` tool
+previously had no key restriction at all, "by design, for a future
+human-driven settings UI that doesn't exist yet" (per the tool's own
+original comment) — a deliberately general-purpose store for a
+not-yet-built human settings surface.
+
+**Rationale.** `aiToolRegistry`'s generic parameter validator checks
+required fields and array shape, but never enforces a schema's `enum`
+values — a schema-only restriction would be a hint a sufficiently
+adversarial or confused model could be talked past, not a real gate.
+Restricting the *AI tool's handler* specifically (not the underlying
+service, which stays general-purpose on purpose for the human settings UI
+this was always meant to serve) means the enforcement is real regardless
+of what the schema says. This is the bounded, safe form of "persistent AI
+memory" the roadmap called for: explicit, structured, opt-in fields only —
+never a freeform inferred fact about anyone, which would be an unbounded,
+unauditable PII-retention risk this decision explicitly does not grant.
+
+**Affected artefacts.**
+[RS-AIG-021](../10-specification/RS-AIG-ai-governance.md#rs-aig-021)
+(new).
+
+**Migration impact.** None — reuses the existing `user_preferences`
+table/service/RLS scoping unchanged; only the AI tool's own handler
+gained a new check.
+
+**Implementation notes.** `aiToolRegistry.js`:
+`AI_ALLOWED_PREFERENCE_KEYS = ['report_format', 'default_chart',
+'language']`, checked explicitly inside the `user_preferences_set`
+handler in addition to the same list's declaration in the tool's JSON
+schema `enum` (the schema declaration is a hint for the model, not the
+enforcement). `userPreferenceService.setPreference` scopes the write by
+both `collegeId` and `userId`.
+
+**Status.** Resolved — implemented, 2026-08-21 (round 13).
+
+---
+
+## ADL-040
+
+### General/Curriculum scope mode: structural tool-free path, not a softer prompt
+
+**Decision.** A conversation's `mode` selects between two fully separate
+code paths — Curriculum mode (the pre-existing tool-scoped path,
+byte-for-byte unchanged) and General mode (a new path that never
+constructs a tool list at all, so nothing exists for the Policy Gate to
+re-fire against). Default is Curriculum everywhere a caller does not
+explicitly opt into General, so no existing caller's behaviour changes.
+
+**Superseded position.** None directly superseded — this replaces the
+composer's prior Ask/Act toggle, which was a UI-only distinction with no
+corresponding backend split; every request went through the same
+tool-scoped path regardless of which the user had selected.
+
+**Rationale.** The user's own framing: staff doing research, coursework,
+or general questions unrelated to any college record shouldn't be boxed
+in by a tool-selection prompt built for exactly college-record lookups —
+but that breadth must never come at the cost of the Policy Gate. A softer
+system-prompt instruction ("don't use tools for this kind of question")
+was rejected as insufficient — a sufficiently adversarial or confused
+model could ignore an instruction; removing the tool list from the call
+entirely removes the capability regardless of what the model does with
+the prompt. This is the same "structural, not conventional" discipline
+[RS-AIG-018](../10-specification/RS-AIG-ai-governance.md#rs-aig-018)'s
+plan mechanism already applies to recursion.
+
+**Affected artefacts.**
+[RS-AIG-023](../10-specification/RS-AIG-ai-governance.md#rs-aig-023)
+(new).
+
+**Migration impact.** None — no schema change; `mode` is a request
+parameter, not stored state.
+
+**Implementation notes.** `routes/ai.js` passes `mode` straight through to
+`aiService.askAgent`. `askAgent`'s branch: `mode === 'general'` →
+`askGeneralChat`, which calls `completeMaybeStreaming` (never
+`completeWithTools` — no `tools` array is ever constructed in this
+branch's own code path); anything else (missing, `'curriculum'`, an
+unrecognized value) falls through to the unchanged, pre-existing
+tool-scoped branch. `GENERAL_CHAT_SYSTEM_PROMPT` retains the same
+identity-masking instruction as the Curriculum-mode prompt and states
+explicitly that this mode has no access to the college's own data.
+
+**Status.** Resolved — implemented, 2026-08-21 (round 18).

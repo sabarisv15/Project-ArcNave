@@ -307,10 +307,17 @@ limitation as a precise result.
 | Document classification granularity | Decided once per document type at ingestion, not per document contents. Mixed-sensitivity content is classified at the coarsest level of its type | [RS-ASM-010](RS-ASM-assessment-documents.md#rs-asm-010) |
 | Role-to-classification matrix | A working default, not a ratified rule | [RS-AIG-006](RS-AIG-ai-governance.md#rs-aig-006) |
 | L2 scope mapping | Deliberately unmapped in the resolution model; open policy work | [RS-GOV-014](RS-GOV-governance.md#rs-gov-014) |
-| Compound AI questions | The agent selects exactly one tool per question | [RS-AIG-009](RS-AIG-ai-governance.md#rs-aig-009) |
 
 Adding an entry to this register requires a Decision Ledger entry. Removing one
 requires the underlying limitation to have actually been resolved.
+
+**Removed 2026-08-21:** *Compound AI questions — the agent selects exactly
+one tool per question.* Resolved by the bounded multi-step workflow plan
+([RS-AIG-018](RS-AIG-ai-governance.md#rs-aig-018),
+[ADL-036](../30-decisions/ledger.md#adl-036)) — a turn may now span up to 6
+tool calls under one plan. See
+[RS-AIG-009](RS-AIG-ai-governance.md#rs-aig-009)'s own superseded-limitation
+note.
 
 | | |
 |---|---|

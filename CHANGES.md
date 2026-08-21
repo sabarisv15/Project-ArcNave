@@ -4,6 +4,39 @@
 
 ---
 
+## 2026-08-21 — AI capability reconciliation
+
+Closes the gap the prior `bka/` documentation-sync round (same day)
+deliberately left open: `bka/`'s AI governance layer (`RS-AIG`), its
+derived tool-capability matrix, and the provider ADR now reflect the real
+AI implementation shipped in rounds 13–18, not the 2026-07-26 state they
+were frozen at. Ground truth was gathered by a dedicated research pass
+reading the actual backend source directly — `aiToolRegistry.js`,
+`aiService.js`, `webRetrievalService.js`, `userPreferenceService.js`,
+`aiProviders/*.js`, `configurationService.js` — file:line cited
+throughout, not taken from this file's own session narrative. That
+direct read caught one real drift worth flagging: the earlier design
+description of the evidence/verification mechanism said "deterministic
+DB/tool re-query"; the real implementation re-parses data already
+fetched for the same request instead, cheaper and equally sound for its
+actual purpose, but not what was originally described — recorded
+accurately now, not as originally sketched.
+
+| Area | Change |
+|---|---|
+| `bka/10-specification/RS-AIG-ai-governance.md` | 7 new rules added: `RS-AIG-017` (short-session conversation memory — last 10 messages, one conversation only, ownership+tenant scoped), `RS-AIG-018` (bounded multi-step workflow plan — 6-step cap, per-step Policy Gate re-fire via the same `invokeTool` path, one plan-level confirmation, structurally no recursive plan creation), `RS-AIG-019` (numeric-claim verification — deterministic, re-parses already-fetched data, advisory-only `PASS`/`CONFLICT`/`INSUFFICIENT_EVIDENCE`, never blocks or auto-corrects), `RS-AIG-020` (Trusted Web Retrieval — single known-URL fetch, SSRF-hardened, per-college opt-in domain allowlist, same untrusted-data boundary as every other tool), `RS-AIG-021` (scoped preference memory — 3-key allowlist enforced in the AI tool's own handler, not just declared in its JSON schema), `RS-AIG-022` (model routing — a "fast" model may only ever describe an already-authorized result, never decide whether a tool runs), `RS-AIG-023` (General/Curriculum scope mode — General mode structurally builds zero tools, not a softer prompt). `RS-AIG-009` corrected: its "the agent selects exactly one tool per question" declared limitation is superseded by `RS-AIG-018`, referenced in place rather than left standing next to a contradicting new rule. `RS-AIG-008`'s `Implementation` field updated (5 real provider adapters, real per-college config for 4 of them). `Governs`/`Depends on` mirrored on both sides of every new edge (`RS-AIG-001`/`002`/`003`/`004`/`008`/`013`, `RS-TEN-001`) per the amendment procedure. |
+| `bka/10-specification/RS-DAT-data-integrity.md` | Removed `RS-DAT-009`'s now-resolved "Compound AI questions — the agent selects exactly one tool per question" row from the declared-limitations register, with a dated removal note per that register's own stated convention (a row may only be removed once the underlying limitation is actually resolved). |
+| `bka/30-decisions/ledger.md` | 6 new entries, `ADL-035` through `ADL-040` — one per new rule (`RS-AIG-018` and `RS-AIG-009`'s correction share `ADL-036`, since one decision produced both). |
+| `bka/30-decisions/adr-register.md` | `ADR-028` Amendment 1: NVIDIA NIM remains the zero-configuration default (unchanged), but "the production provider" is no longer a single fact this ADR can state in isolation — `claude`/`openai`/`self_hosted`/`gemini` are each really, currently selectable per college via `college_ai_config`, and `gemini` additionally has a global env-configured fallback block. |
+| `bka/20-matrices/ai-capability-matrix.md` | §4 (tool register) regenerated in full from the real `aiToolRegistry.js` — **66 registered tools**, verified by counting `registerTool({` call sites and cross-checked against 66 `allowedRoles` declarations (this section had said 32; this session's own earlier narrative had separately been saying "~62"). Reorganized into 9 subsections (read-only, reports, personal-workspace reads/writes, direct-write carve-out, generate, workflow-submitting, the bounded plan, Trusted Web Retrieval, scoped preference memory, cross-cutting session mechanisms) to stay legible at this scale. §6 (deliberately withheld): resolved 2 rows (multi-tool orchestration — now built; per-tenant provider configuration — now real for 4 of 5 adapters). §8 (conformance summary): replaced the prior round's "flagged, not reconciled" stopgap notes with the real, resolved content, plus one new, genuinely unresolved finding (see below). |
+| Not resolved, deliberately | `academic_generate_timetable`/`academic_revise_timetable` are registered `level: 'L1'` in `aiToolRegistry.js` (confirmed by direct source read), but their governing rule, `RS-ACA-005`, states `AI: L2 generate — produces a draft with no external effect; never publishes`. Per `bka/00-foundation/scope-and-conventions.md`'s own precedence rule, code is never the arbiter of a rule — deciding which side is the actual defect needs a check against `RS-AIG-007`'s same-actor-carve-out conditions, a real product/architecture judgment call this pass didn't have standing to make unilaterally. Flagged in `ai-capability-matrix.md` §8 and `bka/70-checkpoint/CURRENT-STATE.md`. |
+
+Result: `python tools/validate.py` (from `bka/`) passes clean — **0
+errors, 0 warnings** — with all of the above included, confirmed by
+re-running after every edit batch, not assumed at the end.
+
+---
+
 ## 2026-08-21 — bka/ documentation-sync audit + validator fix
 
 Not an app-code round — `bka/` (ARCNAVE's separate Business Knowledge Architecture doc estate) and its own tooling. Pre-existing uncommitted app-code changes at session start (round 18's General/Curriculum scope-mode work — `ScopeToggle.jsx`, `AskActToggle.jsx` deletion, composer/route/provider edits) were explicitly left untouched; see round 18's own `CHANGES.md` entry.

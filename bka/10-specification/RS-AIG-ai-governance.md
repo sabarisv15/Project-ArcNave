@@ -39,7 +39,7 @@ directly through the normal dashboard is not gated by it.
 | **Owner** | AI Tool Registry |
 | **Authority** | System invariant |
 | **Depends on** | — |
-| **Governs** | [RS-AIG-004](RS-AIG-ai-governance.md#rs-aig-004), [RS-AIG-006](RS-AIG-ai-governance.md#rs-aig-006), [RS-AIG-007](RS-AIG-ai-governance.md#rs-aig-007), [RS-AIG-012](RS-AIG-ai-governance.md#rs-aig-012), [RS-AIG-013](RS-AIG-ai-governance.md#rs-aig-013), [RS-AIG-015](RS-AIG-ai-governance.md#rs-aig-015), [RS-ANL-002](RS-ANL-analytics-governance.md#rs-anl-002) |
+| **Governs** | [RS-AIG-004](RS-AIG-ai-governance.md#rs-aig-004), [RS-AIG-006](RS-AIG-ai-governance.md#rs-aig-006), [RS-AIG-007](RS-AIG-ai-governance.md#rs-aig-007), [RS-AIG-012](RS-AIG-ai-governance.md#rs-aig-012), [RS-AIG-013](RS-AIG-ai-governance.md#rs-aig-013), [RS-AIG-015](RS-AIG-ai-governance.md#rs-aig-015), [RS-ANL-002](RS-ANL-analytics-governance.md#rs-anl-002), [RS-AIG-018](#rs-aig-018), [RS-AIG-021](#rs-aig-021), [RS-AIG-022](#rs-aig-022), [RS-AIG-023](#rs-aig-023) |
 | **Lifecycle** | — |
 | **Workflow** | L3 → `WorkflowService` |
 | **AI** | Definitional |
@@ -69,7 +69,7 @@ speculatively ahead of them.
 | **Owner** | AI Tool Registry |
 | **Authority** | System invariant |
 | **Depends on** | [RS-TEN-006](RS-TEN-tenancy-security.md#rs-ten-006), [RS-TEN-007](RS-TEN-tenancy-security.md#rs-ten-007) |
-| **Governs** | [RS-ASM-005](RS-ASM-assessment-documents.md#rs-asm-005), [RS-AIG-003](RS-AIG-ai-governance.md#rs-aig-003), [RS-AIG-008](RS-AIG-ai-governance.md#rs-aig-008), [RS-AIG-009](RS-AIG-ai-governance.md#rs-aig-009) |
+| **Governs** | [RS-ASM-005](RS-ASM-assessment-documents.md#rs-asm-005), [RS-AIG-003](RS-AIG-ai-governance.md#rs-aig-003), [RS-AIG-008](RS-AIG-ai-governance.md#rs-aig-008), [RS-AIG-009](RS-AIG-ai-governance.md#rs-aig-009), [RS-AIG-018](#rs-aig-018), [RS-AIG-023](#rs-aig-023) |
 | **Lifecycle** | — |
 | **Workflow** | — |
 | **AI** | Definitional |
@@ -103,7 +103,7 @@ All AI tool outputs → Context Builder → Prompt Safety Layer → LLM
 | **Supporting Components** | Context Builder, Prompt Safety Layer |
 | **Authority** | System invariant |
 | **Depends on** | [RS-AIG-002](RS-AIG-ai-governance.md#rs-aig-002) |
-| **Governs** | [RS-ASM-010](RS-ASM-assessment-documents.md#rs-asm-010) |
+| **Governs** | [RS-ASM-010](RS-ASM-assessment-documents.md#rs-asm-010), [RS-AIG-017](#rs-aig-017), [RS-AIG-020](#rs-aig-020) |
 | **Lifecycle** | — |
 | **Workflow** | — |
 | **AI** | Definitional |
@@ -141,7 +141,7 @@ registration-time convention.
 | **Supporting Components** | AI Tool Registry, `WorkflowService` |
 | **Authority** | System invariant |
 | **Depends on** | [RS-WFL-001](RS-WFL-workflow.md#rs-wfl-001), [RS-FIN-003](RS-FIN-finance.md#rs-fin-003), [RS-ASM-003](RS-ASM-assessment-documents.md#rs-asm-003), [RS-ATT-004](RS-ATT-attendance.md#rs-att-004), [RS-AIG-001](RS-AIG-ai-governance.md#rs-aig-001) |
-| **Governs** | [RS-NTF-003](RS-NTF-notifications.md#rs-ntf-003), [RS-AIG-005](RS-AIG-ai-governance.md#rs-aig-005) |
+| **Governs** | [RS-NTF-003](RS-NTF-notifications.md#rs-ntf-003), [RS-AIG-005](RS-AIG-ai-governance.md#rs-aig-005), [RS-AIG-018](#rs-aig-018) |
 | **Lifecycle** | Workflow request |
 | **Workflow** | Identical entity type and approver chain as the human submission |
 | **AI** | Definitional |
@@ -289,13 +289,13 @@ and nowhere else.
 | **Owner** | LLM provider adapter |
 | **Authority** | System invariant |
 | **Depends on** | [RS-AIG-002](RS-AIG-ai-governance.md#rs-aig-002) |
-| **Governs** | [RS-ASM-008](RS-ASM-assessment-documents.md#rs-asm-008) |
+| **Governs** | [RS-ASM-008](RS-ASM-assessment-documents.md#rs-asm-008), [RS-AIG-022](#rs-aig-022) |
 | **Lifecycle** | — |
 | **Workflow** | — |
 | **AI** | Definitional |
 | **Modules** | 0, 9 |
 | **Data effect** | — |
-| **Implementation** | One provider adapter module; global configuration, not yet per-tenant |
+| **Implementation** | 5 provider adapter modules (`nim`/`gemini`/`claude`/`openai`/`self_hosted`), one interface each; per-college configuration (`college_ai_config`) is real for 4 of the 5 — `nim` remains the zero-configuration default, not itself per-college-configurable, per [ADR-028 Amendment 1](../30-decisions/adr-register.md#adr-028) |
 | **Conformance** | Conformant |
 | **Decisions** | [ADL-002](../30-decisions/ledger.md#adl-002), [ADR-028](../30-decisions/adr-register.md#adr-028) |
 
@@ -318,15 +318,21 @@ classifications cannot honour.
 One shared actor-context resolution path serves every tool handler; a bespoke
 per-tool lookup is prohibited.
 
-**Declared limitation.** The agent selects exactly one tool per question.
-Compound questions spanning multiple tools are not supported; adding that
-changes the LLM interaction loop itself and requires its own scoped decision.
+**Superseded declared limitation.** This rule previously stated the agent
+selects exactly one tool per question, with compound questions
+unsupported. That is no longer true: a bounded multi-step plan
+([RS-AIG-018](#rs-aig-018)) now lets one turn span up to 6 calls to tools
+from this same domain-prefixed, one-Business-Service-call-each register —
+the per-tool naming/dispatch discipline this rule states is unchanged and
+still governs every step of a plan individually; only the old
+single-call-per-turn ceiling was lifted, by its own scoped decision, per
+the limitation as originally written.
 
 | | |
 |---|---|
 | **Owner** | AI Tool Registry |
 | **Authority** | System invariant |
-| **Depends on** | [RS-AIG-002](RS-AIG-ai-governance.md#rs-aig-002) |
+| **Depends on** | [RS-AIG-002](RS-AIG-ai-governance.md#rs-aig-002), [RS-AIG-018](#rs-aig-018) |
 | **Governs** | — |
 | **Lifecycle** | — |
 | **Workflow** | — |
@@ -335,7 +341,7 @@ changes the LLM interaction loop itself and requires its own scoped decision.
 | **Data effect** | — |
 | **Implementation** | `aiToolRegistry.js`; `actorContextService.buildActorContext` as the one shared path |
 | **Conformance** | Conformant |
-| **Decisions** | — |
+| **Decisions** | [ADL-036](../30-decisions/ledger.md#adl-036) |
 
 ---
 
@@ -467,7 +473,7 @@ extraction capability.
 | **Owner** | AI Tool Registry |
 | **Authority** | System invariant |
 | **Depends on** | [RS-FIN-005](RS-FIN-finance.md#rs-fin-005), [RS-AIG-001](RS-AIG-ai-governance.md#rs-aig-001) |
-| **Governs** | — |
+| **Governs** | [RS-AIG-019](#rs-aig-019) |
 | **Lifecycle** | — |
 | **Workflow** | — |
 | **AI** | Definitional |
@@ -567,3 +573,296 @@ the reason.
 | **Implementation** | Policy Gate pre-invocation checks: level support, tenant match, role permitted, classification permitted, department scope |
 | **Conformance** | Conformant |
 | **Decisions** | — |
+
+---
+
+## RS-AIG-017
+
+**Conversation history is per-conversation only, ownership- and
+tenant-isolated, and bounded — never a persistent cross-session memory.**
+
+The AI's earlier statelessness (round 3's own deliberate trade-off for a
+multi-tenant ERP) is relaxed only this far: `askAgent`/`askAboutTool` may
+be given the last 10 messages of the *one* conversation the current
+request already names, never a broader history. A `conversation_id` is
+resolved through the same ownership check any conversation read uses —
+tenant-scoped RLS `client` plus an explicit actor-id check — so a
+conversation belonging to a different user, or a different college
+(RLS-invisible), is simply not found; the failure degrades silently,
+never a leaked row.
+
+History is injected as a labelled, plain-text background hint — not as a
+structured multi-turn message array a provider could treat with elevated
+trust — explicitly marked superseded by anything the current question
+states directly. It is **not** re-wrapped in the untrusted-data boundary
+[RS-AIG-003](#rs-aig-003) requires for tool output on replay: each stored
+message's content already passed through that same boundary once, at the
+turn it was first produced, and merely being replayed as prior context
+does not reintroduce it as a fresh, unvetted input.
+
+| | |
+|---|---|
+| **Owner** | AI conversation layer |
+| **Authority** | System invariant |
+| **Depends on** | [RS-AIG-003](#rs-aig-003), [RS-TEN-001](RS-TEN-tenancy-security.md#rs-ten-001) |
+| **Governs** | — |
+| **Lifecycle** | Conversation |
+| **Workflow** | — |
+| **AI** | Definitional |
+| **Modules** | 9 |
+| **Data effect** | Read-only (no new data effect beyond the conversation's own existing storage) |
+| **Implementation** | `routes/ai.js`'s `resolveAskContext` (`HISTORY_LIMIT = 10`), `conversationService.resolveOwnConversation` (ownership check), `aiService.js`'s `buildHistoryHint` |
+| **Conformance** | Conformant |
+| **Decisions** | [ADL-035](../30-decisions/ledger.md#adl-035) |
+
+---
+
+## RS-AIG-018
+
+**A bounded multi-step workflow plan is the only sanctioned way an AI
+turn may span more than one tool call, and it changes nothing about
+per-step authority — every step re-enters the same Policy Gate a
+single-tool call would.**
+
+A plan is proposed once, by the model, as an ordered list of steps
+against tools already offered that turn (the same role/relevance-filtered
+list a single-tool call would see) — never against a caller-supplied or
+expanded tool set. It is capped at 6 steps; a longer or malformed plan is
+rejected before anything executes. Every step then runs through the
+identical `invokeTool` path a standalone call uses, so
+[RS-AIG-001](#rs-aig-001)'s L1/L2/L3 gate, [RS-AIG-004](#rs-aig-004)'s
+approval requirement and every classification/scope check re-fire per
+step — this rule adds no second gate of its own, it only bounds *how many*
+times the existing one may fire in a single turn and in what shape.
+
+One confirmation covers the whole plan (not one per step) when any step
+needs it — the same L3/bulk-operation confirmation-pause UX every
+single-tool call already has, not a new mechanism. A failed step is
+reported, never silently dropped or retried past the plan; consecutive
+read-only, low-risk steps may execute concurrently, a write step never
+does. The plan mechanism itself is not a registered tool — it exists only
+as a per-call construct the executor builds and discards — so a plan step
+can never name itself: recursive plan creation is structurally impossible,
+not merely disallowed by convention.
+
+**This is also the concrete form of the "no arbitrary code execution"
+boundary**: a plan step is always one of the existing GUI-parity Business
+Service tools ([RS-AIG-002](#rs-aig-002)), never free-form code, a shell
+command, or a query the plan itself constructs. If a genuine computational
+need arises that no existing tool covers, the answer is a new deterministic
+tool — never a general-purpose execution capability.
+
+| | |
+|---|---|
+| **Owner** | AI Tool Registry |
+| **Authority** | System invariant |
+| **Depends on** | [RS-AIG-001](#rs-aig-001), [RS-AIG-002](#rs-aig-002), [RS-AIG-004](#rs-aig-004) |
+| **Governs** | [RS-AIG-009](#rs-aig-009) |
+| **Lifecycle** | — |
+| **Workflow** | Reuses the existing L3/bulk-operation confirmation-pause UX |
+| **AI** | Definitional |
+| **Modules** | 9 |
+| **Data effect** | Per-step, identical to that step's own standalone effect |
+| **Implementation** | `aiService.js`'s `buildPlanMetaTool`/`validatePlanSteps` (`MAX_PLAN_STEPS = 6`)/`resolvePlanSteps`/`executeWorkflowPlan`/`groupStepsByParallelizability` |
+| **Conformance** | Conformant |
+| **Decisions** | [ADL-036](../30-decisions/ledger.md#adl-036) |
+
+---
+
+## RS-AIG-019
+
+**A numeric claim in an AI-generated answer is checked against the data
+already retrieved for that same answer, deterministically, and the
+result is advisory — it is surfaced, never silently corrected and never
+blocking.**
+
+The check re-parses the same sanitized tool-result payload the answer
+itself was generated from — it does not re-query a Business Service or
+issue a second model call. A claimed count either matches a known,
+already-fetched record count (`PASS`), contradicts one (`CONFLICT`), or
+cannot be checked because no countable evidence exists for this answer
+(`INSUFFICIENT_EVIDENCE`). All three outcomes are attached to the response
+for the caller/UI to show; none of them causes the AI to retry, auto-edit
+its own answer, or block a response from reaching the user — this is a
+transparency mechanism, not a second authorization gate, and does not
+change [RS-AIG-013](#rs-aig-013)'s existing advisory-only posture.
+
+The same evidence is rendered as a human-readable trail — source tool,
+record count, retrieval time — so an answer can say what it was based on
+without ever exposing raw SQL or internal query shape.
+
+| | |
+|---|---|
+| **Owner** | AI Tool Registry |
+| **Authority** | System invariant |
+| **Depends on** | [RS-AIG-013](#rs-aig-013) |
+| **Governs** | — |
+| **Lifecycle** | — |
+| **Workflow** | — |
+| **AI** | Advisory only — never blocks or auto-corrects a response |
+| **Modules** | 9 |
+| **Data effect** | — |
+| **Implementation** | `aiService.js`'s `buildEvidence`/`buildEvidenceTrail`/`verifyNumericClaims` (`COUNT_CLAIM_PATTERN`) |
+| **Conformance** | Conformant |
+| **Decisions** | [ADL-037](../30-decisions/ledger.md#adl-037) |
+
+---
+
+## RS-AIG-020
+
+**Trusted Web Retrieval is a single, SSRF-hardened, opt-in, domain-allowlisted
+tool — never an open-ended search — and its result is data, never
+instructions, under the same untrusted-data boundary every other tool's
+output already carries.**
+
+This is the concrete instance of [RS-AIG-003](#rs-aig-003) applied to a
+genuinely new class of source (the public internet, not this system's own
+database): a page fetched from an allowlisted domain flows through the
+identical Context Builder / Prompt Safety Layer pipeline as any other tool
+result, with no special-casing. **A malicious page's content can inform an
+answer; it can never authorize an ARCNAVE action** — the same rule that
+governs a hostile database field governs a hostile web page, because
+nothing downstream of the boundary knows or cares which kind of tool
+produced the text.
+
+The tool takes only an already-known `https://` URL, never an open-ended
+query — no search provider is configured anywhere in this codebase.
+Before a request is made: the URL must be `https://`, carry no embedded
+credentials, and not be an IP literal; redirects are never followed. The
+target hostname must then match a per-college allowlist — a small,
+non-removable platform default (UGC/AICTE/NIRF/NAAC/regulatory domains)
+plus whatever a college adds on top — by exact or subdomain match only,
+never a substring check. A college must explicitly opt in; the tool is
+unreachable otherwise. Response size and fetch time are bounded.
+
+| | |
+|---|---|
+| **Owner** | AI Tool Registry |
+| **Authority** | System invariant |
+| **Depends on** | [RS-AIG-003](#rs-aig-003) |
+| **Governs** | — |
+| **Lifecycle** | — |
+| **Workflow** | — |
+| **AI** | L1 read-only |
+| **Modules** | 9 |
+| **Data effect** | — |
+| **Implementation** | `webRetrievalService.js`'s `assertSafeUrl`/`hostnameIsAllowed`/`getWebRetrievalConfig` (`fetch_trusted_web_page` tool, `aiToolRegistry.js`) |
+| **Conformance** | Conformant — one implementation note, not a defect: the response-size bound is checked against the `content-length` response header before the body is read, not against a running count of streamed bytes, so a server that omits or misreports `content-length` is not caught by this specific check alone (the fetch timeout still bounds realistic abuse) |
+| **Decisions** | [ADL-038](../30-decisions/ledger.md#adl-038) |
+
+---
+
+## RS-AIG-021
+
+**The AI may write exactly three explicit, structured preference fields
+on the user's own behalf — never a freeform or inferred fact about
+anyone — and the restriction is enforced where the AI tool is invoked,
+not merely declared in its schema.**
+
+The underlying preference store is deliberately general-purpose (it also
+serves a human-facing settings surface with no such restriction); the
+narrower allowlist exists only at the AI tool's own handler, which
+re-checks the submitted key against a fixed list before writing, in
+addition to (never instead of) declaring the same list in the tool's JSON
+schema — the schema declaration alone is a hint a model could be talked
+past, since generic parameter validation does not enforce schema `enum`
+values; the handler's own check is the real gate. Every read or write is
+scoped to the acting user's own college and user id.
+
+This is the bounded, safe form of "persistent AI memory": explicit,
+structured, user-opted-into fields only. Storing a freeform inferred fact
+about a student, staff member, or anyone other than the acting user
+themselves is not a narrower version of this capability — it is a
+different, unbounded, unauditable PII-retention risk this rule does not
+authorize.
+
+| | |
+|---|---|
+| **Owner** | AI Tool Registry |
+| **Authority** | System invariant |
+| **Depends on** | [RS-AIG-001](#rs-aig-001), [RS-TEN-001](RS-TEN-tenancy-security.md#rs-ten-001) |
+| **Governs** | — |
+| **Lifecycle** | — |
+| **Workflow** | — |
+| **AI** | L1 direct-write, same-actor only, allowlisted keys only |
+| **Modules** | 9 |
+| **Data effect** | Supersedes (upsert), same-actor-scoped |
+| **Implementation** | `aiToolRegistry.js`'s `AI_ALLOWED_PREFERENCE_KEYS = ['report_format', 'default_chart', 'language']`, enforced in the `user_preferences_set` handler; `userPreferenceService.setPreference` |
+| **Conformance** | Conformant |
+| **Decisions** | [ADL-039](../30-decisions/ledger.md#adl-039) |
+
+---
+
+## RS-AIG-022
+
+**Which model variant answers a request is a routing detail, never an
+authorization input — a "fast" model may only ever be used to describe an
+already-authorized, already-fetched result, never to decide whether a
+tool may run.**
+
+This extends [RS-AIG-008](#rs-aig-008)'s "the provider is configurable,
+never architecturally load-bearing" principle to model *selection* within
+a provider: routing to a smaller/cheaper model is permitted only for the
+synthesis step that turns an already-executed tool result into prose, and
+only when that result's own risk level is low. The tool-selection/decision
+call that a Policy Gate check follows is never eligible for this
+downgrade. Structurally, this distinction cannot be bypassed by a routing
+mistake: every tool invocation — regardless of which model proposed it —
+re-enters the same deterministic `aiToolRegistry.invokeTool` Policy Gate,
+which has no code path that reads which model produced the request.
+
+| | |
+|---|---|
+| **Owner** | LLM provider adapter |
+| **Authority** | System invariant |
+| **Depends on** | [RS-AIG-001](#rs-aig-001), [RS-AIG-008](#rs-aig-008) |
+| **Governs** | — |
+| **Lifecycle** | — |
+| **Workflow** | — |
+| **AI** | Definitional |
+| **Modules** | 9 |
+| **Data effect** | — |
+| **Implementation** | `aiService.js`'s `selectModelForPurpose` (`FAST_MODEL_MAX_RISK_LEVEL = 1`), applied only at `summarizeToolResult`/`executeWorkflowPlan`'s synthesis call, never at the tool-selection call |
+| **Conformance** | Conformant |
+| **Decisions** | — |
+
+---
+
+## RS-AIG-023
+
+**General mode is a structurally separate path that offers the model zero
+ARCNAVE tools — not a narrower prompt over the same tool-scoped path —
+so the Policy Gate has nothing to re-fire against, by construction, not
+by instruction.**
+
+A conversation's `mode` selects between two fully separate branches, never
+a blend. **Curriculum mode** is the pre-existing tool-scoped path,
+unchanged: role/relevance-filtered tools are offered, and every call an
+[RS-AIG-001](#rs-aig-001) authority level, [RS-AIG-004](#rs-aig-004)'s
+approval gate, and every other rule in this domain apply exactly as they
+always have. **General mode** never builds a tool list at all — the code
+path it uses has no branch that could attach one — so there is no tool
+for the model to select, no handler for `invokeTool` to run, and nothing
+for the Policy Gate to gate. This is deliberately not the same design as
+"a system prompt telling the model not to use tools," which a sufficiently
+adversarial or confused model could ignore; here the capability is simply
+absent from the call. General mode retains the same identity-masking
+instruction as Curriculum mode and is told explicitly that it has no
+access to this college's own data. The default is Curriculum everywhere a
+caller does not explicitly select General, so no existing behaviour shifts
+for any caller that has not adopted the new parameter.
+
+| | |
+|---|---|
+| **Owner** | AI Tool Registry |
+| **Authority** | System invariant |
+| **Depends on** | [RS-AIG-001](#rs-aig-001), [RS-AIG-002](#rs-aig-002) |
+| **Governs** | — |
+| **Lifecycle** | — |
+| **Workflow** | — |
+| **AI** | Definitional — General mode is definitionally tool-free, not merely tool-discouraged |
+| **Modules** | 9 |
+| **Data effect** | — |
+| **Implementation** | `routes/ai.js`'s `mode` passthrough; `aiService.js`'s `askAgent` branch (`mode === 'general'` → `askGeneralChat`, using `completeMaybeStreaming` — never `completeWithTools`); `GENERAL_CHAT_SYSTEM_PROMPT` |
+| **Conformance** | Conformant |
+| **Decisions** | [ADL-040](../30-decisions/ledger.md#adl-040) |

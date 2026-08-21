@@ -1,12 +1,10 @@
 # Current State
 
-_Last updated: 2026-08-21 — documentation-sync audit, continued through a
-full validator-error resolution pass. Nothing was open in this file's own
-tracking (last real bka-tracked task closed 2026-08-09, commit `4111d30`);
-this rewrite exists because the file had gone stale against ~9 rounds of
-real implementation work (root `CHECKPOINT.md` rounds 10–18, 2026-08-20/21)
-that shipped without ever being run through this protocol or the Product
-Reasoning workflow._
+_Last updated: 2026-08-21 — AI capability reconciliation. Closes the one
+gap the prior documentation-sync pass (same day) deliberately left open:
+`bka/`'s `RS-AIG` governance layer, `ai-capability-matrix.md`, and
+`ADR-028` are now reconciled against the real AI implementation shipped
+in root `CHECKPOINT.md` rounds 13–18._
 
 Governed by [`00-protocol.md`](00-protocol.md). Read that file for the
 rules; this file holds only the current task's state, per protocol §2 —
@@ -14,219 +12,173 @@ no rule text, spec content, or design content belongs here.
 
 ## Active Task
 
-None. Two passes completed back to back: (1) a read-then-correct
-documentation audit verifying `bka/` reflects the real, current repo
-state; (2) getting `bka/tools/validate.py` actually runnable (no Python
-existed in this environment) and resolving everything it then found,
-ending in a clean `PASSED — 0 errors, 0 warnings` run.
+None. Reconciliation complete: 7 new `RS-AIG` rules added
+(`RS-AIG-017`–`023`), `RS-AIG-009`'s stale "one tool per question"
+declared limitation corrected (2 other stale copies of the same claim
+also fixed, in `ai-capability-matrix.md` §6 and `RS-DAT-009`'s
+declared-limitations register), `ai-capability-matrix.md` §4 regenerated
+from the real 66-tool registry, `ADR-028` amended for the real
+multi-provider state, 6 new Decision Ledger entries (`ADL-035`–`040`)
+recorded per the amendment procedure. `python tools/validate.py` passes
+clean (0 errors, 0 warnings) with the new content included.
 
 ## Phase / Step
 
-N/A — both passes complete. One AI capability reconciliation gap remains
-open by deliberate choice (see Pending).
+N/A — complete. One genuinely new, real finding surfaced *by* this pass
+is itself left open (see Pending) — not silently resolved, since
+resolving it is a product/architecture judgment call this pass isn't
+authorized to make unilaterally.
 
 ## Verification status
 
-- Compared `git log` (`0e72a97`..`578dc3f`, 15 commits) and root
-  `CHECKPOINT.md`/`CHANGES.md` against `bka/`'s own content; fixed
-  `bka/20-matrices/FEATURE-MATRIX.md`'s Staff Documents / Personal rows
-  (folder rename/move/delete, document rename/move/duplicate, nested
-  folders, search-over-real-data) — re-verified directly against
-  `frontend/src/components/PersonalDocuments.jsx`'s row-menu code and the
-  new `personal_document_folders.parent_id` migration, not taken on the
-  commit message's word alone.
-- Installed Python 3.12 (`winget install Python.Python.3.12` — no
-  interpreter existed in this environment). Running
-  `bka/tools/validate.py` then surfaced a real bug in the validator
-  itself: `DOCS = ROOT / "docs"` assumed a `bka/docs/10-specification/...`
-  layout that has never existed in this repo — every file glob silently
-  matched zero files, so it always reported "0 rules found" and a trivial
-  pass, never actually checking anything. Fixed (`DOCS = ROOT`).
-- With the validator actually running, worked the count down **from 69
-  errors/33 warnings to 0 errors/0 warnings**, one category at a time,
-  each verified against real content before editing (not pattern-matched
-  blind):
-  - **53 "missing Owner" errors** — confirmed by direct inspection (every
-    rule has exactly one of `**Owner**`/`**Business Owner**`, never both,
-    never neither) that this was pure label drift, not missing data.
-    Normalized `**Business Owner**` → `**Owner**` across all 16 affected
-    `10-specification/*.md` files.
-  - **3 "unknown domain code" errors** (`RS-PRF`) — confirmed `RS-PRF` is
-    a real, widely-referenced domain (`RS-PRF-personal-workspace.md`, 3
-    rules) that was simply missing from `validate.py`'s own `DOMAINS`
-    set. Added it.
-  - **8 "reference to undefined rule" occurrences of an informal
-    `RS-TTB` + `-001` shorthand** (not spelled out in full here, to avoid
-    this very file re-triggering the same validator check it describes)
-    — traced to a real rule: the tools it names
-    (`academic_generate_timetable`/`academic_revise_timetable`) and the
-    capability described (timetable auto-generation) are governed by
-    [RS-ACA-005](../10-specification/RS-ACA-academic.md#rs-aca-005),
-    confirmed by reading that rule's own Implementation/AI fields. The
-    shorthand was never a real rule (no matching domain file, its domain
-    code not in `DOMAINS`) — replaced all 8 occurrences (7 in
-    `ROLE-COVERAGE.md`, 1 in the role-reference appendix) with the real
-    `RS-ACA-005` citation.
-  - **9 broken relative links** — each checked against the actual
-    location of the linking file, not mechanically: `README.md` (2 links
-    assumed a `docs/` prefix that doesn't exist here — same root cause as
-    the validator's own `DOCS` bug; also relabeled the README's own
-    layout diagram from `docs/` to `bka/` to match reality),
-    `scope-and-conventions-tanglish-elaborate.md` (4 links one directory
-    level too deep — that file lives at `bka/` root, not in a
-    subdirectory, unlike its sibling `00-foundation/scope-and-conventions.md`
-    whose relative paths it originally copied), `40-uat/04-demo-data-seeder-specification.md`
-    (1 link one level too deep), and `RS-STF-staff.md`'s link to
-    `CLAUDE.md` (one `../` too many — corrected to `../../CLAUDE.md`).
-    That last one was initially misdiagnosed as a missing file: `git log`
-    and `git ls-files` both showed nothing because `CLAUDE.md` is a real,
-    current file at the repo root (`D:/gstack/CLAUDE.md`, 198 lines) that
-    has simply never been committed to git (`git status` shows it `??`
-    untracked) — a plain `ls`/`find` in the right working directory finds
-    it immediately. Confirmed its actual rule numbering matches every
-    secondhand reference across `bka/` exactly (rule 2 = DocumentService
-    sole storage owner, rule 3 = WorkflowService approval gate, rule 5 =
-    `/api/v1/` routes, rule 6 = reversible migrations) before trusting the
-    fix.
-  - **2 unresolved-anchor errors** — both were slug-generation mismatches
-    against `validate.py`'s own `slug()` function (which *deletes* `/`
-    rather than converting it to `-`): `FEATURE-MATRIX.md`'s self-link
-    used a double hyphen where the real generated anchor has one;
-    `implementation-impact-matrix.md`'s self-link inserted a hyphen
-    between two words a `/` used to separate, where the real anchor has
-    none. Both corrected to match the actual generated slug.
-  - **3 "table has inconsistent column counts" warnings** — 2 were real
-    content bugs (a stray, unescaped `|` inside a table cell in
-    `RS-ADM-admission-wizard.md` describing a lifecycle alternation —
-    escaped to `\|`; a stray 3rd column in `staff-experience-2026-08-08.md`
-    — merged into 2 columns) and 1 was a genuinely stale row in
-    `staff-documents-personal.md` (a 2026-08-08 pass recording
-    folder-rename as "does not exist" — now built per commit `578dc3f`;
-    fixed the malformed table and added a forward pointer to
-    `FEATURE-MATRIX.md` rather than silently rewriting the historical
-    finding).
-  - **~30 asymmetric `depends on`/`governs` warnings** — each is a
-    missing mirror reference (`00-foundation/scope-and-conventions.md`
-    §7's own amendment procedure requires updating both sides of every
-    edge). Added the missing `Governs`/`Depends on` entry on the correct
-    side for every one, across `RS-CLS`, `RS-AIG`, `RS-ASM`, `RS-ADM`,
-    `RS-DAT`, `RS-GOV`, `RS-STF`, `RS-TEN`. No rule's *meaning* changed —
-    this was cross-reference bookkeeping, not a policy change, so no new
-    Decision Ledger entry was opened for it.
-  - **One self-inflicted regression, caught and fixed inline**: this
-    session's own earlier `FEATURE-MATRIX.md` edit had dropped the
-    `Permission` column on 5 rows — the validator's re-run caught it
-    immediately, fixed before moving on.
-- **Final state: `python tools/validate.py` passes clean — 0 errors, 0
-  warnings**, confirmed by re-running it after every fix batch, not
-  assumed. Confirm the exact current count by re-running rather than
-  trusting this note if time has passed.
+- Ground truth was gathered by direct source reading (not inferred from
+  naming, not taken from `CHECKPOINT.md`'s own session narrative alone) —
+  file:line citations for every claim in the new rules trace to
+  `aiToolRegistry.js`, `aiService.js`, `webRetrievalService.js`,
+  `userPreferenceService.js`, `aiProviders/*.js`, and `configurationService.js`.
+  One real discrepancy this surfaced against the *design* narrative: the
+  evidence/verification mechanism ([RS-AIG-019](../10-specification/RS-AIG-ai-governance.md#rs-aig-019))
+  re-parses already-fetched data rather than issuing a fresh Business
+  Service re-query, contrary to an earlier design description recorded
+  only in session narrative — the rule and its `ADL-037` entry state what
+  actually shipped, not the earlier sketch.
+- **Tool count: 66**, verified by counting `registerTool({` call sites in
+  `aiToolRegistry.js` and cross-checked against 66 `allowedRoles:`
+  declarations — not the "~62" figure carried over from session
+  narrative in the prior pass's own notes.
+- Confirmed via direct read of `aiProviders/index.js` and each adapter
+  file: 5 real adapters (`nim`/`gemini`/`claude`/`openai`/`self_hosted`),
+  each `supportsVision` flag, and `configurationService.js`'s actual
+  per-college vs. global-fallback selection logic (`DEFAULT_AI_PROVIDER`
+  env var, default `'nim'`, confirmed at `config.js`).
+- `python tools/validate.py` re-run after every edit batch (new rules,
+  dependency-edge mirroring, ledger entries, matrix regeneration, ADR
+  amendment) — final state: **0 errors, 0 warnings, PASSED**. Two
+  self-inflicted slug/anchor mistakes were caught and fixed this way
+  during the matrix rewrite (wrong self-referencing anchors after
+  renumbering a subsection), not left in.
+- One item flagged by the research pass as **not fully verified** and
+  therefore *not* asserted as fact anywhere in the new rule text:
+  whether `userPreferenceRepository`'s read methods filter by
+  `college_id` explicitly or rely solely on the RLS-scoped `client` —
+  [RS-AIG-021](../10-specification/RS-AIG-ai-governance.md#rs-aig-021)'s
+  implementation note states only what was directly confirmed (the
+  service-layer call signature), not the unread repository internals.
 
 ## Decisions made
 
-- **Business Owner → Owner normalization was safe to do mechanically**
-  because every rule was verified (via `field_value()`-equivalent
-  parsing, not eyeballing) to have exactly one of the two labels, never
-  both — meaning it was authorial word-choice drift, not two distinct
-  concepts. Confirmed before acting, not assumed.
-- **The informal timetable-finding shorthand was replaced with
-  `RS-ACA-005`, not turned into a new rule.** The referenced capability
-  (timetable generation/revision AI tool coverage) already has a real,
-  on-point governing rule; inventing a new domain for an informal
-  audit-narrative shorthand would have been fabrication, not a fix.
-- **Did not fabricate `CLAUDE.md` when it first looked missing** —
-  git-history search found nothing, but that's not sufficient evidence a
-  file doesn't exist; it turned out to be a real, current, untracked file
-  at the repo root. Right call was to flag it rather than guess, and the
-  user then pointed at the actual location, which resolved it as a simple
-  path fix, not a fabrication.
-- **Still did not attempt the full AI capability reconciliation** (`RS-AIG`
-  tool register, `ADR-028` provider naming) in this pass — that remains a
-  separate, judgment-heavy amendment-procedure task, not something to
-  fold into a validator-error cleanup. See Pending, unchanged from the
-  prior state of this file.
+- **7 new `RS-AIG` rules, not a rewrite of existing ones**
+  ([RS-AIG-017](../10-specification/RS-AIG-ai-governance.md#rs-aig-017)
+  conversation memory,
+  [018](../10-specification/RS-AIG-ai-governance.md#rs-aig-018) bounded
+  workflow plan,
+  [019](../10-specification/RS-AIG-ai-governance.md#rs-aig-019)
+  evidence/verification,
+  [020](../10-specification/RS-AIG-ai-governance.md#rs-aig-020) Trusted
+  Web Retrieval,
+  [021](../10-specification/RS-AIG-ai-governance.md#rs-aig-021) scoped
+  preference memory,
+  [022](../10-specification/RS-AIG-ai-governance.md#rs-aig-022) model
+  routing,
+  [023](../10-specification/RS-AIG-ai-governance.md#rs-aig-023)
+  General/Curriculum mode) — each governs a genuine new authority/data
+  boundary this domain's own stated scope covers (`RS-AIG`'s header:
+  "AI authority levels, tool architecture, injection protection, data
+  classification, carve-outs, identity-context consumption, capability
+  boundaries"). Streaming and token/cost telemetry were deliberately
+  **not** given rules — real changes, but transport/operational details
+  that introduce no new authority boundary, matching this domain's own
+  stated scope rather than treating "shipped this session" as sufficient
+  reason for a rule to exist.
+- **`RS-AIG-009` corrected in place, not left standing next to a
+  contradicting new rule.** Its "exactly one tool per question" claim was
+  the specific thing `RS-AIG-018` (the bounded plan) resolves — leaving
+  both statements live would have recreated the exact "same fact in two
+  places, no mechanism to keep them aligned" problem this whole
+  specification exists to prevent. Also fixed the same stale claim
+  in `ai-capability-matrix.md` §6 and `RS-DAT-009`'s declared-limitations
+  register (3 total copies of one now-false statement, found by grep
+  before writing anything, not assumed to be the only occurrence).
+- **`ADR-028` amended, not replaced.** The "NIM is the zero-configuration
+  default" fact is still true and still worth stating plainly; only the
+  "NIM is *the* production provider" framing needed correcting against a
+  real per-college-configurable reality. Matches the pattern other
+  amended ADRs in this register already use (numbered amendments, not
+  silent rewrites).
+- **One real conformance finding surfaced by this pass, deliberately left
+  unresolved and flagged instead of picked either way**: `academic_generate_timetable`/
+  `academic_revise_timetable` are registered `level: 'L1'` in code, but
+  their governing rule, `RS-ACA-005`, states `AI: L2 generate`. Per this
+  specification's own precedence rule (`00-foundation/scope-and-conventions.md`
+  §5 — code is never the arbiter of a rule, a divergence is a recorded
+  conformance defect, not something auto-corrected toward the code),
+  deciding which side is actually wrong requires checking the tool
+  against `RS-AIG-007`'s same-actor-carve-out conditions — a real
+  product/architecture judgment call. Recorded in
+  `ai-capability-matrix.md` §8, not resolved.
 
 ## Files touched (not yet committed)
 
-- `bka/70-checkpoint/CURRENT-STATE.md` — this rewrite.
-- `bka/20-matrices/FEATURE-MATRIX.md` — Documents rows flipped to Built
-  (see prior audit pass, above); self-link anchor fixed; own
-  Permission-column regression fixed.
-- `bka/20-matrices/ai-capability-matrix.md` — §8 staleness notes added
-  (tool register, provider register).
-- `bka/tools/validate.py` — `DOCS = ROOT` path fix; `PRF` added to
-  `DOMAINS`.
-- `bka/10-specification/*.md` (16 files) — `Business Owner` → `Owner`
-  label normalization.
-- `bka/10-specification/RS-CLS-classroom.md`, `RS-AIG-ai-governance.md`,
-  `RS-ASM-assessment-documents.md`, `RS-ADM-admission-wizard.md`,
-  `RS-DAT-data-integrity.md`, `RS-GOV-governance.md`, `RS-STF-staff.md`,
-  `RS-TEN-tenancy-security.md` — missing `Governs`/`Depends on` mirror
-  references added (~30 edges).
-- `bka/README.md` — 2 broken links fixed, layout diagram relabeled.
-- `bka/scope-and-conventions-tanglish-elaborate.md` — 4 broken links
-  fixed.
-- `bka/40-uat/04-demo-data-seeder-specification.md` — 1 broken link
-  fixed.
-- `bka/20-matrices/ROLE-COVERAGE.md`,
-  `bka/90-appendix/role-reference-platform-admin-L1-L4-staff.md` —
-  informal timetable-finding shorthand replaced with `RS-ACA-005` (8
-  occurrences).
-- `bka/20-matrices/implementation-impact-matrix.md` — self-anchor slug
-  fixed.
-- `bka/10-specification/RS-ADM-admission-wizard.md`,
-  `bka/60-product-reasoning/staff-experience-2026-08-08.md`,
-  `bka/60-product-reasoning/staff-documents-personal.md` — malformed
-  tables fixed.
-- None of the above are committed — this task did not decide to commit on
-  the user's behalf; the working tree also already had unrelated
-  in-progress changes (see Pending) that shouldn't be swept into the same
-  commit without the user's own review.
+- `bka/10-specification/RS-AIG-ai-governance.md` — 7 new rules
+  (`RS-AIG-017`–`023`); `RS-AIG-009` corrected; `RS-AIG-008`'s
+  `Implementation` field updated (5 adapters, real per-college config);
+  `Governs` fields updated on `RS-AIG-001`/`002`/`003`/`004`/`008`/`013`
+  to mirror the new rules' `Depends on` edges.
+- `bka/10-specification/RS-TEN-tenancy-security.md` — `RS-TEN-001`'s
+  `Governs` field updated (mirrors `RS-AIG-017`/`021`).
+- `bka/10-specification/RS-DAT-data-integrity.md` — removed the resolved
+  "Compound AI questions" row from `RS-DAT-009`'s declared-limitations
+  register, with a dated removal note per that register's own stated
+  convention.
+- `bka/30-decisions/ledger.md` — 6 new entries, `ADL-035` through
+  `ADL-040`, one per new rule (`RS-AIG-018`/`RS-AIG-009`'s correction
+  share `ADL-036`).
+- `bka/30-decisions/adr-register.md` — `ADR-028` Amendment 1 (real
+  per-college/per-deployment provider selection state).
+- `bka/20-matrices/ai-capability-matrix.md` — §4 (tool register)
+  regenerated in full from the real 66-tool `aiToolRegistry.js` (was
+  documenting 32, itself already known-stale); §6 (withheld
+  capabilities) — 2 rows resolved (multi-tool orchestration, per-tenant
+  provider config); §8 (conformance summary) — replaced the prior pass's
+  "flagged, not reconciled" stopgap notes with the real, resolved
+  content, plus the new conformance finding above.
+
+None of the above are committed — this task did not decide to commit on
+the user's behalf.
 
 ## Pending (not this task)
 
-- **Full AI capability reconciliation.** `RS-AIG`'s tool register
-  (`ai-capability-matrix.md` §4), `ADR-028` (production provider naming),
-  and likely new `RS-AIG` rules for capabilities that don't map to any
-  existing rule (conversation memory's scope/retention, the workflow
-  engine's step cap and confirmation gate, Trusted Web Retrieval's
-  allowlist mechanism, General/Curriculum mode's tool-visibility split)
-  are all real, evidenced gaps neither pass attempted to close. Needs its
-  own Product Reasoning-style pass, ideally by whoever actually built
-  those rounds (root `CHECKPOINT.md` rounds 13–18 name every file
-  touched).
-- **Minor, worth a beat:** `CLAUDE.md` (repo root, real, current, 198
-  lines) is untracked in git (`git status` shows `??`) despite being
-  cited across `bka/` as Level 1/"permanent project rules" — every other
-  clone or fresh checkout of this repo would be missing it entirely. Not
-  fixed as part of this task (committing it wasn't asked for), just
-  flagged since it's the kind of gap that's invisible until someone hits
-  it the way this pass did.
-- Unrelated pre-existing uncommitted changes in the working tree at the
-  time of this audit (round 18's General/Curriculum scope-mode work:
-  `ScopeToggle.jsx` new, `AskActToggle.jsx` deleted, and edits across
-  `AIComposer.jsx`/`ChatView.jsx`/`ComposerProvider.jsx`/
-  `WorkspaceProvider.jsx`/several routes/`vite.config.js`/
-  `.claude/launch.json`) — not touched or evaluated as part of this
-  documentation task; see root `CHECKPOINT.md`'s round 18 entry for what
-  they are.
+- **The `academic_generate_timetable`/`RS-ACA-005` L1-vs-L2 conformance
+  finding** (see Decisions made) — needs a product/architecture decision,
+  not a mechanical fix. Whoever picks it up should check `RS-AIG-007`'s
+  three carve-out conditions against the tool's real code path first.
+- **`CLAUDE.md` still untracked in git** — flagged by the prior pass,
+  unaffected by this one; still real.
+- Unrelated pre-existing uncommitted changes in the working tree
+  (round 18's General/Curriculum scope-mode *code* — this reconciliation
+  pass documents that work in `bka/`, but the actual frontend/backend
+  code for it was already committed separately; see root `CHECKPOINT.md`
+  round 18/19 entries) — not touched or re-evaluated as part of this
+  task.
 
 ## Exact next action
 
-None pending for *this* task. If the user wants the AI capability surface
-fully reconciled into `bka/`, or wants `CLAUDE.md` actually committed to
-git, those are new, separately-scoped tasks.
+None pending for *this* task. If the user wants the `academic_generate_timetable`
+L1-vs-L2 finding resolved, or `CLAUDE.md` committed, those are new,
+separately-scoped tasks.
 
 ## Authoritative sources already identified for this task
 
-- Root `CHECKPOINT.md` and `CHANGES.md` — the real, current session
-  narrative and file-by-file diffs; more current than anything in `bka/`
-  right now for anything AI-provider/AI-capability/Documents-related.
-- `git log --oneline` on `master` — commit-level ground truth
-  (`0e72a97` initial commit through `578dc3f`, plus the currently
-  uncommitted round-18 working tree).
-- `bka/tools/validate.py` — now runnable; re-run it (`python
-  tools/validate.py` from `bka/`) rather than trusting this file's
-  snapshot of its output.
-- `bka/00-foundation/scope-and-conventions.md` §7 — the amendment
-  procedure a full AI-capability reconciliation pass must follow.
+- `backend/src/services/aiToolRegistry.js`,
+  `backend/src/services/aiService.js`,
+  `backend/src/services/webRetrievalService.js`,
+  `backend/src/services/userPreferenceService.js`,
+  `backend/src/services/aiProviders/*.js`,
+  `backend/src/services/configurationService.js` — the real
+  implementation every new rule cites by file:line.
+- `bka/10-specification/RS-AIG-ai-governance.md` — now the current,
+  reconciled governance layer; read this directly, not root
+  `CHECKPOINT.md`'s session narrative, for what the AI subsystem's real
+  authority boundaries are.
+- `bka/tools/validate.py` — re-run it (`python tools/validate.py` from
+  `bka/`) rather than trusting this file's snapshot.

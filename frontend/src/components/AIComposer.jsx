@@ -4,6 +4,7 @@ import { AskActToggle } from './AskActToggle';
 import { ComposerAttachmentStrip } from './ComposerAttachmentStrip';
 import { IconButton } from './ui/IconButton';
 import { useComposerAttachments } from '../hooks/useComposerAttachments';
+import { useSpeechToText } from '../hooks/useSpeechToText';
 import { ACCEPTED_IMAGE_TYPES } from '../lib/composerAttachments';
 import { markdownFromClipboard } from '../lib/richPaste';
 import { countLines, isLongContent, lineCountLabel, showMoreLabel } from '../lib/longContent';
@@ -54,6 +55,18 @@ export const AIComposer = forwardRef(function AIComposer(
 
   const { attachments, announcement, addFiles, handlePaste, remove, retry } =
     useComposerAttachments(composer);
+
+  // Voice input (P1.4) — appends each finished phrase to whatever is already
+  // typed, with a separating space/newline only when the existing text
+  // doesn't already end in one, so voice and typing can be freely mixed in
+  // one message rather than voice always overwriting or always requiring a
+  // fresh line.
+  const speech = useSpeechToText({
+    onResult: (chunk) => {
+      const needsSeparator = value.length > 0 && !/[\s\n]$/.test(value);
+      onChange(`${value}${needsSeparator ? ' ' : ''}${chunk}`);
+    },
+  });
 
   /* ---- long paste: bounded preview, never a truncated value ---- */
 
@@ -142,6 +155,38 @@ export const AIComposer = forwardRef(function AIComposer(
 
   const attachable = Boolean(composer);
 
+  // Drag-and-drop (P1.5) — the natural companion to the file picker above,
+  // same `pickFiles`/`addFiles` pipeline, no separate upload path. A counter
+  // rather than a plain boolean for enter/leave: dragging over a child
+  // element (the textarea, the attachment strip) fires leave-then-enter on
+  // the parent, and a plain boolean would flicker the highlight off between
+  // those two events.
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dragDepth = useRef(0);
+  const onDragEnter = (e) => {
+    if (!attachable || !e.dataTransfer?.types.includes('Files')) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setIsDragOver(true);
+  };
+  const onDragOver = (e) => {
+    if (!attachable || !e.dataTransfer?.types.includes('Files')) return;
+    e.preventDefault();
+  };
+  const onDragLeave = (e) => {
+    if (!attachable) return;
+    e.preventDefault();
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setIsDragOver(false);
+  };
+  const onDrop = (e) => {
+    if (!attachable) return;
+    e.preventDefault();
+    dragDepth.current = 0;
+    setIsDragOver(false);
+    pickFiles(e.dataTransfer.files);
+  };
+
   return (
     <div className={cn('w-full relative z-[3] flex flex-col', className)}>
       {/* Above the surface, not inside it: the strip owns a fixed band of its
@@ -152,6 +197,10 @@ export const AIComposer = forwardRef(function AIComposer(
       )}
 
       <div
+        onDragEnter={onDragEnter}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
         className={cn(
           'pt-[12px] pr-[12px] pb-[8px] pl-[14px] transition-colors duration-200',
           bare
@@ -163,7 +212,11 @@ export const AIComposer = forwardRef(function AIComposer(
             : 'bg-paper border border-line rounded-[16px] shadow-composer transition-shadow focus-within:border-accent-line focus-within:shadow-[0_2px_14px_rgba(0,0,0,.08)]',
           // The dock's own settle plays on the first render after a send; it is
           // opacity and offset only, and reduced motion drops it entirely.
-          variant === 'chat' && 'animate-composerDock motion-reduce:animate-none'
+          variant === 'chat' && 'animate-composerDock motion-reduce:animate-none',
+          // Drag-and-drop (P1.5) — the same accent used for keyboard focus
+          // above, so a file drag reads as "this surface is about to accept
+          // something," consistent with the composer's own focus language.
+          isDragOver && 'border-accent-line shadow-[0_2px_14px_rgba(0,0,0,.08)]'
         )}
       >
         <div className="relative">
@@ -237,9 +290,20 @@ export const AIComposer = forwardRef(function AIComposer(
 
           <span className="text-[13px] text-ink-faint tracking-[.01em]">Auto</span>
 
-          <IconButton label="Voice input" tooltip="Voice input" className="w-[32px] h-[32px] rounded-[9px] text-ink-muted">
-            <Mic size={17} strokeWidth={1.75} />
-          </IconButton>
+          {speech.supported && (
+            <IconButton
+              label={speech.listening ? 'Stop voice input' : 'Voice input'}
+              tooltip={speech.listening ? 'Listening… click to stop' : 'Voice input'}
+              onClick={speech.toggle}
+              aria-pressed={speech.listening}
+              className={cn(
+                'w-[32px] h-[32px] rounded-[9px]',
+                speech.listening ? 'text-accent animate-pulse' : 'text-ink-muted'
+              )}
+            >
+              <Mic size={17} strokeWidth={1.75} />
+            </IconButton>
+          )}
 
           <button
             type="button"

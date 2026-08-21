@@ -5,10 +5,10 @@ import {
   fetchContextFiles,
   generateReply,
   queryKeys,
-  GENERATION_DELAY,
 } from '../lib/mockApi';
 import { fetchChatsReal, fetchProjectsReal, fetchArtifactsReal } from '../lib/realWorkspaceApi';
 import { conversationsApi } from '@/api/conversations';
+import { aiApi } from '@/api/ai';
 import { projectsApi } from '@/api/projects';
 import { artifactsApi } from '@/api/artifacts';
 import { CHAT_FILES } from '../lib/mockData';
@@ -154,26 +154,121 @@ export function WorkspaceProvider({ children }) {
   );
 
   /**
-   * The first valid message creates the conversation, adds it to Recents and
-   * moves the composer to the bottom dock.
+   * The first valid message creates a REAL conversation (conversationsApi —
+   * the backend owns conversation identity, never a client-generated id),
+   * adds it to Recents, and moves the composer to the bottom dock.
    *
    * `text` is required and comes from the calling composer's own scope — this
    * function no longer knows about any composer state, which is what keeps one
    * surface's draft from being sent (or cleared) by another.
+   *
+   * The actual answer comes from the real backend (POST /ai/ask/stream —
+   * routes/ai.js), not generateReply()/setTimeout: the LLM's tool-select/
+   * plan/confirmation logic all runs for real, streamed token-by-token into
+   * the assistant message's `body` as it arrives (ChatMessage.jsx renders
+   * the partial body once it's non-empty, see that file's own comment).
+   *
+   * Async, but only up to the point the conversation exists and the user's
+   * own message is recorded — the id resolves as soon as navigation has
+   * somewhere real to go, same as the old synchronous mock did. The AI
+   * turn itself (runAiTurn below) is deliberately NOT awaited here: it
+   * keeps streaming into `threads` (react-query cache, not component
+   * state) after this function returns and the caller has already
+   * navigated to the chat, exactly like the old setTimeout-based mock
+   * kept running after send() returned.
    */
+  const runAiTurn = useCallback(
+    async (id, { scope, projectId, body, aiId }) => {
+      const patchAiMessage = (patch) => {
+        setThreads((prev) => ({
+          ...prev,
+          [id]: (prev[id] || []).map((m) => (m.id === aiId ? { ...m, ...patch } : m)),
+        }));
+      };
+
+      let streamedText = '';
+      try {
+        const result = await aiApi.askStream(
+          { question: body, conversation_id: id, project_id: scope === 'project' ? projectId : undefined },
+          (event) => {
+            if (event.type === 'delta') {
+              streamedText += event.delta;
+              patchAiMessage({ body: streamedText, generating: true });
+            }
+          }
+        );
+        if (!result) throw new Error('No result from the AI');
+
+        const finalText = result.answer || streamedText || 'I could not generate an answer for that.';
+        /*
+         * Sources belong to the *response*: each piece of real evidence
+         * (P0.4 — aiService.buildEvidence) the backend actually queried
+         * to produce this answer, not a claim to trust blindly.
+         */
+        const sources = (result.evidence || []).map((e) => ({
+          id: `src-${e.toolName}-${e.retrievedAt}`,
+          title: e.toolName,
+          kind: 'tool',
+          origin:
+            e.recordCount !== undefined
+              ? `${e.recordCount} record(s) · retrieved ${e.retrievedAt}`
+              : `retrieved ${e.retrievedAt}`,
+        }));
+
+        patchAiMessage({
+          generating: false,
+          body: finalText,
+          sources,
+          toolUsed: result.toolUsed,
+          evidenceTrail: result.evidenceTrail,
+          verification: result.verification,
+          pendingConfirmation: result.pendingConfirmation,
+          createdAt: new Date().toISOString(),
+        });
+
+        conversationsApi
+          .addMessage(id, {
+            role: 'assistant',
+            content: finalText,
+            toolUsed: result.toolUsed,
+            presentation: result.presentation,
+          })
+          .catch(() => {});
+      } catch {
+        patchAiMessage({
+          generating: false,
+          body: streamedText || 'Sorry, I ran into a problem answering that. Please try again.',
+          error: true,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    },
+    [setThreads]
+  );
+
   const sendMessage = useCallback(
-    ({ scope = 'chat', convId, projectId, artifactId, text, attachments = [] }) => {
+    async ({ scope = 'chat', convId, projectId, artifactId, text, attachments = [] }) => {
       const body = (text ?? '').trim();
       if (!/[a-zA-Z0-9]/.test(body)) return null;
 
       let id = convId;
       if (!id) {
-        id = 'k' + Date.now();
         const project = projects.find((p) => p.id === projectId);
+        let conversation;
+        try {
+          conversation = await conversationsApi.create({
+            title: titleFromPrompt(body),
+            projectId: scope === 'project' ? projectId : undefined,
+          });
+        } catch {
+          toast('Could not start a new conversation — please try again.');
+          return null;
+        }
+        id = String(conversation.id);
         const record =
           scope === 'project'
-            ? { id, title: titleFromPrompt(body), kind: 'project', project: project?.title ?? '', projectId, meta: 'Just now' }
-            : { id, title: titleFromPrompt(body), kind: 'chat', meta: 'Just now', artifactId };
+            ? { id, title: conversation.title, kind: 'project', project: project?.title ?? '', projectId, meta: 'Just now' }
+            : { id, title: conversation.title, kind: 'chat', meta: 'Just now', artifactId };
         qc.setQueryData(queryKeys.chats, (prev = []) => [record, ...prev]);
         if (scope === 'project') setProjConv((m) => ({ ...m, [projectId]: id }));
         if (scope === 'artifact') setArtConv((m) => ({ ...m, [artifactId]: id }));
@@ -196,27 +291,6 @@ export function WorkspaceProvider({ children }) {
         );
       }
 
-      const reply = generateReply(body, scope);
-      /*
-       * Sources belong to the *response*, not to the conversation, and an
-       * uploaded file is a source only when the reply actually used it —
-       * `generateReply` decides that from the question. Attaching six
-       * screenshots and asking something unrelated must not produce six
-       * sources, which is exactly what the old "Files in this chat" list did.
-       */
-      const sources = [
-        ...(reply.usesAttachments
-          ? sent.map((a) => ({
-              id: `src-${a.id}`,
-              title: a.name,
-              kind: 'uploaded',
-              type: a.type, // drives the file-type glyph in the Sources panel
-              origin: 'Attached to this chat',
-              previewUrl: a.previewUrl,
-            }))
-          : []),
-        ...(reply.sources ?? []),
-      ];
       const aiId = 'm' + Date.now();
       const sentAt = new Date().toISOString();
       setThreads((prev) => ({
@@ -224,34 +298,25 @@ export function WorkspaceProvider({ children }) {
         [id]: [
           ...(prev[id] || []),
           { id: 'u' + Date.now(), role: 'user', text: body, attachments: sent, createdAt: sentAt },
-          { id: aiId, role: 'ai', generating: true, status: reply.status, createdAt: sentAt },
+          { id: aiId, role: 'ai', generating: true, body: '', createdAt: sentAt },
         ],
       }));
 
-      setTimeout(() => {
-        setThreads((prev) => ({
-          ...prev,
-          [id]: (prev[id] || []).map((m) =>
-            m.id === aiId
-              ? {
-                  id: aiId,
-                  role: 'ai',
-                  generating: false,
-                  body: reply.body,
-                  closing: reply.closing,
-                  sources,
-                  // The reply is dated when it landed, not when it was asked
-                  // for — that is the time the reader is looking at.
-                  createdAt: new Date().toISOString(),
-                }
-              : m
-          ),
-        }));
-      }, GENERATION_DELAY);
+      // Persisting the user's own turn is a separate, best-effort write —
+      // conversationService is a transcript store for display/history, not
+      // what the AI itself reads this turn (that's the conversation_id the
+      // askStream call below sends; the backend loads history itself). A
+      // failed save here must not block the actual answer.
+      conversationsApi
+        .addMessage(id, { role: 'user', content: body })
+        .catch(() => {});
+
+      // Deliberately not awaited — see this function's own comment above.
+      runAiTurn(id, { scope, projectId, body, aiId });
 
       return id;
     },
-    [addChatFiles, projects, qc, setThreads]
+    [addChatFiles, projects, qc, setThreads, runAiTurn]
   );
 
   /**

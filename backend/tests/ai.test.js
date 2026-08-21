@@ -61,6 +61,16 @@ function post(baseUrl, path, headers, body) {
   return requestJson(baseUrl, path, 'POST', { headers, body });
 }
 
+// P0.5 (streaming) — /ai/ask/stream returns text/event-stream, not
+// JSON; requestJson's JSON.parse would just fall through to returning
+// the raw text (see its own catch), which already works for reading
+// the whole SSE body as one string once the connection closes, so no
+// separate low-level implementation is needed here — this wrapper only
+// exists so callers don't have to know that detail.
+function postSse(baseUrl, path, headers, body) {
+  return requestJson(baseUrl, path, 'POST', { headers, body });
+}
+
 function startServer(app) {
   return new Promise((resolve) => {
     const server = app.listen(0, () => resolve(server));
@@ -501,6 +511,53 @@ test('ai', async (t) => {
       assert.equal(resp.body.toolUsed, 'get_college_profile');
       const profile = JSON.parse(resp.body.entries[0].data);
       assert.equal(profile.college_id, collegeA.collegeId);
+    } finally {
+      config.nim.apiKey = originalApiKey;
+      global.fetch = originalFetch;
+    }
+  });
+
+  await t.test('POST /ai/ask/stream (P0.5): streams delta events for the final answer, then one done event with the same shape /ai/ask returns', async () => {
+    const originalApiKey = config.nim.apiKey;
+    const originalFetch = global.fetch;
+    config.nim.apiKey = 'test-nim-key';
+    let call = 0;
+    global.fetch = async () => {
+      call += 1;
+      if (call === 1) {
+        // The tool-select call — never streamed (aiService's own
+        // completeMaybeStreaming only streams the final answer).
+        return {
+          ok: true,
+          json: async () => ({
+            choices: [{ message: { tool_calls: [{ function: { name: 'get_college_profile', arguments: '{}' } }] } }],
+          }),
+        };
+      }
+      // The final-answer call — a real SSE body, exercising nim.js's
+      // completeStream end to end through the real route, not mocked
+      // at the aiService layer.
+      return {
+        ok: true,
+        body: (async function* body() {
+          yield Buffer.from('data: {"choices":[{"delta":{"content":"Test "}}]}\n\n');
+          yield Buffer.from('data: {"choices":[{"delta":{"content":"College"}}]}\n\n');
+          yield Buffer.from('data: [DONE]\n\n');
+        }()),
+      };
+    };
+
+    try {
+      const token = await login(collegeA, 'principaluser');
+      const resp = await postSse(baseUrl, '/api/v1/ai/ask/stream', headersFor(collegeA, token), { question: 'What college is this?' });
+      assert.equal(resp.status, 200);
+      assert.match(resp.body, /event: delta\ndata: \{"delta":"Test "\}/);
+      assert.match(resp.body, /event: delta\ndata: \{"delta":"College"\}/);
+      const doneMatch = resp.body.match(/event: done\ndata: (\{.*\})\n\n/);
+      assert.ok(doneMatch, 'a done event with the full result must be the last event');
+      const doneData = JSON.parse(doneMatch[1]);
+      assert.equal(doneData.toolUsed, 'get_college_profile');
+      assert.equal(doneData.answer, 'Test College');
     } finally {
       config.nim.apiKey = originalApiKey;
       global.fetch = originalFetch;

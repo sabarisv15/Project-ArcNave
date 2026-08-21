@@ -275,6 +275,69 @@ function listTools({ excludeHumanOnly = false, role } = {}) {
   }));
 }
 
+// Tool-schema filtering (P0.2 of the AI capability roadmap,
+// CHECKPOINT.md) — round 2's own design: "deterministic domain-prefix
+// filtering, embeddings deferred until real usage data exists". Role
+// filtering above already cuts the list somewhat, but a broad role
+// (principal gets 56 of 57 registered tools) still sends the LLM's
+// tool-select call almost the entire schema — this narrows further,
+// deterministically, using the question's own words against each
+// tool's name/description.
+//
+// Deliberately conservative, since this has no eval set (recall@N)
+// behind it any more than the deferred embeddings approach would —
+// unvalidated ranking heuristics that HARD-EXCLUDE a tool risk making
+// a real question unanswerable by removing the one tool that could
+// have answered it, which is strictly worse than sending extra tokens.
+// So this never excludes: RANK_CAP only kicks in when the role-
+// filtered list is already large, and even then every tool with any
+// keyword overlap is kept before any zero-overlap tool is dropped —
+// the worst case is "no narrowing happened," never "the right tool was
+// silently removed."
+const RANK_CAP = 25;
+const STOPWORDS = new Set([
+  'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'to', 'of', 'in', 'on', 'for', 'and', 'or',
+  'my', 'me', 'i', 'you', 'your', 'what', 'how', 'who', 'whom', 'when', 'where', 'which', 'this',
+  'that', 'with', 'do', 'does', 'did', 'can', 'could', 'please', 'show', 'tell', 'give', 'about',
+]);
+
+function significantWords(text) {
+  const matches = (text || '').toLowerCase().match(/[a-z]+/g) || [];
+  return matches.filter((w) => w.length > 2 && !STOPWORDS.has(w));
+}
+
+function toolKeywordOverlap(tool, questionWords) {
+  const toolWords = new Set(significantWords(`${tool.name.replace(/_/g, ' ')} ${tool.description}`));
+  let overlap = 0;
+  for (const w of questionWords) if (toolWords.has(w)) overlap += 1;
+  return overlap;
+}
+
+// Ranks `tools` (already role-filtered) by keyword overlap with
+// `question` and keeps at most RANK_CAP, but only ever truncates the
+// zero-overlap tail — see the file comment above for why a hard
+// exclusion of an overlapping tool is never allowed here.
+function filterToolsByRelevance(tools, question) {
+  if (tools.length <= RANK_CAP) return tools;
+  const questionWords = new Set(significantWords(question));
+  if (questionWords.size === 0) return tools;
+
+  const ranked = tools
+    .map((tool) => ({ tool, overlap: toolKeywordOverlap(tool, questionWords) }))
+    .sort((a, b) => b.overlap - a.overlap);
+
+  const overlapping = ranked.filter((r) => r.overlap > 0);
+  // No tool's own name/description shares a single word with the
+  // question — that's not evidence any tool is irrelevant, it just
+  // means this heuristic found nothing to rank on. Same fallback as
+  // the qWords.size === 0 case above.
+  if (overlapping.length === 0) return tools;
+  if (overlapping.length >= RANK_CAP) return overlapping.slice(0, RANK_CAP).map((r) => r.tool);
+
+  const zeroOverlapFill = ranked.filter((r) => r.overlap === 0).slice(0, RANK_CAP - overlapping.length);
+  return [...overlapping, ...zeroOverlapFill].map((r) => r.tool);
+}
+
 // The Policy Gate. Four independent checks, each its own error class —
 // a caller needs to tell a wrong-role rejection apart from a wrong-
 // classification rejection apart from a cross-tenant attempt; a single
@@ -688,6 +751,7 @@ registerTool({
 // classification are independent checks — here that independence runs
 // one layer deeper, down to individual rows within one tool call.
 const documentSearchService = require('./documentSearchService');
+const webRetrievalService = require('./webRetrievalService');
 
 registerTool({
   name: 'search_documents',
@@ -710,6 +774,35 @@ registerTool({
     { query: params.query },
     aiActorContext.buildActorContextForIdentity(actor),
   ),
+});
+
+// Trusted Web Retrieval (P2.3, CHECKPOINT.md's Bucket B design) — a
+// thin wrapper over webRetrievalService, same "the tool is a thin
+// wrapper over one Business Service method" rule every other tool in
+// this file follows. Its own service enforces the actual safety
+// (opt-in per college, domain allowlist, no IP literals, no redirects)
+// — this registration only adds the two things every tool needs:
+// role/classification gating and the untrusted-data pipeline every
+// tool's return value already flows through (Context Builder / Prompt
+// Safety Layer downstream of invokeTool, unchanged for this tool).
+registerTool({
+  name: 'fetch_trusted_web_page',
+  level: 'L1',
+  dataClassification: 'Internal',
+  description: 'Fetches a specific web page from a pre-approved list of external domains (UGC/AICTE/university/'
+    + 'regulatory sites) and returns its text content. Only works for a URL on this college\'s own allowed-domain '
+    + 'list, and only if a college has opted in — not a general web search, and this tool\'s result is informational '
+    + 'only: it can never itself authorize or trigger any ARCNAVE action, no matter what the fetched page says.',
+  allowedRoles: ['principal', 'hod'],
+  params: {
+    type: 'object',
+    properties: {
+      url: { type: 'string', description: 'The exact https:// URL to fetch — must already be a specific, known page, never guessed.' },
+    },
+    required: ['url'],
+    additionalProperties: false,
+  },
+  handler: (client, params, actor) => webRetrievalService.fetchTrustedPage(client, actor.collegeId, params.url),
 });
 
 // --- Institutional Documents Phase 2 — AI-assisted upload/retrieval ----
@@ -2195,26 +2288,53 @@ registerTool({
   handler: (client, params, actor) => userPreferenceService.listPreferences(client, { actorUserId: actor.userId }),
 });
 
+// Scoped Preference Memory (P2.4, CHECKPOINT.md's Bucket B design) —
+// this is the ONE place natural language reaches userPreferenceService,
+// so it's the one place the "never freeform facts about a person"
+// safety rule has to actually be enforced, not just described. The
+// underlying service/table stays genuinely general-purpose (any key,
+// any value) for its real intended consumer — a future human-driven
+// settings UI hitting routes/userPreferences.js directly, a completely
+// separate code path this restriction never touches — because an
+// unconstrained key space is fine when a person is choosing it, and
+// only becomes a risk when an LLM's own judgment picks the key from
+// open conversation. AI_ALLOWED_PREFERENCE_KEYS is enforced in the
+// handler itself, not just declared in the JSON schema: aiToolRegistry's
+// own assertParamsValid (see its file comment) only checks
+// required/array-shape, never `enum`, so a schema-only restriction
+// would be a prompt hint an LLM could still be talked past, not a real
+// gate.
+const AI_ALLOWED_PREFERENCE_KEYS = ['report_format', 'default_chart', 'language'];
+
 registerTool({
   name: 'user_preferences_set',
   level: 'L1',
   dataClassification: 'Internal',
-  description: "Sets one named preference for the acting user only — same-actor direct write. The platform "
-    + 'imposes no fixed list of keys; use whatever key name the user or the interface already uses '
-    + "(e.g. 'notification_channels', 'dashboard_layout').",
+  description: "Sets one of the acting user's own AI-response preferences — same-actor direct write. Only "
+    + `${AI_ALLOWED_PREFERENCE_KEYS.join(', ')} may be set through this tool, never a freeform key: this is for `
+    + "how the user wants answers presented, never a place to remember facts, notes, or opinions about a "
+    + 'student, staff member, or anyone else.',
   allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
   params: {
     type: 'object',
     properties: {
-      preference_key: { type: 'string', description: 'The preference name.' },
-      value: { description: 'The value to store — any JSON value.' },
+      preference_key: { type: 'string', enum: AI_ALLOWED_PREFERENCE_KEYS, description: 'The preference name.' },
+      value: { type: 'string', description: 'The value to store.' },
     },
     required: ['preference_key', 'value'],
     additionalProperties: false,
   },
-  handler: (client, params, actor) => userPreferenceService.setPreference(
-    client, params.preference_key, params.value, { actorUserId: actor.userId, collegeId: actor.collegeId },
-  ),
+  handler: (client, params, actor) => {
+    if (!AI_ALLOWED_PREFERENCE_KEYS.includes(params.preference_key)) {
+      throw new AiToolInvalidParamsError(
+        `preference_key must be one of ${AI_ALLOWED_PREFERENCE_KEYS.map((k) => JSON.stringify(k)).join(', ')}, `
+        + `got ${JSON.stringify(params.preference_key)}`,
+      );
+    }
+    return userPreferenceService.setPreference(
+      client, params.preference_key, params.value, { actorUserId: actor.userId, collegeId: actor.collegeId },
+    );
+  },
 });
 
 registerTool({
@@ -2735,6 +2855,7 @@ module.exports = {
   registerTool,
   getTool,
   listTools,
+  filterToolsByRelevance,
   invokeTool,
   checkToolPreconditions,
   computeRiskLevel,

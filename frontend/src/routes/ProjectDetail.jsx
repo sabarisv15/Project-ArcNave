@@ -53,8 +53,8 @@ export function ProjectDetail() {
 
   if (!project) return null;
 
-  const send = () => {
-    const id = sendMessage({ scope: 'project', convId, projectId, text: composer.text, attachments: composer.attachments });
+  const send = async () => {
+    const id = await sendMessage({ scope: 'project', convId, projectId, text: composer.text, attachments: composer.attachments });
     if (id) composer.reset(); // clears this project conversation's draft only
   };
 

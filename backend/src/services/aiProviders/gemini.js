@@ -8,6 +8,7 @@
 
 const { LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError } = require('./errors');
 const { withRetry } = require('./retry');
+const { iterateSseLines } = require('./sse');
 
 const REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
@@ -55,7 +56,12 @@ async function postJson(cfg, path, body) {
   }
 }
 
-async function complete(cfg, { systemPrompt, userPrompt }) {
+// Token/cost telemetry (P1.1) — see nim.js's own comment for the shared
+// reasoning. Gemini's usage block is `usageMetadata` (promptTokenCount/
+// candidatesTokenCount), a different field name and shape from every
+// other adapter's `usage` — a real vendor difference, not an
+// inconsistency in this codebase.
+async function completeWithMeta(cfg, { systemPrompt, userPrompt }) {
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -73,7 +79,73 @@ async function complete(cfg, { systemPrompt, userPrompt }) {
     throw new LlmRequestError('Gemini response did not contain candidates[0].content.parts[].text');
   }
 
+  const usage = payload && payload.usageMetadata
+    ? { inputTokens: payload.usageMetadata.promptTokenCount, outputTokens: payload.usageMetadata.candidatesTokenCount }
+    : undefined;
+  return { text, usage };
+}
+
+async function complete(cfg, prompts) {
+  const { text } = await completeWithMeta(cfg, prompts);
   return text;
+}
+
+// Streaming variant of complete() (P0.5) — see nim.js's own comment
+// for the shared reasoning (only the final answer streams, retries
+// only cover the initial connection). Gemini's streaming endpoint is
+// a genuinely different path (`:streamGenerateContent`, `alt=sse`
+// query param), not just a `stream: true` body flag like the OpenAI-
+// compatible adapters — a real, structural difference between vendors
+// (matches round 2's own note that Gemini's caching API is similarly
+// structurally different, not just a details difference).
+async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
+  if (!isConfigured(cfg)) {
+    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
+  }
+
+  const response = await withRetry(async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(`${baseUrl(cfg)}/models/${cfg.model}:streamGenerateContent?alt=sse`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': cfg.apiKey },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+          generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS },
+        }),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      throw new LlmRequestError(`request to Gemini failed: ${err.message}`);
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
+
+  if (!response.ok) {
+    const bodyText = await response.text().catch(() => '');
+    throw new LlmRequestError(`Gemini returned ${response.status}: ${bodyText.slice(0, 500)}`);
+  }
+
+  let full = '';
+  for await (const payload of iterateSseLines(response)) {
+    let event;
+    try {
+      event = JSON.parse(payload);
+    } catch {
+      continue;
+    }
+    const parts = event && event.candidates && event.candidates[0]
+      && event.candidates[0].content && event.candidates[0].content.parts;
+    const text = Array.isArray(parts) ? parts.map((p) => p.text).filter(Boolean).join('') : '';
+    if (text.length > 0) {
+      full += text;
+      onDelta(text);
+    }
+  }
+  return full;
 }
 
 async function completeWithTools(cfg, { systemPrompt, userPrompt, tools }) {
@@ -145,6 +217,8 @@ module.exports = {
   name: 'gemini',
   isConfigured,
   complete,
+  completeWithMeta,
+  completeStream,
   completeWithTools,
   embed,
   AiProviderCapabilityError,

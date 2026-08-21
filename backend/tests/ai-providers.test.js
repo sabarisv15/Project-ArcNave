@@ -56,6 +56,40 @@ test('claude adapter: embed() throws AiProviderCapabilityError — a real vendor
   );
 });
 
+test('claude adapter.completeWithTools: a cache_control breakpoint is set on the LAST tool only, and the caching beta header is sent (P1.2)', async () => {
+  const claude = aiProviders.getAdapter('claude');
+  const originalFetch = global.fetch;
+  let capturedBody;
+  let capturedHeaders;
+  global.fetch = async (url, options) => {
+    capturedHeaders = options.headers;
+    capturedBody = JSON.parse(options.body);
+    return {
+      ok: true,
+      json: async () => ({ content: [{ type: 'text', text: 'ok' }] }),
+    };
+  };
+  try {
+    await claude.completeWithTools(
+      { apiKey: 'k', model: 'claude-x' },
+      {
+        systemPrompt: 's',
+        userPrompt: 'u',
+        tools: [
+          { name: 'tool_a', description: 'A', params: {} },
+          { name: 'tool_b', description: 'B', params: {} },
+        ],
+      },
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+
+  assert.equal(capturedHeaders['anthropic-beta'], 'prompt-caching-2024-07-31');
+  assert.equal(capturedBody.tools[0].cache_control, undefined, 'only the LAST tool gets the breakpoint');
+  assert.deepEqual(capturedBody.tools[1].cache_control, { type: 'ephemeral' });
+});
+
 test('nim/gemini/selfHosted adapters: complete()/embed() throw LlmNotConfiguredError when unconfigured, no fetch attempted', async () => {
   const originalFetch = global.fetch;
   let fetchCalled = false;

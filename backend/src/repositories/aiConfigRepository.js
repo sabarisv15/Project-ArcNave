@@ -9,7 +9,7 @@
 
 async function findByCollegeId(client, collegeId) {
   const result = await client.query(
-    `SELECT id, college_id, provider, api_key, model, embedding_model, base_url, created_at, updated_at
+    `SELECT id, college_id, provider, api_key, model, embedding_model, fast_model, base_url, created_at, updated_at
      FROM college_ai_config WHERE college_id = $1`,
     [collegeId],
   );
@@ -21,20 +21,21 @@ async function findByCollegeId(client, collegeId) {
 // already uses, minus that function's own optimistic-concurrency
 // version column (nothing in this task asked for one here).
 async function upsert(client, {
-  collegeId, provider, apiKey, model, embeddingModel, baseUrl,
+  collegeId, provider, apiKey, model, embeddingModel, fastModel, baseUrl,
 }) {
   const result = await client.query(
-    `INSERT INTO college_ai_config (college_id, provider, api_key, model, embedding_model, base_url)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO college_ai_config (college_id, provider, api_key, model, embedding_model, fast_model, base_url)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (college_id) DO UPDATE
        SET provider = EXCLUDED.provider,
            api_key = EXCLUDED.api_key,
            model = EXCLUDED.model,
            embedding_model = EXCLUDED.embedding_model,
+           fast_model = EXCLUDED.fast_model,
            base_url = EXCLUDED.base_url,
            updated_at = now()
-     RETURNING id, college_id, provider, api_key, model, embedding_model, base_url, created_at, updated_at`,
-    [collegeId, provider, apiKey, model, embeddingModel, baseUrl],
+     RETURNING id, college_id, provider, api_key, model, embedding_model, fast_model, base_url, created_at, updated_at`,
+    [collegeId, provider, apiKey, model, embeddingModel, fastModel, baseUrl],
   );
   return result.rows[0];
 }

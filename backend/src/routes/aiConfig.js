@@ -44,6 +44,7 @@ function createAiConfigRouter() {
       provider,
       model: config.model,
       embeddingModel: config.embeddingModel,
+      fastModel: config.fastModel,
       baseUrl: config.baseUrl,
       hasApiKey: Boolean(config.apiKey),
     });
@@ -52,11 +53,11 @@ function createAiConfigRouter() {
   router.put('/ai-config', requirePermission('ai_config.update'), asyncHandler(async (req, res) => {
     if (!requireResolvedTenant(req, res)) return;
     const {
-      provider, api_key: apiKey, model, embedding_model: embeddingModel, base_url: baseUrl,
+      provider, api_key: apiKey, model, embedding_model: embeddingModel, fast_model: fastModel, base_url: baseUrl,
     } = req.body || {};
     try {
       const row = await configurationService.setAiConfig(req.dbClient, req.collegeId, {
-        provider, apiKey, model, embeddingModel, baseUrl,
+        provider, apiKey, model, embeddingModel, fastModel, baseUrl,
       }, { userId: identityService.resolveActorUserId(req.capabilities) });
       res.json(row);
     } catch (err) {

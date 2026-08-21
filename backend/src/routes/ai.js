@@ -6,7 +6,9 @@ const { requireAuth } = require('../middleware/rbac');
 const aiToolRegistry = require('../services/aiToolRegistry');
 const aiService = require('../services/aiService');
 const aiProviders = require('../services/aiProviders');
+const conversationService = require('../services/conversationService');
 const notificationService = require('../services/notificationService');
+const webRetrievalService = require('../services/webRetrievalService');
 const assessmentService = require('../services/assessmentService');
 const calendarService = require('../services/calendarService');
 const financeService = require('../services/financeService');
@@ -17,6 +19,13 @@ const workflowService = require('../services/workflowService');
 const attendanceService = require('../services/attendanceService');
 const projectService = require('../services/projectService');
 const { IdentifierResolutionError } = require('../identifierResolution');
+
+// Short-session conversation memory (P0.1) — how many of the most
+// recent messages get threaded into the prompt as background context.
+// A count, not a token budget: bounds worst-case prompt growth without
+// needing a tokenizer here, same reasoning maxAffectedRows uses a row
+// count rather than trying to price a query up front.
+const HISTORY_LIMIT = 10;
 
 function requireResolvedTenant(req, res) {
   if (req.collegeId === null) {
@@ -88,6 +97,13 @@ function mapAiToolError(err, res) {
     return true;
   }
   if (err instanceof aiService.AiServiceValidationError) {
+    res.status(400).json({ detail: err.message });
+    return true;
+  }
+  // A bounded-plan step count/shape/tool-name issue (P0.3) — same
+  // category as AiServiceValidationError above, its own class only so
+  // a caller/test can tell "bad question" apart from "bad plan."
+  if (err instanceof aiService.AiWorkflowPlanValidationError) {
     res.status(400).json({ detail: err.message });
     return true;
   }
@@ -172,6 +188,23 @@ function mapAiToolError(err, res) {
     || err instanceof notificationService.NotificationNotApprovedError
   ) {
     res.status(409).json({ detail: err.message });
+    return true;
+  }
+  // fetch_trusted_web_page (P2.3) — not-enabled/domain-not-allowed are
+  // both "this request can't be served as configured," same 400
+  // category as AiServiceValidationError above; a real upstream fetch
+  // failure (timeout, non-2xx, oversized response) is 502, same
+  // reasoning as aiProviders.LlmRequestError below (the vendor/site,
+  // not this server, is at fault).
+  if (
+    err instanceof webRetrievalService.WebRetrievalNotEnabledError
+    || err instanceof webRetrievalService.WebRetrievalDomainNotAllowedError
+  ) {
+    res.status(400).json({ detail: err.message });
+    return true;
+  }
+  if (err instanceof webRetrievalService.WebRetrievalRequestError) {
+    res.status(502).json({ detail: err.message });
     return true;
   }
 
@@ -335,10 +368,15 @@ function createAiRouter() {
   // to "no project context" rather than failing the whole ask — the
   // same graceful-hint behavior buildFocusHint already has for bad
   // focusContext input.
-  router.post('/ai/ask', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
+  // Shared by /ai/ask and /ai/ask/stream — resolves the identityContext
+  // plus the two optional, gracefully-degrading hints (projectContext,
+  // history) exactly once, so the streaming route (added for P0.5) is
+  // not a second, drifting copy of this same resolution logic.
+  async function resolveAskContext(req) {
     const identityContext = buildAiIdentityContext(req);
-    const { question, focusContext, project_id: projectId } = req.body || {};
+    const {
+      question, focusContext, project_id: projectId, conversation_id: conversationId,
+    } = req.body || {};
     let projectContext;
     if (projectId) {
       try {
@@ -349,8 +387,111 @@ function createAiRouter() {
         // graceful degrade — see comment above
       }
     }
+    // Short-session conversation memory (P0.1) — optional, additive:
+    // a caller that never sends conversation_id (every caller before
+    // this) sees byte-for-byte the same behavior as before. Same
+    // graceful-degrade shape as projectContext above — an invalid/
+    // not-owned conversation_id just means no history, never a failed
+    // ask. Bounded to the last HISTORY_LIMIT messages (not the whole
+    // conversation) to keep the prompt this adds bounded regardless of
+    // how long the conversation has run.
+    let history;
+    if (conversationId) {
+      try {
+        const messages = await conversationService.listMessages(req.dbClient, conversationId, { userId: identityContext.userId });
+        history = messages.slice(-HISTORY_LIMIT).map((m) => ({ role: m.role, content: m.content }));
+      } catch {
+        // graceful degrade — see comment above
+      }
+    }
+    return {
+      question, identityContext, focusContext, projectContext, history,
+    };
+  }
+
+  router.post('/ai/ask', requireAuth, asyncHandler(async (req, res) => {
+    if (!requireResolvedTenant(req, res)) return;
+    const {
+      question, identityContext, focusContext, projectContext, history,
+    } = await resolveAskContext(req);
     try {
-      const result = await aiService.askAgent(req.dbClient, question, { identityContext, focusContext, projectContext });
+      const result = await aiService.askAgent(req.dbClient, question, {
+        identityContext, focusContext, projectContext, history,
+      });
+      res.json(result);
+    } catch (err) {
+      if (mapAiToolError(err, res)) return;
+      throw err;
+    }
+  }));
+
+  // Streaming variant of /ai/ask (P0.5) — same tool-select/plan/
+  // confirmation logic (aiService.askAgent, unchanged), only the FINAL
+  // natural-language answer streams: an SSE `delta` event per chunk as
+  // it arrives, then one `done` event carrying the exact same full
+  // JSON shape /ai/ask itself returns (toolUsed, evidence, plan,
+  // pendingConfirmation, ...) so the frontend reconciles state
+  // identically regardless of which route it used. A separate route,
+  // not a content-negotiated branch of /ai/ask itself, so that route's
+  // existing contract/tests stay byte-for-byte untouched.
+  router.post('/ai/ask/stream', requireAuth, asyncHandler(async (req, res) => {
+    if (!requireResolvedTenant(req, res)) return;
+    const {
+      question, identityContext, focusContext, projectContext, history,
+    } = await resolveAskContext(req);
+
+    res.writeHead(200, {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-cache',
+      connection: 'keep-alive',
+    });
+    const writeEvent = (event, data) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+      const result = await aiService.askAgent(req.dbClient, question, {
+        identityContext, focusContext, projectContext, history,
+      }, (delta) => writeEvent('delta', { delta }));
+      writeEvent('done', result);
+    } catch (err) {
+      // The response has already started (headers sent) by the time
+      // any error here could occur — an SSE `error` event, never an
+      // HTTP status change, is the only honest way to surface it to an
+      // EventSource client at this point.
+      writeEvent('error', { detail: err.message });
+    } finally {
+      res.end();
+    }
+  }));
+
+  // Executes a bounded workflow plan the user already confirmed (P0.3)
+  // — the frontend gets `pendingConfirmation: { steps }` back from
+  // POST /ai/ask when a plan needs a yes/no, then replays that exact
+  // `steps` array here once the user says yes, same "confirm now,
+  // execute via a direct call, no second LLM round-trip" shape
+  // /ai/tools/:name/invoke already uses for a single confirmed tool.
+  // Not re-planned: re-asking the LLM here could produce a DIFFERENT
+  // plan than the one the user actually saw and approved.
+  //
+  // No extra trust is placed in `steps` for being client-supplied
+  // rather than LLM-proposed — executeWorkflowPlan runs every step
+  // through the same invokeTool (Policy Gate, tenant/role/classification
+  // checks) any other entry point uses, exactly like
+  // /ai/tools/:name/invoke already lets a caller name any tool+params
+  // directly with no LLM in the loop at all. The Policy Gate is the
+  // real authority here, never "was this plan LLM-authored."
+  router.post('/ai/workflow/execute', requireAuth, asyncHandler(async (req, res) => {
+    if (!requireResolvedTenant(req, res)) return;
+    const identityContext = buildAiIdentityContext(req);
+    const { question, steps } = req.body || {};
+    if (!Array.isArray(steps) || steps.length === 0) {
+      res.status(400).json({ detail: 'steps is required and must be a non-empty array' });
+      return;
+    }
+    const resolvedSteps = steps.map((s) => ({ toolName: s.toolName || s.tool_name, params: s.params || {} }));
+    try {
+      const result = await aiService.executeWorkflowPlan(req.dbClient, resolvedSteps, question || '', { identityContext });
       res.json(result);
     } catch (err) {
       if (mapAiToolError(err, res)) return;

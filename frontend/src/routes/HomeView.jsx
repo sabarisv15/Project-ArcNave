@@ -18,8 +18,8 @@ export function HomeView() {
   // Home's own draft. It is never read by a project, artifact or chat composer.
   const composer = useComposer(composerScope.home());
 
-  const send = () => {
-    const id = sendMessage({ scope: 'chat', text: composer.text, attachments: composer.attachments });
+  const send = async () => {
+    const id = await sendMessage({ scope: 'chat', text: composer.text, attachments: composer.attachments });
     if (!id) return;
     composer.reset(); // sent — clears Home's scope and nothing else
     navigate(`/chat/${id}`);

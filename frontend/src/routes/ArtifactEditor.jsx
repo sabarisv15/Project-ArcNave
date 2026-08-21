@@ -146,8 +146,8 @@ export function ArtifactEditor() {
               revising={!!convId}
               artifactType={artifact.type}
               composer={composer}
-              onSend={() => {
-                const id = sendMessage({ scope: 'artifact', convId, artifactId, text: composer.text, attachments: composer.attachments });
+              onSend={async () => {
+                const id = await sendMessage({ scope: 'artifact', convId, artifactId, text: composer.text, attachments: composer.attachments });
                 if (id) composer.reset(); // clears this artifact's scope only
               }}
             />

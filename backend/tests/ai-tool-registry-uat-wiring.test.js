@@ -101,8 +101,24 @@ test('AI tool registry — UAT wiring handler delegation (same-actor only)', asy
     t.after(() => setMock.mock.restore());
 
     const tool = aiToolRegistry.getTool('user_preferences_set');
-    await tool.handler({}, { preference_key: 'dashboard_layout', value: ['a', 'b'] }, { userId: 'u1', collegeId: 'c1' });
+    // P2.4: only a fixed, safe key set may be set through this tool now
+    // (see aiToolRegistry.js's own AI_ALLOWED_PREFERENCE_KEYS comment) —
+    // 'report_format' in place of the old free-form 'dashboard_layout'
+    // example; this test is about the ownership scoping, not the key name.
+    await tool.handler({}, { preference_key: 'report_format', value: 'executive' }, { userId: 'u1', collegeId: 'c1' });
     assert.equal(setMock.mock.callCount(), 1);
+  });
+
+  await t.test('user_preferences_set (P2.4): a key outside the fixed safe set is rejected before userPreferenceService is ever touched — never a place to remember freeform facts about a person', async () => {
+    const setMock = t.mock.method(userPreferenceService, 'setPreference', async () => { throw new Error('must not be called'); });
+    t.after(() => setMock.mock.restore());
+
+    const tool = aiToolRegistry.getTool('user_preferences_set');
+    assert.throws(
+      () => tool.handler({}, { preference_key: 'notes_about_student_x', value: 'failing multiple subjects' }, { userId: 'u1', collegeId: 'c1' }),
+      aiToolRegistry.AiToolInvalidParamsError,
+    );
+    assert.equal(setMock.mock.callCount(), 0);
   });
 
   await t.test('substitute_duties_list resolves against the acting user, not a caller-supplied staff id', async () => {

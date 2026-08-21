@@ -115,6 +115,7 @@ function globalNimConfig() {
     baseUrl: globalConfig.nim.baseUrl,
     model: globalConfig.nim.model,
     embeddingModel: globalConfig.nim.embeddingModel,
+    fastModel: globalConfig.nim.fastModel,
   };
 }
 
@@ -135,6 +136,7 @@ async function getAiConfig(client, collegeId) {
     baseUrl: row.base_url,
     model: row.model,
     embeddingModel: row.embedding_model,
+    fastModel: row.fast_model,
   };
   return { provider: row.provider, config, adapter: aiProviders.getAdapter(row.provider) };
 }
@@ -146,7 +148,7 @@ async function getAiConfig(client, collegeId) {
 // in any form, only hasApiKey (a boolean) — a caller (the route) has
 // no raw key to accidentally leak in a response or a log line.
 async function setAiConfig(client, collegeId, {
-  provider, apiKey, model, embeddingModel, baseUrl,
+  provider, apiKey, model, embeddingModel, fastModel, baseUrl,
 }, { userId } = {}) {
   if (!provider) {
     throw new AiConfigValidationError('provider is required');
@@ -162,6 +164,7 @@ async function setAiConfig(client, collegeId, {
     apiKey: apiKey ? cryptoUtil.encryptSecret(apiKey) : null,
     model: model || null,
     embeddingModel: embeddingModel || null,
+    fastModel: fastModel || null,
     baseUrl: baseUrl || null,
   });
 
@@ -174,7 +177,9 @@ async function setAiConfig(client, collegeId, {
     // Never api_key/ciphertext in metadata — only which provider/model
     // changed, same "record the fact, not the secret" restraint
     // security.js's own password/token handling already follows.
-    metadata: { provider: row.provider, model: row.model, embeddingModel: row.embedding_model },
+    metadata: {
+      provider: row.provider, model: row.model, embeddingModel: row.embedding_model, fastModel: row.fast_model,
+    },
   });
 
   return {
@@ -183,6 +188,7 @@ async function setAiConfig(client, collegeId, {
     provider: row.provider,
     model: row.model,
     embeddingModel: row.embedding_model,
+    fastModel: row.fast_model,
     baseUrl: row.base_url,
     hasApiKey: Boolean(row.api_key),
     updatedAt: row.updated_at,

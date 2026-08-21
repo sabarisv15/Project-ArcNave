@@ -286,7 +286,19 @@ export function ChatMessage({ message, selected = false, onSelect, onEdit }) {
         </div>
         <div className="flex-1 min-w-0">
           {message.generating ? (
-            <GenerationState status={message.status} />
+            // P0.5 (streaming): once the first real chunk has arrived,
+            // message.body already holds the partial answer — show it
+            // growing in place rather than a static skeleton for the
+            // whole generation. Before the first chunk (still resolving
+            // which tool to call, or none has arrived yet), body is
+            // still empty and the skeleton is the honest state.
+            message.body ? (
+              <div className="py-[5px]">
+                <Markdown>{message.body}</Markdown>
+              </div>
+            ) : (
+              <GenerationState status={message.status} />
+            )
           ) : (
             <div
               // Selecting a reply is what scopes the Sources panel to it, and

@@ -11,6 +11,7 @@
 
 const { LlmNotConfiguredError, LlmRequestError } = require('./errors');
 const { withRetry } = require('./retry');
+const { iterateSseLines } = require('./sse');
 
 const REQUEST_TIMEOUT_MS = 30000;
 const EMBEDDING_DIMENSIONS = 1024;
@@ -57,7 +58,12 @@ async function postJson(cfg, path, body) {
   }
 }
 
-async function complete(cfg, { systemPrompt, userPrompt }) {
+// Token/cost telemetry (P1.1) — complete() itself stays byte-for-byte
+// unchanged (every existing caller/test expects a plain string back);
+// completeWithMeta is the one place that also reads the raw response's
+// own `usage` block, so aiService's completeMaybeStreaming can log real
+// token counts without any adapter needing a second request shape.
+async function completeWithMeta(cfg, { systemPrompt, userPrompt }) {
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -78,7 +84,83 @@ async function complete(cfg, { systemPrompt, userPrompt }) {
     throw new LlmRequestError('LLM provider response did not contain choices[0].message.content');
   }
 
-  return answer;
+  const usage = payload && payload.usage
+    ? { inputTokens: payload.usage.prompt_tokens, outputTokens: payload.usage.completion_tokens }
+    : undefined;
+  return { text: answer, usage };
+}
+
+async function complete(cfg, prompts) {
+  const { text } = await completeWithMeta(cfg, prompts);
+  return text;
+}
+
+// Streaming variant of complete() (P0.5) — only for the final natural-
+// language answer, never the tool-select call (that needs the whole
+// structured decision before anything downstream can run, so there is
+// nothing meaningful to stream). `onDelta` is called once per text
+// chunk as it arrives; the full concatenated text is still returned at
+// the end so a caller that doesn't care about incremental output can
+// treat this exactly like complete(). Retries (withRetry) only ever
+// apply to the initial connection attempt, before any chunk has been
+// read — once streaming starts, a transient failure surfaces as
+// whatever's already been streamed plus a thrown error, never a silent
+// retry after partial output already reached the caller.
+async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
+  if (!isConfigured(cfg)) {
+    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
+  }
+
+  const response = await withRetry(async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(`${cfg.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${cfg.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: cfg.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          max_tokens: MAX_TOKENS,
+          temperature: 0.2,
+          stream: true,
+        }),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      throw new LlmRequestError(`request to LLM provider failed: ${err.message}`);
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
+
+  if (!response.ok) {
+    const bodyText = await response.text().catch(() => '');
+    throw new LlmRequestError(`LLM provider returned ${response.status}: ${bodyText.slice(0, 500)}`);
+  }
+
+  let full = '';
+  for await (const payload of iterateSseLines(response)) {
+    if (payload === '[DONE]') break;
+    let event;
+    try {
+      event = JSON.parse(payload);
+    } catch {
+      continue;
+    }
+    const delta = event && event.choices && event.choices[0] && event.choices[0].delta && event.choices[0].delta.content;
+    if (typeof delta === 'string' && delta.length > 0) {
+      full += delta;
+      onDelta(delta);
+    }
+  }
+  return full;
 }
 
 async function completeWithTools(cfg, { systemPrompt, userPrompt, tools }) {
@@ -163,6 +245,8 @@ module.exports = {
   EMBEDDING_DIMENSIONS,
   isConfigured,
   complete,
+  completeWithMeta,
+  completeStream,
   completeWithTools,
   embed,
   // Back-compat aliases — existing tests/callers reference these off

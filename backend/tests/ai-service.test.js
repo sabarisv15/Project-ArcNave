@@ -30,6 +30,7 @@ const aiClassificationAccess = require('../src/services/aiClassificationAccess')
 const aiActorContext = require('../src/services/aiActorContext');
 const financeService = require('../src/services/financeService');
 const academicService = require('../src/services/academicService');
+const collegeProfileService = require('../src/services/collegeProfileService');
 
 function fakeClient() {
   const queries = [];
@@ -1078,6 +1079,93 @@ test('aiService.askAgent: the LLM picks no tool -> returns its direct answer, st
   assert.match(client.queries[1].text, /FROM college_ai_config/);
 });
 
+// --- Token/cost telemetry (P1.1) ---
+
+test('aiService.askAboutTool: when the provider returns a usage block, one ai_llm_call audit row is written with real token counts, provider, model, purpose', async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: 'Campus is open 9am-5pm.' } }],
+        usage: { prompt_tokens: 120, completion_tokens: 8, total_tokens: 128 },
+      }),
+    }), async () => {
+      await aiService.askAboutTool(client, 'get_college_profile', {}, 'What are the hours?', { identityContext });
+    });
+  });
+
+  const llmCallRow = client.queries.find((q) => q.text.includes('INSERT INTO audit_log') && q.params[2] === 'ai_llm_call');
+  assert.ok(llmCallRow, 'an ai_llm_call audit row must be written');
+  const metadata = JSON.parse(llmCallRow.params[5]);
+  assert.equal(metadata.provider, 'nim');
+  assert.equal(metadata.model, config.nim.model);
+  assert.equal(metadata.purpose, 'tool_question');
+  assert.equal(metadata.inputTokens, 120);
+  assert.equal(metadata.outputTokens, 8);
+  assert.equal(typeof metadata.latencyMs, 'number');
+});
+
+test('aiService.askAboutTool: no usage block in the provider response -> no ai_llm_call row (nothing to report, not a fabricated zero)', async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async () => mockAnswerResponse('Campus is open 9am-5pm.'), async () => {
+      await aiService.askAboutTool(client, 'get_college_profile', {}, 'What are the hours?', { identityContext });
+    });
+  });
+
+  const llmCallRow = client.queries.find((q) => q.text.includes('INSERT INTO audit_log') && q.params[2] === 'ai_llm_call');
+  assert.equal(llmCallRow, undefined);
+});
+
+test('aiService.askAgent: history (short-session conversation memory) is threaded into the prompt as background, not treated as new instructions', async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const history = [
+    { role: 'user', content: 'Tell me about Priya Sharma.' },
+    { role: 'assistant', content: 'Priya Sharma is a Class X student.' },
+  ];
+
+  let capturedBody;
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async (url, options) => {
+      capturedBody = JSON.parse(options.body);
+      return mockAnswerResponse('She has 92% attendance.');
+    }, async () => {
+      const result = await aiService.askAgent(client, 'What is her attendance?', { identityContext, history });
+      assert.equal(result.answer, 'She has 92% attendance.');
+    });
+  });
+
+  const userMessage = capturedBody.messages.find((m) => m.role === 'user');
+  assert.match(userMessage.content, /User: Tell me about Priya Sharma\./);
+  assert.match(userMessage.content, /Assistant: Priya Sharma is a Class X student\./);
+  assert.match(userMessage.content, /never new/);
+  assert.match(userMessage.content, /Question: What is her attendance\?/);
+});
+
+test('aiService.askAgent: no history param -> prompt is unchanged from before (byte-for-byte backward compatible)', async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  let capturedBody;
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async (url, options) => {
+      capturedBody = JSON.parse(options.body);
+      return mockAnswerResponse('Campus is open 9am-5pm.');
+    }, async () => {
+      await aiService.askAgent(client, 'What are the campus hours?', { identityContext });
+    });
+  });
+
+  const userMessage = capturedBody.messages.find((m) => m.role === 'user');
+  assert.equal(userMessage.content, 'What are the campus hours?');
+});
+
 // --- draft_notification (L2) / request_notification_send (L3) ---
 // notificationService itself is unit-tested against a live-shaped fake
 // client in notification-service.test.js; these tests prove the AI
@@ -1085,6 +1173,506 @@ test('aiService.askAgent: the LLM picks no tool -> returns its direct answer, st
 // origin: 'ai', Policy Gate re-validation) — repository/workflowService/
 // workflowChainService mocked the same way notification-service.test.js
 // mocks them, not re-proving notificationService's own internals.
+
+// --- aiToolRegistry.filterToolsByRelevance (P0.2: tool-schema filtering) ---
+
+test('filterToolsByRelevance: below the rank cap, the list is returned unchanged (no filtering, no reordering)', () => {
+  const tools = aiToolRegistry.listTools({ excludeHumanOnly: true, role: 'staff' }).slice(0, 5);
+  const result = aiToolRegistry.filterToolsByRelevance(tools, 'anything at all');
+  assert.deepEqual(result, tools);
+});
+
+test('filterToolsByRelevance: a tool whose name/description overlaps the question is never excluded, even above the rank cap', () => {
+  const allTools = aiToolRegistry.listTools({ excludeHumanOnly: true, role: 'principal' });
+  assert.ok(allTools.length > 25, 'principal must have more than 25 tools for this test to be meaningful');
+  const result = aiToolRegistry.filterToolsByRelevance(allTools, 'What is our finance status summary this month?');
+  const names = result.map((t) => t.name);
+  assert.ok(names.includes('finance_status_summary'), 'a tool whose own name/description matches the question must never be dropped');
+});
+
+test('filterToolsByRelevance: an ambiguous question with no keyword overlap falls back to the full list, never an empty/wrong-narrowed one', () => {
+  const allTools = aiToolRegistry.listTools({ excludeHumanOnly: true, role: 'principal' });
+  const result = aiToolRegistry.filterToolsByRelevance(allTools, 'xyzzy qux wombat');
+  assert.equal(result.length, allTools.length, 'zero keyword overlap must never narrow the list — it is not evidence any specific tool is irrelevant');
+});
+
+test('filterToolsByRelevance: result never exceeds the rank cap when the role-filtered list is large and the question has real overlap', () => {
+  const allTools = aiToolRegistry.listTools({ excludeHumanOnly: true, role: 'principal' });
+  const result = aiToolRegistry.filterToolsByRelevance(allTools, 'attendance students staff finance marks timetable calendar report');
+  assert.ok(result.length <= 25);
+  assert.ok(result.length < allTools.length, 'a broad multi-domain question should still narrow something out of a 56-tool list');
+});
+
+test('aiService.askAgent: filterToolsByRelevance is applied before the tool-select call — a narrow question sends a smaller tool list than the full role-filtered one', async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const fullCount = aiToolRegistry.listTools({ excludeHumanOnly: true, role: 'principal' }).length;
+
+  let capturedBody;
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async (url, options) => {
+      capturedBody = JSON.parse(options.body);
+      return mockAnswerResponse('Fee collection is on track.');
+    }, async () => {
+      await aiService.askAgent(client, 'What is our finance status summary?', { identityContext });
+    });
+  });
+
+  assert.ok(capturedBody.tools.length < fullCount, `expected fewer than ${fullCount} tools sent, got ${capturedBody.tools.length}`);
+  assert.ok(capturedBody.tools.some((t) => t.function.name === 'finance_status_summary'));
+});
+
+// --- Bounded multi-step workflow engine (P0.3) ---
+
+test('aiService.askAgent: the plan meta-tool is always offered to the LLM, in addition to the role/relevance-filtered real tools', async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  let capturedBody;
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async (url, options) => {
+      capturedBody = JSON.parse(options.body);
+      return mockAnswerResponse('Campus is open 9am-5pm.');
+    }, async () => {
+      await aiService.askAgent(client, 'What are the campus hours?', { identityContext });
+    });
+  });
+
+  const planTool = capturedBody.tools.find((t) => t.function.name === 'run_workflow_plan');
+  assert.ok(planTool, 'run_workflow_plan must always be offered');
+});
+
+test('aiService.askAgent: a 2-step plan runs both tools through the real Policy Gate/invokeTool and produces ONE combined synthesis answer', async (t) => {
+  const profileMock = t.mock.method(collegeProfileService, 'getProfile', async () => ({ name: 'Test College' }));
+  const timetableMock = t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }, { id: 't2' }]));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  const plan = { steps: [{ tool: 'get_college_profile' }, { tool: 'academic_class_timetable' }] };
+  let synthesisCallCount = 0;
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponse('run_workflow_plan', plan),
+      { ok: true, json: async () => { synthesisCallCount += 1; return { choices: [{ message: { content: 'Here is your combined report.' } }] }; } },
+    ]), async () => {
+      const result = await aiService.askAgent(client, 'Give me the college profile and the timetable.', { identityContext });
+      assert.equal(result.toolUsed, 'run_workflow_plan');
+      assert.equal(result.answer, 'Here is your combined report.');
+      assert.equal(result.plan.length, 2);
+      assert.deepEqual(result.plan.map((p) => p.toolName), ['get_college_profile', 'academic_class_timetable']);
+      assert.equal(result.plan[1].recordCount, 2);
+      assert.deepEqual(result.failures, []);
+      assert.equal(result.entries.length, 2, 'both steps\' data must be merged into one combined context for the synthesis call');
+    });
+  });
+
+  // 2, not 1 — describeIdentityContext (called once, up front, for
+  // every askAgent call regardless of which tool/plan runs) itself
+  // reads the college profile for the Identity Context block; the
+  // second call is the actual get_college_profile plan step. This is
+  // pre-existing, identical behavior on the single-tool path too, not
+  // something this plan feature adds.
+  assert.equal(profileMock.mock.callCount(), 2);
+  assert.equal(timetableMock.mock.callCount(), 1);
+  // Exactly 2 total LLM calls (plan decision + one combined synthesis)
+  // regardless of step count — round 4's "less unnecessary work," not
+  // one synthesis call per step.
+  assert.equal(synthesisCallCount, 1);
+});
+
+test('aiService.askAgent: a plan step naming a tool never offered to the LLM (role-filtered out, or hallucinated) is rejected before any step runs', async (t) => {
+  // academic_class_timetable, not get_college_profile — describeIdentityContext
+  // itself always calls collegeProfileService.getProfile once per
+  // askAgent call regardless of plan outcome (see the test above), so
+  // that mock can't distinguish "a step ran" from "the identity block
+  // was built." academicService has no such incidental caller.
+  const timetableMock = t.mock.method(academicService, 'getClassTimetableForActor', async () => ([]));
+  const client = fakeClient();
+  // staff is not in get_college_profile's allowedRoles, so it is never
+  // offered to a staff caller — a plan step naming it anyway must be
+  // rejected as a plan-shape problem, not silently allowed through.
+  const identityContext = { userId: 'u1', role: 'staff', collegeId: 'college-a' };
+
+  const plan = { steps: [{ tool: 'academic_class_timetable' }, { tool: 'get_college_profile' }] };
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async () => mockToolCallResponse('run_workflow_plan', plan), async () => {
+      await assert.rejects(
+        () => aiService.askAgent(client, 'What is our timetable and college profile?', { identityContext }),
+        aiService.AiWorkflowPlanValidationError,
+      );
+    });
+  });
+  assert.equal(timetableMock.mock.callCount(), 0, 'no step may run once the plan itself fails validation — not even the one named before the invalid one');
+});
+
+test('aiService.askAgent: a plan above MAX_PLAN_STEPS is rejected with AiWorkflowPlanValidationError', async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const plan = { steps: Array.from({ length: 7 }, () => ({ tool: 'get_college_profile' })) };
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async () => mockToolCallResponse('run_workflow_plan', plan), async () => {
+      await assert.rejects(
+        () => aiService.askAgent(client, 'Do 7 things.', { identityContext }),
+        aiService.AiWorkflowPlanValidationError,
+      );
+    });
+  });
+});
+
+test('aiService.askAgent: a plan containing an L3 step pauses for ONE plan-level confirmation before any step runs, reusing the existing pendingConfirmation shape', async (t) => {
+  const draftMock = t.mock.method(notificationRepository, 'create');
+  const submitMock = t.mock.method(workflowService, 'submitRequest');
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  const plan = {
+    steps: [
+      { tool: 'draft_notification', params: { channel: 'email', toAddress: 'parent@example.com', body: 'Fee reminder' } },
+      { tool: 'request_notification_send', params: { notificationId: '11111111-1111-4111-8111-111111111111' } },
+    ],
+  };
+  let result;
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async () => mockToolCallResponse('run_workflow_plan', plan), async () => {
+      result = await aiService.askAgent(client, 'Draft and submit a fee reminder.', { identityContext });
+    });
+  });
+
+  assert.equal(result.toolUsed, null);
+  assert.match(result.answer, /Shall I go ahead/);
+  assert.ok(result.pendingConfirmation);
+  assert.equal(result.pendingConfirmation.steps.length, 2);
+  assert.equal(result.pendingConfirmation.steps[1].toolName, 'request_notification_send');
+  assert.equal(draftMock.mock.callCount(), 0, 'no step may execute before the human confirms');
+  assert.equal(submitMock.mock.callCount(), 0);
+});
+
+test('aiService.executeWorkflowPlan: fail-transparent — one step failing does not abort the other, and the answer is told about the failure', async (t) => {
+  t.mock.method(collegeProfileService, 'getProfile', async () => ({ name: 'Test College' }));
+  t.mock.method(academicService, 'getClassTimetableForActor', async () => { throw new Error('boom'); });
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  let capturedSystemPrompt;
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async (url, options) => {
+      const body = JSON.parse(options.body);
+      capturedSystemPrompt = body.messages.find((m) => m.role === 'system').content;
+      return mockAnswerResponse('I got the profile but the timetable failed.');
+    }, async () => {
+      const result = await aiService.executeWorkflowPlan(
+        client,
+        [{ toolName: 'get_college_profile', params: {} }, { toolName: 'academic_class_timetable', params: {} }],
+        'Give me the profile and timetable.',
+        { identityContext },
+      );
+      assert.equal(result.plan.length, 1, 'only the successful step is in the evidence/entries list');
+      assert.equal(result.failures.length, 1);
+      assert.equal(result.failures[0].toolName, 'academic_class_timetable');
+      assert.equal(result.answer, 'I got the profile but the timetable failed.');
+    });
+  });
+  assert.match(capturedSystemPrompt, /academic_class_timetable \(boom\)/);
+});
+
+// --- Parallel Read Workers (P2.5) ---
+
+test('aiService.executeWorkflowPlan: two independent read-only (L1) steps run concurrently, not sequentially', async (t) => {
+  function delay(ms, value) {
+    return new Promise((resolve) => { setTimeout(() => resolve(value), ms); });
+  }
+  t.mock.method(collegeProfileService, 'getProfile', () => delay(60, { name: 'Test College' }));
+  t.mock.method(academicService, 'getClassTimetableForActor', () => delay(60, [{ id: 't1' }]));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  const startedAt = Date.now();
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async () => mockAnswerResponse('Combined.'), async () => {
+      await aiService.executeWorkflowPlan(
+        client,
+        [{ toolName: 'get_college_profile', params: {} }, { toolName: 'academic_class_timetable', params: {} }],
+        'Give me both.',
+        // A precomputed (stub) identityBlock — otherwise this function
+        // calls aiActorContext.describeIdentityContext itself, which
+        // ALSO calls collegeProfileService.getProfile (for the Identity
+        // Context block, a separate concern from the plan step of the
+        // same name) — a real, legitimate second call in production,
+        // but one that would confound this test's own timing
+        // measurement of the plan steps specifically.
+        { identityContext, identityBlock: 'stub identity block' },
+      );
+    });
+  });
+  const elapsedMs = Date.now() - startedAt;
+
+  // Two 60ms steps run sequentially would take >=120ms; run in
+  // parallel, the wall-clock cost is close to the SLOWER one alone.
+  // A generous ceiling (100ms) keeps this robust against normal CI/test
+  // jitter while still failing loudly if the steps were run one after
+  // the other.
+  assert.ok(elapsedMs < 100, `expected parallel execution (<100ms), took ${elapsedMs}ms — steps may be running sequentially`);
+});
+
+test('aiService.executeWorkflowPlan: step results/evidence stay in ORIGINAL plan order even though the steps ran concurrently and finished out of order', async (t) => {
+  function delay(ms, value) {
+    return new Promise((resolve) => { setTimeout(() => resolve(value), ms); });
+  }
+  // get_college_profile is deliberately the SLOWER of the two, so a
+  // naive "push results in completion order" implementation would put
+  // academic_class_timetable first — proving order preservation
+  // actually requires the fix, not just an accident of timing.
+  t.mock.method(collegeProfileService, 'getProfile', () => delay(40, { name: 'Test College' }));
+  t.mock.method(academicService, 'getClassTimetableForActor', () => delay(5, [{ id: 't1' }]));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  let result;
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async () => mockAnswerResponse('Combined.'), async () => {
+      result = await aiService.executeWorkflowPlan(
+        client,
+        [{ toolName: 'get_college_profile', params: {} }, { toolName: 'academic_class_timetable', params: {} }],
+        'Give me both.',
+        { identityContext },
+      );
+    });
+  });
+
+  assert.deepEqual(result.plan.map((p) => p.toolName), ['get_college_profile', 'academic_class_timetable']);
+});
+
+test('aiService.executeWorkflowPlan: a write step (L2) never runs in the same parallel batch as a read step around it', async (t) => {
+  t.mock.method(collegeProfileService, 'getProfile', async () => ({ name: 'Test College' }));
+  const draftMock = t.mock.method(notificationRepository, 'create', async (c, fields) => ({ id: 'n1', ...fields }));
+  t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }]));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  let result;
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async () => mockAnswerResponse('Combined.'), async () => {
+      result = await aiService.executeWorkflowPlan(
+        client,
+        [
+          { toolName: 'get_college_profile', params: {} },
+          { toolName: 'draft_notification', params: { channel: 'email', toAddress: 'a@b.com', body: 'hi' } },
+          { toolName: 'academic_class_timetable', params: {} },
+        ],
+        'Do all three.',
+        { identityContext },
+      );
+    });
+  });
+
+  assert.equal(draftMock.mock.callCount(), 1);
+  assert.deepEqual(result.plan.map((p) => p.toolName), ['get_college_profile', 'draft_notification', 'academic_class_timetable']);
+});
+
+// --- Evidence/provenance + verification (P0.4) ---
+
+test('aiService.askAgent: single-tool path — answer\'s stated count matches the tool\'s real record count -> verification PASS, evidence trail present', async (t) => {
+  t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }, { id: 't2' }, { id: 't3' }]));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponse('academic_class_timetable', {}),
+      mockAnswerResponse('There are 3 periods scheduled.'),
+    ]), async () => {
+      const result = await aiService.askAgent(client, 'How many periods are scheduled?', { identityContext });
+      assert.deepEqual(result.verification, { status: 'PASS' });
+      assert.equal(result.evidence.length, 1);
+      assert.equal(result.evidence[0].recordCount, 3);
+      assert.match(result.evidenceTrail, /academic_class_timetable — 3 record\(s\)/);
+    });
+  });
+});
+
+test('aiService.askAgent: single-tool path — answer states a count that does not match any real evidence -> verification CONFLICT, never blocks the answer itself', async (t) => {
+  t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }, { id: 't2' }, { id: 't3' }]));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponse('academic_class_timetable', {}),
+      mockAnswerResponse('There are 9 periods scheduled.'),
+    ]), async () => {
+      const result = await aiService.askAgent(client, 'How many periods are scheduled?', { identityContext });
+      // Advisory only (Bucket B correction: never authoritative on its
+      // own) — the answer the caller actually asked for is still
+      // returned unmodified; verification is a SEPARATE field the
+      // caller/UI can act on, not a silent block or rewrite.
+      assert.equal(result.answer, 'There are 9 periods scheduled.');
+      assert.equal(result.verification.status, 'CONFLICT');
+      assert.deepEqual(result.verification.claimedNumbers, [9]);
+      assert.deepEqual(result.verification.knownCounts, [3]);
+    });
+  });
+});
+
+test('aiService.askAgent: single-tool path — a non-array tool result (e.g. get_college_profile) has no count to check -> INSUFFICIENT_EVIDENCE, not a false PASS or CONFLICT', async (t) => {
+  t.mock.method(collegeProfileService, 'getProfile', async () => ({ name: 'Test College' }));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponse('get_college_profile', {}),
+      mockAnswerResponse('The college is Test College.'),
+    ]), async () => {
+      const result = await aiService.askAgent(client, 'What college is this?', { identityContext });
+      assert.deepEqual(result.verification, { status: 'INSUFFICIENT_EVIDENCE' });
+    });
+  });
+});
+
+test('aiService.askAgent: a number that is not in count-noun context (a year, a percentage) never triggers a false CONFLICT', async (t) => {
+  t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }]));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponse('academic_class_timetable', {}),
+      mockAnswerResponse('Attendance is at 92% for academic year 2026.'),
+    ]), async () => {
+      const result = await aiService.askAgent(client, 'How is attendance?', { identityContext });
+      assert.deepEqual(result.verification, { status: 'PASS' });
+    });
+  });
+});
+
+test('aiService.executeWorkflowPlan: verification checks the claim against the RIGHT step\'s count when a plan has multiple array-returning steps', async (t) => {
+  t.mock.method(collegeProfileService, 'getProfile', async () => ({ name: 'Test College' }));
+  t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }, { id: 't2' }]));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async () => mockAnswerResponse('There are 2 periods scheduled.'), async () => {
+      const result = await aiService.executeWorkflowPlan(
+        client,
+        [{ toolName: 'get_college_profile', params: {} }, { toolName: 'academic_class_timetable', params: {} }],
+        'Give me the profile and timetable.',
+        { identityContext },
+      );
+      assert.equal(result.verification.status, 'PASS');
+      assert.equal(result.evidence.length, 2);
+      assert.equal(result.evidence[1].recordCount, 2);
+    });
+  });
+});
+
+test('aiService.askAboutTool: response also carries evidence/verification, same as askAgent', async (t) => {
+  t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }]));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async () => mockAnswerResponse('There is 1 period scheduled.'), async () => {
+      const result = await aiService.askAboutTool(client, 'academic_class_timetable', {}, 'How many periods?', { identityContext });
+      assert.deepEqual(result.verification, { status: 'PASS' });
+      assert.equal(result.evidence[0].recordCount, 1);
+    });
+  });
+});
+
+// --- Model routing (P1.3) ---
+
+test('aiService.askAgent: a low-risk (L1) tool\'s synthesis call routes to fastModel when configured; the tool-select call never does', async () => {
+  const originalFastModel = config.nim.fastModel;
+  config.nim.fastModel = 'cheap-fast-model';
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  const capturedModels = [];
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async (url, options) => {
+      const body = JSON.parse(options.body);
+      capturedModels.push(body.model);
+      if (capturedModels.length === 1) return mockToolCallResponse('get_college_profile', {});
+      return mockAnswerResponse('Test College.');
+    }, async () => {
+      await aiService.askAgent(client, 'What college is this?', { identityContext });
+    });
+  }).finally(() => { config.nim.fastModel = originalFastModel; });
+
+  assert.equal(capturedModels[0], config.nim.model, 'tool-select call must never be downgraded');
+  assert.equal(capturedModels[1], 'cheap-fast-model', 'the synthesis call for an L1 (R0/R1) tool routes to fastModel');
+});
+
+test('aiService.askAgent: no fastModel configured -> both calls use the same configured model (no routing, backward compatible)', async () => {
+  assert.equal(config.nim.fastModel, null, 'fastModel must be unset by default for this test to be meaningful');
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  const capturedModels = [];
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async (url, options) => {
+      const body = JSON.parse(options.body);
+      capturedModels.push(body.model);
+      if (capturedModels.length === 1) return mockToolCallResponse('get_college_profile', {});
+      return mockAnswerResponse('Test College.');
+    }, async () => {
+      await aiService.askAgent(client, 'What college is this?', { identityContext });
+    });
+  });
+
+  assert.equal(capturedModels[0], capturedModels[1]);
+});
+
+test('aiService.askAgent: a write tool (L2/L3, riskLevel > 1) never routes to fastModel even when configured', async (t) => {
+  t.mock.method(notificationRepository, 'create', async (c, fields) => ({ id: 'n1', ...fields }));
+  const originalFastModel = config.nim.fastModel;
+  config.nim.fastModel = 'cheap-fast-model';
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  const capturedModels = [];
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async (url, options) => {
+      const body = JSON.parse(options.body);
+      capturedModels.push(body.model);
+      if (capturedModels.length === 1) {
+        return mockToolCallResponse('draft_notification', { channel: 'email', toAddress: 'a@b.com', body: 'hi' });
+      }
+      return mockAnswerResponse('Drafted.');
+    }, async () => {
+      await aiService.askAgent(client, 'Draft an email', { identityContext });
+    });
+  }).finally(() => { config.nim.fastModel = originalFastModel; });
+
+  assert.equal(capturedModels[1], config.nim.model, 'an L2 write tool\'s synthesis call must stay on the full model');
+});
+
+// --- fetch_trusted_web_page (P2.3) ---
+
+test('fetch_trusted_web_page: registered as L1/Internal, principal/hod only, and staff is rejected by the Policy Gate before webRetrievalService is ever touched', async () => {
+  const tool = aiToolRegistry.getTool('fetch_trusted_web_page');
+  assert.ok(tool, 'fetch_trusted_web_page must be registered');
+  assert.equal(tool.level, 'L1');
+  assert.equal(tool.dataClassification, 'Internal');
+  assert.deepEqual(tool.params.required, ['url']);
+
+  await assert.rejects(
+    () => aiToolRegistry.invokeTool('fetch_trusted_web_page', {
+      client: fakeClient(), identityContext: { userId: 'u1', role: 'staff', collegeId: 'college-a' }, params: { url: 'https://ugc.gov.in' },
+    }),
+    aiToolRegistry.AiToolRoleNotPermittedError,
+  );
+});
+
+test('fetch_trusted_web_page: a permitted role reaches the real service, which rejects because no college has opted in by default', async () => {
+  await assert.rejects(
+    () => aiToolRegistry.invokeTool('fetch_trusted_web_page', {
+      client: fakeClient(), identityContext: { userId: 'u1', role: 'principal', collegeId: 'college-a' }, params: { url: 'https://ugc.gov.in' },
+    }),
+    require('../src/services/webRetrievalService').WebRetrievalNotEnabledError,
+  );
+});
 
 test('aiToolRegistry: listTools includes draft_notification (L2/Confidential) and request_notification_send (L3/Confidential) with their params schemas', () => {
   const tools = aiToolRegistry.listTools();

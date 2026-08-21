@@ -181,5 +181,11 @@ module.exports = {
     // with a different output dimension needs a new migration, not
     // just this env var.
     embeddingModel: process.env.NIM_EMBEDDING_MODEL || 'nvidia/nv-embedqa-e5-v5',
+    // Model routing (P1.3) — an optional smaller/cheaper model for the
+    // low-risk half of an askAgent turn (see aiService.js's own
+    // comment on where this is/isn't used). No default: unset means no
+    // routing happens for the global-default NIM config, same single-
+    // model behavior as before this existed.
+    fastModel: process.env.NIM_FAST_MODEL || null,
   },
 };

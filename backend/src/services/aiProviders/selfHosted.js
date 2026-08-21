@@ -21,6 +21,7 @@
 
 const { LlmNotConfiguredError, LlmRequestError } = require('./errors');
 const { withRetry } = require('./retry');
+const { iterateSseLines } = require('./sse');
 
 const REQUEST_TIMEOUT_MS = 30000;
 // Matches claude.js's own MAX_TOKENS — this adapter previously sent no
@@ -66,7 +67,9 @@ async function postJson(cfg, path, body) {
   }
 }
 
-async function complete(cfg, { systemPrompt, userPrompt }) {
+// Token/cost telemetry (P1.1) — see nim.js's own comment; same shape,
+// same OpenAI-compatible `usage` block.
+async function completeWithMeta(cfg, { systemPrompt, userPrompt }) {
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no self-hosted LLM provider is configured for this college (missing baseUrl)');
   }
@@ -87,7 +90,77 @@ async function complete(cfg, { systemPrompt, userPrompt }) {
     throw new LlmRequestError('self-hosted LLM provider response did not contain choices[0].message.content');
   }
 
-  return answer;
+  const usage = payload && payload.usage
+    ? { inputTokens: payload.usage.prompt_tokens, outputTokens: payload.usage.completion_tokens }
+    : undefined;
+  return { text: answer, usage };
+}
+
+async function complete(cfg, prompts) {
+  const { text } = await completeWithMeta(cfg, prompts);
+  return text;
+}
+
+// Streaming variant of complete() (P0.5) — see nim.js's own comment
+// for the shared reasoning (only the final answer streams, retries
+// only cover the initial connection). Same OpenAI-compatible SSE shape
+// nim.js speaks, since a self-hosted deployment is defined as
+// implementing that same convention.
+async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
+  if (!isConfigured(cfg)) {
+    throw new LlmNotConfiguredError('no self-hosted LLM provider is configured for this college (missing baseUrl)');
+  }
+
+  const headers = { 'content-type': 'application/json' };
+  if (cfg.apiKey) headers.authorization = `Bearer ${cfg.apiKey}`;
+
+  const response = await withRetry(async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(`${cfg.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: cfg.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          max_tokens: MAX_TOKENS,
+          temperature: 0.2,
+          stream: true,
+        }),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      throw new LlmRequestError(`request to self-hosted LLM provider failed: ${err.message}`);
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
+
+  if (!response.ok) {
+    const bodyText = await response.text().catch(() => '');
+    throw new LlmRequestError(`self-hosted LLM provider returned ${response.status}: ${bodyText.slice(0, 500)}`);
+  }
+
+  let full = '';
+  for await (const payload of iterateSseLines(response)) {
+    if (payload === '[DONE]') break;
+    let event;
+    try {
+      event = JSON.parse(payload);
+    } catch {
+      continue;
+    }
+    const delta = event && event.choices && event.choices[0] && event.choices[0].delta && event.choices[0].delta.content;
+    if (typeof delta === 'string' && delta.length > 0) {
+      full += delta;
+      onDelta(delta);
+    }
+  }
+  return full;
 }
 
 async function completeWithTools(cfg, { systemPrompt, userPrompt, tools }) {
@@ -163,6 +236,8 @@ module.exports = {
   name: 'self_hosted',
   isConfigured,
   complete,
+  completeWithMeta,
+  completeStream,
   completeWithTools,
   embed,
 };

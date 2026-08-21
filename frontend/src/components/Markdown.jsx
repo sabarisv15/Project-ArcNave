@@ -1,8 +1,14 @@
+import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import { CopyButton } from './ui/CopyButton';
+import { MermaidDiagram } from './MermaidDiagram';
 import { cn } from '../lib/utils';
 import { isSafeHref } from '../lib/richPaste';
+import { highlightCode, languageFromClassName } from '../lib/codeHighlight';
 
 /**
  * The one renderer for chat prose — assistant replies and structured user
@@ -37,18 +43,48 @@ import { isSafeHref } from '../lib/richPaste';
 
 function CodeBlock({ children, className }) {
   const code = String(children ?? '').replace(/\n$/, '');
+  const lang = languageFromClassName(className);
+  // null = not yet highlighted (or a language Shiki couldn't load) — the
+  // plain <pre><code> below covers both the loading state and that
+  // fallback, so a slow/failed highlight is never a blank block.
+  const [html, setHtml] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    highlightCode(code, lang).then((result) => {
+      if (!cancelled) setHtml(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [code, lang]);
 
   return (
     <div className="relative group my-[9px]">
-      <pre
-        className={cn(
-          'm-0 p-[10px] pr-[36px] rounded-[10px] bg-soft border border-line-light overflow-x-auto scroll-quiet',
-          'font-mono text-[12.5px] leading-[1.5] text-ink-soft',
-          className
-        )}
-      >
-        <code>{code}</code>
-      </pre>
+      {html ? (
+        // Shiki's own output already includes <pre><code>; only the sizing/
+        // scroll chrome this codebase's plain fallback below also uses is
+        // layered on top, via the wrapper div — Shiki's inline background/
+        // color styles are left as they are, not fought with utility classes.
+        <div
+          className={cn(
+            '[&>pre]:m-0 [&>pre]:p-[10px] [&>pre]:pr-[36px] [&>pre]:rounded-[10px] [&>pre]:overflow-x-auto [&>pre]:scroll-quiet',
+            '[&>pre]:font-mono [&>pre]:text-[12.5px] [&>pre]:leading-[1.5] [&>pre]:border [&>pre]:border-line-light'
+          )}
+          // eslint-disable-next-line react/no-danger -- Shiki's own escaped output, not user/LLM-controlled HTML (the LLM's raw text is `code` above, tokenized by Shiki, never interpolated as markup).
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      ) : (
+        <pre
+          className={cn(
+            'm-0 p-[10px] pr-[36px] rounded-[10px] bg-soft border border-line-light overflow-x-auto scroll-quiet',
+            'font-mono text-[12.5px] leading-[1.5] text-ink-soft',
+            className
+          )}
+        >
+          <code>{code}</code>
+        </pre>
+      )}
       <CopyButton
         getText={() => code}
         label="Copy code"
@@ -125,8 +161,16 @@ export const markdownComponents = {
     <code className="px-[5px] py-[1px] rounded-[5px] bg-soft font-mono text-[12.5px] text-ink-soft">{children}</code>
   ),
   pre: ({ children }) => {
-    const code = children?.props?.children;
-    return <CodeBlock className={children?.props?.className}>{code}</CodeBlock>;
+    const code = String(children?.props?.children ?? '').replace(/\n$/, '');
+    const className = children?.props?.className;
+    // ```mermaid fences render as a diagram (P2.2), never as a highlighted
+    // code block — a real, product-relevant split, not an inconsistency:
+    // Mermaid source is meant to be seen as the diagram it describes, the
+    // same way a LaTeX $$block$$ below renders as the formula, not the markup.
+    if (languageFromClassName(className) === 'mermaid') {
+      return <MermaidDiagram code={code} />;
+    }
+    return <CodeBlock className={className}>{code}</CodeBlock>;
   },
 
   // Wide tables scroll in their own container rather than widening the reading
@@ -163,7 +207,11 @@ export function Markdown({ children, className }) {
     // change, and DM Sans at this size reads better with the extra half-point
     // than the gain of two more visible lines is worth.
     <div className={cn('text-[14.5px] leading-[1.48] font-[400] text-ink-soft', className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        components={markdownComponents}
+      >
         {children}
       </ReactMarkdown>
     </div>

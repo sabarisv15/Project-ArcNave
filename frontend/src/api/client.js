@@ -40,7 +40,7 @@ async function doRefresh() {
 }
 
 // Single flight: concurrent 401s trigger one refresh, not one per request.
-function refreshOnce() {
+export function refreshOnce() {
   if (!refreshPromise) {
     refreshPromise = doRefresh().finally(() => {
       refreshPromise = null;

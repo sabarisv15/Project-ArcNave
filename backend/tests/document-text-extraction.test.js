@@ -13,6 +13,7 @@ const assert = require('node:assert/strict');
 const PDFDocument = require('pdfkit');
 const { Document, Packer, Paragraph } = require('docx');
 const ExcelJS = require('exceljs');
+const PizZip = require('pizzip');
 const documentTextExtractionService = require('../src/services/documentTextExtractionService');
 const documentExtractionService = require('../src/services/documentExtractionService');
 
@@ -37,6 +38,44 @@ async function buildXlsxBuffer(rows) {
   const worksheet = workbook.addWorksheet('Sheet1');
   rows.forEach((row) => worksheet.addRow(row));
   return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+// Minimal but real OOXML/ODF zip containers — mirrors the exact internal
+// parts extractPptxText/extractOdtText/extractOdsText actually read
+// (ppt/slides/slideN.xml's <a:t> runs, content.xml's <text:p>/
+// <table:table-cell> elements), not full valid Office/ODF documents.
+function buildPptxBuffer(slideTexts) {
+  const zip = new PizZip();
+  zip.file('ppt/presentation.xml', '<presentation/>');
+  slideTexts.forEach((text, index) => {
+    zip.file(
+      `ppt/slides/slide${index + 1}.xml`,
+      `<p:sld><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>${text}</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`,
+    );
+  });
+  return zip.generate({ type: 'nodebuffer' });
+}
+
+function buildOdtBuffer(paragraphs) {
+  const zip = new PizZip();
+  zip.file('mimetype', 'application/vnd.oasis.opendocument.text');
+  const body = paragraphs.map((p) => `<text:p>${p}</text:p>`).join('');
+  zip.file('content.xml', `<office:document-content><office:body><office:text>${body}</office:text></office:body></office:document-content>`);
+  return zip.generate({ type: 'nodebuffer' });
+}
+
+function buildOdsBuffer(sheetName, rows) {
+  const zip = new PizZip();
+  zip.file('mimetype', 'application/vnd.oasis.opendocument.spreadsheet');
+  const rowsXml = rows.map((row) => {
+    const cells = row.map((value) => `<table:table-cell><text:p>${value}</text:p></table:table-cell>`).join('');
+    return `<table:table-row>${cells}</table:table-row>`;
+  }).join('');
+  zip.file(
+    'content.xml',
+    `<office:document-content><office:body><office:spreadsheet><table:table table:name="${sheetName}">${rowsXml}</table:table></office:spreadsheet></office:body></office:document-content>`,
+  );
+  return zip.generate({ type: 'nodebuffer' });
 }
 
 test('extractPlainText: an ordinary text-layer PDF is extracted via the fast text_layer path, never touching OCR', async (t) => {
@@ -88,6 +127,48 @@ test('extractPlainText: a real XLSX is extracted via exceljs, sheet name + cells
 
 test('extractPlainText: a corrupt XLSX degrades to corrupt_or_unreadable, never throws', async () => {
   const result = await documentTextExtractionService.extractPlainText(Buffer.from('not a real xlsx'), documentTextExtractionService.XLSX_MIME_TYPE);
+  assert.equal(result.text, null);
+  assert.equal(result.failureReason, 'corrupt_or_unreadable');
+});
+
+test('extractPlainText: a real PPTX has its slide text runs extracted in slide order', async () => {
+  const buffer = buildPptxBuffer(['First slide text.', 'Second slide text.']);
+  const result = await documentTextExtractionService.extractPlainText(buffer, documentTextExtractionService.PPTX_MIME_TYPE);
+  assert.equal(result.method, 'pptx_slides');
+  assert.match(result.text, /Slide 1\nFirst slide text\./);
+  assert.match(result.text, /Slide 2\nSecond slide text\./);
+});
+
+test('extractPlainText: a corrupt/non-PPTX buffer degrades to corrupt_or_unreadable, never throws', async () => {
+  const result = await documentTextExtractionService.extractPlainText(Buffer.from('not a real pptx'), documentTextExtractionService.PPTX_MIME_TYPE);
+  assert.equal(result.text, null);
+  assert.equal(result.failureReason, 'corrupt_or_unreadable');
+});
+
+test('extractPlainText: a real ODT has its paragraphs extracted, joined by newline', async () => {
+  const buffer = buildOdtBuffer(['Paragraph one.', 'Paragraph two.']);
+  const result = await documentTextExtractionService.extractPlainText(buffer, documentTextExtractionService.ODT_MIME_TYPE);
+  assert.equal(result.method, 'odt_paragraphs');
+  assert.equal(result.text, 'Paragraph one.\nParagraph two.');
+});
+
+test('extractPlainText: a corrupt/non-ODT buffer degrades to corrupt_or_unreadable, never throws', async () => {
+  const result = await documentTextExtractionService.extractPlainText(Buffer.from('not a real odt'), documentTextExtractionService.ODT_MIME_TYPE);
+  assert.equal(result.text, null);
+  assert.equal(result.failureReason, 'corrupt_or_unreadable');
+});
+
+test('extractPlainText: a real ODS has its sheet name + cells joined into readable lines', async () => {
+  const buffer = buildOdsBuffer('Sheet1', [['name', 'marks'], ['Ravi', '92'], ['Meena', '88']]);
+  const result = await documentTextExtractionService.extractPlainText(buffer, documentTextExtractionService.ODS_MIME_TYPE);
+  assert.equal(result.method, 'ods_sheets');
+  assert.match(result.text, /Sheet1/);
+  assert.match(result.text, /Ravi \| 92/);
+  assert.match(result.text, /Meena \| 88/);
+});
+
+test('extractPlainText: a corrupt/non-ODS buffer degrades to corrupt_or_unreadable, never throws', async () => {
+  const result = await documentTextExtractionService.extractPlainText(Buffer.from('not a real ods'), documentTextExtractionService.ODS_MIME_TYPE);
   assert.equal(result.text, null);
   assert.equal(result.failureReason, 'corrupt_or_unreadable');
 });

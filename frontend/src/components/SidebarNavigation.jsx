@@ -1,6 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   ArrowUpRight,
+  BrainCircuit,
   BriefcaseBusiness,
   Building,
   Building2,
@@ -30,6 +31,7 @@ const HOME_NAV = [
   { to: '/', label: 'New', Icon: SquarePen, end: true },
   { to: '/projects', label: 'Projects', Icon: FolderKanban },
   { to: '/artifacts', label: 'Artifacts', Icon: Files },
+  { to: '/ai-memory', label: 'AI Memory', Icon: BrainCircuit },
 ];
 
 const STAFF_CURRICULUM_NAV = [
@@ -272,8 +274,7 @@ export function SidebarNavigation({ mode }) {
     // The mirror of the above: a Curriculum route never lights up a Home item.
     if (onCurriculumRoute) return false;
     if (item.to === '/') return pathname === '/' || pathname.startsWith('/chat');
-    if (item.to === '/projects') return pathname.startsWith('/projects');
-    return pathname.startsWith('/artifacts');
+    return pathname.startsWith(item.to);
   };
 
   return (

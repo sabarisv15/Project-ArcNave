@@ -52,6 +52,7 @@ const createProjectsRouter = require('./routes/projects');
 const createConversationsRouter = require('./routes/conversations');
 const createArtifactsRouter = require('./routes/artifacts');
 const createUserPreferencesRouter = require('./routes/userPreferences');
+const createAiMemoryRouter = require('./routes/aiMemory');
 const createActivityTimelineRouter = require('./routes/activityTimeline');
 const createSearchRouter = require('./routes/search');
 const createWorkspaceHeroRouter = require('./routes/workspaceHero');
@@ -223,6 +224,7 @@ function createTenantApp({ registerExtraRoutes } = {}) {
   app.use(createConversationsRouter());
   app.use(createArtifactsRouter());
   app.use(createUserPreferencesRouter());
+  app.use(createAiMemoryRouter());
   app.use(createActivityTimelineRouter());
   app.use(createSearchRouter());
   app.use(createWorkspaceHeroRouter());

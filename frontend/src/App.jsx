@@ -29,6 +29,7 @@ import { Loading } from './components/InstitutionalState';
 const lazyNamed = (importer, name) => lazy(() => importer().then((m) => ({ default: m[name] })));
 
 const ChatRoute = lazyNamed(() => import('./routes/ChatRoute'), 'ChatRoute');
+const AiMemorySettingsView = lazyNamed(() => import('./routes/AiMemorySettingsView'), 'AiMemorySettingsView');
 const ProjectsView = lazyNamed(() => import('./routes/ProjectsView'), 'ProjectsView');
 const ProjectDetail = lazyNamed(() => import('./routes/ProjectDetail'), 'ProjectDetail');
 const ArtifactLibrary = lazyNamed(() => import('./routes/ArtifactLibrary'), 'ArtifactLibrary');
@@ -136,6 +137,7 @@ export default function App() {
         <Route path="/artifacts" element={<ArtifactLibrary />} />
         <Route path="/artifacts/new" element={<ArtifactCreate />} />
         <Route path="/artifacts/:artifactId" element={<ArtifactEditor />} />
+        <Route path="/ai-memory" element={<AiMemorySettingsView />} />
         <Route path="/curriculum" element={<CurriculumLanding />} />
         <Route path="/curriculum/attendance" element={<AttendanceLayout />}>
           <Route element={<AttendanceTabsLayout />}>

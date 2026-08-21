@@ -2116,6 +2116,7 @@ registerTool({
 const classLogService = require('./classLogService');
 const personalNoteService = require('./personalNoteService');
 const userPreferenceService = require('./userPreferenceService');
+const aiMemoryService = require('./aiMemoryService');
 const activityTimelineService = require('./activityTimelineService');
 const projectService = require('./projectService');
 
@@ -2361,6 +2362,87 @@ registerTool({
     return userPreferenceService.setPreference(
       client, params.preference_key, params.value, { actorUserId: actor.userId, collegeId: actor.collegeId },
     );
+  },
+});
+
+// Scoped AI Preference Memory (CHECKPOINT.md's P1 item, deferred out of the
+// chat-attachment governance pass) — a bounded, consent-gated version of
+// "the AI remembers things you told it," distinct from user_preferences_set
+// above (that one is an AI-response *display* setting with no retention
+// risk; this one is the AI persisting something a human said in
+// conversation, which is exactly the "unbounded/unauditable PII retention"
+// risk CHECKPOINT.md's own roadmap flagged). Three tools, deliberately no
+// fourth: there is NO ai_memory_consent_set tool. Consent can only be
+// granted or revoked by the human directly, through routes/aiMemory.js —
+// see aiMemoryService.js's own file comment for why that split is the
+// actual safety property here, not a formality.
+registerTool({
+  name: 'ai_memory_consent_status',
+  level: 'L1',
+  dataClassification: 'Internal',
+  description: "Reads whether the acting user has opted in to AI Memory (the AI remembering their stated "
+    + 'preferences across conversations). If false, tell the user they can turn it on in AI Memory settings '
+    + '— never claim it is already on, never suggest you can turn it on for them.',
+  allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
+  params: { type: 'object', properties: {}, additionalProperties: false },
+  handler: (client, params, actor) => aiMemoryService.getConsent(client, { actorUserId: actor.userId }),
+});
+
+registerTool({
+  name: 'ai_memory_remember',
+  level: 'L1',
+  dataClassification: 'Internal',
+  description: "Remembers one fact about how the acting user wants to work with the AI, for future "
+    + `conversations. Only ${aiMemoryService.ALLOWED_MEMORY_TYPES.join(', ')} may be set — never a freeform `
+    + 'type, and never a fact, note, or opinion about a student, staff member, or anyone other than the '
+    + 'acting user themselves. Fails if the user has not opted in to AI Memory yet — if it fails for that '
+    + 'reason, tell them where to turn it on, do not retry.',
+  allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
+  params: {
+    type: 'object',
+    properties: {
+      memory_type: { type: 'string', enum: aiMemoryService.ALLOWED_MEMORY_TYPES, description: 'The kind of preference being remembered.' },
+      value: { type: 'string', description: 'The preference itself, in the user\'s own words (short).' },
+    },
+    required: ['memory_type', 'value'],
+    additionalProperties: false,
+  },
+  handler: (client, params, actor) => {
+    if (!aiMemoryService.ALLOWED_MEMORY_TYPES.includes(params.memory_type)) {
+      throw new AiToolInvalidParamsError(
+        `memory_type must be one of ${aiMemoryService.ALLOWED_MEMORY_TYPES.map((t) => JSON.stringify(t)).join(', ')}, `
+        + `got ${JSON.stringify(params.memory_type)}`,
+      );
+    }
+    return aiMemoryService.rememberPreference(
+      client, params.memory_type, params.value, { actorUserId: actor.userId, collegeId: actor.collegeId },
+    );
+  },
+});
+
+registerTool({
+  name: 'ai_memory_forget',
+  level: 'L1',
+  dataClassification: 'Internal',
+  description: 'Deletes one previously remembered AI Memory fact for the acting user. Always allowed, even '
+    + 'if AI Memory is currently turned off.',
+  allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
+  params: {
+    type: 'object',
+    properties: {
+      memory_type: { type: 'string', enum: aiMemoryService.ALLOWED_MEMORY_TYPES, description: 'The kind of preference to forget.' },
+    },
+    required: ['memory_type'],
+    additionalProperties: false,
+  },
+  handler: (client, params, actor) => {
+    if (!aiMemoryService.ALLOWED_MEMORY_TYPES.includes(params.memory_type)) {
+      throw new AiToolInvalidParamsError(
+        `memory_type must be one of ${aiMemoryService.ALLOWED_MEMORY_TYPES.map((t) => JSON.stringify(t)).join(', ')}, `
+        + `got ${JSON.stringify(params.memory_type)}`,
+      );
+    }
+    return aiMemoryService.forgetPreference(client, params.memory_type, { actorUserId: actor.userId });
   },
 });
 

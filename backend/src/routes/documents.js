@@ -82,15 +82,15 @@ function sniffImageMimeType(buffer) {
   return null;
 }
 
-// PDF/DOCX/XLSX magic-byte sniffing, extending sniffImageMimeType above with
-// the same "never trust the client's declared type" discipline — see the
+// PDF/DOCX/XLSX/PPTX magic-byte sniffing, extending sniffImageMimeType above
+// with the same "never trust the client's declared type" discipline — see the
 // documentTextExtractionService.js file comment for why chat attachments
-// support these formats. DOCX/XLSX share the ZIP container magic
+// support these formats. DOCX/XLSX/PPTX share the ZIP container magic
 // (50 4B 03 04); PizZip (already a dependency — see
 // documentService.assertValidDocxTemplate's identical technique) is opened to
-// check which real OpenXML part is inside, so a bare .zip or a renamed .pptx
-// (ZIP magic, but neither word/document.xml nor xl/workbook.xml) is rejected
-// by construction, not by a separate deny-list.
+// check which real OpenXML part is inside, so a bare .zip (ZIP magic, but
+// none of word/document.xml, xl/workbook.xml, ppt/presentation.xml) is
+// rejected by construction, not by a separate deny-list.
 function sniffOfficeOpenXmlMimeType(buffer) {
   const isZip = buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04;
   if (!isZip) return null;
@@ -106,7 +106,35 @@ function sniffOfficeOpenXmlMimeType(buffer) {
   if (zip.file('xl/workbook.xml')) {
     return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   }
+  if (zip.file('ppt/presentation.xml')) {
+    return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+  }
   return null;
+}
+
+// ODT/ODS sniffing — also a ZIP container (same 50 4B 03 04 magic as
+// OOXML above), but OpenDocument's own manifest is the "mimetype" member
+// stored at the archive root: its raw content IS the real media type
+// (per the ODF spec, always uncompressed / first entry), so reading it
+// directly is the equivalent of checking word/document.xml above — real
+// internal-structure evidence, not a filename guess.
+const OPEN_DOCUMENT_MIME_TYPES = new Set([
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+]);
+function sniffOpenDocumentMimeType(buffer) {
+  const isZip = buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04;
+  if (!isZip) return null;
+  let zip;
+  try {
+    zip = new PizZip(buffer);
+  } catch {
+    return null;
+  }
+  const mimetypeEntry = zip.file('mimetype');
+  if (!mimetypeEntry) return null;
+  const declared = mimetypeEntry.asText().trim();
+  return OPEN_DOCUMENT_MIME_TYPES.has(declared) ? declared : null;
 }
 
 function sniffPdfMimeType(buffer) {
@@ -151,6 +179,7 @@ function sniffChatAttachmentMimeType(buffer, fileName) {
   return sniffImageMimeType(buffer)
     || sniffPdfMimeType(buffer)
     || sniffOfficeOpenXmlMimeType(buffer)
+    || sniffOpenDocumentMimeType(buffer)
     || sniffPlainTextMimeType(buffer, fileName)
     || null;
 }
@@ -528,14 +557,14 @@ function createDocumentsRouter() {
     // The client's declared mime_type is never trusted (composerAttachments.js's own
     // "server still authorizes and re-validates every upload" comment) — the sniffed
     // type from the real bytes is what's stored and later sent to a vision provider
-    // or through documentTextExtractionService, depending on type. PPTX/ODT/ODS,
-    // bare ZIP, and executable/script content are all rejected here — either they
-    // fail every sniff check outright (no matching magic bytes/internal manifest/
-    // plain-text shape) or they're simply not in the allowlist.
+    // or through documentTextExtractionService, depending on type. Bare ZIP and
+    // executable/script content are rejected here — either they fail every sniff
+    // check outright (no matching magic bytes/internal manifest/plain-text shape)
+    // or they're simply not in the allowlist.
     const sniffedMimeType = sniffChatAttachmentMimeType(fileBuffer, fileName);
     if (!sniffedMimeType) {
       res.status(400).json({
-        detail: 'file content is not a supported attachment type (png, jpeg, gif, webp, pdf, docx, xlsx, md, txt, csv)',
+        detail: 'file content is not a supported attachment type (png, jpeg, gif, webp, pdf, docx, xlsx, pptx, odt, ods, md, txt, csv)',
       });
       return;
     }

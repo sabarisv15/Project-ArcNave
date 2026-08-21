@@ -27,6 +27,15 @@ function mockAudit(t) {
   return t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
 }
 
+// askAgent now unconditionally calls buildMemoryHint (aiService.js), which
+// queries ai_scoped_memory — a bare {} client (previously fine, since
+// nothing here touched the DB before the mocked LLM/service calls) no
+// longer works. A minimal stub with an empty-rows .query is enough; these
+// tests aren't about memory hints at all.
+function fakeDbClient() {
+  return { query: async () => ({ rows: [] }) };
+}
+
 test('maxAffectedRows — departments_create (exact, deterministic estimate: course_duration x default_sections)', async (t) => {
   await t.test('below confirmAt (30): preconditions pass, no rejection', async () => {
     const auditMock = mockAudit(t);
@@ -180,7 +189,7 @@ test('maxAffectedRows — askAgent reuses the existing confirmation-pause mechan
       profileMock.mock.restore();
     });
 
-    const result = await aiService.askAgent({}, 'Create the ECE department', { identityContext: PRINCIPAL_IDENTITY });
+    const result = await aiService.askAgent(fakeDbClient(), 'Create the ECE department', { identityContext: PRINCIPAL_IDENTITY });
 
     assert.equal(result.pendingConfirmation, undefined);
     assert.equal(result.toolUsed, 'departments_create');
@@ -207,7 +216,7 @@ test('maxAffectedRows — askAgent reuses the existing confirmation-pause mechan
       profileMock.mock.restore();
     });
 
-    const result = await aiService.askAgent({}, 'Create the ECE department', { identityContext: PRINCIPAL_IDENTITY });
+    const result = await aiService.askAgent(fakeDbClient(), 'Create the ECE department', { identityContext: PRINCIPAL_IDENTITY });
 
     assert.equal(profileMock.mock.callCount(), 0);
     assert.ok(result.pendingConfirmation);
@@ -234,7 +243,7 @@ test('maxAffectedRows — askAgent reuses the existing confirmation-pause mechan
     });
 
     await assert.rejects(
-      () => aiService.askAgent({}, 'Create the ECE department', { identityContext: PRINCIPAL_IDENTITY }),
+      () => aiService.askAgent(fakeDbClient(), 'Create the ECE department', { identityContext: PRINCIPAL_IDENTITY }),
       aiToolRegistry.AiToolBulkOperationRejectedError,
     );
   });

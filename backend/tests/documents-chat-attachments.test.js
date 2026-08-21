@@ -134,12 +134,33 @@ function fakeXlsxBuffer() {
   zip.file('xl/workbook.xml', '<workbook/>');
   return zip.generate({ type: 'nodebuffer' });
 }
-// A real ZIP container with neither expected internal part — same magic
-// bytes as a docx/xlsx, deliberately used to prove a bare .zip (or a
-// renamed .pptx) is rejected by construction, not by a separate deny-list.
-function fakeUnrelatedZipBuffer() {
+function fakePptxBuffer() {
   const zip = new PizZip();
   zip.file('ppt/presentation.xml', '<presentation/>');
+  return zip.generate({ type: 'nodebuffer' });
+}
+// ODT/ODS's own manifest is the raw "mimetype" member content, per the
+// ODF spec — same real-internal-structure sniff as the OOXML magic-byte
+// checks above, just via file content instead of a fixed member path.
+function fakeOdtBuffer() {
+  const zip = new PizZip();
+  zip.file('mimetype', 'application/vnd.oasis.opendocument.text');
+  zip.file('content.xml', '<office:document-content/>');
+  return zip.generate({ type: 'nodebuffer' });
+}
+function fakeOdsBuffer() {
+  const zip = new PizZip();
+  zip.file('mimetype', 'application/vnd.oasis.opendocument.spreadsheet');
+  zip.file('content.xml', '<office:document-content/>');
+  return zip.generate({ type: 'nodebuffer' });
+}
+// A real ZIP container with none of the internal parts any sniff check
+// looks for — same magic bytes as docx/xlsx/pptx/odt/ods, deliberately
+// used to prove a bare .zip is rejected by construction, not by a
+// separate deny-list.
+function fakeUnrelatedZipBuffer() {
+  const zip = new PizZip();
+  zip.file('some/unrelated/part.xml', '<nothing/>');
   return zip.generate({ type: 'nodebuffer' });
 }
 
@@ -268,10 +289,40 @@ test('documents chat-attachments', async (t) => {
     assert.equal(resp.body.mime_type, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   });
 
-  await t.test('a bare zip / renamed pptx (ZIP magic, but neither word/document.xml nor xl/workbook.xml inside) is rejected', async () => {
+  await t.test('a real PPTX upload succeeds and is sniffed as the openxml presentation type', async () => {
     const token = await login('userone');
     const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
       file_name: 'slides.pptx',
+      file_base64: fakePptxBuffer().toString('base64'),
+    });
+    assert.equal(resp.status, 201);
+    assert.equal(resp.body.mime_type, 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
+  });
+
+  await t.test('a real ODT upload succeeds and is sniffed as the opendocument text type', async () => {
+    const token = await login('userone');
+    const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
+      file_name: 'notes.odt',
+      file_base64: fakeOdtBuffer().toString('base64'),
+    });
+    assert.equal(resp.status, 201);
+    assert.equal(resp.body.mime_type, 'application/vnd.oasis.opendocument.text');
+  });
+
+  await t.test('a real ODS upload succeeds and is sniffed as the opendocument spreadsheet type', async () => {
+    const token = await login('userone');
+    const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
+      file_name: 'marks.ods',
+      file_base64: fakeOdsBuffer().toString('base64'),
+    });
+    assert.equal(resp.status, 201);
+    assert.equal(resp.body.mime_type, 'application/vnd.oasis.opendocument.spreadsheet');
+  });
+
+  await t.test('a bare zip (ZIP magic, but none of the recognized internal parts) is rejected', async () => {
+    const token = await login('userone');
+    const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
+      file_name: 'archive.zip',
       file_base64: fakeUnrelatedZipBuffer().toString('base64'),
     });
     assert.equal(resp.status, 400);

@@ -19,7 +19,7 @@ export function HomeView() {
   const composer = useComposer(composerScope.home());
 
   const send = async () => {
-    const id = await sendMessage({ scope: 'chat', text: composer.text, attachments: composer.attachments });
+    const id = await sendMessage({ scope: 'chat', text: composer.text, attachments: composer.attachments, mode: composer.mode });
     if (!id) return;
     composer.reset(); // sent — clears Home's scope and nothing else
     navigate(`/chat/${id}`);

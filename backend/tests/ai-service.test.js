@@ -2388,3 +2388,65 @@ test('aiService.askAgent: vision-capable provider -> the image actually reaches 
   assert.equal(userMessage.content[0].type, 'image');
   assert.equal(userMessage.content[0].source.media_type, 'image/png');
 });
+
+// General/Curriculum scope mode (ScopeToggle.jsx's redefinition of the old
+// Ask/Act toggle) — General never gives the model a tool to call at all, a
+// structural boundary (no tools field in the outbound request, not just a
+// prompt instruction), proven directly against the real request body the
+// adapter sends, the same way the vision tests above prove the image
+// content block rather than trusting the mock's return value alone.
+test("aiService.askAgent: mode 'general' never sends a tools/tool_choice field — completeMaybeStreaming's plain-completion path runs, not completeWithTools", async (t) => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'staff', collegeId: 'college-a' };
+  let capturedBody;
+  let toolInvoked = false;
+  t.mock.method(aiToolRegistry, 'invokeTool', async () => { toolInvoked = true; return {}; });
+
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async (url, options) => {
+      capturedBody = JSON.parse(options.body);
+      return mockAnswerResponse('React is a JavaScript library for building user interfaces.');
+    }, async () => {
+      const result = await aiService.askAgent(
+        client,
+        'explain react hooks for a class project',
+        { identityContext, mode: 'general' },
+      );
+      assert.equal(result.toolUsed, null);
+      assert.equal(result.answer, 'React is a JavaScript library for building user interfaces.');
+    });
+  });
+
+  assert.equal(toolInvoked, false, 'no ARCNAVE tool is ever offered to the model in General mode');
+  assert.equal(capturedBody.tools, undefined, 'General mode never sends a tools field — nothing for the model to call');
+  assert.equal(capturedBody.tool_choice, undefined);
+  const systemMessage = capturedBody.messages.find((m) => m.role === 'system');
+  assert.match(systemMessage.content, /General mode/);
+});
+
+test("aiService.askAgent: mode 'curriculum' (and no mode at all) is byte-for-byte the unchanged tool-selecting path", async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponse('get_college_profile', {}),
+      mockAnswerResponse('This is ARCNAVE Demo College.'),
+    ]), async () => {
+      const result = await aiService.askAgent(client, 'What college is this?', { identityContext, mode: 'curriculum' });
+      assert.equal(result.toolUsed, 'get_college_profile');
+    });
+  });
+
+  const client2 = fakeClient();
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponse('get_college_profile', {}),
+      mockAnswerResponse('This is ARCNAVE Demo College.'),
+    ]), async () => {
+      // mode entirely absent — every pre-existing caller of askAgent, unaffected.
+      const result = await aiService.askAgent(client2, 'What college is this?', { identityContext });
+      assert.equal(result.toolUsed, 'get_college_profile');
+    });
+  });
+});

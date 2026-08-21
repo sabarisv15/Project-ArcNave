@@ -75,10 +75,10 @@ describe('draft isolation', () => {
   it('isolates mode and attachments, not just text', () => {
     const { result } = renderPair(composerScope.home(), composerScope.artifactRevision('a1'));
     act(() => {
-      result.current.a.setMode('act');
+      result.current.a.setMode('general');
       result.current.a.setAttachments([{ id: 'f1', name: 'roster.csv' }]);
     });
-    expect(result.current.b.mode).toBe('ask');
+    expect(result.current.b.mode).toBe('curriculum');
     expect(result.current.b.attachments).toEqual([]);
   });
 });

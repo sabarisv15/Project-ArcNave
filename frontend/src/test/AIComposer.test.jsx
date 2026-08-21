@@ -14,7 +14,7 @@ function setup(props = {}) {
         value={props.value ?? ''}
         onChange={onChange}
         onSend={onSend}
-        mode={props.mode ?? 'ask'}
+        mode={props.mode ?? 'curriculum'}
         onMode={onMode}
         placeholder="Ask ArcNave anything about your campus…"
       />
@@ -45,13 +45,13 @@ describe('AIComposer', () => {
     expect(onSend).toHaveBeenCalledTimes(1);
   });
 
-  it('renders Ask and Act with identical dimensions', () => {
+  it('renders General and Curriculum with identical dimensions', () => {
     setup();
-    const ask = screen.getByRole('button', { name: 'Ask' });
-    const act = screen.getByRole('button', { name: 'Act' });
-    expect(ask.className).toContain('w-[60px]');
-    expect(act.className).toContain('w-[60px]');
-    expect(ask.className).toContain('h-[28px]');
-    expect(act.className).toContain('h-[28px]');
+    const general = screen.getByRole('button', { name: 'General' });
+    const curriculum = screen.getByRole('button', { name: 'Curriculum' });
+    expect(general.className).toContain('w-[92px]');
+    expect(curriculum.className).toContain('w-[92px]');
+    expect(general.className).toContain('h-[28px]');
+    expect(curriculum.className).toContain('h-[28px]');
   });
 });

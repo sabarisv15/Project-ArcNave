@@ -5,7 +5,14 @@
       "name": "gstack-frontend",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
-      "port": 3100
+      "port": 3100,
+      "autoPort": true
+    },
+    {
+      "name": "gstack-backend",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "app"],
+      "port": 8000
     }
   ]
 }

@@ -4,6 +4,34 @@
 
 ---
 
+## 2026-08-21 — bka/ documentation-sync audit + validator fix
+
+Not an app-code round — `bka/` (ARCNAVE's separate Business Knowledge Architecture doc estate) and its own tooling. Pre-existing uncommitted app-code changes at session start (round 18's General/Curriculum scope-mode work — `ScopeToggle.jsx`, `AskActToggle.jsx` deletion, composer/route/provider edits) were explicitly left untouched; see round 18's own `CHANGES.md` entry.
+
+| Area | Change |
+|---|---|
+| `bka/70-checkpoint/CURRENT-STATE.md` | Rewritten. Was stale since 2026-08-09 (12 days, spanning rounds 10–18) — none of that work was ever run through this file's own protocol. Now records the real current state and flags the AI-capability-surface gap in `bka/` as its own separately-scoped task. |
+| `bka/20-matrices/FEATURE-MATRIX.md` | Staff Documents / Personal rows (folder rename/move/delete, document rename/move/duplicate, nested folders, search-over-real-data) flipped from "Not built"/"Backend built, unwired" to Built, each re-verified directly against `PersonalDocuments.jsx`'s row-menu code and the `personal_document_folders.parent_id` migration — not taken on round 17's commit message alone. One table-column regression introduced mid-edit (dropped the `Permission` column on 5 rows) caught by re-running the validator and fixed before moving on. |
+| `bka/20-matrices/ai-capability-matrix.md` | §8 Conformance summary: added notes flagging the tool register (32 documented vs. ~62 real) and `ADR-028`'s provider naming as stale against rounds 13–18 — flagged, not reconciled (see `CURRENT-STATE.md`'s Pending). |
+| `bka/tools/validate.py` | Two real bugs fixed. (1) `DOCS = ROOT / "docs"` assumed a `bka/docs/` subfolder that has never existed in this repo — every file glob silently matched zero files, so it always reported "0 rules, PASSED" without checking anything. Fixed to `DOCS = ROOT`. (2) `PRF` was missing from the `DOMAINS` set despite being a real, referenced domain (`RS-PRF-personal-workspace.md`) — added. No Python interpreter existed in this environment before this session (`winget install Python.Python.3.12`). |
+| `bka/10-specification/*.md` (16 files) | Normalized a `**Business Owner**` vs `**Owner**` metadata-label split across 53 rules. Verified first (via the same field-parsing logic the validator uses) that every rule had exactly one label, never both — confirming pure authorial drift, not two distinct concepts, before normalizing to `Owner`. |
+| `bka/10-specification/RS-CLS-classroom.md`, `RS-AIG-ai-governance.md`, `RS-ASM-assessment-documents.md`, `RS-ADM-admission-wizard.md`, `RS-DAT-data-integrity.md`, `RS-GOV-governance.md`, `RS-STF-staff.md`, `RS-TEN-tenancy-security.md` | Added ~30 missing reverse `Governs`/`Depends on` cross-references (per `scope-and-conventions.md` §7's own amendment procedure — both sides of every edge). No rule's meaning changed; pure bookkeeping, no new Decision Ledger entry opened. |
+| `bka/20-matrices/ROLE-COVERAGE.md`, `bka/90-appendix/role-reference-platform-admin-L1-L4-staff.md` | An informal `RS-TTB-001`-shaped shorthand (8 occurrences) — never a real rule, no matching domain file or registered domain code — replaced with the real governing rule it was actually describing, `RS-ACA-005` (timetable auto-generation), confirmed by reading that rule's own Implementation/AI fields first. |
+| `bka/README.md`, `bka/scope-and-conventions-tanglish-elaborate.md`, `bka/40-uat/04-demo-data-seeder-specification.md`, `bka/10-specification/RS-STF-staff.md` | 9 broken relative links fixed, each checked against the linking file's actual location, not mechanically. One (`RS-STF-staff.md` → `CLAUDE.md`) was initially misdiagnosed as a missing file — `git log`/`git ls-files` found nothing because `CLAUDE.md` was never `git add`ed, despite being real, current, and sitting at the repo root the whole time; the user pointed this out and it resolved to a one-`../`-too-many path fix. |
+| `bka/20-matrices/FEATURE-MATRIX.md`, `bka/20-matrices/implementation-impact-matrix.md` | 2 self-referencing anchor links fixed — both were slug-generation mismatches against `validate.py`'s own `slug()` function (which deletes `/` rather than converting it to `-`). |
+| `bka/10-specification/RS-ADM-admission-wizard.md`, `bka/60-product-reasoning/staff-experience-2026-08-08.md`, `bka/60-product-reasoning/staff-documents-personal.md` | 3 malformed markdown tables fixed — 2 real bugs (an unescaped `\|` inside a table cell; a stray extra column), 1 genuinely stale row (folder-rename recorded as "does not exist" in a 2026-08-08 pass, now built per round 17 — fixed the table and pointed it at `FEATURE-MATRIX.md` rather than silently rewriting the historical finding). |
+| `CLAUDE.md` | Committed to git for the first time. Real, current, cited as Level 1 project authority ~25 times across `bka/`, but had never been `git add`ed — any other checkout of this repo was missing it entirely. |
+
+Result: `python tools/validate.py` (from `bka/`) went from a false "0 rules, PASSED" to a real 69 errors/33 warnings, resolved down to a genuine, verified **0 errors/0 warnings, PASSED**.
+
+One process note: a plain `git commit` after staging only `bka/`+`CLAUDE.md` still picked up `frontend/src/components/ScopeToggle.jsx`, since it was already sitting in the index (staged) from round 18's unfinished work before this session started — `git commit` commits the whole index, not just what was explicitly staged that turn. Caught immediately; a follow-up commit (`git rm --cached`) restored it to its prior untracked-but-present-on-disk state before push. Commits: `5924736` (the sync), `bebbb40` (the correction), both pushed to `origin/master`.
+
+### Explicitly not changed this session
+
+The AI-capability-surface reconciliation `bka/`'s `RS-AIG` tool register and `ADR-028` still need against rounds 13–18's real work (conversation memory, the workflow engine, streaming, evidence/provenance, Trusted Web Retrieval, model routing, the OpenAI adapter, the Vertex AI migration, General/Curriculum mode) — flagged in `bka/70-checkpoint/CURRENT-STATE.md` as its own separately-scoped task, deliberately not folded into a validator-error cleanup pass.
+
+---
+
 ## 2026-08-20 — Backend optimization: pass 1 + pass 2
 
 Pre-existing modifications at session start (not made this session, listed here only so the diff below isn't confused with them): `backend/package-lock.json`, `backend/package.json`, `backend/src/storage/fileStorage.js`, and an untracked `bka/` directory. None of these were touched in this session.
@@ -434,3 +462,43 @@ Live-verified against real Gemini, same question 3/3 tries: now asks a clarifyin
 Full backend suite: **1,860/1,862 passed** (2 pre-existing, unrelated `fetch_trusted_web_page`/web-retrieval-config failures — confirmed present on `master` before this session's changes too, via `git stash`). Frontend: existing `documents.test.js` (mock-data unit tests, untouched — still exercises `lib/documentsData.js`'s own helpers) passes; `vite build` succeeds. Live end-to-end against a real Postgres-backed instance (not the test suite): nested folder create/rename/move with cycle rejection, document upload/rename/move/duplicate, real-byte download, cascade folder delete, the widened self-delete permission, a cross-user delete correctly refused with 403, and an AI tool call producing a document whose metadata and real bytes both round-trip through the chat download card.
 
 Not done this round: no automated test yet for the frontend Documents components themselves (`DocumentsProvider.jsx`/`PersonalDocuments.jsx`/`InstitutionalDocuments.jsx`) beyond the pre-existing mock-data unit tests — verification was live/manual against the real backend. No inline document preview (the backend has no "view" endpoint distinct from download, only `Content-Disposition: attachment`).
+
+---
+
+## 2026-08-21 — General/Curriculum scope mode (redefined Ask/Act toggle)
+
+The user's framing: staff use the chat for research, coursework, and general subject/new-tech knowledge that has nothing to do with any college record — being tool-scoped 24/7 makes ARCNAVE worse than ChatGPT/Claude/Gemini for that use case. Asked to redefine the existing Ask/Act toggle (previously read-vs-write, functionally inert — `mode` was never even sent to the backend) into a General/Curriculum scope switch, with the explicit requirement that the Policy Gate stays exactly as strong whenever a tool actually runs. Resolved as a structural split: General mode never gives the model a tool to call at all, so there is nothing for `invokeTool`/the Policy Gate to re-fire against — not a softer prompt a model could ignore.
+
+### Backend
+
+| File | Change |
+|---|---|
+| `backend/src/services/aiService.js` | New `GENERAL_CHAT_SYSTEM_PROMPT` (ChatGPT/Claude/Gemini-breadth open-domain assistant, identity masking preserved, tells the model to redirect college-record questions to Curriculum mode). New `askGeneralChat(client, question, promptQuestion, { identityContext, identityBlock, adapter, aiConfig, images }, onDelta)` — reuses `completeMaybeStreaming` (the same plain-completion path `askAboutTool`'s own answer and every synthesis call already use) instead of `adapter.completeWithTools`, so no tool list is ever built or sent; vision support (`imagesSupported`/`imageAnalysisUnavailable`) mirrors the existing Curriculum-path logic exactly. `askAgent` now takes an additional `mode` option; `mode === 'general'` short-circuits to `askGeneralChat` before a single tool is listed — anything else (missing, `'curriculum'`, a stale value) falls through to the pre-existing tool-selecting path, byte-for-byte unchanged, so every caller that never sends `mode` (every caller before this) is unaffected. |
+| `backend/src/routes/ai.js` | `resolveAskContext` now also destructures `mode` from the request body and returns it; both `/ai/ask` and `/ai/ask/stream` thread it into `aiService.askAgent`. |
+| `backend/tests/ai-service.test.js` | Two new tests: General mode's outbound request body genuinely has no `tools`/`tool_choice` field (proven against the real captured fetch body, not just the mocked response) and never invokes any ARCNAVE tool; Curriculum mode (explicit and mode-omitted) is unchanged, still resolves and invokes a tool as before. |
+
+### Frontend
+
+| File | Change |
+|---|---|
+| `frontend/src/components/AskActToggle.jsx` → `frontend/src/components/ScopeToggle.jsx` | Renamed (`git mv`). Labels now **General / Curriculum**, mode values `'general'`/`'curriculum'`, widened to `w-[92px]` to fit "Curriculum". |
+| `frontend/src/components/AIComposer.jsx` | Import + usage updated to `ScopeToggle`. |
+| `frontend/src/store/ComposerProvider.jsx` | `EMPTY_COMPOSER.mode` default changed `'ask'` → `'curriculum'` (preserves today's exact behavior for any surface that doesn't explicitly override it — Curriculum is the pre-existing tool-scoped path). JSDoc updated. |
+| `frontend/src/routes/ArtifactEditor.jsx` | `defaultMode` changed `'act'` → `'curriculum'` — artifact work needs the real `export_artifact`/`update_artifact_content` tools, which General mode never offers the model. |
+| `frontend/src/store/WorkspaceProvider.jsx` | `sendMessage`/`runAiTurn` both take an additional `mode` param, threaded into the `askStream` request body. |
+| `frontend/src/routes/HomeView.jsx`, `frontend/src/routes/ProjectDetail.jsx`, `frontend/src/routes/ArtifactEditor.jsx` | Their `sendMessage(...)` calls now pass `mode: composer.mode`. |
+| `frontend/src/components/ChatView.jsx`, `frontend/src/routes/ChatRoute.jsx` | `ChatView`'s `onSend` now also passes `composer.mode`; `ChatRoute`'s `onSend` forwards it into `sendMessage`. |
+| `frontend/src/test/composer.test.jsx`, `frontend/src/test/AIComposer.test.jsx` | Updated mode values/labels/dimensions (`'ask'/'act'` → `'general'/'curriculum'`, button width `60px` → `92px`); the scope-isolation test now sets `'general'` (the non-default) on scope A to keep proving isolation now that the default itself is `'curriculum'`. |
+
+### Verification
+
+Backend: 113/115 `ai-service.test.js` passed (2 new tests both passing; 2 failures are pre-existing `fetch_trusted_web_page`/web-retrieval-config issues, confirmed present before this change). All 28 `ai.test.js` (real HTTP + live local Postgres) passed. Frontend: all 16 `composer.test.jsx`/`AIComposer.test.jsx` tests passed; broader frontend suite failures (`students.test.jsx`, `termCommencement.test.jsx`, etc.) confirmed pre-existing via `git stash` — not caused by this change.
+
+### Local dev servers brought up live (same session, for verification)
+
+| File | Change |
+|---|---|
+| `frontend/vite.config.js` | Dev server port now `Number(process.env.PORT) \|\| 3100` (was hardcoded `3100`) — lets a second local instance run on an auto-assigned port without touching anyone else's default. |
+| `.claude/launch.json` | Added `gstack-backend` (`docker compose up app`, port 8000) alongside the existing `gstack-frontend` entry; `gstack-frontend` gained `"autoPort": true`. |
+
+Caught while starting the backend: the Docker image's baked-in `node_modules` was stale (missing `helmet`, added to `package.json` after the image was last built) — `docker compose build app` + removed the old container (and its now-stale anonymous `node_modules` volume) before restarting. Both servers verified live: backend container healthy, frontend reachable through it with no console errors, login page rendering against the real API.

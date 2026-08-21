@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowUp, ChevronDown, ChevronUp, Mic, Paperclip } from 'lucide-react';
-import { AskActToggle } from './AskActToggle';
+import { ScopeToggle } from './ScopeToggle';
 import { ComposerAttachmentStrip } from './ComposerAttachmentStrip';
 import { IconButton } from './ui/IconButton';
 import { useComposerAttachments } from '../hooks/useComposerAttachments';
@@ -284,7 +284,7 @@ export const AIComposer = forwardRef(function AIComposer(
             <Paperclip size={17} strokeWidth={1.75} />
           </IconButton>
 
-          <AskActToggle mode={mode} onMode={onMode} />
+          <ScopeToggle mode={mode} onMode={onMode} />
 
           <div className="flex-1" />
 

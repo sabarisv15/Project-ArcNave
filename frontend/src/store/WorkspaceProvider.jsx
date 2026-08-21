@@ -238,7 +238,7 @@ export function WorkspaceProvider({ children }) {
    */
   const runAiTurn = useCallback(
     async (id, {
-      scope, projectId, artifactId, body, aiId, attachmentIds,
+      scope, projectId, artifactId, body, aiId, attachmentIds, mode,
     }) => {
       const patchAiMessage = (patch) => {
         setThreads((prev) => ({
@@ -262,6 +262,11 @@ export function WorkspaceProvider({ children }) {
             // this as pdf" inside an artifact's revision chat had no id to
             // call that tool with.
             focusContext: scope === 'artifact' && artifactId ? { entityType: 'artifact', id: artifactId } : undefined,
+            // General/Curriculum (ScopeToggle.jsx) — the composer's own mode
+            // for THIS message, not a session-wide setting. Missing/anything
+            // other than 'general' falls through to aiService.askAgent's
+            // unchanged Curriculum path (that function's own comment).
+            mode,
           },
           (event) => {
             if (event.type === 'delta') {
@@ -339,7 +344,7 @@ export function WorkspaceProvider({ children }) {
   );
 
   const sendMessage = useCallback(
-    async ({ scope = 'chat', convId, projectId, artifactId, text, attachments = [] }) => {
+    async ({ scope = 'chat', convId, projectId, artifactId, text, attachments = [], mode }) => {
       const body = (text ?? '').trim();
       if (!/[a-zA-Z0-9]/.test(body)) return null;
 
@@ -435,7 +440,7 @@ export function WorkspaceProvider({ children }) {
 
       // Deliberately not awaited — see this function's own comment above.
       runAiTurn(id, {
-        scope, projectId, artifactId, body, aiId, attachmentIds,
+        scope, projectId, artifactId, body, aiId, attachmentIds, mode,
       });
 
       return id;

@@ -54,7 +54,7 @@ export function ProjectDetail() {
   if (!project) return null;
 
   const send = async () => {
-    const id = await sendMessage({ scope: 'project', convId, projectId, text: composer.text, attachments: composer.attachments });
+    const id = await sendMessage({ scope: 'project', convId, projectId, text: composer.text, attachments: composer.attachments, mode: composer.mode });
     if (id) composer.reset(); // clears this project conversation's draft only
   };
 

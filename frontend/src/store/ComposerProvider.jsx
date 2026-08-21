@@ -12,7 +12,8 @@ import { ME } from '../lib/substituteData';
  * ever see its own slice — there is no shared slot left to leak through.
  *
  * A scope owns everything the user typed or chose while in it: text, the
- * Ask/Act mode, attachments, context chips, and any mention/command state. It
+ * General/Curriculum scope mode, attachments, context chips, and any
+ * mention/command state. It
  * is kept in memory for the session (so returning to a conversation restores
  * what was being written) and mirrored into `sessionStorage` under the
  * signed-in user's namespace, so an accidental close or reload is recoverable.
@@ -31,7 +32,7 @@ import { ME } from '../lib/substituteData';
 
 export const EMPTY_COMPOSER = Object.freeze({
   text: '',
-  mode: 'ask',
+  mode: 'curriculum',
   attachments: [],
   contextChips: [],
   mention: null,
@@ -116,11 +117,12 @@ function useComposerStore() {
  * @param {object}  [opts]
  * @param {boolean} [opts.canRestore] false while the resource is still resolving or
  *        is not readable by this user; no stored draft is restored until it is true.
- * @param {'ask'|'act'} [opts.defaultMode] what this surface opens on while its scope
- *        is untouched. It is a property of the *scope*, not a global setting, so an
- *        Artifact opening on Act cannot change what Home, a chat or a project opens
- *        on, and no surface's mode can leak into another. A scope the user has
- *        already set keeps their choice — this only supplies the starting point.
+ * @param {'general'|'curriculum'} [opts.defaultMode] what this surface opens on while
+ *        its scope is untouched. It is a property of the *scope*, not a global
+ *        setting, so an Artifact opening on Curriculum cannot change what Home, a
+ *        chat or a project opens on, and no surface's mode can leak into another. A
+ *        scope the user has already set keeps their choice — this only supplies the
+ *        starting point.
  */
 export function useComposer(scopeKey, { canRestore = true, defaultMode = EMPTY_COMPOSER.mode } = {}) {
   const { scopes, peekScope, patchScope, dropScope } = useComposerStore();

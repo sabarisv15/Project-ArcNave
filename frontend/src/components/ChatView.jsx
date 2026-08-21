@@ -13,9 +13,9 @@ import { composerScope, useComposer } from '../store/ComposerProvider';
  * Normal chat, through the shared ChatWorkspace shell: inline top bar, transcript
  * as the primary scroll area, one bottom-docked compact composer.
  *
- * `onSend` is handed this chat's own draft text and its own attachments, and is
- * responsible for clearing them — the composer state belongs to `chat:<chatId>`
- * and to nothing else.
+ * `onSend` is handed this chat's own draft text, its own attachments, and its
+ * own General/Curriculum scope mode, and is responsible for clearing them —
+ * the composer state belongs to `chat:<chatId>` and to nothing else.
  *
  * ## Sources
  * Scoped to **one assistant response**: the latest by default, or whichever
@@ -97,7 +97,7 @@ export function ChatView({ chatId, title, meta, messages, placeholder, onSend, b
               value={composer.text}
               onChange={composer.setText}
               onSend={() => {
-                if (onSend(composer.text, composer.attachments) !== false) composer.reset();
+                if (onSend(composer.text, composer.attachments, composer.mode) !== false) composer.reset();
               }}
               mode={composer.mode}
               onMode={composer.setMode}

@@ -126,14 +126,15 @@ export function ArtifactEditor() {
    * — and both are per-artifact, so artifact A's draft never reaches artifact
    * B. `canRestore` waits for the artifact to resolve.
    *
-   * Artifacts open on **Act**: the work here is producing and changing a
-   * document, not asking about one. That is a property of these two scopes
-   * alone — Home, chats and projects keep opening on Ask, and neither can see
-   * the other's mode.
+   * Artifacts open on **Curriculum**: the work here is producing and changing
+   * an institutional document via the real ARCNAVE tools (export_artifact,
+   * update_artifact_content), which General mode never offers the model at
+   * all. That is a property of these two scopes alone — Home, chats and
+   * projects keep opening on General, and neither can see the other's mode.
    */
   const composer = useComposer(
     convId ? composerScope.artifactRevision(artifactId) : composerScope.artifactCreate(artifactId),
-    { canRestore: Boolean(artifact), defaultMode: 'act' }
+    { canRestore: Boolean(artifact), defaultMode: 'curriculum' }
   );
 
   if (!artifact) return null;
@@ -210,7 +211,7 @@ export function ArtifactEditor() {
               artifactType={artifact.type}
               composer={composer}
               onSend={async () => {
-                const id = await sendMessage({ scope: 'artifact', convId, artifactId, text: composer.text, attachments: composer.attachments });
+                const id = await sendMessage({ scope: 'artifact', convId, artifactId, text: composer.text, attachments: composer.attachments, mode: composer.mode });
                 if (id) composer.reset(); // clears this artifact's scope only
               }}
             />

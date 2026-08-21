@@ -96,3 +96,92 @@ test('personalDocumentFolderService.listFolders', async (t) => {
     assert.equal(result.length, 1);
   });
 });
+
+// Nested folders (Documents module real-backend wiring, this session):
+// updateFolder is the one entry point for both Rename (name only) and
+// Move to... (parentId only) — same reasoning documentRepository.update's
+// own entries-filter gives, exercised here through the service's own
+// ownership + cycle guards.
+test('personalDocumentFolderService.updateFolder', async (t) => {
+  await t.test('throws ForbiddenError renaming a folder owned by someone else', async () => {
+    const findMock = t.mock.method(personalDocumentFolderRepository, 'findById', async () => ({ id: 'f1', owner_user_id: 'other-user' }));
+    t.after(() => findMock.mock.restore());
+
+    await assert.rejects(
+      () => personalDocumentFolderService.updateFolder({}, 'f1', { name: 'New name' }, { actorUserId: 'u1' }),
+      personalDocumentFolderService.PersonalDocumentFolderForbiddenError,
+    );
+  });
+
+  await t.test('rejects a blank rename', async () => {
+    const findMock = t.mock.method(personalDocumentFolderRepository, 'findById', async () => ({ id: 'f1', owner_user_id: 'u1' }));
+    t.after(() => findMock.mock.restore());
+
+    await assert.rejects(
+      () => personalDocumentFolderService.updateFolder({}, 'f1', { name: '   ' }, { actorUserId: 'u1' }),
+      personalDocumentFolderService.PersonalDocumentFolderValidationError,
+    );
+  });
+
+  await t.test('renames for the real owner', async () => {
+    const findMock = t.mock.method(personalDocumentFolderRepository, 'findById', async () => ({ id: 'f1', owner_user_id: 'u1' }));
+    const updateMock = t.mock.method(personalDocumentFolderRepository, 'update', async (client, id, fields) => ({ id, ...fields }));
+    t.after(() => { findMock.mock.restore(); updateMock.mock.restore(); });
+
+    const result = await personalDocumentFolderService.updateFolder({}, 'f1', { name: '  Chemistry  ' }, { actorUserId: 'u1' });
+    assert.equal(result.name, 'Chemistry');
+  });
+
+  await t.test('rejects moving a folder into itself', async () => {
+    const findMock = t.mock.method(personalDocumentFolderRepository, 'findById', async (client, id) => ({ id, owner_user_id: 'u1', parent_id: null }));
+    t.after(() => findMock.mock.restore());
+
+    await assert.rejects(
+      () => personalDocumentFolderService.updateFolder({}, 'f1', { parentId: 'f1' }, { actorUserId: 'u1' }),
+      personalDocumentFolderService.PersonalDocumentFolderCycleError,
+    );
+  });
+
+  await t.test('rejects moving a folder into its own descendant', async () => {
+    // f1 (root) -> f2 -> f3. Moving f1 under f3 would create a cycle.
+    const tree = {
+      f1: { id: 'f1', owner_user_id: 'u1', parent_id: null },
+      f2: { id: 'f2', owner_user_id: 'u1', parent_id: 'f1' },
+      f3: { id: 'f3', owner_user_id: 'u1', parent_id: 'f2' },
+    };
+    const findMock = t.mock.method(personalDocumentFolderRepository, 'findById', async (client, id) => tree[id] || null);
+    t.after(() => findMock.mock.restore());
+
+    await assert.rejects(
+      () => personalDocumentFolderService.updateFolder({}, 'f1', { parentId: 'f3' }, { actorUserId: 'u1' }),
+      personalDocumentFolderService.PersonalDocumentFolderCycleError,
+    );
+  });
+
+  await t.test('rejects a parentId that does not resolve to a folder this actor owns', async () => {
+    const tree = {
+      f1: { id: 'f1', owner_user_id: 'u1', parent_id: null },
+      other: { id: 'other', owner_user_id: 'someone-else', parent_id: null },
+    };
+    const findMock = t.mock.method(personalDocumentFolderRepository, 'findById', async (client, id) => tree[id] || null);
+    t.after(() => findMock.mock.restore());
+
+    await assert.rejects(
+      () => personalDocumentFolderService.updateFolder({}, 'f1', { parentId: 'other' }, { actorUserId: 'u1' }),
+      personalDocumentFolderService.PersonalDocumentFolderParentNotFoundError,
+    );
+  });
+
+  await t.test('moves into a real, valid, non-cyclic parent', async () => {
+    const tree = {
+      f1: { id: 'f1', owner_user_id: 'u1', parent_id: null },
+      f2: { id: 'f2', owner_user_id: 'u1', parent_id: null },
+    };
+    const findMock = t.mock.method(personalDocumentFolderRepository, 'findById', async (client, id) => tree[id] || null);
+    const updateMock = t.mock.method(personalDocumentFolderRepository, 'update', async (client, id, fields) => ({ id, ...fields }));
+    t.after(() => { findMock.mock.restore(); updateMock.mock.restore(); });
+
+    const result = await personalDocumentFolderService.updateFolder({}, 'f1', { parentId: 'f2' }, { actorUserId: 'u1' });
+    assert.equal(result.parentId, 'f2');
+  });
+});

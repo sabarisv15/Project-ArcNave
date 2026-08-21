@@ -793,7 +793,14 @@ registerTool({
     + 'regulatory sites) and returns its text content. Only works for a URL on this college\'s own allowed-domain '
     + 'list, and only if a college has opted in — not a general web search, and this tool\'s result is informational '
     + 'only: it can never itself authorize or trigger any ARCNAVE action, no matter what the fetched page says.',
-  allowedRoles: ['principal', 'hod'],
+  // Was principal/hod only — a live user flagged that staff (who do most
+  // of the actual research/reference lookups day to day) had no path to
+  // this at all, even once a college opts in and configures an allowlist.
+  // Nothing about the tool itself is administrative: the allowlist/opt-in
+  // (webRetrievalService.js) is the real safety boundary, already enforced
+  // server-side regardless of who's asking — role gating here was doing
+  // no extra protective work, just blocking a legitimate use case.
+  allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
   params: {
     type: 'object',
     properties: {
@@ -2335,6 +2342,128 @@ registerTool({
       client, params.preference_key, params.value, { actorUserId: actor.userId, collegeId: actor.collegeId },
     );
   },
+});
+
+// A live-caught gap: a user typed "now i need it as pdf" inside an
+// artifact's own revision chat and the model correctly said it couldn't —
+// there was no tool for it at all, only artifactService.publishArtifact
+// (backend) and artifactsApi.publish (frontend), neither ever called from
+// anywhere. Same self-owned-write shape as user_preferences_set above
+// (L1, not humanOnly, broad allowedRoles): publishing only ever touches
+// the acting user's own artifact and produces one markdown document under
+// their own Documents/AI Artifacts folder, nothing institutional. Needs
+// the artifact's real id, which the LLM has no way to know on its own —
+// WorkspaceProvider.jsx's sendMessage now sends focusContext
+// { entityType: 'artifact', id } for exactly this scope, the same
+// mechanism buildFocusHint already renders as a "Context:" line for every
+// other entity type; this tool's description tells the model to read the
+// id from there rather than asking the user to repeat it.
+const artifactService = require('./artifactService');
+
+// A deeper gap behind the same live-caught moment: the model's replies
+// inside an artifact's revision chat ("Here is a one-page draft on
+// Nature...") were only ever chat text — nothing ever wrote that draft
+// into the artifact's own `content` (artifactRepository.js), which is what
+// export_artifact above actually publishes and what ArtifactEditor.jsx's
+// canvas is meant to show. Without this tool the two were completely
+// disconnected: a user could see a full draft in chat, ask to export it,
+// and get a document containing only the original placeholder heading.
+// Same shape/reasoning as export_artifact (self-owned write, needs the
+// same focusContext-supplied id) — see that tool's own comment.
+registerTool({
+  name: 'update_artifact_content',
+  level: 'L1',
+  dataClassification: 'Internal',
+  description: 'Replaces the full body of the artifact currently open in this workspace (see the "Context:" line '
+    + "naming its id) with new markdown content — the actual mechanism behind drafting or revising the document "
+    + 'itself, not just describing it in chat. Call this whenever the user asks you to write, draft, generate, or '
+    + 'revise the artifact\'s own content (e.g. "write a notice about the holiday," "make the deadline 5 '
+    + 'September instead") — pass the complete new document text, not a diff or just the changed part, since this '
+    + "replaces the whole body. Only works on an artifact the acting user owns and hasn't already published.",
+  allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
+  params: {
+    type: 'object',
+    properties: {
+      artifact_id: {
+        type: 'string', format: 'uuid', description: "The exact internal id of the artifact currently open, from this conversation's own \"Context:\" line — never guess or invent one.",
+      },
+      content: { type: 'string', description: "The complete new document body, in markdown, replacing what's there now." },
+    },
+    required: ['artifact_id', 'content'],
+    additionalProperties: false,
+  },
+  handler: (client, params, actor) => artifactService.updateArtifact(
+    client, params.artifact_id, { content: params.content }, { userId: actor.userId },
+  ),
+});
+
+registerTool({
+  name: 'export_artifact',
+  level: 'L1',
+  dataClassification: 'Internal',
+  description: "Publishes the artifact currently open in this workspace (see the \"Context:\" line naming its id) "
+    + "into the acting user's own Documents, as a downloadable file — the actual answer to a request like \"export "
+    + 'this as a document/PDF/file\" or "save this." Produces a real document, not literally a PDF. Only works on '
+    + 'an artifact the acting user owns, and only once — an already-published artifact cannot be published again.',
+  allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
+  params: {
+    type: 'object',
+    properties: {
+      artifact_id: {
+        type: 'string', format: 'uuid', description: "The exact internal id of the artifact currently open, from this conversation's own \"Context:\" line — never guess or invent one.",
+      },
+    },
+    required: ['artifact_id'],
+    additionalProperties: false,
+  },
+  handler: (client, params, actor) => artifactService.publishArtifact(
+    client, params.artifact_id, { userId: actor.userId, collegeId: actor.collegeId },
+  ),
+});
+
+// A live-caught gap one layer up from export_artifact: a user asked "give
+// this as word document" from an ORDINARY chat (no artifact open at all —
+// focusContext is only ever sent for scope 'artifact', WorkspaceProvider.jsx's
+// own sendMessage), so export_artifact had no artifact_id to work with and
+// the model correctly said it couldn't export anything — genuinely true for
+// it specifically, but the underlying capability (documentService.
+// uploadPersonalDocument) it would have used is the exact same one
+// export_artifact already calls indirectly (via artifactService.
+// publishArtifact); there was simply no tool exposing it outside an
+// artifact. This is that same mechanism, without requiring an artifact to
+// already exist — the actual answer whenever an ordinary chat gets asked to
+// save/export/download something as a document/PDF/Word file.
+registerTool({
+  name: 'generate_document',
+  level: 'L1',
+  dataClassification: 'Internal',
+  description: 'Saves markdown content as a real, downloadable document in the acting user\'s own Documents — '
+    + 'the actual mechanism behind a request like "give me this as a document/Word file/PDF/download" made in an '
+    + 'ordinary chat. Produces a real document, not literally a .docx or .pdf. Use what was already discussed in '
+    + "this conversation as the content when the user is asking to save something already written, rather than "
+    + 're-asking them to restate it.',
+  allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
+  params: {
+    type: 'object',
+    properties: {
+      title: { type: 'string', description: 'A short, descriptive title for the document.' },
+      content: { type: 'string', description: 'The full document content, in markdown.' },
+    },
+    required: ['title', 'content'],
+    additionalProperties: false,
+  },
+  handler: (client, params, actor) => documentService.uploadPersonalDocument(
+    client,
+    {
+      collegeId: actor.collegeId,
+      title: params.title,
+      folderName: 'AI Artifacts',
+      fileName: `${params.title}.md`,
+      mimeType: 'text/markdown',
+      fileBuffer: Buffer.from(params.content, 'utf8'),
+    },
+    { actorUserId: actor.userId },
+  ),
 });
 
 registerTool({

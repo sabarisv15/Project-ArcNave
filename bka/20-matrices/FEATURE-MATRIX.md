@@ -1,0 +1,175 @@
+# FEATURE-MATRIX.md — Product Reasoning Feature Matrix
+
+Page/feature-grained matrix produced by the
+[Product Reasoning Workflow](../60-product-reasoning/00-workflow.md)
+(`/product-reasoning <page>`). Rows are appended, never invented ahead of
+an actual analysis pass.
+
+Different grain than [`ROLE-COVERAGE.md`](ROLE-COVERAGE.md) (role ×
+capability × backend/GUI/AI-access) — this matrix is page × feature × user
+action, and records **scope classification**, not just reachability.
+Cross-reference the two; don't merge them.
+
+Scope classification values: `CORE`, `REQUIRED SUPPORT`, `RELATED /
+FUTURE`, `EXISTING CAPABILITY / RELATED / UNWIRED`, `FUTURE`, `NEEDS
+PRODUCT DECISION`. See workflow §6 for what each means and when (rarely)
+`NEEDS PRODUCT DECISION` is used.
+
+---
+
+## Staff Documents / Personal tab
+
+Source: [`staff-documents-personal.md`](../60-product-reasoning/staff-documents-personal.md), analyzed 2026-08-08.
+
+| Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Staff Documents | Staff | Personal | Create folder | Click "New folder", name, submit | `NewFolderDialog` | `POST /documents/personal/folders` | `personal_document_folders` | Owner-scoped (`actorUserId`) | Built, live-verified | CORE | — | — |
+| Staff Documents | Staff | Personal | Upload/save document | Click "Save document", pick folder + file, submit | `SaveDocumentDialog` | `POST /documents/personal` (upload) | `documents` | Owner-scoped | Built | CORE | Create folder (for folder picker) | — |
+| Staff Documents | Staff | Personal | Download document | Click download icon on a row | `DocumentRow` | `documentsApi.download` | `documents` | Owner-scoped | Built | CORE | — | — |
+| Staff Documents | Staff | Personal | List folders/documents, grouped display | Open Personal tab | `PersonalTab` | `GET /documents/personal/folders`, `GET /documents/personal` | `personal_document_folders`, `documents` | Owner-scoped | Built | REQUIRED SUPPORT | — | — |
+| Staff Documents | Staff | Personal | Delete folder | — (no UI) | none | `DELETE /documents/personal/folders/:id` (exists, ownership-checked) | `personal_document_folders` | Owner-scoped (already enforced in service) | Backend built, unwired | EXISTING CAPABILITY / RELATED / UNWIRED | Create folder | — |
+| Staff Documents | Staff | Personal | Rename folder | — | none | none | none | — | Not built | RELATED / FUTURE | Create folder | — |
+| Staff Documents | Staff | Personal | Move document between folders | — | none | none | none | — | Not built | RELATED / FUTURE | Create folder, Upload | — |
+| Staff Documents | Staff | Personal | Copy document | — | none | none | none | — | Not built | RELATED / FUTURE | Upload | — |
+| Staff Documents | Staff | Personal | Rename/delete individual document | — | none | none | `documents` | — | Not built | RELATED / FUTURE | Upload | — |
+| Staff Documents | Staff | Personal | Nested folders | — | none | none | none | — | Not built | FUTURE | Create folder | — |
+
+No row above required a Product Refinement question — none met the
+workflow's §12 threshold on their own.
+
+### Pass 2 — Document Search (2026-08-08)
+
+| Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Staff Documents | Staff | Personal | Search documents | Type in search box | `SearchBar` | none (client-side filter over existing `GET /documents/personal`) | none | Owner-scoped (inherited, no new call) | Not built | CORE | List folders/documents (Pass 1) | — |
+| Staff Documents | Staff | Personal | Hide empty folder-groups while searching | (implicit, follows search) | `PersonalTab` grouping logic | none | none | — | Not built | REQUIRED SUPPORT | Search documents | Resolved — [ADL-033](../30-decisions/ledger.md#adl-033) |
+| Staff Documents | Staff | Personal | Search by folder name | — | none | none | none | — | Not built | RELATED / FUTURE | Search documents | — |
+| Staff Documents | Staff | Personal | Combined folder-filter + search | — | none | none | none | — | Not built | RELATED / FUTURE | Search documents | — |
+| Staff Documents | Staff | Personal | AI/RAG semantic document search | — | none | `search_documents` tool exists (RS-ASM-010) | `ai_document_chunks` (pgvector) | Classification-gated | Exists (different mechanism, AI-only) | FUTURE | — | — |
+| Staff Documents | Staff | Institutional | Search documents (UI) | — | none | `GET /documents/institutional?search=` — exists | `documents` | Requires-auth read | Backend + frontend API built, no UI | EXISTING CAPABILITY / RELATED / UNWIRED | — | — |
+
+The "Hide empty folder-groups while searching" row is the only one that
+required a Product Refinement question this pass — resolved and logged as
+[ADL-033](../30-decisions/ledger.md#adl-033) so it doesn't need to be
+re-asked for a future grouped/foldered-list search feature.
+
+---
+
+## Staff Experience — Full Pass (2026-08-08)
+
+Source: [`staff-experience-2026-08-08.md`](../60-product-reasoning/staff-experience-2026-08-08.md) — a combined pass across all 13 post-login
+Staff mockups, analyzed as one connected experience. **Zero Product
+Refinement questions asked** — every apparent conflict resolved via
+workflow §15's resolution order (rule → prior decision → backend/business
+correctness → design-system pattern → implement new design). See the
+source doc for full per-page reasoning; rows below are condensed to one
+per notable capability per page, not exhaustive to every checklist item.
+
+| Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Home | Staff | — | Greeting + next-teaching-moment subtitle + ask pill + 3 suggestion chips | Land on `/` | `WorkspaceHero` | `GET /workspace/hero` | none new | Authenticated | Built, matches design | CORE | — | — |
+| Home | Staff | — | Multi-moment "what's next today" | — | none | none | none | — | Not built | RELATED / FUTURE | Home hero | — |
+| Documents | Staff | Institutional | Read-only, category-grouped list + download | Open Institutional tab | `InstitutionalTab` | `GET /documents/institutional` | `documents` | Requires-auth read | Built, matches design | CORE | — | — |
+| Documents | Staff | Personal | Create folder / Save document / Download / Search | See [prior pass](#staff-documents--personal-tab) | `PersonalTab` | see prior pass | `personal_document_folders`, `documents` | Owner-scoped | Built | CORE / REQUIRED SUPPORT | — | — |
+| Documents | Staff | Personal | Delete/rename folder, move/copy/rename/delete document, nested folders | — | none | partial (delete exists) | `personal_document_folders` | Owner-scoped | Mixed (see prior pass) | EXISTING CAPABILITY / RELATED / UNWIRED, RELATED / FUTURE, FUTURE | Create folder | — |
+| Documents | Principal/HOD | Institutional | Full upload/lifecycle manager (separate page) | Open `/institutional-documents` | `InstitutionalDocumentsPage` | `documents.js` lifecycle routes | `documents` | Permission-gated | Built, out of Staff-persona scope | FUTURE | — | — |
+| Students list | Staff | — | Search/sort/filter/export/bulk-notify/dialogs/pagination | Open `/students` | `StudentsListPage` | `students.js` | `students` + related | Role/ownership-scoped | Built, exceeds mockup | CORE | — | — |
+| Staff list | Staff | — | Name search | Open `/staff` | `StaffListPage` | `GET /staff` | `staff` | Role-scoped | Built | CORE | — | — |
+| Staff list | Staff | — | Department filter, Designation filter | Type/select filter | `StaffListPage` (new) | `GET /staff` (existing) | `staff` | Role-scoped | Not built | CORE | Name search | — |
+| Staff list | Staff | — | Designation shown as class-tutor pill | — | `StaffListPage` (new) | may need `is_class_tutor` on list response | `staff` | — | Not built | REQUIRED SUPPORT | Designation filter | — |
+| Staff list | Staff | — | Invite staff / New HOD account / pagination | Click button | `StaffListPage` | `POST /staff/invitations`, `POST /staff/hod-accounts` | `staff_invitations` | Permission-gated | Built | CORE | — | — |
+| Attendance | Staff | Mark attendance | Class select + timetable-approval gate | Select class | `AttendancePage` | `GET /attendance` | `attendance_sessions` | Per-hour ownership (RS-ATT-002) | Built | CORE | — | — |
+| Attendance | Staff | Mark attendance | Roster search, Mark-all-present, per-student toggle | Mark students | `AttendancePage` (rework) | `POST /attendance` (existing) | `attendance_sessions` | Per-hour ownership | Not built (UI rework) | CORE | Class select | — |
+| Attendance | Staff | Mark attendance | "Today" summary card | View today's periods | `AttendancePage` (new) | `GET /attendance` (existing) | `attendance_sessions`, `class_logs` | Per-hour ownership | Not built | CORE | — | — |
+| Attendance | Staff | Mark attendance | Correction request/approve/reject, lock/unlock | — | `AttendancePage` | `attendance.js` corrections/lock routes | `attendance_sessions`, corrections | RS-ATT-003/004, `attendance.lock` | Built | REQUIRED SUPPORT | — | — |
+| Attendance | Staff | My class log | Actor's own class-log entries across classes | Open tab | `MyClassLog` | `GET /class-logs` | `class_logs` | Owner-scoped | Built | REQUIRED SUPPORT | — | — |
+| Class log | Staff | — | Day-grouped entries, Topic/Notes highlight, filter popover | Open `/class-log` | `ClassLogPage` | `GET /class-logs` | `class_logs` | `visibilityService` class-scoped | Built, matches design | CORE | — | — |
+| Class log | Staff | — | Real period number + period clock time | — | none | none | `class_logs.timetable_period_id` (unpopulated) | — | Not built (data gap) | RELATED / FUTURE | `timetable_periods`/`faculty_allocation` population | — |
+| Assessment | Staff | — | New cross-class Assessment landing page + status per class×type + click-through | Open `/assessment` | new page | `GET /assessment-types`, `GET /classes/:id/assessment-submissions/status` (existing) | `assessment_types`, `assessment_marks` | `assertIsAssignedFaculty`-scoped list | Not built | CORE | — | — |
+| Assessment | Staff | — | "Create assessment" → existing type-creation | Click button | new page | existing type-creation endpoint | `assessment_types` | Principal/faculty per RS-ASM-012 | Not built (wiring only) | CORE | Landing page | — |
+| Assessment | Staff | — | Due-date field, literal entered-count fraction | — | none | none | none | — | Not built | RELATED / FUTURE | Landing page | — |
+| Assessment | Staff | (existing tab) | Mark corrections / re-evaluation surfaced on landing page | — | none | exists (assessments.js) | `assessment_mark_corrections`, `..._reevaluations` | Workflow-gated | Backend built, unwired here | EXISTING CAPABILITY / RELATED / UNWIRED | Landing page | — |
+| Calendar | Staff | — | Month grid, event dots, per-date dialog, Events list, event CRUD | Open `/calendar` | `CalendarPage` | `calendar.js` | `academic_calendar_events`, personal notes | `calendar.write`-gated writes | Built, matches design | CORE | — | — |
+| Calendar | Staff | — | Two-tier holiday vs. institute-activity color split | — | none | none | `event_type` (free text, no enum) | — | Not built | RELATED / FUTURE | Month grid | — |
+| Settings | Staff | Profile | Avatar/name/email, View full profile, Log out | Open dialog | `SettingsDialog` | none | none | Authenticated | Built | CORE | — | — |
+| Settings | Staff | Profile | Richer Role/College display | — | `SettingsDialog` (enrich) | reuse `staffService.getOwnProfile` logic | none new | Authenticated | Not built | REQUIRED SUPPORT | Profile tab | — |
+| Settings | Staff | Waiting/Projects/Notes/Activity | Existing richer tabs | Open dialog | `SettingsDialog` | multiple existing | multiple existing | Various | Built | CORE (kept) | — | — |
+| Settings | Staff | Account/Notifications | — | — | none | none | none | — | Not built, no spec | RELATED / FUTURE | — | — |
+| Staff /me | Staff | — | Institutional/Identity/Mobile-OTP/Education incl. specialization/Work-history list | Open `/staff/me` | `StaffMyProfilePage` | `staff.js` self-service routes | `staff`, `staff_work_history` | Self-owner only (RS-STF-013) | Built, matches spec | CORE | — | — |
+| Staff /me | Staff | — | Page-level view/edit toggle | — | none | none | none | — | Not built | RELATED / FUTURE | — | — |
+| Projects | Staff | — | List/create/delete | Open `/projects` | `ProjectsListPage` | `projects.js` | `projects` | Owner-only | Built | CORE | — | — |
+| Projects | Staff | — | Sort control, "{N} chats" meta, "New project" surface | — | `ProjectsListPage` (enrich) | `conversationsApi.list({projectId})` (existing) | none new | Owner-only | Not built | REQUIRED SUPPORT | List/create | — |
+| Projects | Staff | — | Row click → Project detail | Click row | `ProjectsListPage` (new) | none new | none | Owner-only | Not built | CORE | Project detail page | — |
+| Projects | Staff | — | Category icon/taxonomy, Rename UI | — | none | rename API exists | none | — | Mixed | RELATED / FUTURE, EXISTING CAPABILITY / RELATED / UNWIRED | — | — |
+| Project detail | Staff | — | Route + project-scoped conversation composer (Chat/Act) | Open `/projects/:id` | new page | `conversations.js` (existing) | `conversations` | Owner-only | Not built | CORE | Projects list | — |
+| Project detail | Staff | — | Instructions field, injected into AI context | Edit text | new page | new (extend `PUT /projects/:id`) | `projects.instructions` (new column) | Owner-only | Not built | CORE | Route | — |
+| Project detail | Staff | — | Context: attach documents | Attach file | new page | new (`project_documents` link) | new link table | Owner-only | Not built | CORE | Route | — |
+| Project detail | Staff | — | "⋯" menu: rename/delete | Click menu | new page | `projectsApi.rename/.remove` (existing) | `projects` | Owner-only | Not built (wiring only) | REQUIRED SUPPORT | Route | — |
+| Project detail | Staff | — | Pin project | — | none | none | `projects.pinned` (doesn't exist) | — | Not built | RELATED / FUTURE | — | — |
+| Project detail | Staff | — | Memory (automatic AI memory extraction) | — | none | none | none | — | Not built | FUTURE | — | Own future Product Reasoning pass |
+| Artifacts | Staff | — | List/edit/publish/delete, save-as-artifact from AI response | Open `/artifacts` | `ArtifactsListPage` | `artifacts.js` | `artifacts`, `artifact_versions` | Owner-only | Built | CORE | — | — |
+| Artifacts | Staff | — | New-artifact dropdown → category picker → seeded conversation | Click "New artifact" | new UI | `conversations.js` (existing) | none new | Owner-only | Not built | CORE | List page | — |
+
+No row above required a Product Refinement question — see the source doc's
+per-page "Product Refinement" sections for how each apparent conflict
+resolved automatically.
+
+---
+
+## Consistency Reconciliation (2026-08-08)
+
+Source: the "Reconciliation Pass — 2026-08-08" section of
+[`staff-experience-2026-08-08.md`](../60-product-reasoning/staff-experience-2026-08-08.md),
+run after a cross-page consistency review of the pass above found 9
+issues. **Zero Product Refinement questions asked** — all resolved via
+existing rules/ADRs/architecture. Rows below are changed/added versions of
+rows already in the table above; the row's own page/feature identifies
+which one it supersedes.
+
+| Page | Role | Tab | Feature | User Action | UI | Backend Dependency | Database Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Settings | Staff | Projects | Projects tab repointed onto canonical `projects` entity + "View all projects" link | Open dialog | `SettingsDialog` (repoint) | `projectsApi.list/create` (existing) | `projects` (existing) | Owner-only | Not built (repoint) | REQUIRED SUPPORT | Supersedes the "kept as-is" Settings-Projects row implied by §9's original pass; must ship no later than Projects-list polish | — |
+| Staff list | Staff | — | Department/Designation filters, built on shared `QuickFilterPanel` | Filter | `StaffListPage` + new shared component | `GET /staff` (existing) | `staff` | Role-scoped | Not built | CORE | Extract `QuickFilterPanel` from Students list first | — |
+| Attendance | Staff | Mark attendance | Roster rebuild, built on shared `SearchableRosterList` | Mark students | `AttendancePage` + new shared component | `POST /attendance` (existing) | `attendance_sessions` | Per-hour ownership | Not built | CORE | `SearchableRosterList` extracted here; future consumer: `AssessmentTab.jsx` (not built by this pass) | — |
+| Documents | Staff | Institutional | `/institutional-documents` gains Staff-role route guard, redirects to `/documents` | Navigate to URL | Route guard (frontend only) | none (backend read permission unchanged) | none | Requires-auth read (unchanged) | Not built | REQUIRED SUPPORT | — | — |
+| Project detail | Staff | — | Instructions field + direct L1/L2 AI-tool equivalent | Edit text / prompt | new page | new (`PUT /projects/:id` extended) + new AI tool | `projects.instructions` (new column) | Owner-only; AI tool same-actor carve-out (RS-AIG-007 P4) | Not built | CORE | Route (§12) | — |
+| Project detail | Staff | — | Context: reference-only document attach/detach + direct L1/L2 AI-tool equivalent | Attach/detach / prompt | new page, reuses Documents' picker pattern | new `project_documents` link table + 2 endpoints + new AI tool | `project_documents` (new link table, FK to `documents`) | Owner-only; AI tool same-actor carve-out (RS-AIG-007 P4) | Not built | CORE | Route (§12); Documents' document-picker pattern (§2) | — |
+
+### Findings resolved without a row change (no Feature Matrix entry needed)
+
+- **Sidebar "New" vs. Artifacts' "New artifact" dropdown** — clarified as
+  two distinct, non-merged actions (§1, §13 of the source doc). No new
+  row; both existing/planned rows stand as already written.
+- **Attendance-vs-Assessment correction-submitter asymmetry** — no rule
+  determines a change; left as-is, recorded as a verification item, not a
+  scope row.
+
+No row above (or in the pass this section reconciles) required a Product
+Refinement question.
+
+## Principal Institution Setup (first-login flow)
+
+Source: [`principal-institution-setup.md`](../60-product-reasoning/principal-institution-setup.md),
+analyzed 2026-08-16. One `AskUserQuestion` asked (setup gating: advisory
+vs. hard gate) — user chose advisory. Everything else resolved via
+existing rules, no further questions.
+
+| Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Institution | Principal | — | Departments list/create/edit/delete | Add/edit/delete department | New `DepartmentFormDialog` + list on `CollegeProfilePage.jsx` | `GET/POST/PUT/DELETE /departments` (existing) | `departments` (existing) | `principal`-only, own college | Backend built, frontend not built | CORE | — | — |
+| Staff | Principal | — | Create HOD account (credentialing correction) | Submit `HodAccountFormDialog` (unchanged UI) | `HodAccountFormDialog` (existing, unchanged) | `staffService.provisionHodAccount` (existing, behavior correction required) | `users`, `staff` (existing) | `principal`-only, own college | Built but non-conformant (mails plaintext password instead of invite — RS-IDN-010/ADR-021 Amendment 2) | REQUIRED SUPPORT | — | — |
+| Dashboard | Principal | — | Institution Setup status panel (departments/HOD/academic year/class-tutor coverage) | View dashboard | New status card | New aggregate read (or frontend aggregation of existing `GET /departments`, `GET /academic-years`, class-tutor assignment read) | none new | `principal`-only, own college | Not built | CORE | Departments feature (for count accuracy) | — |
+| Institution | Principal | — | HOD-in-charge appointment (assign existing staff, distinct from creating new HOD account) | — (no UI) | none | `POST /departments/:id/hod-in-charge` (exists) | `departments` | `principal`-only | Backend built, unwired | EXISTING CAPABILITY / RELATED / UNWIRED | Departments feature | — |
+| Institution | Principal | — | Delete department without `WorkflowService` approval gate | Delete department | — | `DELETE /departments/:id` (exists, bypasses CLAUDE.md rule 3) | `departments` | `principal`-only | Built, non-conformant | FUTURE | — | Flagged for a dedicated correction pass, not this one |
+| Dashboard/Class page | HOD | — | Class Tutor assignment gated on Active Academic Year | Assign class tutor | — | `classTutorService` (existing) | `academic_years`, class-tutor Position Account tables | L3/HOD, own department | N/A — undecided | — | — | Whether Class Tutor assignment should require an Active Academic Year first — genuinely undecided in spec (RS-CLS-003 omits this dependency) |
+
+No further rows required a Product Refinement question — everything else
+resolved via `RS-IDN-010`/`ADR-021` Amendment 2 (credentialing
+correction), CLAUDE.md rule 3 (destructive-action gate, flagged not
+fixed), and the one answered `AskUserQuestion` (advisory vs. hard gate).
+
+## Project Detail — Ask/Act composer correction
+
+| Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Project Detail | Staff | — | Correct static "Chat · Act" + hardcoded model name | Passive (visual only) | `ProjectDetailPage.jsx` composer footer | none | none | — | Existing (incorrect per RS-AIG-008) | CORE (correction, composer-scoped only) | shared composer | — |

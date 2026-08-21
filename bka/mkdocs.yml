@@ -1,0 +1,99 @@
+site_name: ARCNAVE Business Knowledge Architecture
+site_description: Enterprise Architecture Specification — canonical rule set, dependency graph, lifecycle, AI capability, historical data integrity and implementation impact
+docs_dir: docs
+edit_uri: ""
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.tracking
+    - toc.follow
+    - content.code.copy
+    - search.highlight
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue grey
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue grey
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+
+validation:
+  links:
+    absolute_links: warn
+    unrecognized_links: warn
+    anchors: warn
+
+nav:
+  - Overview: index.md
+  - Foundation:
+      - Scope & Conventions: 00-foundation/scope-and-conventions.md
+      - Actor Model: 00-foundation/actor-model.md
+      - Domain Model: 00-foundation/domain-model.md
+  - Specification:
+      - Overview: 10-specification/index.md
+      - Platform Governance (GOV): 10-specification/RS-GOV-governance.md
+      - Tenancy & Isolation (TEN): 10-specification/RS-TEN-tenancy-security.md
+      - Identity (IDN): 10-specification/RS-IDN-identity.md
+      - Staff (STF): 10-specification/RS-STF-staff.md
+      - Classroom (CLS): 10-specification/RS-CLS-classroom.md
+      - Academic (ACA): 10-specification/RS-ACA-academic.md
+      - Attendance (ATT): 10-specification/RS-ATT-attendance.md
+      - Students (STU): 10-specification/RS-STU-students.md
+      - Finance (FIN): 10-specification/RS-FIN-finance.md
+      - Assessment & Documents (ASM): 10-specification/RS-ASM-assessment-documents.md
+      - Workflow (WFL): 10-specification/RS-WFL-workflow.md
+      - Notifications (NTF): 10-specification/RS-NTF-notifications.md
+      - AI Governance (AIG): 10-specification/RS-AIG-ai-governance.md
+      - Data Integrity (DAT): 10-specification/RS-DAT-data-integrity.md
+  - Matrices:
+      - Dependency Graph: 20-matrices/dependency-graph.md
+      - Lifecycle Matrix: 20-matrices/lifecycle-matrix.md
+      - AI Capability Matrix: 20-matrices/ai-capability-matrix.md
+      - Historical Data Integrity: 20-matrices/historical-data-integrity.md
+      - Implementation Impact Matrix: 20-matrices/implementation-impact-matrix.md
+  - Decisions:
+      - Overview: 30-decisions/index.md
+      - Decision Ledger: 30-decisions/ledger.md
+      - ADR Register: 30-decisions/adr-register.md
+  - Appendix:
+      - Glossary: 90-appendix/glossary.md
+      - Traceability: 90-appendix/traceability.md
+
+extra_javascript:
+  - https://unpkg.com/mermaid@10/dist/mermaid.min.js

@@ -18,6 +18,8 @@ const academicService = require('../services/academicService');
 const workflowService = require('../services/workflowService');
 const attendanceService = require('../services/attendanceService');
 const projectService = require('../services/projectService');
+const artifactService = require('../services/artifactService');
+const documentService = require('../services/documentService');
 const { IdentifierResolutionError } = require('../identifierResolution');
 
 // Short-session conversation memory (P0.1) — how many of the most
@@ -236,6 +238,18 @@ function mapAiToolError(err, res) {
     // below match that existing mapper exactly, not a new convention.
     || err instanceof attendanceService.AttendanceValidationError
     || err instanceof attendanceService.AttendanceCorrectionValidationError
+    // export_artifact/update_artifact_content (this session's own tools) —
+    // never registered here until the live test that first exercised the
+    // failure path caught it: artifactService's errors fell straight
+    // through to an unhandled 500 (the frontend's own generic "Sorry, I
+    // ran into a problem" fallback), same class of gap the
+    // attendanceService UAT finding above already fixed once for a
+    // different service.
+    || err instanceof artifactService.ArtifactValidationError
+    // generate_document (this session's own tool) — same reasoning,
+    // applied up front this time rather than found live: uploadDocument's
+    // own required-field guard (documentService.js).
+    || err instanceof documentService.DocumentValidationError
   ) {
     res.status(400).json({ detail: err.message });
     return true;
@@ -246,6 +260,7 @@ function mapAiToolError(err, res) {
     || err instanceof attendanceService.AttendanceForbiddenError
     || err instanceof financeService.FeePaymentNotAuthorizedError
     || err instanceof projectService.ProjectForbiddenError
+    || err instanceof artifactService.ArtifactForbiddenError
   ) {
     res.status(403).json({ detail: err.message });
     return true;
@@ -268,6 +283,7 @@ function mapAiToolError(err, res) {
     || err instanceof attendanceService.AttendanceSessionNotFoundError
     || err instanceof attendanceService.AttendanceCorrectionNotFoundError
     || err instanceof projectService.ProjectNotFoundError
+    || err instanceof artifactService.ArtifactNotFoundError
   ) {
     res.status(404).json({ detail: err.message });
     return true;
@@ -293,8 +309,18 @@ function mapAiToolError(err, res) {
     // own attendance route never resolves "current session" implicitly,
     // so this exact class has no prior mapping anywhere to match against).
     || err instanceof attendanceService.AttendanceNoActiveSessionError
+    // Same "actor/resource isn't in a state that allows this action right
+    // now" semantics as AttendanceLockedError etc. above — a published
+    // artifact is terminal (assertNotPublished, artifactService.js).
+    || err instanceof artifactService.ArtifactAlreadyPublishedError
   ) {
     res.status(409).json({ detail: err.message });
+    return true;
+  }
+  // generate_document (this session's own tool) — same 413 routes/documents.js
+  // already uses for this exact class, not a new convention.
+  if (err instanceof documentService.DocumentStorageQuotaExceededError) {
+    res.status(413).json({ detail: err.message });
     return true;
   }
 
@@ -376,7 +402,7 @@ function createAiRouter() {
     const identityContext = buildAiIdentityContext(req);
     const {
       question, focusContext, project_id: projectId, conversation_id: conversationId,
-      attachment_ids: attachmentIds,
+      attachment_ids: attachmentIds, mode,
     } = req.body || {};
     let projectContext;
     if (projectId) {
@@ -406,18 +432,18 @@ function createAiRouter() {
       }
     }
     return {
-      question, identityContext, focusContext, projectContext, history, attachmentIds,
+      question, identityContext, focusContext, projectContext, history, attachmentIds, mode,
     };
   }
 
   router.post('/ai/ask', requireAuth, asyncHandler(async (req, res) => {
     if (!requireResolvedTenant(req, res)) return;
     const {
-      question, identityContext, focusContext, projectContext, history, attachmentIds,
+      question, identityContext, focusContext, projectContext, history, attachmentIds, mode,
     } = await resolveAskContext(req);
     try {
       const result = await aiService.askAgent(req.dbClient, question, {
-        identityContext, focusContext, projectContext, history, attachmentIds,
+        identityContext, focusContext, projectContext, history, attachmentIds, mode,
       });
       res.json(result);
     } catch (err) {
@@ -438,7 +464,7 @@ function createAiRouter() {
   router.post('/ai/ask/stream', requireAuth, asyncHandler(async (req, res) => {
     if (!requireResolvedTenant(req, res)) return;
     const {
-      question, identityContext, focusContext, projectContext, history, attachmentIds,
+      question, identityContext, focusContext, projectContext, history, attachmentIds, mode,
     } = await resolveAskContext(req);
 
     res.writeHead(200, {
@@ -452,7 +478,7 @@ function createAiRouter() {
 
     try {
       const result = await aiService.askAgent(req.dbClient, question, {
-        identityContext, focusContext, projectContext, history, attachmentIds,
+        identityContext, focusContext, projectContext, history, attachmentIds, mode,
       }, (delta) => writeEvent('delta', { delta }));
       writeEvent('done', result);
     } catch (err) {

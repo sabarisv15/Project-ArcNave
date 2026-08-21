@@ -1,180 +1,232 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { toast } from 'sonner';
 import {
-  INSTITUTIONAL_DOCS, ME, PERSONAL_ROOT,
-  assertScope, canMoveInto, canMutate, initialPersonalNodes, uniqueName,
-} from '../lib/documentsData';
+  createContext, useCallback, useContext, useEffect, useMemo, useState,
+} from 'react';
+import { toast } from 'sonner';
+import { useAuth } from '../hooks/useAuth';
+import { documentsApi } from '../api/documents';
+import { PERSONAL_ROOT, canMoveInto, uniqueName } from '../lib/documentsData';
 
 const DocumentsContext = createContext(null);
 
+function folderToNode(f) {
+  return {
+    id: f.id,
+    parentId: f.parent_id ?? PERSONAL_ROOT,
+    kind: 'folder',
+    name: f.name,
+    mimeType: null,
+    size: null,
+    createdAt: new Date(f.created_at),
+    updatedAt: new Date(f.created_at),
+    ownerId: f.owner_user_id,
+    trashed: false,
+    scope: 'personal',
+  };
+}
+
+function documentToNode(d, folderNameToId) {
+  return {
+    id: d.id,
+    parentId: d.folder_name ? (folderNameToId.get(d.folder_name) ?? PERSONAL_ROOT) : PERSONAL_ROOT,
+    kind: 'file',
+    name: d.file_name,
+    mimeType: d.mime_type,
+    size: d.file_size_bytes,
+    createdAt: new Date(d.created_at),
+    updatedAt: new Date(d.updated_at || d.created_at),
+    ownerId: d.uploaded_by_user_id,
+    trashed: false,
+    scope: 'personal',
+    // The real move-target for this file is a folder NAME (documents.
+    // folder_name is a plain text match, no FK — see the backend
+    // migration's own comment), not the id every other node uses for
+    // its parent — kept alongside so move() below never has to re-look
+    // it up.
+    folderName: d.folder_name || null,
+  };
+}
+
 /**
- * Documents state for `/curriculum/documents`.
+ * Documents state for `/curriculum/documents` — Personal tab only.
+ * (Institutional documents are read-only and fetched directly by
+ * InstitutionalDocuments.jsx, which needs real server-side filtering
+ * or academic-year/category/department facets this provider has no
+ * reason to hold.)
  *
- * Every mutation goes through `canMutate()` here, not just in the UI, so an
- * institutional document stays read-only even if a stale screen (or a direct
- * call) tries to rename or delete one. The institutional list is exposed as a
- * frozen read-only array for the same reason.
- *
- * Deletes move to trash rather than destroying anything, and the restore path
- * is offered in the same quiet toast — the one destructive-looking action in
- * the module is recoverable by construction.
- *
- * Mock-data caveat, deliberately explicit: this is client state. The real API
- * must re-apply ownership and institutional-publish rights server-side.
+ * Every read/write here goes through the real backend
+ * (frontend/src/api/documents.js -> backend/src/routes/documents.js):
+ * personal folders now nest (parent_id) and support rename/move,
+ * personal documents support rename/move/duplicate, and delete is
+ * permanently gone once confirmed — the backend soft-deletes the row,
+ * but there is no restore endpoint yet, so this UI never claims
+ * otherwise (no Undo toast, unlike the old mock).
  */
 export function DocumentsProvider({ children }) {
-  const [nodes, setNodes] = useState(() => initialPersonalNodes());
-  const [uploads, setUploads] = useState([]); // { id, name, progress, status: 'uploading'|'failed'|'done', parentId, size }
+  const { user } = useAuth();
+  const [folders, setFolders] = useState([]);
+  const [documents, setDocuments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [uploads, setUploads] = useState([]); // { id, name, parentId, status: 'uploading'|'failed'|'done', progress }
 
-  const institutional = useMemo(() => assertScope(INSTITUTIONAL_DOCS, 'institutional'), []);
-  const personal = useMemo(() => assertScope(nodes, 'personal').filter((n) => !n.trashed), [nodes]);
-  const trashed = useMemo(() => nodes.filter((n) => n.trashed), [nodes]);
+  const refresh = useCallback(async () => {
+    const [folderRows, documentRows] = await Promise.all([
+      documentsApi.listPersonalFolders(),
+      documentsApi.listPersonalDocuments(),
+    ]);
+    setFolders(Array.isArray(folderRows) ? folderRows : []);
+    setDocuments(Array.isArray(documentRows) ? documentRows : []);
+  }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    refresh()
+      .catch(() => toast('Could not load your documents — please try again.'))
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [refresh]);
+
+  const nodes = useMemo(() => {
+    const folderNameToId = new Map(folders.map((f) => [f.name, f.id]));
+    return [
+      ...folders.map(folderToNode),
+      ...documents.map((d) => documentToNode(d, folderNameToId)),
+    ];
+  }, [folders, documents]);
+
+  const personal = nodes; // already scoped server-side to the acting user
   const childrenOf = useCallback(
     (parentId) => personal.filter((n) => n.parentId === parentId),
     [personal]
   );
 
-  const createFolder = useCallback((parentId, name) => {
+  const folderNameOf = useCallback(
+    (folderId) => (folderId === PERSONAL_ROOT ? null : folders.find((f) => f.id === folderId)?.name ?? null),
+    [folders]
+  );
+
+  const createFolder = useCallback(async (parentId, name) => {
     const clean = (name || '').trim();
     if (!clean) return null;
-    let created = null;
-    setNodes((prev) => {
-      const siblings = prev.filter((n) => n.parentId === parentId && !n.trashed);
-      const now = new Date();
-      created = {
-        id: `p-${now.getTime()}-${Math.random().toString(36).slice(2, 7)}`,
-        parentId, kind: 'folder', name: uniqueName(siblings, clean),
-        mimeType: null, size: null,
-        createdAt: now, updatedAt: now,
-        ownerId: ME.id, trashed: false, scope: 'personal',
-      };
-      return [...prev, created];
-    });
-    return created;
-  }, []);
+    try {
+      const created = await documentsApi.createPersonalFolder({
+        name: clean, parentId: parentId === PERSONAL_ROOT ? null : parentId,
+      });
+      await refresh();
+      return folderToNode(created);
+    } catch (err) {
+      toast(err?.detail || 'Could not create that folder — the name may already be taken.');
+      return null;
+    }
+  }, [refresh]);
 
-  const rename = useCallback((id, name) => {
+  const rename = useCallback(async (id, name) => {
     const clean = (name || '').trim();
     if (!clean) return false;
-    let ok = false;
-    setNodes((prev) =>
-      prev.map((n) => {
-        if (n.id !== id) return n;
-        if (!canMutate(n)) return n; // institutional / not owned — refused here, not just hidden
-        ok = true;
-        const siblings = prev.filter((s) => s.parentId === n.parentId && s.id !== id && !s.trashed);
-        return { ...n, name: uniqueName(siblings, clean), updatedAt: new Date() };
-      })
-    );
-    return ok;
-  }, []);
-
-  const move = useCallback((id, targetFolderId) => {
-    let ok = false;
-    setNodes((prev) => {
-      const node = prev.find((n) => n.id === id);
-      if (!node || !canMutate(node) || !canMoveInto(prev, id, targetFolderId)) return prev;
-      ok = true;
-      const siblings = prev.filter((s) => s.parentId === targetFolderId && !s.trashed);
-      return prev.map((n) =>
-        n.id === id ? { ...n, parentId: targetFolderId, name: uniqueName(siblings, n.name), updatedAt: new Date() } : n
-      );
-    });
-    if (ok) toast('Moved');
-    return ok;
-  }, []);
-
-  const duplicate = useCallback((id) => {
-    setNodes((prev) => {
-      const node = prev.find((n) => n.id === id);
-      if (!node || !canMutate(node) || node.kind !== 'file') return prev;
-      const siblings = prev.filter((s) => s.parentId === node.parentId && !s.trashed);
-      const now = new Date();
-      return [...prev, {
-        ...node,
-        id: `p-${now.getTime()}-${Math.random().toString(36).slice(2, 7)}`,
-        name: uniqueName(siblings, node.name),
-        createdAt: now, updatedAt: now,
-      }];
-    });
-  }, []);
-
-  /** Delete is always recoverable: the node is trashed, and the toast offers Undo. */
-  const remove = useCallback((ids) => {
-    const list = Array.isArray(ids) ? ids : [ids];
-    let count = 0;
-    setNodes((prev) =>
-      prev.map((n) => {
-        if (!list.includes(n.id) || !canMutate(n)) return n;
-        count += 1;
-        return { ...n, trashed: true, trashedAt: new Date() };
-      })
-    );
-    if (count) {
-      toast(`${count} item${count > 1 ? 's' : ''} moved to Trash`, {
-        action: {
-          label: 'Undo',
-          onClick: () => setNodes((prev) => prev.map((n) => (list.includes(n.id) ? { ...n, trashed: false } : n))),
-        },
-      });
+    const node = nodes.find((n) => n.id === id);
+    if (!node) return false;
+    try {
+      if (node.kind === 'folder') {
+        await documentsApi.renamePersonalFolder(id, clean);
+      } else {
+        await documentsApi.renamePersonalDocument(id, clean);
+      }
+      await refresh();
+      return true;
+    } catch (err) {
+      toast(err?.detail || 'Could not rename that — the name may already be taken.');
+      return false;
     }
-    return count;
-  }, []);
+  }, [nodes, refresh]);
 
-  const restore = useCallback((id) => {
-    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, trashed: false, trashedAt: null } : n)));
-  }, []);
+  const move = useCallback(async (id, targetFolderId) => {
+    const node = nodes.find((n) => n.id === id);
+    if (!node || !canMoveInto(personal, id, targetFolderId)) return false;
+    try {
+      if (node.kind === 'folder') {
+        await documentsApi.movePersonalFolder(id, targetFolderId === PERSONAL_ROOT ? null : targetFolderId);
+      } else {
+        await documentsApi.movePersonalDocument(id, folderNameOf(targetFolderId));
+      }
+      await refresh();
+      toast('Moved');
+      return true;
+    } catch (err) {
+      toast(err?.detail || 'Could not move that item.');
+      return false;
+    }
+  }, [nodes, personal, folderNameOf, refresh]);
+
+  const duplicate = useCallback(async (id) => {
+    const node = nodes.find((n) => n.id === id);
+    if (!node || node.kind !== 'file') return;
+    try {
+      await documentsApi.duplicatePersonalDocument(id);
+      await refresh();
+    } catch {
+      toast('Could not duplicate that file.');
+    }
+  }, [nodes, refresh]);
 
   /**
-   * Upload with a visible, accessible progress row. A failed upload keeps its
-   * row and its Retry action rather than vanishing — the file is still on the
-   * user's disk, and silently dropping it would look like success.
+   * Permanent once confirmed — the backend soft-deletes the row (a
+   * folder delete cascades to its subfolders), but there is no restore
+   * endpoint yet, so no Undo is offered here. The confirm dialog
+   * (PersonalDocuments.jsx) says exactly this before the call is made.
    */
+  const remove = useCallback(async (ids) => {
+    const list = Array.isArray(ids) ? ids : [ids];
+    const targets = nodes.filter((n) => list.includes(n.id));
+    let count = 0;
+    for (const node of targets) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        if (node.kind === 'folder') await documentsApi.removePersonalFolder(node.id);
+        // eslint-disable-next-line no-await-in-loop
+        else await documentsApi.removeDocument(node.id);
+        count += 1;
+      } catch {
+        toast(`Could not delete “${node.name}”.`);
+      }
+    }
+    if (count) {
+      await refresh();
+      toast(`${count} item${count > 1 ? 's' : ''} deleted`);
+    }
+    return count;
+  }, [nodes, refresh]);
+
   const upload = useCallback((parentId, files) => {
     const list = Array.from(files || []);
     if (!list.length) return;
-    list.forEach((f) => {
+    const folderName = folderNameOf(parentId);
+    list.forEach((file) => {
       const id = `up-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      setUploads((prev) => [...prev, { id, name: f.name, size: f.size, parentId, progress: 0, status: 'uploading' }]);
-
-      let progress = 0;
-      const tick = setInterval(() => {
-        progress = Math.min(100, progress + 20 + Math.random() * 25);
-        setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, progress: Math.round(progress) } : u)));
-        if (progress >= 100) {
-          clearInterval(tick);
-          setNodes((prev) => {
-            const siblings = prev.filter((s) => s.parentId === parentId && !s.trashed);
-            const now = new Date();
-            return [...prev, {
-              id: `p-${now.getTime()}-${Math.random().toString(36).slice(2, 7)}`,
-              parentId, kind: 'file',
-              name: uniqueName(siblings, f.name),
-              mimeType: f.type || 'application/octet-stream',
-              size: f.size,
-              createdAt: now, updatedAt: now,
-              ownerId: ME.id, trashed: false, scope: 'personal',
-            }];
-          });
+      setUploads((prev) => [...prev, {
+        id, name: file.name, size: file.size, parentId, progress: 40, status: 'uploading',
+      }]);
+      documentsApi.uploadPersonalDocument({ file, folderName })
+        .then(async () => {
+          await refresh();
           setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, status: 'done', progress: 100 } : u)));
           setTimeout(() => setUploads((prev) => prev.filter((u) => u.id !== id)), 1600);
-        }
-      }, 220);
+        })
+        .catch(() => {
+          setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, status: 'failed' } : u)));
+        });
     });
-  }, []);
+  }, [folderNameOf, refresh]);
 
   const dismissUpload = useCallback((id) => setUploads((prev) => prev.filter((u) => u.id !== id)), []);
 
   const value = useMemo(
     () => ({
-      me: ME, root: PERSONAL_ROOT,
-      institutional, personal, trashed, nodes,
-      childrenOf, createFolder, rename, move, duplicate, remove, restore,
+      me: user, root: PERSONAL_ROOT, loading,
+      personal, nodes,
+      childrenOf, createFolder, rename, move, duplicate, remove,
       uploads, upload, dismissUpload,
-      canMutate,
     }),
-    [institutional, personal, trashed, nodes, childrenOf, createFolder, rename, move, duplicate, remove, restore, uploads, upload, dismissUpload]
+    [user, loading, personal, nodes, childrenOf, createFolder, rename, move, duplicate, remove, uploads, upload, dismissUpload]
   );
 
   return <DocumentsContext.Provider value={value}>{children}</DocumentsContext.Provider>;
@@ -185,3 +237,9 @@ export function useDocumentsStore() {
   if (!ctx) throw new Error('useDocumentsStore must be used inside DocumentsProvider');
   return ctx;
 }
+
+// uniqueName is still useful client-side (a fast, optimistic "this name
+// is probably taken" hint before the round trip) even though the
+// server is the real authority now — re-exported so callers don't need
+// a second import from documentsData.js just for this.
+export { uniqueName };

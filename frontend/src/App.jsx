@@ -62,6 +62,7 @@ const InstitutionFacultyView = lazyNamed(() => import('./routes/InstitutionFacul
 const InstitutionStudentsView = lazyNamed(() => import('./routes/InstitutionStudentsView'), 'InstitutionStudentsView');
 const InstitutionApprovalsView = lazyNamed(() => import('./routes/InstitutionApprovalsView'), 'InstitutionApprovalsView');
 const InstitutionTimetableView = lazyNamed(() => import('./routes/InstitutionTimetableView'), 'InstitutionTimetableView');
+const InstitutionAiSettingsView = lazyNamed(() => import('./routes/InstitutionAiSettingsView'), 'InstitutionAiSettingsView');
 const InstitutionAcademicYearView = lazyNamed(() => import('./routes/InstitutionAcademicYearView'), 'InstitutionAcademicYearView');
 const DelegatedOverview = lazyNamed(() => import('./routes/DelegatedOverview'), 'DelegatedOverview');
 const DelegatedApprovalsView = lazyNamed(() => import('./routes/DelegatedApprovalsView'), 'DelegatedApprovalsView');
@@ -208,6 +209,7 @@ export default function App() {
           <Route path="students" element={<InstitutionStudentsView />} />
           <Route path="approvals" element={<InstitutionApprovalsView />} />
           <Route path="timetable" element={<InstitutionTimetableView />} />
+          <Route path="ai-settings" element={<InstitutionAiSettingsView />} />
         </Route>
         {/*
           The delegated seat's destinations, at their own scope-named root.

@@ -3,6 +3,7 @@
 const express = require('express');
 const asyncHandler = require('../middleware/asyncHandler');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
+const { roleHasPermission } = require('../middleware/permissions');
 const documentService = require('../services/documentService');
 const personalDocumentFolderService = require('../services/personalDocumentFolderService');
 const ocrService = require('../services/ocrService');
@@ -175,6 +176,14 @@ function mapPersonalDocumentFolderError(err, res) {
   }
   if (err instanceof personalDocumentFolderService.PersonalDocumentFolderForbiddenError) {
     res.status(403).json({ detail: err.message });
+    return true;
+  }
+  if (err instanceof personalDocumentFolderService.PersonalDocumentFolderParentNotFoundError) {
+    res.status(404).json({ detail: err.message });
+    return true;
+  }
+  if (err instanceof personalDocumentFolderService.PersonalDocumentFolderCycleError) {
+    res.status(400).json({ detail: err.message });
     return true;
   }
   return false;
@@ -478,6 +487,65 @@ function createDocumentsRouter() {
     res.json(documents);
   }));
 
+  // Rename (file_name/title) and/or move (folder_name) one of the
+  // caller's own personal documents — documentService.renamePersonalDocument/
+  // movePersonalDocument, both scoped to doc_type='personal' AND
+  // uploaded_by_user_id === the caller, regardless of what id is
+  // named. A caller sends only what it's actually changing (the
+  // frontend's Rename vs Move-to are two different actions); folder_name
+  // is resolved here first so both can be applied in a single request
+  // if a future caller ever wants that, without introducing a second
+  // partial-update code path.
+  router.patch('/documents/personal/:id', requireAuth, asyncHandler(async (req, res) => {
+    if (!requireResolvedTenant(req, res)) return;
+    const { file_name: fileName, title, folder_name: folderName } = req.body || {};
+    const actorUserId = identityService.resolveActorUserId(req.capabilities);
+    try {
+      let document;
+      if (fileName !== undefined) {
+        document = await documentService.renamePersonalDocument(
+          req.dbClient, req.params.id, { fileName, title }, { actorUserId },
+        );
+      }
+      if (folderName !== undefined) {
+        document = await documentService.movePersonalDocument(
+          req.dbClient, req.params.id, { folderName }, { actorUserId },
+        );
+      }
+      if (document === undefined) {
+        res.status(400).json({ detail: 'file_name or folder_name is required' });
+        return;
+      }
+      if (document === null) {
+        res.status(404).json({ detail: `No document found with id ${JSON.stringify(req.params.id)}` });
+        return;
+      }
+      res.json(document);
+    } catch (err) {
+      if (mapDocumentServiceError(err, res)) return;
+      throw err;
+    }
+  }));
+
+  router.post('/documents/personal/:id/duplicate', requireAuth, asyncHandler(async (req, res) => {
+    if (!requireResolvedTenant(req, res)) return;
+    try {
+      const document = await documentService.duplicatePersonalDocument(
+        req.dbClient,
+        req.params.id,
+        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+      );
+      if (document === null) {
+        res.status(404).json({ detail: `No document found with id ${JSON.stringify(req.params.id)}` });
+        return;
+      }
+      res.status(201).json(document);
+    } catch (err) {
+      if (mapDocumentServiceError(err, res)) return;
+      throw err;
+    }
+  }));
+
   // Personal document folders — a real, listable, creatable object
   // independent of any document (see the migration's own comment for
   // why documents.personal's folder_name column alone can't do this).
@@ -487,7 +555,7 @@ function createDocumentsRouter() {
     try {
       const folder = await personalDocumentFolderService.createFolder(
         req.dbClient,
-        { name: (req.body || {}).name },
+        { name: (req.body || {}).name, parentId: (req.body || {}).parent_id },
         { actorUserId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
       );
       res.status(201).json(folder);
@@ -504,6 +572,28 @@ function createDocumentsRouter() {
       { actorUserId: identityService.resolveActorUserId(req.capabilities) },
     );
     res.json(folders);
+  }));
+
+  // Rename and/or move a personal folder — a caller sends only the
+  // field(s) it actually changed (name for Rename, parent_id for
+  // "Move to..."); personalDocumentFolderService.updateFolder's own
+  // entries-filter leaves whatever wasn't sent untouched. parent_id:
+  // null moves the folder to the root, omitted leaves it where it is.
+  router.patch('/documents/personal/folders/:id', requireAuth, asyncHandler(async (req, res) => {
+    if (!requireResolvedTenant(req, res)) return;
+    const { name, parent_id: parentId } = req.body || {};
+    try {
+      const folder = await personalDocumentFolderService.updateFolder(
+        req.dbClient,
+        req.params.id,
+        { name, parentId },
+        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+      );
+      res.json(folder);
+    } catch (err) {
+      if (mapPersonalDocumentFolderError(err, res)) return;
+      throw err;
+    }
   }));
 
   router.delete('/documents/personal/folders/:id', requireAuth, asyncHandler(async (req, res) => {
@@ -826,10 +916,33 @@ function createDocumentsRouter() {
     }
   }));
 
-  router.delete('/documents/:id', requirePermission('documents.delete'), asyncHandler(async (req, res) => {
+  // requireAuth, not requirePermission('documents.delete') alone: that
+  // permission (principal-only, deliberately conservative — see
+  // middleware/permissions.js's own comment) is still the gate for
+  // every OTHER document (institutional, student, template), enforced
+  // below exactly as before. A personal document is different — it's
+  // the caller's own private file, and gating its deletion on the same
+  // principal-only permission would mean an ordinary staff member could
+  // never delete their own upload. The document must be loaded first to
+  // tell which case applies, which is why the permission check moved
+  // from route-level middleware into the handler.
+  router.delete('/documents/:id', requireAuth, asyncHandler(async (req, res) => {
     if (!requireResolvedTenant(req, res)) return;
-    const document = await documentService.removeDocument(req.dbClient, req.params.id, { userId: identityService.resolveActorUserId(req.capabilities) });
+    const document = await documentService.getDocument(req.dbClient, req.params.id);
     if (document === null) {
+      res.status(404).json({ detail: `No document found with id ${JSON.stringify(req.params.id)}` });
+      return;
+    }
+    const actorUserId = identityService.resolveActorUserId(req.capabilities);
+    const actorRole = req.jwtClaims.role || req.capabilities.effectiveRole;
+    const ownsThisPersonalDocument = document.doc_type === documentService.PERSONAL_DOC_TYPE
+      && document.uploaded_by_user_id === actorUserId;
+    if (!ownsThisPersonalDocument && !roleHasPermission(actorRole, 'documents.delete')) {
+      res.status(403).json({ detail: 'Insufficient role' });
+      return;
+    }
+    const removed = await documentService.removeDocument(req.dbClient, req.params.id, { userId: actorUserId });
+    if (removed === null) {
       res.status(404).json({ detail: `No document found with id ${JSON.stringify(req.params.id)}` });
       return;
     }

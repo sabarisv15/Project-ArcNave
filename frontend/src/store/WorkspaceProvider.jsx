@@ -1,4 +1,6 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import {
+  createContext, useCallback, useContext, useEffect, useMemo, useState,
+} from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -10,6 +12,7 @@ import { conversationsApi } from '@/api/conversations';
 import { aiApi } from '@/api/ai';
 import { projectsApi } from '@/api/projects';
 import { artifactsApi } from '@/api/artifacts';
+import { useAuth } from '@/hooks/useAuth';
 import { CHAT_FILES } from '../lib/mockData';
 import { formatBytes } from '../lib/composerAttachments';
 import { titleFromPrompt } from '../lib/utils';
@@ -24,11 +27,31 @@ const WorkspaceContext = createContext(null);
 
 export function WorkspaceProvider({ children }) {
   const qc = useQueryClient();
+  // WorkspaceProvider sits above the router (main.jsx), so it mounts —
+  // and these queries would otherwise fire — before a real access token
+  // exists: either still on the login page, or on reload before
+  // AuthBootstrap's restoreSession() lands (the in-memory access token,
+  // authStorage.js's own comment, starts every reload as null).
+  // `sessionReady` alone doesn't gate this: it flips true once the boot
+  // sequence finishes trying, including the "no refresh token, nothing to
+  // restore" case where the user is still unauthenticated on /login — so
+  // gating on it alone still fired these queries pre-login and left them
+  // permanently 401'd (queries don't auto-refire just because a sibling
+  // provider's state changes later). `isAuthenticated` is the flag that
+  // actually flips true at the moment a real token exists (via
+  // restoreSession() or login()), which is what these need to wait for.
+  const { isAuthenticated } = useAuth();
 
   // Real backend data — no more mockApi fetchers for these three lists.
-  const { data: chats = [] } = useQuery({ queryKey: queryKeys.chats, queryFn: fetchChatsReal });
-  const { data: projects = [] } = useQuery({ queryKey: queryKeys.projects, queryFn: fetchProjectsReal });
-  const { data: artifacts = [] } = useQuery({ queryKey: queryKeys.artifacts, queryFn: fetchArtifactsReal });
+  const { data: chats = [] } = useQuery({
+    queryKey: queryKeys.chats, queryFn: fetchChatsReal, enabled: isAuthenticated,
+  });
+  const { data: projects = [] } = useQuery({
+    queryKey: queryKeys.projects, queryFn: fetchProjectsReal, enabled: isAuthenticated,
+  });
+  const { data: artifacts = [] } = useQuery({
+    queryKey: queryKeys.artifacts, queryFn: fetchArtifactsReal, enabled: isAuthenticated,
+  });
   const { data: contextFiles = [] } = useQuery({ queryKey: queryKeys.contextFiles, queryFn: fetchContextFiles });
   const { data: threads = {} } = useQuery({ queryKey: queryKeys.threads, queryFn: async () => ({}) });
 
@@ -81,6 +104,32 @@ export function WorkspaceProvider({ children }) {
   const [instructions, setInstructions] = useState('');
   const [projConv, setProjConv] = useState({}); // projectId -> conversationId
   const [artConv, setArtConv] = useState({}); // artifactId -> conversationId
+
+  // artConv otherwise only ever gains an entry when a revision message is
+  // sent live in *this* browser session (the `scope === 'artifact'` branch
+  // below) — a real live-caught gap: reopening an artifact that already has
+  // a conversation_id from a previous session (or after a reload) found
+  // nothing in this map and silently rendered no revision chat at all, even
+  // though the backend has one. `artifacts` (fetchArtifactsReal) now carries
+  // that same conversation_id straight from artifactRepository's own
+  // LIST_COLUMNS — seed it in whenever the list loads/changes, additive only
+  // (never overwrites a fresher session-created mapping for the same id).
+  useEffect(() => {
+    const fromServer = artifacts.filter((a) => a.conversationId);
+    if (fromServer.length === 0) return;
+    setArtConv((m) => {
+      let changed = false;
+      const next = { ...m };
+      for (const a of fromServer) {
+        if (next[a.id] === undefined) {
+          next[a.id] = a.conversationId;
+          changed = true;
+        }
+      }
+      return changed ? next : m;
+    });
+  }, [artifacts]);
+
   // chatId -> file[]. This is message/upload **metadata**, not a surface: the
   // "Files in this chat" widget and its header button are gone (Sources
   // replaced them), but a sent attachment still belongs to its conversation
@@ -143,6 +192,11 @@ export function WorkspaceProvider({ children }) {
               ? { id: String(m.id), role: 'user', text: m.content, createdAt: m.created_at }
               : {
                 id: String(m.id), role: 'ai', generating: false, body: m.content, createdAt: m.created_at,
+                // raw_data is the same generic JSONB column addMessage's
+                // own rawData just wrote a { document } payload into
+                // (see runAiTurn above) — round-tripped back out here so
+                // a reloaded transcript still shows the download card.
+                document: m.raw_data?.document,
               }
           ));
           setThreads((prev) => ({ ...prev, [chat.id]: messages }));
@@ -183,7 +237,9 @@ export function WorkspaceProvider({ children }) {
    * kept running after send() returned.
    */
   const runAiTurn = useCallback(
-    async (id, { scope, projectId, body, aiId, attachmentIds }) => {
+    async (id, {
+      scope, projectId, artifactId, body, aiId, attachmentIds,
+    }) => {
       const patchAiMessage = (patch) => {
         setThreads((prev) => ({
           ...prev,
@@ -199,6 +255,13 @@ export function WorkspaceProvider({ children }) {
             conversation_id: id,
             project_id: scope === 'project' ? projectId : undefined,
             attachment_ids: attachmentIds && attachmentIds.length ? attachmentIds : undefined,
+            // routes/ai.js already accepts+threads this for both /ai/ask and
+            // /ai/ask/stream (resolveAskContext's own comment) — the
+            // export_artifact tool (aiToolRegistry.js) needs the artifact's
+            // real id and has no other way to learn it; without this, "export
+            // this as pdf" inside an artifact's revision chat had no id to
+            // call that tool with.
+            focusContext: scope === 'artifact' && artifactId ? { entityType: 'artifact', id: artifactId } : undefined,
           },
           (event) => {
             if (event.type === 'delta') {
@@ -239,6 +302,13 @@ export function WorkspaceProvider({ children }) {
           // model — surfaced regardless of whether the answer text itself
           // mentions it.
           imageAnalysisUnavailable: result.imageAnalysisUnavailable,
+          // A real, downloadable document a tool just produced
+          // (generate_document/export_artifact — aiService.js's own
+          // extractDocumentAttachment) — {id, fileName, mimeType, title}
+          // or undefined. ChatMessage.jsx renders this as a download
+          // card so the file is reachable from the transcript itself,
+          // not only from the Documents module it was also saved into.
+          document: result.document || undefined,
           createdAt: new Date().toISOString(),
         });
 
@@ -248,6 +318,12 @@ export function WorkspaceProvider({ children }) {
             content: finalText,
             toolUsed: result.toolUsed,
             presentation: result.presentation,
+            // Round-trips through conversation_messages.raw_data (a
+            // generic JSONB column already meant for exactly this kind
+            // of extra payload) so a reload's seedThread below can
+            // rebuild the same download card rather than losing it the
+            // moment the in-memory thread is replaced by a fresh fetch.
+            rawData: result.document ? { document: result.document } : undefined,
           })
           .catch(() => {});
       } catch {
@@ -287,7 +363,17 @@ export function WorkspaceProvider({ children }) {
             : { id, title: conversation.title, kind: 'chat', meta: 'Just now', artifactId };
         qc.setQueryData(queryKeys.chats, (prev = []) => [record, ...prev]);
         if (scope === 'project') setProjConv((m) => ({ ...m, [projectId]: id }));
-        if (scope === 'artifact') setArtConv((m) => ({ ...m, [artifactId]: id }));
+        if (scope === 'artifact') {
+          setArtConv((m) => ({ ...m, [artifactId]: id }));
+          // Persists the link server-side (artifactService.updateArtifact's
+          // new conversationId param) — setArtConv alone only updates this
+          // browser's react-query cache, which a reload wipes. Best-effort:
+          // a failure here still leaves the chat fully working for the rest
+          // of this session (artConv already has it), it just won't survive
+          // a reload, same "best-effort, doesn't block the real work"
+          // restraint conversationsApi.addMessage's own calls already use.
+          artifactsApi.update(artifactId, { conversationId: id }).catch(() => {});
+        }
       }
 
       // Only attachments that finished uploading are sent. A failed one stays
@@ -314,7 +400,18 @@ export function WorkspaceProvider({ children }) {
         [id]: [
           ...(prev[id] || []),
           { id: 'u' + Date.now(), role: 'user', text: body, attachments: sent, createdAt: sentAt },
-          { id: aiId, role: 'ai', generating: true, body: '', createdAt: sentAt },
+          // GenerationState (ChatMessage.jsx) renders this as the "still
+          // resolving which tool to call" skeleton — its own comment says so
+          // — but nothing ever supplied the text, so it always rendered a
+          // blank line: the reply looked like it just silently appeared once
+          // the stream landed, with nothing shown in between. `status` never
+          // changes after this (only `body`/`generating` do, in runAiTurn's
+          // own patchAiMessage), which matches GenerationState's own design:
+          // it's the one skeleton line shown only until the first real chunk
+          // arrives, not a running progress log.
+          {
+            id: aiId, role: 'ai', generating: true, body: '', status: 'Thinking…', createdAt: sentAt,
+          },
         ],
       }));
 
@@ -337,7 +434,9 @@ export function WorkspaceProvider({ children }) {
       const attachmentIds = sent.map((a) => a.serverId).filter(Boolean);
 
       // Deliberately not awaited — see this function's own comment above.
-      runAiTurn(id, { scope, projectId, body, aiId, attachmentIds });
+      runAiTurn(id, {
+        scope, projectId, artifactId, body, aiId, attachmentIds,
+      });
 
       return id;
     },
@@ -457,8 +556,14 @@ export function WorkspaceProvider({ children }) {
   const createArtifact = useCallback(
     async (type) => {
       const title = 'Untitled ' + type.toLowerCase();
-      const row = await artifactsApi.create({ title, content: '' });
-      const artifact = { id: String(row.id), title: row.title, type, edited: 'Edited just now', link: '' };
+      // artifactService.createArtifact (backend) rejects empty/whitespace-only
+      // content outright (ArtifactValidationError) — an artifact always needs
+      // *some* body, even a fresh one. A bare heading is the smallest content
+      // that satisfies that and still reads correctly as a blank starting point.
+      const row = await artifactsApi.create({ title, content: `# ${title}\n\n`, artifactType: type });
+      const artifact = {
+        id: String(row.id), title: row.title, type, edited: 'Edited just now', link: '', status: row.status,
+      };
       qc.setQueryData(queryKeys.artifacts, (prev = []) => [artifact, ...prev]);
       return artifact;
     },
@@ -471,6 +576,28 @@ export function WorkspaceProvider({ children }) {
         prev.map((a) => (a.id === id ? { ...a, title } : a))
       );
       artifactsApi.update(id, { title }).catch(() => qc.invalidateQueries({ queryKey: queryKeys.artifacts }));
+    },
+    [qc]
+  );
+
+  // The deterministic counterpart to the export_artifact AI tool
+  // (aiToolRegistry.js) — same backend call (artifactService.publishArtifact),
+  // reached by a header action instead of asking in chat. Both existed only
+  // as unused backend/API-layer code until now (artifactsApi.publish was
+  // defined but never called from anywhere in this app).
+  const publishArtifact = useCallback(
+    async (id) => {
+      let row;
+      try {
+        row = await artifactsApi.publish(id);
+      } catch (err) {
+        toast(err?.detail || 'Could not export this artifact — please try again.');
+        return;
+      }
+      qc.setQueryData(queryKeys.artifacts, (prev = []) =>
+        prev.map((a) => (a.id === id ? { ...a, status: row.status } : a))
+      );
+      toast('Exported to Documents → AI Artifacts.');
     },
     [qc]
   );
@@ -504,7 +631,7 @@ export function WorkspaceProvider({ children }) {
       projConv, artConv,
       sendMessage, seedThread, editMessage,
       renameChat, deleteChat, addChatToProject,
-      createProject, deleteProject, togglePin, createArtifact, renameArtifact,
+      createProject, deleteProject, togglePin, createArtifact, renameArtifact, publishArtifact,
       addContextFile, removeContextFile,
     }),
     [
@@ -514,7 +641,7 @@ export function WorkspaceProvider({ children }) {
       recentQuery, recentFilter, projectQuery, projectSort, artifactQuery, artifactFilter,
       scheduleOpen, profileDrawerOpen, instructions, projConv, artConv,
       sendMessage, seedThread, editMessage, renameChat, deleteChat, addChatToProject,
-      createProject, deleteProject, togglePin, createArtifact, renameArtifact,
+      createProject, deleteProject, togglePin, createArtifact, renameArtifact, publishArtifact,
       addContextFile, removeContextFile,
     ]
   );

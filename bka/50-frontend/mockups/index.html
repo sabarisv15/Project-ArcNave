@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ARCNAVE — Frontend redesign mockups (backup)</title>
+<style>
+body { font-family: ui-sans-serif, system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; background: #faf8f5; color: #222; }
+h1 { font-size: 22px; }
+p.note { color: #666; font-size: 14px; }
+ul { padding-left: 20px; line-height: 2; }
+a { color: #3a3a6b; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.status { font-size: 12px; color: #888; }
+</style>
+</head>
+<body>
+<h1>ARCNAVE frontend redesign — saved mockups</h1>
+<p class="note">Saved 2026-08-07 as a backup, since these only existed as ephemeral chat renders otherwise. See <code>FRONTEND-REDESIGN-HANDOFF.md</code> in the parent folder for the full written spec, decisions, and current build status. Open any file below directly in a browser.</p>
+<ul>
+<li><a href="01-home.html">01 — Home (Curriculum toggle: Home tab, landing hero)</a> <span class="status">— approved, not yet built as a component (real WorkspaceHero.jsx is different, older content)</span></li>
+<li><a href="02-documents.html">02 — Documents (Institutional/Personal tabs)</a> <span class="status">— approved with "good", not yet built (real DocumentsPage.jsx is a different, older template-upload feature)</span></li>
+<li><a href="03-students-list.html">03 — Student list, full page</a> <span class="status">— approved ("excellent work"), real page exists but not yet re-verified against this exact mockup</span></li>
+<li><a href="04-staff-list.html">04 — Staff list, full page</a> <span class="status">— accepted, not yet re-verified against real page</span></li>
+<li><a href="05-projects-list.html">05 — Projects, list view</a> <span class="status">— approved, needs new backend entity before real</span></li>
+<li><a href="06-project-detail.html">06 — Project detail hub</a> <span class="status">— approved, needs new backend entity before real</span></li>
+<li><a href="07-calendar.html">07 — Calendar, full page</a> <span class="status">— designed, real CalendarPage.jsx exists — not yet verified it matches</span></li>
+<li><a href="08-settings-profile-tab.html">08 — Settings dialog, Profile tab (lightweight)</a> <span class="status">— corrected per user spec, not yet built</span></li>
+<li><a href="09-staff-me-profile.html">09 — Staff /me full profile page, view mode</a> <span class="status">— exact field spec locked, real StaffMyProfilePage.jsx exists — not yet verified it matches; 2 real schema gaps (UG/PG specialization columns, Previous institutions as a repeatable list) — see handoff doc §5</span></li>
+<li><a href="10-artifacts-workflow.html">10 — Artifacts (new dropdown/category picker/composer)</a> <span class="status">— approved, needs new backend entity before real</span></li>
+<li><a href="11-attendance-mark-flow.html">11 — Attendance + mark-attendance flow</a> <span class="status">— approved with "good", backend real, page not yet re-verified against this exact mockup</span></li>
+<li><a href="12-classlog-full-page.html">12 — Class log, full page</a> <span class="status">— highlight treatment approved with "good", backend real (classLogs routes/service/table), <strong>no frontend page exists at all yet</strong></span></li>
+<li><a href="13-assessment-full-page.html">13 — Assessment, full page (list view)</a> <span class="status">— approved with "good", backend real and mature; a real marks-entry component (AssessmentTab.jsx) exists but is orphaned/unreachable — reconnect before rebuilding</span></li>
+</ul>
+<p class="note">Not saved here (superseded/intermediate iterations, or never reached a locked state): the 6 Notes/Topic-highlight iterations before Class log's final version, the two rejected pre-session design systems, the New Project modal and Profile menu dropdown component-level studies (their content is folded into 05/06/08 above), the assessment marks-entry table iterations (filter/scoring corrections — final locked state is inside 13), Documents' folder/save-document sub-flow (not separately saved — see handoff doc for the description).</p>
+</body>
+</html>

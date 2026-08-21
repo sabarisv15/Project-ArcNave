@@ -13,6 +13,7 @@ import { DocumentIcon } from './DocumentIcon';
 import { DocumentPreviewDrawer } from './DocumentPreviewDrawer';
 import { RenameNodeDialog } from './RenameNodeDialog';
 import { useDocumentsStore } from '../store/DocumentsProvider';
+import { documentsApi } from '../api/documents';
 import { PERSONAL_ROOT, canMoveInto, formatSize, pathTo } from '../lib/documentsData';
 import { formatDateDMY } from '../lib/ist';
 import { FILTER_SURFACE } from './FilterPopover';
@@ -122,7 +123,7 @@ function UploadTray({ uploads, onDismiss }) {
 export function PersonalDocuments() {
   const {
     root, childrenOf, createFolder, rename, move, duplicate, remove,
-    uploads, upload, dismissUpload, personal,
+    uploads, upload, dismissUpload, personal, loading,
   } = useDocumentsStore();
 
   const [folderId, setFolderId] = useState(root);
@@ -211,7 +212,10 @@ export function PersonalDocuments() {
               <DropdownMenu.Item className={MENU_ITEM} onSelect={() => duplicate(node.id)}>
                 <Copy size={13} strokeWidth={1.9} /> Duplicate
               </DropdownMenu.Item>
-              <DropdownMenu.Item className={MENU_ITEM} onSelect={() => toast(`Downloading ${node.name}`)}>
+              <DropdownMenu.Item
+                className={MENU_ITEM}
+                onSelect={() => documentsApi.download(node.id, node.name).catch(() => toast(`Could not download “${node.name}”.`))}
+              >
                 <Download size={13} strokeWidth={1.9} /> Download
               </DropdownMenu.Item>
             </>
@@ -321,7 +325,11 @@ export function PersonalDocuments() {
         </div>
       )}
 
-      {items.length === 0 ? (
+      {loading ? (
+        <div className="flex-1 min-h-0 grid place-items-center border border-line rounded-[16px] bg-paper">
+          <div className="text-[12.5px] text-ink-faint">Loading your documents…</div>
+        </div>
+      ) : items.length === 0 ? (
         <div className={cn('flex-1 min-h-0 grid place-items-center border rounded-[16px] bg-paper', dragOver ? 'border-accent-line bg-accent-soft' : 'border-line')}>
           <div className="text-center px-[20px]">
             <div className="text-[13.5px] font-[500] text-ink">{query ? 'No results found' : 'This folder is empty'}</div>
@@ -493,7 +501,7 @@ export function PersonalDocuments() {
               {confirmDelete?.length === 1 ? `Delete “${confirmDelete[0].name}”?` : `Delete ${confirmDelete?.length} items?`}
             </AlertDialog.Title>
             <AlertDialog.Description className="m-0 mb-[18px] text-[12.5px] leading-[1.6] text-ink-muted">
-              This moves {confirmDelete?.length === 1 ? 'it' : 'them'} to Trash. You can undo straight after.
+              This can&rsquo;t be undone.{confirmDelete?.length === 1 && confirmDelete[0].kind === 'folder' ? ' Everything inside this folder is deleted too.' : ''}
             </AlertDialog.Description>
             <div className="flex justify-end gap-[9px]">
               <AlertDialog.Cancel asChild>

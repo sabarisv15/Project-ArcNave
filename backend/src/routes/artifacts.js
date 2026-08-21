@@ -80,12 +80,13 @@ function createArtifactsRouter() {
     if (!requireResolvedTenant(req, res)) return;
     const {
       title, content, conversation_id: conversationId, source_message_id: sourceMessageId,
+      artifact_type: artifactType,
     } = req.body || {};
     try {
       const artifact = await artifactService.createArtifact(
         req.dbClient,
         {
-          title, content, conversationId, sourceMessageId,
+          title, content, conversationId, sourceMessageId, artifactType,
         },
         { userId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
       );
@@ -98,10 +99,11 @@ function createArtifactsRouter() {
 
   router.put('/artifacts/:id', requireAuth, asyncHandler(async (req, res) => {
     if (!requireResolvedTenant(req, res)) return;
-    const { title, content } = req.body || {};
+    const { title, content, conversation_id: conversationId } = req.body || {};
     try {
       const artifact = await artifactService.updateArtifact(
-        req.dbClient, req.params.id, { title, content }, { userId: identityService.resolveActorUserId(req.capabilities) },
+        req.dbClient, req.params.id, { title, content, conversationId },
+        { userId: identityService.resolveActorUserId(req.capabilities) },
       );
       res.json(artifact);
     } catch (err) {

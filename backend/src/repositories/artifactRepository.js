@@ -20,6 +20,7 @@ const COLUMNS = [
   ['conversationId', 'conversation_id'],
   ['sourceMessageId', 'source_message_id'],
   ['title', 'title'],
+  ['artifactType', 'artifact_type'],
   ['content', 'content'],
   ['status', 'status'],
   ['versionNumber', 'version_number'],
@@ -55,7 +56,7 @@ async function findById(client, id) {
 // potentially large) back for a listing. findById below still selects
 // `*`: opening one specific artifact genuinely needs its content.
 const LIST_COLUMNS = [
-  'id', 'college_id', 'user_id', 'conversation_id', 'source_message_id', 'title',
+  'id', 'college_id', 'user_id', 'conversation_id', 'source_message_id', 'title', 'artifact_type',
   'status', 'version_number', 'published_document_id', 'published_at', 'deleted_at',
   'created_at', 'updated_at',
 ].join(', ');

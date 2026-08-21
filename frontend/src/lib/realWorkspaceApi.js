@@ -45,5 +45,13 @@ export async function fetchArtifactsReal() {
     type: a.artifact_type || 'Document',
     edited: `Edited ${relativeTime(a.updated_at || a.created_at)}`,
     link: a.conversation_title || '',
+    // artifactRepository's LIST_COLUMNS already returns this — WorkspaceProvider
+    // seeds `artConv` (artifactId -> conversationId) from it so ArtifactEditor's
+    // revision chat re-opens on reload, not just for the current browser session.
+    conversationId: a.conversation_id ? String(a.conversation_id) : null,
+    // 'draft' | 'published' — ArtifactEditor uses this to swap the Export
+    // action for a settled "Exported" state, mirroring assertNotPublished
+    // (artifactService.js): a published artifact can't be published again.
+    status: a.status,
   }));
 }

@@ -32,6 +32,7 @@ const documentCategoryService = require('../src/services/documentCategoryService
 const academicYearService = require('../src/services/academicYearService');
 const workflowService = require('../src/services/workflowService');
 const staffService = require('../src/services/staffService');
+const personalDocumentFolderRepository = require('../src/repositories/personalDocumentFolderRepository');
 
 function buildFakeDocxBuffer() {
   const zip = new PizZip();
@@ -804,5 +805,119 @@ test('DocumentService Phase 3 — versions, lineage, publish/supersede/archive (
       () => documentService.archiveInstitutionalDocument({}, 'doc-1', { actorUserId: 'principal-1' }),
       documentService.DocumentPublicationStateError,
     );
+  });
+});
+
+// Documents module real-backend wiring (this session): rename/move/
+// duplicate on a staff member's own Personal Documents tab. The one
+// rule every test below is really checking is loadOwnedPersonalDocument's
+// own gate — none of these three may ever touch a document that isn't
+// doc_type='personal' AND uploaded_by_user_id === the caller, regardless
+// of what id is named.
+test('DocumentService personal-document rename/move/duplicate (no DB, no filesystem)', async (t) => {
+  await t.test('renamePersonalDocument returns null for an unknown id', async () => {
+    const findByIdMock = t.mock.method(documentRepository, 'findById', async () => null);
+    t.after(() => findByIdMock.mock.restore());
+
+    const result = await documentService.renamePersonalDocument({}, 'missing', { fileName: 'x.pdf' }, { actorUserId: 'u1' });
+    assert.equal(result, null);
+  });
+
+  await t.test('renamePersonalDocument refuses a document owned by someone else', async () => {
+    const findByIdMock = t.mock.method(documentRepository, 'findById', async () => ({
+      id: 'doc-1', doc_type: 'personal', uploaded_by_user_id: 'other-user',
+    }));
+    t.after(() => findByIdMock.mock.restore());
+
+    await assert.rejects(
+      () => documentService.renamePersonalDocument({}, 'doc-1', { fileName: 'x.pdf' }, { actorUserId: 'u1' }),
+      documentService.DocumentNotAuthorizedError,
+    );
+  });
+
+  await t.test('renamePersonalDocument refuses a non-personal document even for its own uploader', async () => {
+    const findByIdMock = t.mock.method(documentRepository, 'findById', async () => ({
+      id: 'doc-1', doc_type: 'aadhaar', uploaded_by_user_id: 'u1',
+    }));
+    t.after(() => findByIdMock.mock.restore());
+
+    await assert.rejects(
+      () => documentService.renamePersonalDocument({}, 'doc-1', { fileName: 'x.pdf' }, { actorUserId: 'u1' }),
+      documentService.DocumentNotAuthorizedError,
+    );
+  });
+
+  await t.test('renamePersonalDocument updates file_name (and title when given) for the real owner', async () => {
+    const findByIdMock = t.mock.method(documentRepository, 'findById', async () => ({
+      id: 'doc-1', doc_type: 'personal', uploaded_by_user_id: 'u1',
+    }));
+    const updateMock = t.mock.method(documentRepository, 'update', async (client, id, fields) => ({ id, ...fields }));
+    t.after(() => { findByIdMock.mock.restore(); updateMock.mock.restore(); });
+
+    const result = await documentService.renamePersonalDocument({}, 'doc-1', { fileName: '  Notes v2.pdf  ', title: 'Notes v2' }, { actorUserId: 'u1' });
+    assert.equal(result.fileName, 'Notes v2.pdf');
+    assert.equal(result.title, 'Notes v2');
+  });
+
+  await t.test('movePersonalDocument rejects a folder name the actor does not own', async () => {
+    const findByIdMock = t.mock.method(documentRepository, 'findById', async () => ({
+      id: 'doc-1', doc_type: 'personal', uploaded_by_user_id: 'u1',
+    }));
+    const listMock = t.mock.method(personalDocumentFolderRepository, 'listByOwner', async () => [{ id: 'f1', name: 'Research' }]);
+    t.after(() => { findByIdMock.mock.restore(); listMock.mock.restore(); });
+
+    await assert.rejects(
+      () => documentService.movePersonalDocument({}, 'doc-1', { folderName: 'Nonexistent' }, { actorUserId: 'u1' }),
+      documentService.DocumentValidationError,
+    );
+  });
+
+  await t.test('movePersonalDocument to null (root) never needs to check the folder list', async () => {
+    const findByIdMock = t.mock.method(documentRepository, 'findById', async () => ({
+      id: 'doc-1', doc_type: 'personal', uploaded_by_user_id: 'u1',
+    }));
+    const listMock = t.mock.method(personalDocumentFolderRepository, 'listByOwner', async () => { throw new Error('must not be called'); });
+    const updateMock = t.mock.method(documentRepository, 'update', async (client, id, fields) => ({ id, ...fields }));
+    t.after(() => { findByIdMock.mock.restore(); listMock.mock.restore(); updateMock.mock.restore(); });
+
+    const result = await documentService.movePersonalDocument({}, 'doc-1', { folderName: null }, { actorUserId: 'u1' });
+    assert.equal(result.folderName, null);
+  });
+
+  await t.test('duplicatePersonalDocument refuses a document the actor does not own', async () => {
+    const findByIdMock = t.mock.method(documentRepository, 'findById', async () => ({
+      id: 'doc-1', doc_type: 'personal', uploaded_by_user_id: 'other-user',
+    }));
+    t.after(() => findByIdMock.mock.restore());
+
+    await assert.rejects(
+      () => documentService.duplicatePersonalDocument({}, 'doc-1', { actorUserId: 'u1' }),
+      documentService.DocumentNotAuthorizedError,
+    );
+  });
+
+  await t.test('duplicatePersonalDocument reads the real bytes and re-uploads under a "(copy)" name', async () => {
+    const findByIdMock = t.mock.method(documentRepository, 'findById', async () => ({
+      id: 'doc-1', doc_type: 'personal', uploaded_by_user_id: 'u1', college_id: 'c1',
+      title: 'Notes', file_name: 'Notes.pdf', mime_type: 'application/pdf', folder_name: 'Research',
+      storage_path: 'c1/personal/notes.pdf',
+    }));
+    const getConfigurationMock = t.mock.method(configurationService, 'getConfiguration', async () => null);
+    const readFileMock = t.mock.method(fileStorage, 'readFile', async () => Buffer.from('hello'));
+    const getStorageTierMock = t.mock.method(collegeProfileRepository, 'getStorageTier', async () => null);
+    const buildPathMock = t.mock.method(fileStorage, 'buildStoragePath', () => 'c1/personal/notes-copy.pdf');
+    const writeFileMock = t.mock.method(fileStorage, 'writeFile', async () => {});
+    const createMock = t.mock.method(documentRepository, 'create', async (client, fields) => ({ id: 'doc-2', ...fields }));
+    const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
+    t.after(() => {
+      findByIdMock.mock.restore(); getConfigurationMock.mock.restore(); readFileMock.mock.restore();
+      getStorageTierMock.mock.restore(); buildPathMock.mock.restore(); writeFileMock.mock.restore();
+      createMock.mock.restore(); auditMock.mock.restore();
+    });
+
+    const result = await documentService.duplicatePersonalDocument({}, 'doc-1', { actorUserId: 'u1' });
+    assert.equal(result.fileName, 'Notes (copy).pdf');
+    assert.equal(result.folderName, 'Research');
+    assert.equal(createMock.mock.calls[0].arguments[1].uploadedByUserId, 'u1');
   });
 });

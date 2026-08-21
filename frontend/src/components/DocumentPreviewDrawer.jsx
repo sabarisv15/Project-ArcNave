@@ -1,7 +1,8 @@
-import { Download, ExternalLink, Lock } from 'lucide-react';
+import { Download, Lock } from 'lucide-react';
 import { toast } from 'sonner';
-import { DrawerShell, DrawerRail, PRIMARY_BTN, GHOST_BTN } from './AttendanceActionDrawer';
+import { DrawerShell, DrawerRail, PRIMARY_BTN } from './AttendanceActionDrawer';
 import { DocumentIcon } from './DocumentIcon';
+import { documentsApi } from '../api/documents';
 import { FILE_KINDS, fileKind, formatSize } from '../lib/documentsData';
 import { formatDateDMY } from '../lib/ist';
 
@@ -30,7 +31,7 @@ export function DocumentPreviewDrawer({ open, onClose, doc }) {
   const previewable = FILE_KINDS[kind]?.preview;
 
   const contextLine = institutional
-    ? `${doc.category} · ${doc.folder}`
+    ? [doc.category, doc.department].filter(Boolean).join(' · ') || 'Institutional'
     : `${FILE_KINDS[kind]?.label ?? 'File'} · ${formatSize(doc.size)}`;
 
   return (
@@ -59,9 +60,9 @@ export function DocumentPreviewDrawer({ open, onClose, doc }) {
           {institutional ? (
             <>
               <Row label="Category" value={doc.category} />
-              <Row label="Folder" value={doc.folder} />
-              <Row label="Published" value={formatDateDMY(doc.publishedAt)} />
-              <Row label="Published by" value={`${doc.publishedBy} · ${doc.publisherRole}`} />
+              <Row label="Department" value={doc.department} />
+              <Row label="Status" value={doc.status} />
+              <Row label="Uploaded" value={formatDateDMY(doc.publishedAt)} />
             </>
           ) : (
             <>
@@ -76,16 +77,17 @@ export function DocumentPreviewDrawer({ open, onClose, doc }) {
         {institutional && (
           <p className="flex items-start gap-[7px] mt-[12px] mb-0 text-[11.5px] text-ink-muted">
             <Lock size={13} strokeWidth={1.9} className="flex-none mt-[1px] text-ink-faint" aria-hidden="true" />
-            Published by {doc.publisherRole}. Institutional documents are read-only — you can view and download them.
+            Institutional documents are read-only — you can view and download them.
           </p>
         )}
       </div>
 
       <DrawerRail>
-        <button type="button" className={GHOST_BTN} onClick={() => toast(`Opening ${doc.name}`)}>
-          <span className="inline-flex items-center gap-[6px]"><ExternalLink size={13} strokeWidth={2} />Open</span>
-        </button>
-        <button type="button" className={PRIMARY_BTN} onClick={() => toast(`Downloading ${doc.name}`)}>
+        <button
+          type="button"
+          className={PRIMARY_BTN}
+          onClick={() => documentsApi.download(doc.id, doc.name).catch(() => toast(`Could not download “${doc.name}”.`))}
+        >
           <span className="inline-flex items-center gap-[6px]"><Download size={13} strokeWidth={2} />Download</span>
         </button>
       </DrawerRail>

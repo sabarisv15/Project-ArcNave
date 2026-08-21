@@ -1,28 +1,47 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { LayoutGrid, List, Lock } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '../lib/utils';
 import { PANE, STICKY_HEAD, StickyTableShell, TABLE_HEAD, TableEmptyState } from './WorkspaceLayout';
 import { IconToolbar, SearchPopoverField, SortIconPopover } from './ToolbarIcons';
 import { FilterPopover, FilterSelect } from './FilterPopover';
 import { DocumentIcon } from './DocumentIcon';
 import { DocumentPreviewDrawer } from './DocumentPreviewDrawer';
-import { useDocumentsStore } from '../store/DocumentsProvider';
-import { INSTITUTIONAL_CATEGORIES, INSTITUTIONAL_FOLDERS, formatSize } from '../lib/documentsData';
+import { documentsApi } from '../api/documents';
+import { formatSize } from '../lib/documentsData';
 import { formatDateDMY } from '../lib/ist';
 
-const GRID = 'grid grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,.6fr)] gap-[12px] items-center';
+const GRID = 'grid grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,.8fr)_minmax(0,.6fr)] gap-[12px] items-center';
 
 const SORTS = [
-  { key: 'published-desc', label: 'Newest published' },
-  { key: 'published-asc', label: 'Oldest published' },
+  { key: 'published-desc', label: 'Newest uploaded' },
+  { key: 'published-asc', label: 'Oldest uploaded' },
   { key: 'name-asc', label: 'Name A–Z' },
   { key: 'name-desc', label: 'Name Z–A' },
   { key: 'size-desc', label: 'Largest first' },
 ];
 
+function documentToRow(d, categoryById, departmentById) {
+  return {
+    id: d.id,
+    name: d.title || d.file_name,
+    mimeType: d.mime_type,
+    category: d.category_id ? (categoryById.get(d.category_id) ?? '—') : '—',
+    department: d.department_id ? (departmentById.get(d.department_id) ?? '—') : 'College-wide',
+    status: d.publication_status,
+    publishedAt: new Date(d.created_at),
+    size: d.file_size_bytes,
+    scope: 'institutional',
+  };
+}
+
 /**
  * Institutional documents — published by an authorised higher authority, and
  * read-only to an ordinary staff member.
+ *
+ * Real backend (GET /documents/institutional): category and department are
+ * server-side filters, search matches title or file name server-side too;
+ * sort stays client-side over whatever page of results came back.
  *
  * There is no upload, new-folder, rename, move, replace or delete control in
  * this pane at all. They are not rendered-and-disabled: a control a staff
@@ -31,27 +50,48 @@ const SORTS = [
  * mysterious.
  */
 export function InstitutionalDocuments() {
-  const { institutional } = useDocumentsStore();
+  const [documents, setDocuments] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('');
-  const [folder, setFolder] = useState('');
+  const [department, setDepartment] = useState('');
   const [sort, setSort] = useState('published-desc');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [view, setView] = useState('list');
   const [preview, setPreview] = useState(null);
 
+  useEffect(() => {
+    Promise.all([documentsApi.listDocumentCategories(), documentsApi.listDepartments()])
+      .then(([categoryRows, departmentRows]) => {
+        setCategories(Array.isArray(categoryRows) ? categoryRows : []);
+        setDepartments(Array.isArray(departmentRows) ? departmentRows : []);
+      })
+      .catch(() => {});
+  }, []);
+
+  // A short debounce on the free-text search only — category/department
+  // are discrete picks that should refetch immediately, a keystroke
+  // shouldn't fire a request per character.
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    const timer = setTimeout(() => {
+      documentsApi
+        .listInstitutionalDocuments({ categoryId: category || undefined, departmentId: department || undefined, search: query || undefined })
+        .then((rows) => { if (!cancelled) setDocuments(Array.isArray(rows) ? rows : []); })
+        .catch(() => { if (!cancelled) toast('Could not load institutional documents.'); })
+        .finally(() => { if (!cancelled) setLoading(false); });
+    }, query ? 250 : 0);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [category, department, query]);
+
+  const categoryById = useMemo(() => new Map(categories.map((c) => [c.id, c.name])), [categories]);
+  const departmentById = useMemo(() => new Map(departments.map((d) => [d.id, d.name])), [departments]);
+
   const rows = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    let out = institutional.filter((d) => {
-      if (category && d.category !== category) return false;
-      if (folder && d.folder !== folder) return false;
-      if (!term) return true;
-      return (
-        d.name.toLowerCase().includes(term) ||
-        d.category.toLowerCase().includes(term) ||
-        d.publishedBy.toLowerCase().includes(term)
-      );
-    });
+    const mapped = documents.map((d) => documentToRow(d, categoryById, departmentById));
     const by = {
       'published-desc': (a, b) => b.publishedAt - a.publishedAt,
       'published-asc': (a, b) => a.publishedAt - b.publishedAt,
@@ -59,11 +99,10 @@ export function InstitutionalDocuments() {
       'name-desc': (a, b) => b.name.localeCompare(a.name),
       'size-desc': (a, b) => (b.size ?? 0) - (a.size ?? 0),
     }[sort];
-    out = [...out].sort(by);
-    return out;
-  }, [institutional, query, category, folder, sort]);
+    return [...mapped].sort(by);
+  }, [documents, categoryById, departmentById, sort]);
 
-  const activeFilters = (category ? 1 : 0) + (folder ? 1 : 0);
+  const activeFilters = (category ? 1 : 0) + (department ? 1 : 0);
 
   return (
     // `pt-[12px]`, tighter than the shared pane: Documents has a tab row of its
@@ -71,7 +110,7 @@ export function InstitutionalDocuments() {
     // row's own bottom edge was a band of empty white with nothing in it.
     <div className={cn(PANE, 'pt-[12px]')}>
       <IconToolbar
-        resultCount={`${rows.length} of ${institutional.length}`}
+        resultCount={loading ? 'Loading…' : `${rows.length} document${rows.length === 1 ? '' : 's'}`}
         // The read-only line is the pane's heading in everything but name, so
         // it takes the left of the header row rather than crowding the icons.
         leading={
@@ -94,20 +133,20 @@ export function InstitutionalDocuments() {
           onOpenChange={setFiltersOpen}
           activeCount={activeFilters}
           align="end"
-          onClear={() => { setCategory(''); setFolder(''); }}
+          onClear={() => { setCategory(''); setDepartment(''); }}
         >
           <div className="grid gap-[12px]">
             <FilterSelect
               label="Category"
               value={category}
               onChange={setCategory}
-              options={[{ value: '', label: 'All categories' }, ...INSTITUTIONAL_CATEGORIES.map((c) => ({ value: c, label: c }))]}
+              options={[{ value: '', label: 'All categories' }, ...categories.map((c) => ({ value: c.id, label: c.name }))]}
             />
             <FilterSelect
-              label="Folder"
-              value={folder}
-              onChange={setFolder}
-              options={[{ value: '', label: 'All folders' }, ...INSTITUTIONAL_FOLDERS.map((f) => ({ value: f, label: f }))]}
+              label="Department"
+              value={department}
+              onChange={setDepartment}
+              options={[{ value: '', label: 'All departments' }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
             />
           </div>
         </FilterPopover>
@@ -127,8 +166,8 @@ export function InstitutionalDocuments() {
           <div className={cn(GRID, STICKY_HEAD, TABLE_HEAD, 'px-[14px] py-[9px]')}>
             <span>Document</span>
             <span>Category</span>
-            <span>Folder</span>
-            <span>Published by</span>
+            <span>Department</span>
+            <span>Status</span>
             <span className="text-right">Size</span>
           </div>
           {rows.map((d) => (
@@ -146,15 +185,12 @@ export function InstitutionalDocuments() {
                 </span>
               </span>
               <span className="text-[12px] text-ink-muted truncate">{d.category}</span>
-              <span className="text-[12px] text-ink-muted truncate">{d.folder}</span>
-              <span className="min-w-0">
-                <span className="block text-[12px] text-ink-muted truncate">{d.publishedBy}</span>
-                <span className="block text-[11px] text-ink-faint truncate">{d.publisherRole}</span>
-              </span>
+              <span className="text-[12px] text-ink-muted truncate">{d.department}</span>
+              <span className="text-[12px] text-ink-muted truncate">{d.status}</span>
               <span className="text-[12px] text-ink-faint tabular-nums text-right">{formatSize(d.size)}</span>
             </button>
           ))}
-          {rows.length === 0 && (
+          {!loading && rows.length === 0 && (
             <TableEmptyState title="No results found" hint="Clear a filter or change the search term to see documents." />
           )}
         </StickyTableShell>
@@ -177,7 +213,7 @@ export function InstitutionalDocuments() {
               </button>
             ))}
           </div>
-          {rows.length === 0 && (
+          {!loading && rows.length === 0 && (
             <TableEmptyState title="No results found" hint="Clear a filter or change the search term to see documents." />
           )}
         </div>

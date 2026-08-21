@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { FileOutput } from 'lucide-react';
 import { ChatMessage } from '../components/ChatMessage';
+import { Markdown } from '../components/Markdown';
 import { ArtifactRevisionComposer } from '../components/ArtifactRevisionComposer';
 import { ChatHeader } from '../components/ChatHeader';
 import { ChatWorkspace, ChatTranscriptScrollArea, ChatComposerDock } from '../components/ChatWorkspace';
@@ -9,7 +12,13 @@ import { SourcesWidget } from '../components/SourcesPopover';
 import { useTranscriptScroll } from '../hooks/useTranscriptScroll';
 import { useWorkspace } from '../store/WorkspaceProvider';
 import { composerScope, useComposer } from '../store/ComposerProvider';
-import { ARTIFACT_CONTEXT, DOC_PARAGRAPHS } from '../lib/mockData';
+import { artifactsApi } from '@/api/artifacts';
+import { ARTIFACT_CONTEXT } from '../lib/mockData';
+
+// Same class ProjectDetail.jsx's own extraSections items use — ChatHeader.jsx
+// doesn't export its MENU_ITEM constant, so each caller keeps its own copy.
+const MENU_ITEM =
+  'flex items-center gap-[9px] h-[32px] px-[9px] rounded-[9px] font-sans text-[12.5px] text-ink cursor-pointer outline-none data-[highlighted]:bg-tint2 disabled:opacity-40 disabled:cursor-not-allowed';
 
 /** Must stay in step with `ArtifactContextPanel`'s own classes. */
 const hasColumn = (pinned) =>
@@ -31,16 +40,60 @@ const hasColumn = (pinned) =>
  */
 export function ArtifactEditor() {
   const { artifactId } = useParams();
-  const { artifacts, threads, artConv, sendMessage, renameArtifact, deleteChat, editMessage, sidebarMode } = useWorkspace();
+  const {
+    artifacts, threads, artConv, sendMessage, seedThread, renameArtifact, publishArtifact, deleteChat, editMessage,
+    sidebarMode,
+  } = useWorkspace();
   const [contextOpen, setContextOpen] = useState(false);
   const [panelHidden, setPanelHidden] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [sourcesHidden, setSourcesHidden] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  // The real document body — `artifacts` (fetchArtifactsReal/WorkspaceProvider)
+  // deliberately omits `content` for the list view (artifactRepository.js's
+  // own LIST_COLUMNS comment: no reason to pull every artifact's full text
+  // back for a listing), so opening one specific artifact needs its own
+  // fetch, same as seedThread does for messages below. null = not loaded yet
+  // (never rendered as if it were a real empty document).
+  const [docContent, setDocContent] = useState(null);
 
   const artifact = artifacts.find((a) => a.id === artifactId);
   const convId = artConv[artifactId] || null;
+
+  // Mirrors ChatRoute's own `if (chat) seedThread(chat)` — without this, a
+  // revision chat with a real conversation_id (from artConv's own
+  // server-hydration, WorkspaceProvider.jsx) still never loaded its actual
+  // messages: `threads` only ever gains an entry through seedThread or a
+  // live sendMessage in the current session. seedThread only ever reads
+  // `.id` off what it's given (its own comment), so a plain `{ id: convId }`
+  // is enough — no need for a matching row in the unrelated `chats` list.
+  useEffect(() => {
+    if (convId) seedThread({ id: convId });
+  }, [convId, seedThread]);
+
   const messages = (convId && threads[convId]) || [];
   const { ref, onScroll, showJump, jumpToLatest } = useTranscriptScroll(messages);
+
+  useEffect(() => {
+    setDocContent(null);
+    if (!artifactId) return;
+    artifactsApi.get(artifactId).then((row) => setDocContent(row.content)).catch(() => {});
+  }, [artifactId]);
+
+  // Refetches the canvas once a turn that may have called
+  // update_artifact_content (aiToolRegistry.js) actually finishes —
+  // `result.toolUsed` isn't threaded into ChatMessage today, so this
+  // re-fetches on every settled AI reply rather than trying to special-case
+  // which tool ran; one extra GET on a reply that didn't touch content is
+  // cheap, and it stays correct if a future tool also writes content.
+  const lastSettledAiId = useRef(null);
+  useEffect(() => {
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== 'ai' || last.generating) return;
+    if (lastSettledAiId.current === last.id) return;
+    lastSettledAiId.current = last.id;
+    artifactsApi.get(artifactId).then((row) => setDocContent(row.content)).catch(() => {});
+  }, [messages, artifactId]);
 
   const context = ARTIFACT_CONTEXT[artifactId] ?? [];
 
@@ -94,6 +147,21 @@ export function ArtifactEditor() {
         onRename={(next) => renameArtifact(artifact.id, next)}
         onDelete={convId && (() => deleteChat(convId))}
         deleteLabel="Delete revision chat"
+        extraSections={[
+          <DropdownMenu.Item
+            key="export"
+            disabled={artifact.status === 'published' || exporting}
+            onSelect={async () => {
+              setExporting(true);
+              await publishArtifact(artifact.id);
+              setExporting(false);
+            }}
+            className={MENU_ITEM}
+          >
+            <FileOutput size={14} strokeWidth={1.9} />
+            {artifact.status === 'published' ? 'Exported to Documents' : 'Export to Documents'}
+          </DropdownMenu.Item>,
+        ]}
         sources={sources}
         sourcesPinned={pinned}
         sourcesPinnedShown={!sourcesHidden}
@@ -114,16 +182,11 @@ export function ArtifactEditor() {
                 {artifact.type.toUpperCase()}
               </p>
               <h2 className="m-0 mb-[14px] text-[19px] font-[600]">{artifact.title}</h2>
-              {DOC_PARAGRAPHS.map((p) => (
-                <p key={p.slice(0, 24)} className="m-0 mb-[11px] text-[13.5px] leading-[1.72] text-ink-soft">
-                  {p}
-                </p>
-              ))}
-              <p className="mt-[22px] mb-0 text-[13px] text-ink-muted">
-                Priya Ramesh
-                <br />
-                Academic Coordinator
-              </p>
+              {docContent === null ? (
+                <p className="m-0 text-[13.5px] text-ink-faint animate-pulseSoft">Loading…</p>
+              ) : (
+                <Markdown>{docContent}</Markdown>
+              )}
             </div>
 
             {convId && messages.length > 0 && (

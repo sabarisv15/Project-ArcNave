@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pencil, Share2, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { Download, FileText, Pencil, Share2, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { Markdown } from './Markdown';
 import { CollapsibleContent } from './CollapsibleContent';
@@ -7,6 +7,7 @@ import { GenerationState, ANMessageMark } from './GenerationState';
 import { CopyButton } from './ui/CopyButton';
 import { useRelativeTime } from '../hooks/useRelativeTime';
 import { cn } from '../lib/utils';
+import { downloadFile } from '../api/client';
 
 const ACTION =
   'w-[26px] h-[26px] grid place-items-center border-0 bg-transparent rounded-[7px] text-ink-ghost cursor-pointer transition-colors duration-200 hover:bg-tint2 hover:text-ink-soft focus-visible:opacity-100';
@@ -167,6 +168,52 @@ function MessageEditor({ message, onSave, onCancel }) {
           Save
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * A real, downloadable file a tool (generate_document/export_artifact —
+ * aiService.js's own extractDocumentAttachment) just saved into the acting
+ * user's own Documents, surfaced right where it was produced rather than
+ * only in the Documents module the user would otherwise have to go find it
+ * in. Download streams the real bytes (GET /documents/:id/download,
+ * client.js's own downloadFile) — never a synthetic client-side blob of
+ * whatever markdown happens to be in `message.body`, so this stays correct
+ * even when the model's chat text differs from the saved file.
+ */
+function DocumentAttachmentCard({ document: doc }) {
+  const [downloading, setDownloading] = useState(false);
+
+  return (
+    <div className="mt-[8px] flex items-center gap-[10px] w-[min(70ch,100%)] max-w-full px-[12px] py-[9px] border border-line rounded-[12px] bg-paper">
+      <span className="flex-none w-[32px] h-[32px] grid place-items-center rounded-[9px] bg-accent-soft text-accent">
+        <FileText size={15} strokeWidth={1.9} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[12.5px] font-[500] text-ink truncate" title={doc.fileName}>{doc.fileName}</span>
+        <span className="block text-[11px] text-ink-faint">Saved to your Documents</span>
+      </span>
+      <button
+        type="button"
+        aria-label={`Download ${doc.fileName}`}
+        title="Download"
+        disabled={downloading}
+        onClick={async () => {
+          setDownloading(true);
+          try {
+            await downloadFile(`/documents/${doc.id}/download`, doc.fileName);
+          } catch {
+            toast('Could not download this file — please try again.');
+          } finally {
+            setDownloading(false);
+          }
+        }}
+        className="flex-none inline-flex items-center gap-[6px] h-[30px] px-[11px] border-0 rounded-[9px] bg-accent text-white font-sans text-[12px] font-[500] cursor-pointer transition-colors duration-200 hover:bg-accent-hover disabled:opacity-60 disabled:cursor-not-allowed"
+      >
+        <Download size={13} strokeWidth={2} />
+        {downloading ? 'Downloading…' : 'Download'}
+      </button>
     </div>
   );
 }
@@ -344,6 +391,7 @@ export function ChatMessage({ message, selected = false, onSelect, onEdit }) {
                   The AI model configured for this college can't view images, so the attached photo was not analyzed.
                 </p>
               )}
+              {message.document && <DocumentAttachmentCard document={message.document} />}
             </div>
           )}
           {!message.generating && <ResponseActions message={message} />}

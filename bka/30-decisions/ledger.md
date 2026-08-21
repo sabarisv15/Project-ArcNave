@@ -1,0 +1,1808 @@
+# Architecture Decision Ledger
+
+**Status:** Historical record. Binding for rationale and migration obligation;
+never for current-state rule text.
+
+---
+
+## Purpose
+
+The Specification layer states what is true. This ledger states **how it came
+to be true**: every resolved conflict, superseded position and open decision,
+with rationale, affected artefacts, migration impact and implementation notes.
+
+Keeping the two apart is deliberate. The specification stays timeless and free
+of "corrected on", "previously", "reversal of" language; complete architectural
+traceability lives here.
+
+## Entry schema
+
+| Field | Meaning |
+|---|---|
+| **Decision** | The resolved position, stated once |
+| **Superseded position** | What was previously asserted, and where |
+| **Rationale** | Why the resolution is correct |
+| **Affected artefacts** | Rules, code, tables, routes, tools |
+| **Migration impact** | Schema, data and behaviour changes required |
+| **Implementation notes** | Sequencing constraints and hazards |
+| **Status** | `Resolved — implemented` / `Resolved — pending implementation` / `Open` |
+
+## Register
+
+| ID | Subject | Status |
+|---|---|---|
+| [ADL-001](#adl-001) | Platform-side actor consolidation and scope | Resolved — implemented |
+| [ADL-002](#adl-002) | LLM provider identity | Resolved — implemented |
+| [ADL-003](#adl-003) | Lifecycle state naming across three lifecycles | Resolved — implemented |
+| [ADL-004](#adl-004) | Classroom, labelling and configuration ownership | Resolved — partially implemented |
+| [ADL-005](#adl-005) | Role-to-data-classification matrix | **Open** |
+| [ADL-006](#adl-006) | Required actor level for Level 3 invitation | Resolved — implemented |
+| [ADL-007](#adl-007) | Staff registration initiation and chain | Resolved — partially implemented |
+| [ADL-008](#adl-008) | Staff deactivation AI tool | Resolved — deliberately not built |
+| [ADL-009](#adl-009) | Attendance correction tiering | Resolved — implemented (Stage 5) |
+| [ADL-010](#adl-010) | Same-actor direct-action carve-out | Resolved — implemented |
+| [ADL-011](#adl-011) | Action-carrying system notifications | Resolved — partially implemented (absence flag, Stage 6) |
+| [ADL-012](#adl-012) | Student lifecycle approval gate | Resolved — gate/floor implemented (Stage 6); L3 notification still pending |
+| [ADL-013](#adl-013) | Fee structure removal and fee-status authority | Resolved — implemented |
+| [ADL-014](#adl-014) | Mark entry versus correction | Resolved — implemented (Stage 5) |
+| [ADL-015](#adl-015) | Declared limitations register | Resolved — implemented |
+| [ADL-016](#adl-016) | Notification ledger | Resolved — implemented |
+| [ADL-017](#adl-017) | AI drafting of Send Alert wording | Resolved — implemented |
+| [ADL-018](#adl-018) | AI pre-submission confirmation turn | Resolved — implemented |
+| [ADL-019](#adl-019) | AI identity-context consumption | Resolved — implemented |
+| [ADL-020](#adl-020) | AI downstream scope fidelity | Resolved — implemented (Phase 4) |
+| [ADL-021](#adl-021) | Position level integer versus business L-number | Resolved — was never a real defect |
+| [ADL-022](#adl-022) | Consolidation of the documentation estate | Resolved — implemented |
+| [ADL-023](#adl-023) | Copilot/Workspace AI surface merger | Resolved — implemented |
+| [ADL-024](#adl-024) | Send Alert authority widened from Class Tutor to assigned staff | Resolved — implemented |
+| [ADL-034](#adl-034) | L2 login/session model — Position Account vs delegated-in-staff-login | Resolved — spec corrected to match shipped code |
+
+---
+
+## ADL-001
+
+### Platform-side actor consolidation and scope
+
+**Decision.** Exactly one platform-side role exists: Platform Admin, an ARCNAVE
+employee holding no seat in any institution's hierarchy. Its authority is
+bounded to onboarding plus five key-gated structural actions.
+
+**Superseded position.** Three distinct actors were previously implied across
+the estate: "Super Admin" (a naming never built), `college_admin` (a real
+tenant role that was subsequently retired), and Platform Admin. Academic Year
+lifecycle transitions were previously documented as Platform-Admin-executed on
+the Principal's request.
+
+**Rationale.** A cross-tenant operation cannot be modelled as a role inside a
+tenant-scoped RLS path without either baking a bypass into every query or
+accepting that one role quietly breaks the isolation model. Keeping Platform
+Admin structurally outside means RLS stays airtight with no special case to
+remember. Separately, a head of institution should not have to ask an outside
+party to change their own college's operational settings — so the boundary is
+drawn by *kind of change* (structural/legal identity versus operational
+policy), not by frequency.
+
+**Affected artefacts.** [RS-GOV-001](../10-specification/RS-GOV-governance.md#rs-gov-001)–[RS-GOV-009](../10-specification/RS-GOV-governance.md#rs-gov-009),
+[RS-GOV-014](../10-specification/RS-GOV-governance.md#rs-gov-014),
+[RS-TEN-004](../10-specification/RS-TEN-tenancy-security.md#rs-ten-004),
+[RS-ACA-002](../10-specification/RS-ACA-academic.md#rs-aca-002),
+[ADR-010](adr-register.md#adr-010), [ADR-020](adr-register.md#adr-020).
+
+**RS-GOV-014 ratified 2026-07-26.** The product owner confirmed L2's
+per-college flexibility (Platform Admin decides existence at onboarding;
+each college's own L1 decides scope and chain position) as the final
+governing behavior, not open policy work — no fixed global default is
+introduced, and no code changes.
+
+**Migration impact.**
+
+| Item | Change |
+|---|---|
+| Authorization key mechanism | New — modelled on the existing opaque-token/hash invitation pattern. Generate (L1, one live key per college), cancel, redeem (Platform Admin, atomic), 7-day expiry |
+| Department routes | Onboarding-time creation moves to Platform Admin; post-onboarding creation already correctly L1-gated, no change; merge and rename are new key-gated Platform-Admin endpoints |
+| Structural versioning | Version column plus audit row on `colleges`/`departments` structural fields |
+| `college_admin` | Already retired by migration; references corrected in the classification matrix and document module |
+
+**Implementation notes.** The key mechanism assumes a functioning L1. Its
+absence of a vacancy fallback is deliberate
+([RS-GOV-007](../10-specification/RS-GOV-governance.md#rs-gov-007)) and MUST NOT
+be "fixed" by adding one.
+
+**Status.** Resolved — implemented (2026-07-25, Stage 3a). Key mechanism
+(`structuralAuthorizationKeyRepository`, `platformService.generate/cancel/
+loadRedeemable/markStructuralKeyRedeemed`), department risk split
+(`POST /platform/colleges/:college_id/departments` onboarding-only,
+`executeDepartmentMergeOrRename` key-gated), and structural versioning all
+built and tested (10 integration tests). One real finding from an
+independent reviewer pass fixed before close: redemption was not actually
+atomic — `markStructuralKeyRedeemed` could run before the tenant-side
+department write was durably committed, meaning an ordinary commit failure
+could consume the key with no change landed. Fixed by exposing
+`req.commitTransaction()` from `db/tenantTransaction.js` and calling it
+explicitly before marking the key redeemed. D18 (RS-GOV-003) removed from
+the divergence list — see the Implementation Impact Matrix.
+
+---
+
+## ADL-002
+
+### LLM provider identity
+
+**Decision.** The production LLM provider is **NVIDIA NIM**, reached through an
+OpenAI-compatible completions endpoint, with embeddings from the same provider.
+Provider identity is not an architectural fact and is recorded in exactly one
+place: [ADR-028](adr-register.md#adr-028).
+
+**Superseded position.** Four canonical artefacts asserted Gemini as the
+current provider: the AI governance document's provider section, the
+architecture document's AI layer diagram, the technology stack list, and the
+deferred-decision register's local-LLM row. A fifth artefact already stated the
+correct, provider-neutral position.
+
+**Rationale.** Gemini was the original placeholder; no key for it ever existed
+in this environment. NIM is a real credential the project actually holds and
+against which the pipeline is live-verified. Nothing about the provider
+abstraction was broken — the component genuinely is swappable — but four
+"locked" documents asserted a fact about the running system that had not been
+true since the AI module shipped, and no decision record governed the actual
+production choice.
+
+**Affected artefacts.**
+[RS-AIG-008](../10-specification/RS-AIG-ai-governance.md#rs-aig-008),
+[RS-ASM-008](../10-specification/RS-ASM-assessment-documents.md#rs-asm-008),
+[ADR-012](adr-register.md#adr-012) (status corrected),
+[ADR-028](adr-register.md#adr-028) (new).
+
+**Migration impact.** None — code was already correct. This was a documentation
+and decision-record defect only.
+
+**Implementation notes.** The classification normalization layer
+([RS-ASM-008](../10-specification/RS-ASM-assessment-documents.md#rs-asm-008)) is
+provider-agnostic by construction and requires no change if the provider
+changes again. The prohibition on asserting provider identity outside the ADR
+register is what prevents this defect recurring.
+
+**Status.** Resolved — implemented.
+
+---
+
+## ADL-003
+
+### Lifecycle state naming across three lifecycles
+
+**Decision.** Three lifecycles were normalised in one pass:
+
+| Lifecycle | Resolution |
+|---|---|
+| Academic Year | `Draft → Active → Completed`. `Closed` renamed to `Completed`; `Archived` retired |
+| College provisioning | `provisioning → ready → active → archived`, `suspended` a side-branch off `active` only. `active` added as its own state |
+| Student | `Alumni` is terminal. No `Archived` student status |
+
+**Superseded position.** Academic Year previously terminated at `Closed` with
+`Archived` as a further state. College provisioning previously ran
+`provisioning → ready → suspended → archived`, with the readiness gate on the
+`provisioning → ready` transition and reactivation returning to `ready`.
+Student lifecycle previously implied an `Archived` terminal status.
+
+**Rationale.** Record archival is a record-keeping mechanism applied *on top of*
+a lifecycle, not a further state the entity itself passes through
+([RS-DAT-003](../10-specification/RS-DAT-data-integrity.md#rs-dat-003)).
+Modelling it as a lifecycle state conflated two independent axes in all three
+places. Separately, `ready` (onboarding configuration complete) and `active`
+(the college is actually running) are genuinely different facts that were
+previously collapsed, which put the readiness gate on the wrong transition.
+
+**Affected artefacts.**
+[RS-ACA-002](../10-specification/RS-ACA-academic.md#rs-aca-002),
+[RS-GOV-010](../10-specification/RS-GOV-governance.md#rs-gov-010),
+[RS-GOV-011](../10-specification/RS-GOV-governance.md#rs-gov-011),
+[RS-GOV-012](../10-specification/RS-GOV-governance.md#rs-gov-012),
+[RS-STU-006](../10-specification/RS-STU-students.md#rs-stu-006).
+
+**Migration impact.**
+
+| Item | Change | Data migration? |
+|---|---|---|
+| `academic_years.status` | Stored value `Closed` → `Completed`; `Archived` retired | **Yes** — existing rows carry these values, and no CHECK constraint currently narrows them |
+| `colleges.provisioning_status` | New column with the four-state enum plus transition guards | **No** — greenfield; the column was never shipped |
+| Readiness gate | Moves from the `provisioning → ready` transition to `ready → active` | No |
+| Reactivation target | `ready` → `active` | No |
+
+**Implementation notes.** Build the college lifecycle directly in its final
+shape — there is no shipped state to migrate. The Academic Year rename is the
+only real data migration in this entry and MUST NOT be treated as a code
+relabel. Semester-level "closing Semester 3" wording is a different concept
+from the Academic Year's own state and is deliberately unchanged.
+
+**Status.** Resolved — implemented (2026-07-25/26, Stages 3a+3b, Student fix
+2026-07-26). College provisioning lifecycle done (Stage 3a):
+`colleges.provisioning_status` (four-state CHECK constraint), the readiness
+gate correctly on `ready→active` (not `provisioning→ready`), reactivation
+correctly targeting `active`. Academic Year done (Stage 3b):
+`academic_years.status` `Closed`→`Completed` data migration, `Archived`
+retired, new CHECK constraint, `completeAcademicYear` replacing
+`closeAcademicYear`/`archiveAcademicYear`.
+
+Student's `Archived` removal done 2026-07-26: `studentService.js`'s
+`LIFECYCLE_STATES` no longer lists `'Archived'` — `changeStudentStatus`
+rejects it like any other unknown value, closing the gap where a caller
+could set a student's status straight to `Archived` with no approval step.
+Mirrored in `frontend/src/features/students/schemas.js`'s
+`LIFECYCLE_STATUSES`. The frontend's "Archive student" feature (buttons +
+dialogs on Students List and Student Detail) was removed outright rather
+than repointed, per explicit user decision — no valid status carries the
+same meaning.
+
+---
+
+## ADL-004
+
+### Classroom, labelling and configuration ownership
+
+**Decision.** A consolidated set of resolutions from the classroom and
+labelling review:
+
+| Question | Resolution |
+|---|---|
+| Is Class Tutor separate from L4? | **No.** L4 is the one real credentialed classroom concept; "Class Tutor" is its default display label |
+| L1–L4 versus job titles | Not two concepts. L1–L4 is the fixed authority structure; job titles are per-college display labels resolved at render time |
+| Does a class belong to a batch? | **No.** A class is a permanent slot keyed by (department, semester number); occupants rotate annually |
+| Who owns Organization Name, position titles, storage backend? | The college's own L1, unrestricted, via Institution Settings |
+| Is Community restricted like Aadhaar? | **No.** It is a normal coarse category field under ordinary role-based access |
+| Is attendance authority class-level? | **No.** Strictly per-hour |
+
+**Superseded position.** Class Tutor was previously framed as "kept
+deliberately separate" from L4, with its own narrower rules stated
+independently in several domains. Organization Name and position-title editing
+lived on the platform-admin frontend. Community was treated as
+restricted-adjacent. Attendance permitted class-tutor and HOD force-marking.
+
+**Rationale.** Two names for one credentialed concept guarantee that rules
+stated against one name will drift from rules stated against the other.
+Organization Name and position titles are identity and labelling changes, not
+the data-integrity risk the structural-key mechanism exists for — the contrast
+with department merge/rename is the operative distinction. Community captures
+only a coarse category already used as a legitimate scholarship criterion; the
+granular sub-caste name is not captured at all, so the Aadhaar exclusion does
+not apply.
+
+**Affected artefacts.**
+[RS-CLS-002](../10-specification/RS-CLS-classroom.md#rs-cls-002),
+[RS-CLS-004](../10-specification/RS-CLS-classroom.md#rs-cls-004),
+[RS-CLS-005](../10-specification/RS-CLS-classroom.md#rs-cls-005),
+[RS-CLS-007](../10-specification/RS-CLS-classroom.md#rs-cls-007),
+[RS-CLS-008](../10-specification/RS-CLS-classroom.md#rs-cls-008),
+[RS-CLS-009](../10-specification/RS-CLS-classroom.md#rs-cls-009),
+[RS-CLS-010](../10-specification/RS-CLS-classroom.md#rs-cls-010),
+[RS-IDN-012](../10-specification/RS-IDN-identity.md#rs-idn-012),
+[RS-GOV-013](../10-specification/RS-GOV-governance.md#rs-gov-013),
+[RS-ATT-002](../10-specification/RS-ATT-attendance.md#rs-att-002),
+[RS-DAT-008](../10-specification/RS-DAT-data-integrity.md#rs-dat-008).
+
+**Migration impact.**
+
+| Item | Change |
+|---|---|
+| Class auto-generation | New — on department create, generate slots for in-scope years × sections |
+| Student create/edit | Scope to L4's own class; timetable-linked view and export for other staff, with export events logged |
+| Attendance authority | Rework from class-tutor/HOD force-marking to strict per-hour ownership. Touches the marking routes and the AI assistant's validation |
+| Substitute flow | New state machine replacing the current direct HOD-assigns implementation |
+| Organization Name / titles | Remove or lock the fields on the platform-admin edit dialog; surface them in Institution Settings |
+| Display labels | New per-college lookup (`college_id`, `level`, `custom_label`), consulted at render time only |
+| Storage backend | Pluggable backend selection, L1-editable; the document service remains the sole mediator |
+
+**Implementation notes.** The display-label lookup is **additive only**.
+Internal role keys stay exactly as they are in every route guard, token claim
+and AI tool grant — zero changes to authorization code. Attendance authority
+rework and AI tool ownership checks must land together, or the AI path will
+enforce a looser rule than the human path.
+
+**Status.** Resolved — partially implemented (2026-07-25/26, Stages 5/8a/8b).
+
+Done: attendance authority reworked to strict per-hour ownership, landed
+together with the AI tool's own eligibility check (Stage 5). Organization
+Name and level1/level3 position titles moved to Institution Settings,
+principal-only, off the platform-admin frontend (Stage 8a). Storage backend
+is a real pluggable per-tenant configuration (`storageProviderRegistry.js`,
+Stage 8a). Per-college display-label lookup exists for L1/L3/L4
+(`colleges.level1/3/4_position_title`, Stage 8a/8b) and is consulted by AI;
+no frontend surface renders it yet — deliberately deferred per explicit user
+decision, until a real screen (Staff Directory, Approval screens, Profile
+page) needs it, not treated as a bug.
+
+Still pending: class auto-generation on department create
+([RS-CLS-002](../10-specification/RS-CLS-classroom.md#rs-cls-002)/[RS-CLS-001](../10-specification/RS-CLS-classroom.md#rs-cls-001));
+the substitute flow's request→L3-approval step and 24-hour window (the
+underlying assignment mechanism itself already exists — see
+[RS-CLS-007](../10-specification/RS-CLS-classroom.md#rs-cls-007)'s own
+Conformance field, reclassified Partial).
+
+---
+
+## ADL-005
+
+### Role-to-data-classification matrix
+
+**Decision.** A conservative code-level matrix mapping each role to the set of
+data classifications it may receive, checked **independently** of whether the
+role may invoke the tool at all. Adopted as a **working default** so the first
+AI slice could ship something real, explicitly flagged as open rather than
+silently assumed.
+
+**Superseded position.** The AI governance document stated that per-tool
+classification access is "defined per tool, not assumed" without supplying the
+definition. The original matrix also carried an entry for the since-retired
+`college_admin` role.
+
+**Rationale.** Action level and data classification are two genuinely
+independent properties: a tool with broad read access is not automatically
+entitled to Restricted data because it is read-only. A declared default that is
+visibly open is better than an undeclared assumption.
+
+**Ratified 2026-07-26.** The product owner ratified the matrix as final
+policy, effective immediately, without waiting for a real production case of
+a role first needing higher-tier access — the previously open question below
+is now moot.
+
+**Formerly open question (resolved by ratification above).** Ratifying the
+matrix requires a role's access to be genuinely exercised by real production
+use, not merely declared. Today the higher tiers are exercised only by roles
+that already held that access, so no case has yet tested a role needing
+Confidential or Restricted access for the first time.
+
+**Affected artefacts.**
+[RS-AIG-006](../10-specification/RS-AIG-ai-governance.md#rs-aig-006),
+[RS-FIN-006](../10-specification/RS-FIN-finance.md#rs-fin-006),
+[RS-ASM-004](../10-specification/RS-ASM-assessment-documents.md#rs-asm-004),
+[ADR-020](adr-register.md#adr-020).
+
+**Migration impact.** None. The matrix lives in its own module.
+
+**Implementation notes.** One deliberate per-tool divergence exists: the marks
+summary tool is registered `Internal` rather than the `Confidential` default
+for marks, because the same tutor already holds full read and write access to
+those exact marks on the dashboard. Divergences of this kind MUST be stated on
+the tool, never left implicit.
+
+**Status.** **Open.**
+
+---
+
+## ADL-006
+
+### Required actor level for Level 3 invitation
+
+**Decision.** The required actor level to invite or reassign a Level 3 seat is
+**L1**.
+
+**Superseded position.** The shipped invitation configuration requires actor
+level 2 to invite a new Level 3.
+
+**Rationale.** L2 is optional and most colleges will not have one. Requiring an
+L2 to create an L3 makes it **structurally impossible to ever create an HOD** at
+any college without an L2 — contradicting the L2-optionality invariant that has
+held from the outset. This is a live defect, not a design question.
+
+**Affected artefacts.**
+[RS-IDN-004](../10-specification/RS-IDN-identity.md#rs-idn-004),
+[RS-STF-007](../10-specification/RS-STF-staff.md#rs-stf-007).
+
+**Migration impact.** One configuration value: `2` → `1`.
+
+**Implementation notes.** Ship with a regression test proving an L1 can invite
+an L3 at a college with **no L2 present**. The one-line nature of the fix is
+what makes the regression test mandatory: without it, nothing prevents the
+value drifting back.
+
+**Status.** Resolved — implemented (2026-07-25, Stage 2). Fixed in
+`positionAccountInvitationService.js` (`RECURSIVE_INVITERS[3].requiredActorLevel`
+`LEVEL2` → `LEVEL1`). Regression test added proving an L1 with no L2 position
+anywhere in its capabilities can invite an L3. Full suite green (1393/1393),
+independent reviewer pass clean (2 cosmetic findings, both fixed).
+
+---
+
+## ADL-007
+
+### Staff registration initiation and chain
+
+**Decision.** Staff registration is L3-initiated and invite-first: L3 sends an
+invite → the invitee accepts and completes their profile → L3 approves → L2 (if
+in the chain) or L1 gives final approval → the account is live. Only then may
+L3 assign the person as an L4.
+
+**Superseded position.** A self-service chain in which the faculty member
+submits a registration request, resolved by a bare approve/reject pair with no
+invite step.
+
+**Rationale.** Because the invite originates from a specific L3, the new staff
+member's department is set automatically and correctly, which a self-service
+request cannot guarantee. The approval chain is retained; only the initiation
+changes.
+
+**Affected artefacts.**
+[RS-STF-001](../10-specification/RS-STF-staff.md#rs-stf-001),
+[RS-STF-002](../10-specification/RS-STF-staff.md#rs-stf-002),
+[RS-STF-003](../10-specification/RS-STF-staff.md#rs-stf-003),
+[RS-STF-010](../10-specification/RS-STF-staff.md#rs-stf-010).
+
+**Migration impact.** Invitation-first registration path; existing approve and
+reject methods re-pointed at the new chain.
+
+**Implementation notes.** **Hazard.** A plain staff hire's own temporary
+credential bootstrap is *not* a violation of the invite-only credential-reset
+rule. That rule governs Position Account reassignment — L1, L2, L3 and Class
+Tutor seats specifically. A base-level person-centric account sits outside that
+model entirely
+([RS-STF-010](../10-specification/RS-STF-staff.md#rs-stf-010)) and MUST NOT be
+"corrected" while rebuilding the invite-first flow.
+
+**Status.** Resolved — partially implemented (2026-07-25, Stage 3d). The
+invite-first mechanism itself is built: `staff_invitations` (college_id,
+department_id, email, token_hash, invited_by, expires_at, accepted_at —
+no RLS, same structural reason `principal_invitations`/
+`position_account_invitations` have none), `staffService.inviteStaff`
+(`POST /staff/invitations`, hod-only — actorUserId must be the real,
+verified hod of the department the invite lands in, resolved via
+`findHodDepartmentId`, never a caller-supplied departmentId) and
+`acceptStaffInvitation` (`POST /staff/invitations/accept`, unauthenticated
+— same pre-tenant-context pattern `routes/invitations.js`/
+`routes/positionAccountInvitations.js` already establish). Accept creates
+the `users` row (role `staff`, `isActive: false` — live only after final
+approval, per RS-STF-002) and the `staff` row (department inherited from
+the invitation, never the accepting caller) in one transaction, then
+immediately auto-submits into the existing hod->principal chain — RS-STF-002
+step 2 ("L3 approves") starts the moment step 1 finishes, not as a
+separate manual action. 9 new unit tests + 3 new integration tests
+(golden path, non-hod actor forbidden, invalid/reused token rejected).
+
+**Two real gaps deliberately left open, not silently declared done:**
+1. The chain `acceptStaffInvitation` submits into is still the old
+   hardcoded `findHodForDepartment`/`findPrincipal` 2-step build, not
+   `workflowChainService`'s configurable resolver — so RS-STF-002's own
+   "L2-or-L1 per the institution's configured chain" is not actually
+   reachable; an institution that configures an L2 step gets no
+   different behavior. Same restraint `workflowChainService`'s own
+   header comment already states for every other still-hardcoded submit
+   function — a deliberate, matching scope boundary, not an oversight
+   specific to this change.
+2. `POST /staff` (bare, non-invite `createStaff`) and
+   `POST /staff/:id/submit-registration` are UNCHANGED and still fully
+   reachable — the frontend's own "Add Staff" flow still calls them
+   directly, bypassing the invite entirely. RS-STF-001's "there is no
+   staff-initiated request step" is therefore enforced for the NEW path
+   only; the old path is not yet locked down, because doing so today
+   would break the live frontend with no replacement UI built for it.
+   Locking `POST /staff` down and repointing the frontend at
+   `POST /staff/invitations` is deferred to this project's own "frontend
+   against stable spec" phase (step 5 of the 6-step sequence this backend
+   implementation effort follows), not silently dropped.
+
+---
+
+## ADL-008
+
+### Staff deactivation AI tool
+
+**Decision.** No AI tool for staff deactivation is built.
+
+**Rationale.** The human action itself carries a pre-existing authorization gap
+— no per-row scope check. An AI tool would inherit and amplify it. The
+human-side fix is a prerequisite, not a parallel task.
+
+**Affected artefacts.**
+[RS-STF-005](../10-specification/RS-STF-staff.md#rs-stf-005).
+
+**Migration impact.** None. The prerequisite fix is a per-row scope check on
+the human path.
+
+**Implementation notes.** This is recorded so the omission is never
+re-discovered as an oversight. Two further AI capabilities are withheld on
+similar grounds: document upload and review for tutor and HOD, where the
+current permission is principal-only and explicitly provisional pending a real
+rule decision; and multi-tool orchestration, which changes the LLM interaction
+loop and needs its own scoped decision.
+
+**Status.** Resolved — deliberately not built.
+
+---
+
+## ADL-009
+
+### Attendance correction tiering
+
+**Decision.** Attendance correction is **single-tier**: the Subject Faculty
+submits, the class's L4 approves, and L4's approval is final by default. L4 may
+discretionarily escalate a specific case.
+
+**Superseded position.** A two-tier model in which "high-risk" corrections
+escalated further up the configured chain.
+
+**Rationale.** The high-risk threshold was never precisely defined, and the
+overwhelming majority of corrections are ordinary data-entry slips — roll 43
+typed as 33 — that cross-checking and L4's own review already catch. The
+permanent audit trail is the safety net, in place of a mandatory second
+reviewer. Preserving L4's *discretion* to escalate keeps the genuine benefit of
+the two-tier model without a system-enforced classification nobody could
+define.
+
+**Affected artefacts.**
+[RS-ATT-004](../10-specification/RS-ATT-attendance.md#rs-att-004),
+[RS-DAT-002](../10-specification/RS-DAT-data-integrity.md#rs-dat-002).
+
+**Migration impact.** Remove the high-risk escalation branch from the
+correction implementation. No schema change.
+
+**Implementation notes.** This is a removal, not an addition — the simpler of
+the three correction paths to bring into conformance, and a reasonable first
+one to land as a template for the other two.
+
+**Status.** Resolved — implemented (2026-07-25, Stage 5). The discretionary
+(not system-classified) escalation option is built: `attendanceService.
+escalateAttendanceCorrection` + `workflowService.escalateRequest` let L4
+append a `hod`/`principal` step to the same pending request, human-discretion
+only, no AI entry point. See [RS-ATT-004](../10-specification/RS-ATT-attendance.md#rs-att-004).
+
+---
+
+## ADL-010
+
+### Same-actor direct-action carve-out
+
+**Decision.** A three-condition written test determines when an AI tool may be
+registered below Level 3: same actor and scope, already direct for a human, and
+never a delete.
+
+**Superseded position.** One specific carve-out — natural-language attendance
+marking — was described ad hoc, with no general test. Future tools would have
+been checked against precedent rather than a rule.
+
+**Rationale.** Precedent-copying is exactly how a boundary erodes. A written
+test that must be verified against real route and service code, never inferred
+from naming, converts a judgement call into a check.
+
+**Affected artefacts.**
+[RS-AIG-007](../10-specification/RS-AIG-ai-governance.md#rs-aig-007),
+[RS-ATT-005](../10-specification/RS-ATT-attendance.md#rs-att-005),
+[RS-NTF-006](../10-specification/RS-NTF-notifications.md#rs-ntf-006).
+
+**Migration impact.** None — a registration discipline, backed by a runtime
+bypass backstop.
+
+**Implementation notes.** The extension boundary is the operative clause: if
+natural-language marking is ever extended to let one user mark a session they
+are not already eligible for, that variant **loses** the carve-out and must use
+the ordinary correction workflow.
+
+**Status.** Resolved — implemented.
+
+---
+
+## ADL-011
+
+### Action-carrying system notifications
+
+**Decision.** System notifications divide into delivery-only and
+action-carrying. The action-carrying set — substitute approval, the
+five-consecutive-day absence flag, and pending high-severity student-status
+requests — remains outstanding until acted on and its closure is logged.
+
+**Superseded position.** The system-notification carve-out was framed as
+uniformly delivery-only, by analogy with OTP.
+
+**Rationale.** The analogy holds for *why* these bypass the draft and approve
+pipeline — fixed, mechanical, non-discretionary content — but not for what
+happens afterwards. An absence flag that can be silently unread is not a
+control.
+
+**Affected artefacts.**
+[RS-NTF-005](../10-specification/RS-NTF-notifications.md#rs-ntf-005),
+[RS-ATT-008](../10-specification/RS-ATT-attendance.md#rs-att-008),
+[RS-CLS-007](../10-specification/RS-CLS-classroom.md#rs-cls-007),
+[RS-STU-007](../10-specification/RS-STU-students.md#rs-stu-007).
+
+**Migration impact.** A new notification type plus a lightweight outstanding-flag
+state for the absence flag.
+
+**Implementation notes.** The absence flag is deliberately **not** a workflow
+entity: there is nothing to approve or reject, only to close. Modelling it as a
+workflow request would misrepresent it and add an approver where none exists.
+
+**Status.** Resolved — partially implemented (2026-07-25, Stage 6): the
+absence flag itself (raise/outstanding/close, `attendance_absence_flags`) is
+built. The "automatic system notification" delivery half is not — the flag is
+queryable and AI-readable, not pushed via email/dashboard alert yet.
+
+---
+
+## ADL-012
+
+### Student lifecycle approval gate
+
+**Decision.** All four of Suspended, Discontinued, Debarred and Dismissed
+require the institution's configured approval workflow, with **L3 as a
+mandatory minimum floor** that no configuration may remove.
+
+**Superseded position.** The gate covered three of the four, omitting
+Suspended, and no floor was enforced — an institution could in principle
+configure these as Tutor-only.
+
+**Rationale.** Student disciplinary and lifecycle changes are ordinarily
+visible and reviewable at HOD level in how institutions actually operate, not
+solely at the tutor's discretion. Suspended is no less consequential than the
+other three.
+
+**Affected artefacts.**
+[RS-STU-007](../10-specification/RS-STU-students.md#rs-stu-007),
+[RS-STU-010](../10-specification/RS-STU-students.md#rs-stu-010),
+[RS-WFL-003](../10-specification/RS-WFL-workflow.md#rs-wfl-003).
+
+**Migration impact.** The status-change path and the corresponding AI tool's
+downstream approval routing.
+
+**Implementation notes.** Note the two independent axes: whether a transition
+requires approval to *enter*, and whether the resulting status *blocks
+progression*. Suspended requires approval but is promoted or blocked per
+institution policy. Conflating the two is the most likely implementation error
+here.
+
+**Status.** Resolved — partially implemented (2026-07-25, Stage 6): the gate
+now includes `Suspended`, and `workflowChainService.resolveApproverChain`
+enforces the L3 floor structurally (`WorkflowChainFloorViolationError` on any
+configured chain that never reaches it). RS-STU-007's own automatic
+notification to L3 for a pending request is not yet built — see ADL-011.
+
+---
+
+## ADL-013
+
+### Fee structure removal and fee-status authority
+
+**Decision.** The fee-structure concept is removed from ARCNAVE entirely — not
+merely its approval workflow. Fee status is a bare Paid/Not Paid flag: L4 marks
+it first-time as a receipt-backed direct write; L3 approves any later
+correction.
+
+**Superseded position.** A shipped fee-structure table, route, service approval
+methods, workflow entity type and two AI tools. First-time payment marking was
+principal-only in both the permission model and the AI tool registry.
+
+**Rationale.** How much a student owes is not data ARCNAVE holds — it lives in
+the institution's own accounting system, the same territory as the already
+excluded gateway, ledger, fine, concession and refund capability. Retaining a
+structure record with no amount served no purpose. On authority: the class's L4
+is the actor who actually handles fee receipts, and the required receipt
+attachment is what makes the direct write safe.
+
+**Affected artefacts.**
+[RS-FIN-001](../10-specification/RS-FIN-finance.md#rs-fin-001)–[RS-FIN-004](../10-specification/RS-FIN-finance.md#rs-fin-004),
+[RS-AIG-004](../10-specification/RS-AIG-ai-governance.md#rs-aig-004),
+[RS-DAT-002](../10-specification/RS-DAT-data-integrity.md#rs-dat-002).
+
+**Migration impact.**
+
+| Item | Change | Real schema change? |
+|---|---|---|
+| Fee-structure table and route | Drop | Yes |
+| Fee-structure service approval methods | Remove | No |
+| Fee-structure workflow entity type | Remove | No |
+| Fee-structure AI tools | **Remove, not defer** — nothing remains for them to draft or submit | No |
+| `fee_payments.fee_structure_id` | `NOT NULL` FK into the dropped table — drop the column and FK | **Yes** |
+| `(student_id, fee_structure_id)` unique constraint | Replace with plain `student_id` uniqueness | **Yes** |
+| Fee-payment permission and AI tool role | Principal-only → `class_tutor` for first entry | No |
+| Correction path | New workflow-submitting AI tool routed to L3's own-department queue | No |
+
+**Implementation notes.** This is the largest real schema change in the current
+backlog. `fee_payments` is already amount-free but structurally dependent on
+the table being removed, so the migration must run before or with the drop —
+not after. The correction path is new work, not a rename of the removed
+approval flow.
+
+**Status.** Resolved — implemented (2026-07-25, Stage 4). `fee_structures`
+dropped entirely (table, route, workflow entity type, `financeService`
+approval methods, both fee-structure AI tools). `fee_payments.fee_structure_id`
+FK dropped, `(student_id, fee_structure_id)` unique constraint replaced with
+plain `student_id` uniqueness — a fee status is now one row per student, not
+per fee-line, matching RS-FIN-002's own `unmarked -> marked -> (corrected)`
+lifecycle. `markFeePayment` moved to `class_tutor` (own class only, real
+per-row check, not a role-only gate), now requires a receipt document, and
+refuses a second direct mark — RS-FIN-003's new `fee_corrections` table +
+`requestFeeCorrection`/`approveFeeCorrection`/`rejectFeeCorrection` handle
+any later change instead, modeled directly on `attendance_corrections`
+(structural pattern P1 — original value never touched, effective value
+computed at read time). `finance_status_summary` AI tool reworked to report
+counts only, matching RS-FIN-004's "no amount to summarise." Frontend's
+fee-structures admin page removed along with the two Dashboard widgets that
+read it; the Student Detail page's fee-payment card rebuilt around the new
+single-status-plus-correction shape.
+
+Reviewer pass found one real gap, fixed before close: the generic
+`POST /workflow-requests/:id/approve` endpoint had no dispatch branch for
+`fee_correction` (or the pre-existing `attendance_correction`), so calling it
+directly would flip a correction's `workflow_requests` row to Approved
+without ever marking the correction applied — a silent violation of RS-DAT-002's
+"approved correction becomes the effective value" for exactly the entity
+types built to protect it. Fixed by having `dispatchWorkflowAction` reject
+both entity types outright (409, new `WorkflowRequestWrongEndpointError`),
+directing callers to the dedicated `/finance/fee-corrections/:id/approve`/
+`/attendance/corrections/:id/approve` routes instead of silently
+under-applying.
+
+---
+
+## ADL-014
+
+### Mark entry versus correction
+
+**Decision.** First-time mark entry is a direct write by the assigned Subject
+Faculty. Any later write to an existing value is a correction approved by the
+class's L4.
+
+**Superseded position.** No boundary existed: any write proceeded directly.
+
+**Rationale.** This closes a real gap rather than changing a decision. The
+class's L4 already owns the Examination section and already approves attendance
+corrections, so the same checkpoint applies without inventing a new authority.
+Unlike attendance, marks have no live time window to lock, so
+first-write-versus-any-write is the natural boundary rather than a workaround
+for a missing lock event.
+
+**Affected artefacts.**
+[RS-ASM-002](../10-specification/RS-ASM-assessment-documents.md#rs-asm-002),
+[RS-ASM-003](../10-specification/RS-ASM-assessment-documents.md#rs-asm-003),
+[RS-DAT-002](../10-specification/RS-DAT-data-integrity.md#rs-dat-002).
+
+**Migration impact.** The record-mark path and its AI tool must check for an
+existing value before writing. A new workflow entity type within the existing
+engine, plus a new workflow-submitting AI tool. No new mechanism.
+
+**Implementation notes.** AI may perform first-time entry on the assigned
+faculty's own behalf under the same-actor carve-out, but **never a correction**.
+An AI-initiated correction must route through the normal submission path with
+the pre-submission confirmation turn
+([ADL-018](#adl-018)).
+
+**Status.** Resolved — implemented (2026-07-25, Stage 5). `recordMark` throws
+`AssessmentMarkAlreadyRecordedError` instead of overwriting an existing value;
+`requestMarkCorrection`/`approveMarkCorrection`/`rejectMarkCorrection` and the
+`assessment_submit_mark_correction` AI tool give the correction path a real
+route. See [RS-ASM-002](../10-specification/RS-ASM-assessment-documents.md#rs-asm-002),
+[RS-ASM-003](../10-specification/RS-ASM-assessment-documents.md#rs-asm-003).
+
+---
+
+## ADL-015
+
+### Declared limitations register
+
+**Decision.** Known data-quality and scope limitations are recorded in one
+register that every consumer inherits, rather than being noted incidentally
+wherever they were discovered.
+
+**Rationale.** A limitation noted in the domain where it was found does not
+reach the analytics or reporting consumer that later builds on the field. A
+single register with a rule that consumers must not present a listed limitation
+as a precise result makes the inheritance explicit.
+
+**Affected artefacts.**
+[RS-DAT-009](../10-specification/RS-DAT-data-integrity.md#rs-dat-009),
+[RS-ATT-009](../10-specification/RS-ATT-attendance.md#rs-att-009),
+[RS-ASM-010](../10-specification/RS-ASM-assessment-documents.md#rs-asm-010),
+[RS-AIG-006](../10-specification/RS-AIG-ai-governance.md#rs-aig-006).
+
+**Migration impact.** None.
+
+**Implementation notes.** Adding an entry requires a ledger entry; removing one
+requires the underlying limitation to have actually been resolved, not merely
+worked around at one call site.
+
+**Status.** Resolved — implemented.
+
+---
+
+## ADL-016
+
+### Notification ledger
+
+**Decision.** Every outbound notification is a ledger row before dispatch, with
+every delivery attempt recorded.
+
+**Superseded position.** The notification service sends email directly, with no
+ledger and no delivery-attempt history. This was a deliberate, recorded scope
+decision at the time, not an oversight.
+
+**Rationale.** Without a ledger there is no delivery history and no record of
+retries. The gap is tolerable only while every send is already gated by a
+completed approval. Any caller needing to send a notification **not** already
+gated that way — AI-drafted content, bulk send, anything discretionary — cannot
+reuse the direct send path.
+
+**Affected artefacts.**
+[RS-NTF-001](../10-specification/RS-NTF-notifications.md#rs-ntf-001),
+[RS-NTF-002](../10-specification/RS-NTF-notifications.md#rs-ntf-002),
+[RS-NTF-003](../10-specification/RS-NTF-notifications.md#rs-ntf-003).
+
+**Migration impact.** Two new tables: the notification record and the
+delivery-attempt log.
+
+**Implementation notes.** The trigger condition is already met in principle by
+AI-drafted notification content, which makes this higher priority than its
+"deferred" framing suggests.
+
+**Status.** Resolved — implemented. Verified against real code, 2026-07-25:
+the `notifications` table (migration `1753100000000_module-8-notification-
+ledger.js`) and `notification_delivery` table both exist and are populated by
+`notificationService`; this entry's own "pending implementation" framing was
+stale, not a real gap. See [RS-NTF-001](../10-specification/RS-NTF-notifications.md#rs-ntf-001),
+[RS-NTF-002](../10-specification/RS-NTF-notifications.md#rs-ntf-002).
+
+---
+
+## ADL-017
+
+### AI drafting of Send Alert wording
+
+**Decision.** AI may draft the wording of a Send Alert message. The same tutor
+must directly review and confirm the final text before it sends.
+
+**Superseded position.** Any AI involvement was treated as disqualifying the
+Send Alert exception.
+
+**Rationale.** The disqualifying condition is not "AI touched it" — it is
+"nobody reviewed it". The tutor already holds unilateral authority to send this
+exact category of message, so AI assisting with wording grants no new authority;
+it saves typing. An unreviewed auto-dispatch is a different capability
+entirely and keeps the full approval requirement.
+
+**Affected artefacts.**
+[RS-NTF-006](../10-specification/RS-NTF-notifications.md#rs-ntf-006),
+[RS-NTF-007](../10-specification/RS-NTF-notifications.md#rs-ntf-007),
+[RS-WFL-004](../10-specification/RS-WFL-workflow.md#rs-wfl-004).
+
+**Migration impact.** None.
+
+**Implementation notes.** The exception is conditional on all four conditions
+at [RS-NTF-007](../10-specification/RS-NTF-notifications.md#rs-ntf-007) holding
+simultaneously. Dropping any one of them — cross-class send, rich content,
+auto-dispatch — makes it a different feature requiring the full ledger path.
+
+**Status.** Resolved — implemented.
+
+---
+
+## ADL-018
+
+### AI pre-submission confirmation turn
+
+**Decision.** Before filing any workflow submission, the AI must ask the
+requesting user for explicit confirmation, and only a clear affirmative reply
+triggers submission.
+
+**Superseded position.** Confirmation was implied per tool rather than required
+generally; a conversational mention could in principle produce a formal
+submission.
+
+**Rationale.** A formal request created off an ambiguous conversational
+mention is a real failure mode with a real cost — an approver's queue receives
+something the requester never intended to file. Making the confirmation a
+general rule rather than per-tool means a future workflow-submitting tool
+inherits it automatically.
+
+**Affected artefacts.**
+[RS-AIG-005](../10-specification/RS-AIG-ai-governance.md#rs-aig-005), and every
+workflow-submitting tool.
+
+**Migration impact.** A new confirmation turn in the AI conversation flow —
+**not a backend-only change.**
+
+**Implementation notes.** This is a shared AI-layer change and should land once
+all new correction tools exist, rather than being retrofitted per tool. No
+reply, an ambiguous reply and "not now" all mean the AI does nothing and no
+request is created.
+
+**Status.** Resolved — implemented. `askAgent` (`backend/src/services/aiService.js`)
+now stops before running any L3 tool's handler: policy/param preconditions
+are checked (`aiToolRegistry.checkToolPreconditions`), then the AI returns a
+`pendingConfirmation` (toolName + validated params) plus a natural-language
+confirmation question instead of submitting. The frontend (`useAskAgent.js`'s
+`confirmSubmission`/`cancelSubmission`, rendered by `MessageDocument.jsx`'s
+`SubmissionConfirm`) only fires the real `POST /ai/tools/:name/invoke` call
+on an explicit "Yes, submit" click, recorded as its own conversation turn —
+no reply, a "No", or navigating away all leave no request created. Applies
+generically to every L3 tool by level, not per-tool, so a future
+workflow-submitting tool inherits it automatically.
+
+---
+
+## ADL-019
+
+### AI identity-context consumption
+
+**Decision.** AI consumes the resolved identity context generically and
+contains no branch asking whether the session is personal or institutional.
+Authorization resolves against the request's live effective role.
+
+**Superseded position.** The AI Policy Gate read the raw token role claim
+directly and was gated only by authentication rather than by the permission
+middleware that reads the resolved role.
+
+**Rationale.** Identity resolution is the identity subsystem's responsibility;
+AI is a consumer. The branching happens once, upstream, before AI code runs. A
+branch inside AI would be a second place for the two contexts to diverge.
+
+**Affected artefacts.**
+[RS-AIG-010](../10-specification/RS-AIG-ai-governance.md#rs-aig-010),
+[RS-IDN-007](../10-specification/RS-IDN-identity.md#rs-idn-007),
+[ADR-023](adr-register.md#adr-023).
+
+**Migration impact.** None outstanding.
+
+**Implementation notes.** Two effective-role labels are producible only by an
+institutional session. The class-tutor label was granted tool-by-tool wherever
+a tool's existing staff grant already meant "own taught or tutored classes".
+The level-2 label was deliberately granted to **no** tool: granting it
+speculatively would pre-empt product policy the AI domain does not own.
+
+**Status.** Resolved — implemented.
+
+---
+
+## ADL-020
+
+### AI downstream scope fidelity
+
+**Decision (principle).** Once request authentication has produced an identity
+context, downstream Business Services must consume that context directly and
+must not perform a second capability resolution from a user id unless
+intentionally resolving a different principal.
+
+**Current defect.** The shared scope-resolution helper always resolves the
+**Personal** identity context from the caller's user id, regardless of the role
+passed in, and never consults the institutional resolver. An AI tool call from
+a Position Account session therefore receives the underlying person's Personal
+scope, not the Position Account's Institutional scope — even though the Policy
+Gate itself correctly read the institutional context.
+
+**Severity.** **Highest of any open item.** This is an authorization-fidelity
+defect, not a documentation problem: a Position Account session's AI tool calls
+can return the occupant's own personal data instead of the position's scoped
+data.
+
+**Blast radius.** A full audit of every AI-tool-backing function found the
+affected set is narrow and precise: **five call sites**. Most functions either
+perform their own independent verified lookup or have no per-department or
+per-class narrowing at all. The larger "rewire every service to consume the
+capability object directly" refactor originally feared is **not** required.
+
+**Affected artefacts.**
+[RS-AIG-011](../10-specification/RS-AIG-ai-governance.md#rs-aig-011),
+[RS-AIG-010](../10-specification/RS-AIG-ai-governance.md#rs-aig-010).
+
+**Migration impact.** Each of the five functions accepts either the legacy
+shape or a pre-built actor context. A pure helper maps the already-resolved
+identity context onto that shape with no additional database call. The five
+tool handlers pass it. **Every non-AI dashboard caller is untouched** — the
+legacy shape resolves exactly as before.
+
+**Implementation notes.** This is the one open item where a specification
+disagreement indicated a possible live security-boundary defect rather than
+stale text, and it is therefore the first item to verify directly against code.
+Verification is an end-to-end test over a real HTTP and database round trip,
+proving a Class Tutor Position Account's scope is provably narrower than the
+same occupant's personal scope where the two genuinely differ.
+
+**Status.** **Resolved (2026-07-25, verified against real code).** The fix
+described under Migration impact above is shipped: `aiActorContext.
+buildActorContextForIdentity` exists and is wired into all five identified
+call sites through `aiToolRegistry.js`. This entry stays in the ledger as the
+historical record of the defect and its fix, not as an open item — see
+[RS-AIG-011](../10-specification/RS-AIG-ai-governance.md#rs-aig-011) for the
+current, corrected conformance status.
+
+---
+
+## ADL-021
+
+### Position level integer versus business L-number
+
+**Corrected 2026-07-25 — this was never actually true, verified against real
+code.** Every HOD position-creation call site (`ensureHodPositionForInvite`,
+`staffService.js`) creates the position with `level: 3`. No `level: 2`
+assignment for HOD exists anywhere in the codebase. The collision this entry
+describes does not exist in the current code.
+
+**Original (incorrect) premise, kept for the historical record.** ~~The
+shipped position schema stores the HOD seat as level integer `2`, while every
+business rule refers to HOD as **L3**.~~
+
+**Why this is not merely cosmetic.** Any code — a future report query, a new AI
+tool written by someone unfamiliar with the resolution façade — that enforces a
+rule such as "L3 is a mandatory minimum approval floor" by comparing raw level
+integers rather than going through the resolved effective role will silently
+check the wrong number. The façade exists precisely so nothing downstream needs
+to compare raw integers; the numbering collision becomes a live authorization
+defect the moment that discipline is bypassed.
+
+**Options.**
+
+| Option | Consequence |
+|---|---|
+| Accept the collision | Zero migration. Permanent reliance on the façade discipline never being bypassed |
+| Renumber to match the business rule | Real migration across positions and every dependent assignment table. Removes the trap permanently |
+
+**Affected artefacts.**
+[RS-IDN-003](../10-specification/RS-IDN-identity.md#rs-idn-003),
+[RS-IDN-007](../10-specification/RS-IDN-identity.md#rs-idn-007),
+[RS-WFL-003](../10-specification/RS-WFL-workflow.md#rs-wfl-003).
+
+**Sequencing constraint — removed 2026-07-25.** Nothing is blocked by this
+entry any longer. [ADL-006](#adl-006), [ADL-007](#adl-007) and
+[ADL-003](#adl-003)'s college lifecycle work may all proceed without waiting
+on any level-numbering decision.
+
+**Status.** **Resolved — not a real defect, no action needed.**
+
+---
+
+## ADL-022
+
+### Consolidation of the documentation estate
+
+**Decision.** The prior documentation estate is replaced by this connected
+specification: a canonical rule layer in which every statement has exactly one
+home, derived matrices regenerated from it, and this ledger as the sole home
+for change history and rationale.
+
+**Superseded position.** An estate in which the same fact was stated in two to
+four places at differing ages, with no mechanism to keep them aligned. Every
+conflict resolved in this ledger arose from that structure rather than from a
+design error — a fast-moving rules layer outrunning the narrative documents
+describing it.
+
+**Rationale.** The recurring failure was structural, not behavioural: a session
+correctly updated one document while two or three others describing the same
+fact went untouched. Deduplication removes the possibility rather than
+mitigating the symptom. Statements now have a single source of truth, and a
+validator enforces it mechanically.
+
+**Affected artefacts.** The entire repository. Retirement mapping from every
+prior source document is recorded in
+[Traceability](../90-appendix/traceability.md).
+
+**Migration impact.** None to code.
+
+**Implementation notes.** Three controls sustain the property:
+
+1. Prose restatement of another rule's normative content is prohibited; only
+   cross-reference is permitted
+   ([Conventions §8](../00-foundation/scope-and-conventions.md#8-cross-reference-convention)).
+2. Every amendment edits exactly one rule and regenerates the derived matrices
+   in the same change.
+3. `tools/validate.py` fails the build on duplicate identifiers, unresolved
+   cross-references, asymmetric dependency edges and orphaned rules.
+
+**Status.** Resolved — implemented.
+
+---
+
+## ADL-023
+
+### Copilot/Workspace AI surface merger
+
+**Decision.** ARCNAVE has one AI surface: the Workspace shell at
+`/workspace`. Conversation is a capability that surface expands into on a
+second non-entity ask, not a separate destination. `/ai/copilot` redirects to
+`/workspace`.
+
+**Superseded position.** Two independent AI surfaces shipped side by side:
+`/ai/copilot` (a full-page, dark-themed, multi-conversation chat app) and
+`/workspace` (the task-first shell — hero, single ask box, entity resolution,
+waiting tray). Nothing in the specification or ADR layer had ever decided
+which would win or how they would merge; `routes.jsx` carried its own
+in-code comment flagging `/workspace` as a preview build pending that
+decision.
+
+**Rationale.** A new user should never have to decide "Copilot or
+Workspace?" before doing any work — the two surfaces answered the same
+question (ask ARCNAVE AI something) with different amounts of chrome
+depending on which URL was typed, not which task was being done. Merging
+them removes that false choice: the single-ask flow stays the default for a
+quick lookup, and a second follow-up question promotes into the same
+threaded conversation Copilot offered, in place, without navigating away.
+Entity resolution short-circuits at every turn regardless of thread state, so
+resolving a record is never slower inside a conversation than outside one.
+
+**Affected artefacts.** `frontend/src/app/routes.jsx` (`/ai/copilot` now a
+redirect), `frontend/src/contexts/WorkspaceContext.jsx` (owns the
+promotion rule via `askQuestion`), `frontend/src/components/workspace/*`
+(AskSpine, WorkspaceLandingPage, ArtifactViewer, PersonalShelf,
+WorkspaceHero), `frontend/src/components/ai/*` (the shared conversation
+components — ConversationThread, PromptComposer, MessageDocument,
+DocumentUploadConfirm, and the useConversations/useAskAgent/useToolInvoke
+hooks — promoted out of `features/ai/` since they are cross-cutting, used by
+Workspace, owned by none). `CopilotPage.jsx`, `AiWorkspace.jsx`,
+`ConversationSidebar.jsx` and `EmptyState.jsx` are deleted outright — they
+were Copilot-page-specific chrome with no further caller once the redirect
+landed.
+
+**Migration impact.** None to data. Workspace's conversation history reuses
+Copilot's existing `localStorage` keys directly (same per-user/college
+namespace) rather than migrating or duplicating them — the correct
+single-store design for a client-only conversation cache, not a compatibility
+shim. No production users existed at the time of this change, so no user-
+facing migration was needed either way.
+
+**Implementation notes.** Landed as four sequential commits, each verified
+live before the next began:
+
+1. Visual unification first, decoupled from the structural merge — Concept A
+   theme (light, warm-cream/navy, Space Grotesk/Manrope) applied to
+   Workspace, and Copilot's dark `arcnave-ai-theme` override stopped being
+   toggled so both surfaces read as one product immediately, before any
+   behavioural change landed.
+2. Pure file move of the shared conversation components into
+   `components/ai/` — zero behavior change, verified by confirming Copilot
+   still worked identically afterward.
+3. The actual merge: conversation wired into Workspace as a promotable
+   capability, entity short-circuiting preserved at every turn, document
+   upload confirm and the Curriculum/Circulars/Reminders prompts carried
+   over from Copilot's sidebar into Workspace's hero as chips.
+4. Retirement: `/ai/copilot` becomes a redirect, the four Copilot-only files
+   are deleted, and the by-then-fully-dead `arcnave-ai-theme` CSS block is
+   removed.
+
+**Known residual gap — closed.** `DataTable`'s entity links (used inside
+conversation threads) initially still resolved through
+`features/ai/lib/entityRoutes`' legacy `/students/:id`-style routes rather
+than Workspace's own `/workspace/e/:type/:id` scheme — harmless (the link
+opened in a new tab) but inconsistent with Workspace's own route family.
+Closed in a follow-up change: `entityRoutes.js`'s legacy `resolveEntityRoute`
+(now callerless — Copilot was its only other consumer, and Copilot no
+longer exists) was replaced with `resolveWorkspaceEntityRoute`, and
+`DataTable` now renders these as an in-app `react-router` `Link` instead of
+a new-tab `<a>`, so opening an entity from inside a thread stays within the
+Workspace shell like every other entity resolution.
+
+**Second follow-up — landing page.** `information-architecture.md`'s own
+rule 1 ("Landing page = the AI Workspace, for every tenant role except
+Platform Admin") was not actually true after M4: `/` still rendered
+`DashboardPage` inside the nav-based `AppShell`, and `/workspace` was only
+reachable via the "ARCNAVE AI" nav item, not where a session actually
+landed. Closed: `DashboardPage` moved from `/` to `/dashboard` (still
+reachable from `AppShell`'s nav, now pointing there instead), and `/` is a
+plain `<Navigate to="/workspace" replace />`. `LoginPage`/`MfaChallengePage`
+already navigate to `/` (or `location.state.from.pathname`) on success, so
+no auth-flow code needed changing — they land on the Workspace for free.
+Platform Admin is unaffected: it authenticates through the structurally
+separate `/platform/login` → `/platform/dashboard` flow and never touches
+`/`.
+
+**Status.** Resolved — implemented.
+
+---
+
+## ADL-024
+
+### Send Alert authority widened from Class Tutor to assigned staff
+
+**Decision.** [RS-NTF-007](../10-specification/RS-NTF-notifications.md#rs-ntf-007)'s
+Send Alert exemption is widened from "Class Tutor, own class" to **any staff
+member currently timetable-assigned to that class** (subject/period
+assignment, not just the tutor role), sending a plain-text message to that
+class's students and parents.
+
+**Superseded position.** RS-NTF-007 as written scoped Send Alert's
+unilateral, no-approval authority to "L4, own class" — i.e. the Class Tutor
+only. A subject staff member teaching that class but not tutoring it had no
+equivalent unilateral path; a routine message like "bring your record note"
+would have had to go through the full `draft → approve → dispatch` ledger
+([RS-NTF-001](../10-specification/RS-NTF-notifications.md#rs-ntf-001)/
+[RS-NTF-003](../10-specification/RS-NTF-notifications.md#rs-ntf-003)).
+
+**Rationale.** Raised while reviewing the Students List visual redesign's
+proposed bulk "Notify" action against [RS-WFL-004](../10-specification/RS-WFL-workflow.md#rs-wfl-004)
+(the two hard-coded workflow exemptions). The original tutor-only scoping
+was an arbitrary narrowing, not a deliberate authority boundary — the same
+low-stakes, plain-text, human-reviewed, own-scope reasoning that justifies
+the Tutor exemption applies identically to any staff member who is
+genuinely, currently assigned to that class. Widening the *scope test* from
+role ("is Tutor") to assignment ("is timetable-assigned") keeps every
+existing safeguard intact (plain text only, own class only, human review
+before send, no retry/fallback) while closing a gap that would otherwise
+force routine subject-teacher communication through a full approval chain.
+
+**Conditions — all must hold (verified via `AcademicService`, not
+self-declared):**
+1. The staff member is currently timetable-assigned to that class
+   (subject/period link — tutor assignment also qualifies, since a tutor is
+   definitionally assigned to their own class).
+2. Sending to that class only — never a class the sender is not assigned to.
+3. Content is plain free text.
+4. Delivery is per-recipient, best-effort, no auto-retry, no channel
+   fallback.
+5. The sending staff member reviews the final wording before it sends.
+
+**Any variant that drops one of these conditions** remains out of scope for
+this exemption and must use the normal draft → approve → dispatch ledger,
+exactly as RS-NTF-007 already stated for the tutor case.
+
+**Affected artefacts.**
+[RS-NTF-007](../10-specification/RS-NTF-notifications.md#rs-ntf-007) and
+[RS-WFL-004](../10-specification/RS-WFL-workflow.md#rs-wfl-004) (authority and
+conditions reworded); `backend/src/services/academicService.js`
+(`sendClassAlert`'s gate now accepts the tutor OR any staff member with a
+`faculty_allocation` row for the class, via the file's own
+`listFacultyAllocationsForClass`; `ClassSendAlertNotTutorError` renamed to
+`ClassSendAlertNotAssignedError`); `backend/src/routes/classes.js` (error
+mapping + comment updated to match); `backend/src/services/aiToolRegistry.js`
+(comment only — `class_send_alert` calls the same `sendClassAlert`, so it
+inherits the widened check with no code change of its own);
+`backend/tests/send-class-alert.test.js` (renamed error-case test, added a
+case covering a non-tutor assigned-faculty sender).
+
+**Migration impact.** None — no schema or data change; this is an
+authorization-scope change to an existing, already-built endpoint.
+
+**Status.** Resolved — implemented.
+
+---
+
+## ADL-025
+
+### Platform-wide default license + Trial expiry window
+
+**Decision.** [RS-GOV-015](../10-specification/RS-GOV-governance.md#rs-gov-015)
+is added: a platform-wide `default_license` setting seeds the Onboarding
+Wizard's License step, and a Trial license carries a fixed, non-configurable
+30-day expiry window from the college's `created_at`.
+
+**Superseded position.** Neither existed before this session. The wizard's
+License step hardcoded `'Trial'` as its own initial value, with no platform
+setting behind it. No trial-expiry concept existed anywhere in the schema —
+Dashboard's "Trial Colleges" stat card had no sub-metric because there was
+nothing real to back one (documented at the time as "left blank rather than a
+fabricated number," not a bug).
+
+**Rationale.** Raised while wiring the Platform Settings page's "Default
+License for New Colleges" toggle from the design mock — the toggle existed in
+the UI with nothing behind it. Making the platform-wide default real is a
+one-column addition; the trial-expiry window followed naturally from the same
+session's Dashboard sub-metric flag. 30 days was chosen as a fixed, simple
+policy rather than per-college configurable, since no requirement for
+per-college variation was raised.
+
+**Affected artefacts.** `platform_settings.default_license` (migration
+`1760700000000`); `colleges.trial_ends_at` (migration `1760800000000`);
+`platformRepository.createCollege`/`updateCollege` (derives `trial_ends_at`
+from the same placeholder as `subscription_status`, in the same statement);
+`platformCollegeRepository.countTrialCollegesExpiringSoon`; `OnboardingWizard.jsx`
+(seeds its License step from `GET /platform/settings` once, never overwriting
+a manual selection); `PlatformSettingsPage.jsx` (Default License toggle, now
+real); `DashboardStats.jsx` ("N expire this week" sub-metric, now real).
+
+**Migration impact.** Two additive columns, both nullable/defaulted; existing
+trial colleges backfilled with `trial_ends_at = created_at + 30 days` at
+migration time (`1760800000000`'s own `UPDATE` statement).
+
+**Status.** Resolved — implemented.
+
+---
+
+## ADL-026
+
+### Principal Invitation resend can revive a revoked invitation; resend accepts an email override
+
+**Decision.** [RS-GOV-016](../10-specification/RS-GOV-governance.md#rs-gov-016)
+is added, documenting Principal Invitation as its own lifecycle. Two real
+behavior changes: (1) `resendInvitation`'s guard is narrowed from
+`accepted_at IS NULL AND revoked_at IS NULL` to `accepted_at IS NULL` only —
+resend now revives a revoked invitation (clears `revoked_at`) instead of
+rejecting with 409; (2) resend optionally accepts an `email` override,
+redirecting the SAME invitation row to a different address in the same call
+(typo-correction), rather than requiring revoke-then-fresh-invite.
+
+**Superseded position.** Before this session, a revoked invitation's row had
+no real action available on the Invitations screen (shown as "—"), and any
+wrong-email pending invitation required revoking it and starting the heavier
+Organizations Invite-L1 flow (email → OTP → invite) from scratch, since resend
+always mailed the invitation's stored email verbatim with no override.
+
+**Rationale.** Raised directly by the product owner: a revoked invitation
+whose only real problem was a wrong email address didn't need the college
+recreated or a whole new Invite-L1 flow — a design mock supplied for the
+Invitations screen showed a revoked row's action flowing through the SAME
+resend modal (with a 3-second "link invalid" flash immediately after revoke,
+then a real "SEND INVITATION" button), confirming revive-via-resend as the
+intended real behavior, not a shortcut invented ad hoc.
+
+**Affected artefacts.**
+`principalInvitationRepository.resendInvitation` (WHERE guard narrowed; adds
+`revoked_at = NULL` and `email = coalesce($4, email)` to the UPDATE);
+`platformService.loadResendableInvitation` (new, accepted-only guard, used
+only by resend — `loadPendingInvitation` is unchanged and still gates revoke
+to pending-only); `routes/platform.js`'s resend route (accepts `email` in the
+body); `platformAdminApi.resendInvitation` (frontend, takes an optional
+email); `InvitationsPage.jsx` (`ResendModal`'s email field is editable, not
+read-only; revoked rows get a real "SEND INVITATION" action with a 3-second
+`justRevokedId`-gated "link invalid" flash immediately after revoke);
+`tests/platform-service.test.js` (revoked-invitation-resend unit test
+rewritten from "throws" to "succeeds"); `tests/principal-invitation.test.js`
+(new e2e test: revoke → resend → old token still 401s, new token accepts).
+
+**Migration impact.** None — no schema change, an authorization/behavior
+change to existing endpoints.
+
+**Status.** Resolved — implemented.
+
+---
+
+## ADL-027
+
+### Principal's wizard-entered profile auto-populates the real account; L1 Head Email OTP made real
+
+**Decision.** [RS-GOV-017](../10-specification/RS-GOV-governance.md#rs-gov-017)
+is added: the Onboarding Wizard's L1 Head name/designation/phone/address now
+flow through `principal_invitations` into the real `users` row at accept
+time, instead of being discarded. Separately, but found while reviewing the
+same wizard step: the L1 Head Email field's OTP "verify" step is now a real
+send-code/verify-code round trip (new `wizard_email_verifications` table),
+replacing a fake client-side `setTimeout`.
+
+**Superseded position.** `toCollegePayload`'s own prior comment explicitly
+documented the personal-profile fields as "deliberately NOT mapped" — the
+established pattern (matching Staff invitations) was that an invited person
+always fills their own profile on accept, Platform Admin never enters it for
+them. Separately, `wizardAtoms.jsx`'s `OtpField` was documented as "inert demo
+interaction... no backend OTP endpoint exists for institution or L1-head
+contact fields."
+
+**Rationale.** The product owner explicitly reversed the profile-population
+decision: unlike a Staff invite (sent by L3 for someone L3 has never met), the
+Wizard's L1 Head fields are filled by Platform Admin *during a live
+onboarding conversation with the institution* — the data already reflects
+what the institution told Platform Admin, so asking the incoming Principal to
+re-type it only reintroduces transcription risk already resolved once.
+Reviewing this surfaced a real, separate gap in the same step: the L1 Head
+Email field is the exact address `invitePrincipal` emails a live 24-hour
+invitation token to at college-creation time, and its "verification" was
+entirely fake — a typo there would previously have sailed through undetected
+and sent a real invitation to the wrong address. Every OTHER wizard OTP field
+(institution mobile/email, L1 mobile/alt-mobile/alt-email) was deliberately
+left on the fake simulation — none of them are ever used to send anything
+real, so no equivalent risk exists there.
+
+**Affected artefacts.** `principal_invitations.full_name`/`designation`/
+`phone`/`address` and matching nullable columns on `users` (migration
+`1761000000000`); `principalInvitationRepository.createInvitation`/
+`getInvitationByTokenHash` (now select/store the four fields);
+`authRepository.createUser`/`getUserById` (now accept/return them);
+`authService.acceptInvitation` (copies `invitation.full_name` etc. onto the
+new `users` row); `platformService.invitePrincipal`/`createCollege` (accept
+`fullName`/`designation`/`phone`/`address` and forward them);
+`routes/platform.js` (`POST /colleges` accepts `principal_full_name` etc.);
+`routes/auth.js` (`GET /auth/me` now does a real DB read via
+`authService.getUserProfile`, not just JWT claims); `ProfilePage.jsx` (renders
+the four fields); `OnboardingWizard.jsx`'s `toCollegePayload` (maps
+`l1FirstName`/`l1LastName` → `principalFullName`, etc.). Separately:
+`wizard_email_verifications` table (migration `1760900000000`);
+`platformService.sendWizardEmailVerificationCode`/`verifyWizardEmailCode`
+(reuse the same generate/hash helpers and error classes as the existing
+Organizations Invite-L1 OTP flow, but keyed by email alone — no `college_id`
+exists yet at this wizard step); `POST /onboarding/verify-email/send-code`\|
+`verify-code`; `OnboardingWizard.jsx`'s new `EmailOtpField` component
+(replaces the fake `OtpField` for `l1Email` only).
+
+**Migration impact.** Four additive nullable columns on two tables; no
+backfill needed (both tables' existing rows simply have NULLs, matching prior
+behavior for every invitation/user that predates this change).
+
+**Status.** Resolved — implemented.
+
+---
+
+## ADL-028
+
+### Storage tier is now a real, enforced quota
+
+**Decision.** [RS-ASM-011](../10-specification/RS-ASM-assessment-documents.md#rs-asm-011)
+is added: `colleges.storage_tier` (set once, by Platform Admin, at onboarding)
+is now a real byte quota, enforced by `documentService.assertWithinStorageQuota`
+inside the single real upload path (`uploadDocument`) — rejecting any upload
+that would push the college's total stored bytes over it.
+
+**Superseded position.** `storage_tier` was a free-text label that "nothing
+ever read" (per `platformRepository.js`'s own prior comment on why it isn't
+in the Platform Admin PATCH route's editable-columns list) — captured at
+onboarding, displayed nowhere, enforced nowhere.
+
+**Rationale.** Raised directly by the product owner while reviewing the
+Onboarding Wizard's Cloud Storage/Storage Quota step: "storage tier is real,
+enable it." Parsing the tier string generically (number + unit, binary
+1024-based) rather than a fixed lookup table means new tier options (the
+wizard's dropdown can grow) need no corresponding code change. A college with
+no tier set (Cloud Storage = No at onboarding) stays unmetered — this does
+not retroactively impose a quota on any college that never had one.
+
+**Affected artefacts.** `documentService.parseStorageTierBytes`/
+`assertWithinStorageQuota`/`DocumentStorageQuotaExceededError`;
+`collegeProfileRepository.getStorageTier` (new, mirrors the existing
+`getLevel1/3/4PositionTitle` read-only tenant-side pattern); `documentRepository.sumFileSizeBytes`
+(new); `uploadDocument`'s call to `assertWithinStorageQuota` before
+`fileStorage.writeFile` (covers `uploadTemplate`/`uploadInstitutionalDocument`
+for free, since both delegate to `uploadDocument`); `routes/documents.js`
+(`DocumentStorageQuotaExceededError` → HTTP 413); `platformRepository.js`'s
+own comment on why `storage_tier` isn't PATCH-editable (updated — it's real
+now, but still only ever set once at `createCollege` time, same as
+`level1/3PositionTitle`); `tests/document-service.test.js` (all upload-path
+tests mock `collegeProfileRepository.getStorageTier` → `null`, i.e.
+unmetered, matching every pre-existing test college's real state).
+
+**Migration impact.** None — no schema change (`storage_tier` already
+existed); a behavior change to an existing write path, defaulting to
+unmetered (today's behavior) for every college with no tier set.
+
+**Status.** Resolved — implemented.
+
+---
+
+## ADL-029
+
+### Student flag/clear widened from tutor-only to any subject faculty
+
+**Decision.** [RS-STU-013](../10-specification/RS-STU-students.md#rs-stu-013)
+now authorizes flagging/clearing a student by the same boundary as VIEWING
+them (`visibilityService.assertCanViewStudent`), not the narrower
+tutor-only `assertCanModifyStudent` boundary editing the student's profile
+uses. A staff member who teaches a subject to the student's class — not
+just the class's tutor-of-record — may now flag/clear, matching the fact
+they can already see that student.
+
+**Superseded position.** RS-STU-013 previously pinned flag authority to
+`assertCanModifyStudent` (class's own L4, HOD's own department, Principal
+college-wide) "no boundary invented specially for this" — deliberately
+tutor-only.
+
+**Rationale.** Product owner confirmed directly: a subject teacher who
+isn't the tutor should be able to flag a student and record why, since
+they hold direct classroom knowledge of that student the tutor may not.
+No separate boundary was invented — the existing, broader "can view this
+student" rule (tutor-of-record OR faculty-allocated) already draws exactly
+the line wanted, so flagging now reuses it instead of the write-side rule.
+
+**Affected artefacts.** `studentService.flagStudent`/`clearStudentFlag`
+(now call new `assertCanFlagStudent`, wrapping
+`visibilityService.assertCanViewStudent` and re-throwing
+`VisibilityForbiddenError` as `StudentNotAuthorizedError` so existing route
+error mapping is unchanged); `tests/student-flag-service.test.js` (updated
+to mock `visibilityService.assertCanViewStudent` instead of
+`identityService.resolveActiveClassTutorPosition`); frontend: new Flag/
+Clear flag action added to the Student Detail header dropdown
+(`StudentRecord.jsx`), previously unbuilt for any role despite the backend
+route and AI tools (`students_flag`/`students_flag_clear`) already
+existing — closes the ROLE-COVERAGE.md gap flagging this as GUI-missing.
+
+**Migration impact.** None — authorization-only change, no schema change.
+
+**Status.** Resolved — implemented.
+
+---
+
+## ADL-030
+
+### Staff page expansion — profile self-service, phone OTP, directory, assessment authoring, personal calendar
+
+**Decision.** A batch of five staff-facing changes, decided together in one
+product conversation and implemented together: (1) [RS-STF-013](../10-specification/RS-STF-staff.md#rs-stf-013)
+widened — a staff member may now self-edit first/last name, contact email,
+designation (fixed dropdown), appointment type, structured education
+(doctorate/UG/PG), and work experience, on top of the fields already
+self-service; (2) [RS-STF-014](../10-specification/RS-STF-staff.md#rs-stf-014)
+added — self-reported mobile requires OTP verification, reusing RS-STU's
+existing student-phone-OTP mechanism; (3) [RS-STF-015](../10-specification/RS-STF-staff.md#rs-stf-015)
+added — any staff member may view a limited directory (name, designation,
+department, phone) of every colleague, reversing the prior "self only"
+default; (4) [RS-ASM-012](../10-specification/RS-ASM-assessment-documents.md#rs-asm-012)
+added — any teaching staff member may create/name/edit their own assessment
+type (was Principal-only), creator-only edit; (5) [RS-PRF-001](../10-specification/RS-PRF-personal-workspace.md#rs-prf-001)
+widened — Personal Notes gains a `noteDate`, rendered as a calendar grid
+merged (read-only, presentation-only merge) with the institutional calendar,
+replacing the flat reminder-sorted list. Separately, [RS-STU-013](../10-specification/RS-STU-students.md#rs-stu-013)'s
+flag remark changes from required to optional.
+
+**Superseded position.** RS-STF-011/013 previously held appointment type,
+education, and work experience as Principal-only ("administrative half").
+`assertCanViewStaff` previously blocked an ordinary staff member from viewing
+any colleague besides themselves. `assessment_types.create`/`.update` were
+Principal-only ("institution-wide configuration, authorized administrators").
+Personal Notes was explicitly a flat, reminder-sorted list with no date
+association. RS-STU-013's flag remark was required, not optional.
+
+**Rationale.** Raised directly by the product owner while reviewing the Staff
+login end to end: a teacher should be able to maintain their own identity
+details without waiting on the Principal for every change (splitting exactly
+which fields per RS-STF-004/RS-STF-011's existing payroll/staff-code/
+department carve-outs, none of which were named in the widening and so stay
+Principal-only); phone OTP closes the trust gap a self-reported, suddenly-
+self-editable number would otherwise open, by reusing a mechanism that
+already exists rather than inventing a new one; a basic staff directory was
+judged to have no real sensitivity reason to stay hidden between colleagues,
+unlike the fields the directory deliberately excludes; assessment authoring
+was widened because the actual protection against misuse — RS-ASM-002's
+assigned-faculty check at mark-entry time — already exists independently of
+who may name a type, so Principal-only creation was gatekeeping a low-risk
+action; the personal calendar rebuild responds directly to how staff
+described actually wanting to use it (a real calendar, not a flat list); and
+the flag remark was made optional because an in-the-moment flag (e.g.
+straight from Class Log after an incident) shouldn't be blocked on writing a
+reason immediately.
+
+**Affected artefacts.** Backend: `staffService.js` (`SELF_SERVICE_FIELDS`
+widened; `first_name`/`last_name` kept in sync with `full_name`),
+`staffPhoneVerificationService.js` (new, mirrors `phoneVerificationService.js`
+exactly but targets `staff.phone`/`phone_verified`), `routes/staff.js`
+(`POST /staff/me/phone-verification/otp`\|`verify`; `GET /staff` returns a
+limited-field shape for `staff`/`class_tutor`), migration adding
+`staff.first_name`/`last_name`/`email` and `staff_phone_otps` table;
+`assessmentService.js` (`assertHasTeachingAssignment`, creator-only check in
+`updateAssessmentType`), `permissions.js` (`assessment_types.create`/`.update`
+widened to `['staff','class_tutor','hod','principal']`); `personalNoteService.js`/
+`personalNoteRepository.js` (`noteDate` column, `listByUserInRange`);
+`studentService.js` (`flagStudent`'s remark check removed). Frontend: new My
+Profile edit screen + OTP verification UI, new Staff Directory page (Staff
+nav), new assessment create/edit UI under Marks, new Personal Calendar page
+(replaces the old flat notes panel), Flag dialog's remark field made
+optional.
+
+**Migration impact.** Additive only — new nullable columns
+(`staff.first_name`/`last_name`/`email`, `personal_notes.note_date`), one new
+table (`staff_phone_otps`, same shape as `student_phone_otps`). No backfill:
+existing staff rows simply have NULLs for the new name-split/email columns
+until self-edited; `full_name` remains populated and authoritative until then.
+
+**Status.** Resolved — implemented.
+
+---
+
+## ADL-031
+
+### Substitute request now checks the named candidate's department and actual availability
+
+**Decision.** [RS-CLS-007](../10-specification/RS-CLS-classroom.md#rs-cls-007)
+is tightened: `academicService.requestSubstituteAssignment` now rejects a
+named substitute who (a) isn't in the same department as the class needing
+coverage, or (b) doesn't actually have a free hour at that exact period/date —
+checked against both their regular weekly `faculty_allocation` and any
+existing `substitute_assignments` row for that period/date.
+
+**Superseded position.** The function accepted any `substituteStaffUserId`
+with zero eligibility checking — any staff member, any department, already
+teaching or not, could be named and would sail through to a pending L3
+approval request regardless.
+
+**Rationale.** Raised directly by the product owner: a substitute should only
+ever be requested from within the same department, and only if they
+genuinely have a free hour then — otherwise the request either creates an
+impossible double-booking or forces the wrong candidate onto a class outside
+their subject area. Notably, RS-CLS-007's own prior text already promised
+this ("AI suggesting who is genuinely free that period") — the checking logic
+to back that claim simply didn't exist; this decision makes an existing
+promise real rather than introducing a new one. Checked at request time
+(not deferred to a confusing failure at approval) so the requester finds out
+immediately if the person they named can't actually take it.
+
+**Affected artefacts.** `academicService.requestSubstituteAssignment` (new
+department + free-hour checks); three new error classes
+(`SubstituteAssignmentCandidateNotFoundError`,
+`SubstituteAssignmentCandidateNotInDepartmentError`,
+`SubstituteAssignmentCandidateNotFreeError`); `routes/classes.js`'s
+`mapAcademicServiceError` (404 / 422 / 409 respectively).
+
+**Migration impact.** None — authorization/validation-only change, no schema
+change. A substitute request that would previously have been accepted and
+only failed later (or silently double-booked someone) is now rejected
+immediately if it violates either rule.
+
+**Status.** Resolved — implemented.
+
+---
+
+## ADL-032
+
+### AI Conversations/Projects backend persistence, and a new ArtifactService
+
+**Decision.** AI chat Conversations, Messages and Projects move from
+client-side-only `localStorage` (`frontend/src/components/ai/lib/
+conversationStorage.js`) to real, tenant-scoped, self-owned backend
+persistence (`projects`, `conversations`, `messages` tables). Separately, a
+new `ArtifactService` is introduced to own structured, editable AI-generated
+content (markdown, versioned) as its own DB rows (`artifacts`,
+`artifact_versions`) — distinct from `DocumentService`. An artifact only
+becomes a real binary document when a user explicitly publishes it, at which
+point `ArtifactService.publishArtifact` is the sole call site into
+`DocumentService` (`uploadPersonalDocument`) for this whole slice. This
+narrows ADR-009's "DocumentService owns all storage" to persistent **binary
+file** storage specifically — see [ADR-009 Amendment 1](adr-register.md#adr-009).
+
+**Superseded position.** The AI backend was, and remains, fully stateless
+per turn (`aiService.js`'s `askAgent` still takes no history parameter and
+creates no server-side session of its own — unchanged by this decision).
+Prior to this decision, all conversation/message/project state existed only
+in one browser's `localStorage`, explicitly documented in
+`conversationStorage.js`'s own comment as "no backend concept exists" —
+meaning a Project never actually grouped anything durable, and chat history
+never survived a cleared browser or a second device. CLAUDE.md rule 2
+previously read simply "`DocumentService` is the sole owner of file
+storage," with no carve-out for structured, not-yet-published content.
+
+**Rationale.** A Project only means something if there's real chat content
+behind it — a thin backend Projects table referencing client-only
+conversations would leave Projects fragile and per-device underneath, so
+Conversations/Messages move server-side together with Projects, not
+separately. Artifacts (AI-generated content saved for reuse/editing) were
+found to have no existing backend or frontend concept at all —
+`ArtifactViewer.jsx` is an unrelated, non-persisted "Draft" display for one
+in-flight L2 AI turn, not a saved/reusable object. Splitting `ArtifactService`
+from `DocumentService` — rather than storing every artifact as a file, or
+inventing a second bare table that inevitably grows its own versioning/
+status/ownership concerns anyway — keeps `DocumentService` focused on actual
+binary file storage/lifecycle while giving artifacts room to be edited
+cheaply (DB row updates) before a user decides something is worth
+publishing. `messages` is immutable/append-only (same reasoning
+`timetable_revisions` already established) with a relational
+`parent_message_id`/`tool_params` shape replacing the frontend's ad-hoc
+`regenerate` JSONB payload — regenerating a turn becomes "re-read the parent
+user message's own columns," not a separate payload shape to construct or
+parse. Artifact deletion is soft (`deleted_at`), matching
+`documentRepository.js`'s own `archived_at`/`superseded_at` lifecycle-
+timestamp pattern rather than a hard delete, since a draft artifact is
+structurally a not-yet-published document. Publish is terminal in v1 (no
+edit/republish) to avoid designing edit-after-publish reconciliation before
+there's a real use case for it.
+
+**Affected artefacts.** Migrations
+`1761500000000_ai-conversations-and-projects.js` (projects, conversations,
+messages, `messages_touch_conversation` trigger maintaining
+`conversations.updated_at`/`message_count`/`last_message_preview`) and
+`1761600000000_ai-artifacts.js` (artifacts, artifact_versions);
+repositories `projectRepository.js`/`conversationRepository.js`/
+`messageRepository.js`/`artifactRepository.js`/`artifactVersionRepository.js`;
+services `projectService.js`/`conversationService.js`/`artifactService.js`;
+routes `routes/projects.js`/`routes/conversations.js`/`routes/artifacts.js`,
+registered in `tenantApp.js`; CLAUDE.md/AGENTS.md rule 2 reworded;
+`adr-register.md` ADR-009 Amendment 1. Frontend:
+`useConversations.js` rewritten onto React Query against the new API
+(`replaceMessage` removed from its surface — its two callers no longer need
+it under the new sequential-POST flow); `useAskAgent.js`/`useToolInvoke.js`
+post the user message, then the assistant message, rather than an
+optimistic placeholder patched in place; new `api/projects.js`/
+`api/conversations.js`/`api/artifacts.js`; new minimal
+`ProjectsListPage.jsx`/`ArtifactsListPage.jsx` (functional only — visual
+design is separate, later work per
+`docs/bka/50-frontend/FRONTEND-REDESIGN-HANDOFF.md`); "Save as artifact"
+buttons added to `ArtifactViewer.jsx`/`MessageDocument.jsx`.
+
+**Migration impact.** Additive only — five new tables, no existing table
+touched. A user's pre-existing `localStorage` chat history is left alone,
+neither migrated nor read by the new backend; new chats persist server-side
+from this point on. Two real, user-visible behavior changes ship with this
+slice: regenerating an in-thread answer now appends a new message instead of
+overwriting the old one, and full message-body search in the conversation
+list narrows to title-only (message bodies are no longer loaded up front for
+every conversation) until a later server-side search param is built.
+
+**Status.** Resolved — implemented.
+
+## ADL-033
+
+### Search-vs-empty-groups precedent for grouped/foldered list search
+
+**Decision.** When a search/filter is added to any grouped-by-folder (or
+similarly grouped) list, groups with zero matching items are hidden while a
+search is active; they reappear once the search is cleared. First raised
+for Staff Documents' Personal tab document search
+(`docs/bka/60-product-reasoning/staff-documents-personal.md`) via a
+Product Refinement question
+([workflow §12/§15](../60-product-reasoning/00-workflow.md#15-step-12-product-refinement-strict-decision-threshold)),
+answered by the user 2026-08-08.
+
+**Superseded position.** No prior rule existed. Personal Documents'
+existing "every registered folder shows, even empty" guarantee (recorded
+in `StaffDocumentsPage.jsx`'s own code comment, and confirmed as `Existing`
+in the Personal-tab reasoning pass) was written before search existed and
+does not, by its own stated rationale, extend to an actively-filtered view
+— it was silent on this case, which is why it met the Product Reasoning
+workflow's decision threshold rather than being auto-classified.
+
+**Rationale.** Hiding empty groups while searching keeps search results
+legible (only relevant groups shown) without weakening the original
+guarantee, which remains fully in effect for the normal, unfiltered view —
+an empty folder still shows there. This precedent is recorded so future
+Product Reasoning passes on other grouped/foldered lists (if any) can
+follow it automatically under workflow §13's "if an existing ARCNAVE
+pattern exists, follow it" rule instead of re-asking the same question.
+
+**Affected artefacts.**
+`docs/bka/60-product-reasoning/staff-documents-personal.md` (Document
+Search feature contract, Approved Spec addendum). No application code yet
+— this decision covers the Approved Spec `/build-slice`/`/wire-frontend`
+will implement against, not an implementation already shipped.
+
+**Migration impact.** None (no schema change; this governs client-side
+filter display behavior only).
+
+**Status.** Resolved — implemented (`frontend/src/features/documents/
+pages/StaffDocumentsPage.jsx`'s `PersonalTab`, with behavior coverage in
+`StaffDocumentsPage.test.jsx`).
+
+---
+
+## ADL-034
+
+### L2 login/session model — Position Account vs delegated-in-staff-login
+
+**Decision.** L2 **is** a real Position Account with its own `position_access`
+session, identical in kind to L1/L3 — not a delegated capability surfaced
+inside the holder's personal Staff login. Raised while compiling a
+consolidated role-reference document
+(`docs/bka/90-appendix/role-reference-platform-admin-L1-L4-staff.md`) and
+found to be a direct textual contradiction between two normative passages
+that were both marked "Conformant."
+
+**The contradiction.** [RS-GOV-014](../10-specification/RS-GOV-governance.md#rs-gov-014)
+stated "Whether L2 has its own login | **Never**" while
+[RS-IDN-003](../10-specification/RS-IDN-identity.md#rs-idn-003) listed L2
+alongside L1/L3 as getting a Position Account row, and
+[RS-IDN-007](../10-specification/RS-IDN-identity.md#rs-idn-007)'s
+Institutional Identity Context derivation table mechanically produces
+`effectiveRole: 'level2'` from a `position_access` token — which only exists
+for a Position Account session. RS-GOV-014's own Implementation field
+already said as much ("`effectiveRole: 'level2'` produced only by the
+Institutional resolver") without the surrounding prose noticing the
+conflict.
+
+**Resolution basis — checked against shipped code, not just re-read
+harder.** `backend/src/services/positionAccountAuthService.js`'s
+`assertLevelAllowsPositionLogin` explicitly allows Position Account login
+for levels 1–3 (plus level 4 with `position_type='class_tutor'`), backed by
+a full wired stack: `positionAccountInvitationService.js`,
+`routes/positionAccounts.js`, the `position_accounts`/
+`position_account_refresh_tokens` tables. This is real, reachable,
+already-built behavior — reversing it to match the "Never has a login"
+wording would have been a live backend change (removing L2 from the
+eligibility guard, invitation flow, and routes), not a documentation fix.
+Aligning the spec to the code was the lower-risk, already-correct path.
+
+**Superseded wording.**
+- RS-GOV-014: ~~"Whether L2 has its own login | **Never** — L2's duties
+  surface inside the existing login of whoever holds them"~~ → now "Yes,
+  where L2 exists — a real Position Account with its own `position_access`
+  session."
+- `actor-model.md` §3 table: L2's "Account type" cell previously omitted
+  "Position Account" (the only level 1–4 row that did) and said "Duties
+  surface inside an existing staff login" → corrected to "Position Account
+  — own `position_access` session, per L1's configuration."
+- `actor-model.md` §8: L2's "Never may" column previously said "Hold a
+  separate login" → corrected to "Act without a resolved position context;
+  hold institutional authority without the Institutional Identity Context"
+  (the actual invariant — mirrors what L1/L3/L4 are each held to).
+
+**What does not change.** The L2 optionality invariant
+([RS-IDN-004](../10-specification/RS-IDN-identity.md#rs-idn-004),
+`actor-model.md` §3.1) is untouched — L2 still may not exist at a given
+college, and no rule/route/permission/invitation path may require it. This
+decision is purely about the session mechanics *when* L2 does exist, not
+about whether it must.
+
+**Affected artefacts.**
+[RS-GOV-014](../10-specification/RS-GOV-governance.md#rs-gov-014) (fixed),
+`docs/bka/00-foundation/actor-model.md` §3/§8 tables (fixed),
+[RS-IDN-003](../10-specification/RS-IDN-identity.md#rs-idn-003) and
+[RS-IDN-007](../10-specification/RS-IDN-identity.md#rs-idn-007) (already
+correct, no change needed),
+`docs/bka/90-appendix/role-reference-platform-admin-L1-L4-staff.md` (role
+reference, updated in the same pass).
+
+**Migration impact.** None — no code changed. Documentation-only
+correction to match already-shipped, already-Conformant behavior.
+
+**Status.** Resolved — spec corrected to match shipped code, 2026-08-16.

@@ -27,6 +27,7 @@
 const crypto = require('node:crypto');
 const PizZip = require('pizzip');
 const documentRepository = require('../repositories/documentRepository');
+const personalDocumentFolderRepository = require('../repositories/personalDocumentFolderRepository');
 const auditLogRepository = require('../repositories/auditLogRepository');
 const collegeProfileRepository = require('../repositories/collegeProfileRepository');
 const fileStorage = require('../storage/fileStorage');
@@ -616,6 +617,95 @@ async function uploadPersonalDocument(client, {
 
 async function listPersonalDocuments(client, { actorUserId }) {
   return documentRepository.findPersonal(client, { uploadedByUserId: actorUserId });
+}
+
+// Real, listable-Explorer-style mutations on a staff member's own
+// Documents > Personal tab (rename/move/duplicate) — the Documents
+// module real-backend wiring task. Every one of these is scoped to a
+// document this SAME actor owns AND that's tagged PERSONAL_DOC_TYPE
+// (never an institutional/student/template row, regardless of who's
+// calling) — loadOwnedPersonalDocument is the one shared gate all
+// three go through, same "one shared read-access rule" shape
+// assertCanViewDocument already establishes for reads. null (not a
+// thrown error) means "no such document" so the route can turn that
+// into a 404, same convention getDocument's own null return uses;
+// DocumentNotAuthorizedError means "it exists, but isn't yours/isn't
+// personal," a 403.
+async function loadOwnedPersonalDocument(client, id, actorUserId) {
+  const document = await documentRepository.findById(client, id);
+  if (document === null) {
+    return null;
+  }
+  if (document.doc_type !== PERSONAL_DOC_TYPE || document.uploaded_by_user_id !== actorUserId) {
+    throw new DocumentNotAuthorizedError(`user ${JSON.stringify(actorUserId)} may not modify document ${JSON.stringify(id)}`);
+  }
+  return document;
+}
+
+// Renames a personal document's own file identity — deliberately NOT
+// a widening of uploadDocument's general immutability rule (this
+// file's own header comment): every other doc_type stays exactly as
+// immutable as before, this is a new, narrow, personal-only mutation
+// path, not a relaxation of the existing one.
+async function renamePersonalDocument(client, id, { fileName, title }, { actorUserId } = {}) {
+  const document = await loadOwnedPersonalDocument(client, id, actorUserId);
+  if (document === null) {
+    return null;
+  }
+  if (!fileName || !String(fileName).trim()) {
+    throw new DocumentValidationError('fileName is required');
+  }
+  const fields = { fileName: fileName.trim() };
+  if (title !== undefined) {
+    fields.title = title ? String(title).trim() : null;
+  }
+  return documentRepository.update(client, id, fields);
+}
+
+// Moves a personal document into a different personal folder (or to
+// the root, folderName null/empty) — folder_name stays the plain
+// free-text match the documents-personal-folder migration already
+// established (no FK), so this only ever needs to confirm a real
+// folder by that exact name exists for this actor, same check
+// uploadPersonalDocument implicitly relies on the frontend to have
+// already gotten right, now enforced server-side.
+async function movePersonalDocument(client, id, { folderName }, { actorUserId } = {}) {
+  const document = await loadOwnedPersonalDocument(client, id, actorUserId);
+  if (document === null) {
+    return null;
+  }
+  const trimmed = folderName ? String(folderName).trim() : null;
+  if (trimmed) {
+    const folders = await personalDocumentFolderRepository.listByOwner(client, actorUserId);
+    if (!folders.some((f) => f.name === trimmed)) {
+      throw new DocumentValidationError(`no personal folder named ${JSON.stringify(trimmed)} exists`);
+    }
+  }
+  return documentRepository.update(client, id, { folderName: trimmed });
+}
+
+// Duplicates a personal document's bytes into a new document row in
+// the same folder — a real byte copy (readFile -> uploadDocument),
+// not a row-level clone, since uploadDocument is the one place
+// CLAUDE.md rule 2 allows storage to be written at all.
+async function duplicatePersonalDocument(client, id, { actorUserId } = {}) {
+  const document = await loadOwnedPersonalDocument(client, id, actorUserId);
+  if (document === null) {
+    return null;
+  }
+  const providerName = await resolveStorageProviderName(client, document.college_id);
+  const buffer = await fileStorage.readFile(document.storage_path, { providerName });
+  const dot = document.file_name.lastIndexOf('.');
+  const base = dot > 0 ? document.file_name.slice(0, dot) : document.file_name;
+  const ext = dot > 0 ? document.file_name.slice(dot) : '';
+  return uploadPersonalDocument(client, {
+    collegeId: document.college_id,
+    title: `${document.title || base} (copy)`,
+    folderName: document.folder_name,
+    fileName: `${base} (copy)${ext}`,
+    mimeType: document.mime_type,
+    fileBuffer: buffer,
+  }, { actorUserId });
 }
 
 // The natural "what templates can I generate from" listing a picker
@@ -1223,6 +1313,7 @@ module.exports = {
   TEMPLATE_DOC_TYPE,
   CHAT_ATTACHMENT_DOC_TYPE,
   AADHAAR_DOC_TYPE,
+  PERSONAL_DOC_TYPE,
   PUBLICATION_STATUSES,
   STAFF_TIER_ROLES,
   uploadDocument,
@@ -1230,6 +1321,9 @@ module.exports = {
   uploadChatAttachment,
   uploadInstitutionalDocument,
   uploadPersonalDocument,
+  renamePersonalDocument,
+  movePersonalDocument,
+  duplicatePersonalDocument,
   mergeTemplate: templateMerger.mergeTemplate,
   mergeDocumentTemplate,
   listTemplates,

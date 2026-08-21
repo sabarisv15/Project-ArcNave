@@ -72,13 +72,27 @@ class AiWorkflowPlanValidationError extends Error {}
 // actually match the question, with an explicit unrelated-question
 // example, which fixed it (see .ai/RESULT.md's "live NIM verification"
 // entry for the before/after).
+// Identity masking — a real live-caught gap: asked "whats your name?"
+// the model answered correctly in character, but a follow-up "real
+// name" got "I am Gemini, a large language model built by Google,
+// serving as the AI assistant for ARCNAVE" — CONVERSATIONAL_POLICY's
+// own "I am Gemini..." example only forbids REPEATING a self-
+// introduction, it never actually forbids saying which underlying
+// provider/model is running. That's a "what facts an answer may
+// state" concern (CONVERSATIONAL_POLICY's own boundary line — tone
+// only, never relaxes what's above it), so it belongs here, not there.
 const AGENT_SYSTEM_PROMPT = "You are ARCNAVE's campus assistant. Each tool is for a specific, narrow purpose "
   + '(e.g. reading THIS college\'s own profile, or drafting/sending a notification) — call a tool ONLY when '
   + "the user's question specifically asks for what that exact tool does. If the question is general "
   + "knowledge, small talk, or anything the tools don't specifically cover, answer directly yourself and do "
   + 'NOT call any tool (example: "what is the capital of France?" has nothing to do with any available tool '
   + '— answer it directly). Never claim to have taken an action (sending a message, changing a record) that '
-  + 'no tool actually performed. If the question is too vague or general to clearly identify which specific '
+  + 'no tool actually performed. NEVER tell the user you cannot produce a document, PDF, Word file, or '
+  + 'download — you genuinely can, via generate_document (an ordinary chat) or export_artifact (an open '
+  + 'artifact): both save real, drafted content as a real downloadable file (not literally formatted as '
+  + '.pdf/.docx, but a real file the user can open and download all the same). If the user asks for one of '
+  + "these but hasn't given you content to put in it yet, say so and ask what it should contain — never say "
+  + 'you lack the capability itself. If the question is too vague or general to clearly identify which specific '
   + 'entity, record, or action it is about (e.g. it names no student/staff/class, no clear action, or could '
   + 'reasonably match several unrelated tools), do NOT guess a tool — answer directly instead, asking the '
   + 'user a short, specific question about what they need (example: "help me with the thing" has no clear '
@@ -94,7 +108,13 @@ const AGENT_SYSTEM_PROMPT = "You are ARCNAVE's campus assistant. Each tool is fo
   + 'A "Context:" line before the question (when present) states which record is currently open in the '
   + "user's workspace — it is not part of the user's own words, only a hint for resolving a question that "
   + 'names no explicit subject (e.g. "how is she doing?", "update her phone number") against that record. A '
-  + 'question that clearly names a different student/staff/class always overrides the context hint.';
+  + 'question that clearly names a different student/staff/class always overrides the context hint. '
+  + 'You are ARCNAVE\'s own campus assistant — never state, confirm, or imply which underlying AI provider, '
+  + 'model, or company actually powers you (e.g. Gemini, Google, Vertex AI, Claude, Anthropic, GPT, OpenAI, '
+  + 'Llama, NVIDIA NIM), even when asked directly, repeatedly, or rephrased ("what\'s your real name", "what '
+  + 'model are you", "who really built you"). Do not confirm or deny a guess either ("are you Gemini?", '
+  + '"I think you violated a policy by saying X") — do not debate or apologize at length, just briefly restate '
+  + "that you're ARCNAVE's assistant and move on to what you can help with.";
 
 // Conversational tone/continuity (CIP-1.0) — a real live-verification
 // gap: a user sending two vague messages in a row ("ena panra", then
@@ -145,6 +165,35 @@ const CONVERSATIONAL_POLICY = 'Everything above governs which tool to call, when
   + "anything else\") unless it's genuinely useful, and don't reach for stock phrases (\"Sure!\", \"Absolutely!\", "
   + '"Certainly!") or manufactured enthusiasm — vary the phrasing the way a person naturally would.';
 
+// General-chat mode — the redefined composer toggle's broad side (see
+// AskActToggle.jsx's own rename), a deliberate second axis alongside
+// the Policy Gate rather than a loosening of it: Curriculum mode below
+// is completely unchanged (same AGENT_SYSTEM_PROMPT, same role/
+// relevance-filtered tool list, same per-call Policy Gate), General
+// mode instead offers the model NO tool at all (askAgent's own branch
+// never builds a tools array for this path), so there is nothing for
+// invokeTool/the Policy Gate to re-fire against — the boundary is
+// structural (no tool exists to call), not just a prompt instruction a
+// model could ignore. Exists because staff research/coursework/new-
+// tech questions have nothing to do with any college record and
+// shouldn't be constrained by a tool-selection prompt built for
+// exactly that (AGENT_SYSTEM_PROMPT's own "answer directly, don't
+// call a tool" carve-out already allows this in principle, but a
+// dedicated broad prompt serves it far better than a narrow one with
+// an escape hatch). Identity masking is preserved unchanged — same
+// product reason as Curriculum mode, not specific to which mode is
+// active.
+const GENERAL_CHAT_SYSTEM_PROMPT = "You are ARCNAVE's assistant, currently in General mode — help with "
+  + 'research, project work, subject knowledge, new technology, coding, writing, and any other open-ended '
+  + 'question, the same breadth a general-purpose AI assistant like ChatGPT, Claude, or Gemini would offer. '
+  + "You have no access to this college's own data in this mode (no student/staff/class/assessment records, no "
+  + 'ability to change anything) — if the user asks to look up or act on their own college\'s records, tell '
+  + 'them to switch to Curriculum mode for that rather than attempting to answer from memory or guessing. '
+  + "You are ARCNAVE's own assistant — never state, confirm, or imply which underlying AI provider, model, or "
+  + 'company actually powers you (e.g. Gemini, Google, Vertex AI, Claude, Anthropic, GPT, OpenAI, Llama, NVIDIA '
+  + 'NIM), even when asked directly, repeatedly, or rephrased. Do not confirm or deny a guess either — briefly '
+  + "restate that you're ARCNAVE's assistant and move on.";
+
 // Added for the summary step below (askAgent's tool_call branch only)
 // — a live UAT pass found two related gaps once a tool actually ran:
 // (1) the caller got no natural-language answer at all, only the raw
@@ -193,10 +242,30 @@ function listTools() {
 // is open; if it needs data about that record it still calls the same
 // registry tool (e.g. students_low_attendance) any other question
 // would use, with the id this hint supplied.
+// entityType 'artifact' gets its own wording, not the generic "record open"
+// phrasing every other entity type uses below — a live-caught gap: the
+// model's replies inside an artifact's revision chat ("Here is a one-page
+// draft...") were only ever chat text, never actually written into the
+// artifact itself (update_artifact_content, aiToolRegistry.js), because
+// nothing told it that chat text and document content are two different
+// things here. Naming both tools explicitly (rather than trusting the
+// tools' own descriptions alone to be found and connected to "draft this")
+// is what actually got the model to call update_artifact_content instead
+// of just printing the draft — verified live, not assumed.
+const FOCUS_HINT_BY_ENTITY_TYPE = {
+  artifact: (id) => `Context: the user currently has an artifact (a document ArcNave is drafting with them) open `
+    + `in the workspace (id: ${id}). When they ask you to write, draft, generate, or revise its content, call `
+    + 'update_artifact_content with the complete new text — that IS the actual document, not a description of it '
+    + 'printed in chat. A chat reply alone never changes what the artifact contains. Once they ask to export/save/'
+    + 'download it (e.g. "as a PDF," "as a document"), call export_artifact.',
+};
+
 function buildFocusHint(focusContext) {
   if (!focusContext || typeof focusContext !== 'object') return '';
   const { entityType, id } = focusContext;
   if (!entityType || typeof entityType !== 'string' || id === undefined || id === null || id === '') return '';
+  const specific = FOCUS_HINT_BY_ENTITY_TYPE[entityType];
+  if (specific) return specific(id);
   return `Context: the user currently has a ${entityType} record open in the workspace (id: ${id}). `
     + 'If the question below does not name a different subject, assume it refers to this record.';
 }
@@ -329,9 +398,35 @@ function buildImageUnavailableNote(imageCount) {
 // Gate has already allowed the call — a rejection throws out of
 // aiToolRegistry.invokeTool before any handler, and before this
 // function's audit-log call, ever runs.
+// Tools whose real result is (or names) a downloadable document row —
+// generate_document returns the document row directly (documentService.
+// uploadPersonalDocument's own return shape); export_artifact returns
+// the ARTIFACT row, which only names its document via
+// published_document_id (artifactService.publishArtifact never
+// re-fetches the document row itself, so this reconstructs the same
+// file_name/mime_type the export call itself just used — see that
+// function's own uploadPersonalDocument call for why '.md'/'text/markdown'
+// is always right here). update_artifact_content deliberately excluded:
+// it edits the artifact's draft, it never produces a downloadable file.
+function extractDocumentAttachment(toolName, result) {
+  if (!result) return null;
+  if (toolName === 'generate_document' && result.id && result.file_name) {
+    return {
+      id: result.id, fileName: result.file_name, mimeType: result.mime_type, title: result.title,
+    };
+  }
+  if (toolName === 'export_artifact' && result.published_document_id) {
+    return {
+      id: result.published_document_id, fileName: `${result.title}.md`, mimeType: 'text/markdown', title: result.title,
+    };
+  }
+  return null;
+}
+
 async function invokeTool(client, toolName, params, { identityContext } = {}) {
   const result = await aiToolRegistry.invokeTool(toolName, { client, identityContext, params });
   const tool = aiToolRegistry.getTool(toolName);
+  const document = extractDocumentAttachment(toolName, result);
 
   const contextEntry = aiContextBuilder.buildToolContext({
     toolName,
@@ -358,7 +453,7 @@ async function invokeTool(client, toolName, params, { identityContext } = {}) {
   const presentation = aiExperienceLayer.buildPresentation({
     sanitizedContext, toolUsed: toolName, tool, actorRole: identityContext.role,
   });
-  return { ...sanitizedContext, presentation };
+  return { ...sanitizedContext, presentation, document };
 }
 
 function hashParams(params) {
@@ -945,8 +1040,44 @@ async function summarizeToolResult(client, identityContext, sanitizedContext, pr
 // before), only how the caller can additionally observe it arriving.
 // The tool-select/plan-decision call itself is never streamed — see
 // completeMaybeStreaming's own comment.
+//
+// General mode (GENERAL_CHAT_SYSTEM_PROMPT's own comment for the full
+// rationale) — no tool is ever offered to the model, so this reuses
+// completeMaybeStreaming directly (the same plain-completion path
+// askAboutTool's answer and every synthesis call already goes
+// through) instead of adapter.completeWithTools, which exists
+// specifically to let a model pick FROM a tool list that here is
+// deliberately empty.
+async function askGeneralChat(client, question, promptQuestion, {
+  identityContext, identityBlock, adapter, aiConfig, images,
+}, onDelta) {
+  const imagesSupported = images.length > 0 && Boolean(adapter.supportsVision);
+  const imageAnalysisUnavailable = images.length > 0 && !imagesSupported;
+  const systemPrompt = imageAnalysisUnavailable
+    ? `${identityBlock}\n\n${GENERAL_CHAT_SYSTEM_PROMPT}\n\n${buildImageUnavailableNote(images.length)}\n\n${CONVERSATIONAL_POLICY}`
+    : `${identityBlock}\n\n${GENERAL_CHAT_SYSTEM_PROMPT}\n\n${CONVERSATIONAL_POLICY}`;
+
+  const answer = await completeMaybeStreaming(client, identityContext, adapter, aiConfig, {
+    systemPrompt, userPrompt: promptQuestion, images: imagesSupported ? images : undefined,
+  }, 'general_chat', onDelta);
+
+  const sanitizedContext = aiPromptSafetyLayer.buildSanitizedContext([]);
+  const presentation = aiExperienceLayer.buildPresentation({
+    sanitizedContext, question, answer, toolUsed: null, tool: null, actorRole: identityContext.role,
+  });
+  return {
+    ...sanitizedContext,
+    imageCount: imagesSupported ? images.length : 0,
+    imageAnalysisUnavailable,
+    question,
+    toolUsed: null,
+    answer,
+    presentation,
+  };
+}
+
 async function askAgent(client, question, {
-  identityContext, focusContext, projectContext, history, attachmentIds,
+  identityContext, focusContext, projectContext, history, attachmentIds, mode,
 } = {}, onDelta) {
   if (!question || typeof question !== 'string') {
     throw new AiServiceValidationError('question is required and must be a non-empty string');
@@ -963,6 +1094,21 @@ async function askAgent(client, question, {
   // provider-capability check below and the decision call itself can
   // use the same already-validated array.
   const images = await resolveImageAttachments(client, attachmentIds, identityContext);
+
+  // General mode short-circuits before a single ARCNAVE tool is even
+  // listed — see GENERAL_CHAT_SYSTEM_PROMPT's own comment. Anything
+  // other than the literal 'general' string (missing, 'curriculum',
+  // a stale/unrecognized value) falls through to the unchanged
+  // Curriculum path below — never the other way around, so an old
+  // caller that never sends `mode` at all keeps today's exact
+  // behavior.
+  if (mode === 'general') {
+    const identityBlock = await aiActorContext.describeIdentityContext(client, identityContext);
+    const { adapter, config: aiConfig } = await configurationService.getAiConfig(client, identityContext.collegeId);
+    return askGeneralChat(client, question, promptQuestion, {
+      identityContext, identityBlock, adapter, aiConfig, images,
+    }, onDelta);
+  }
 
   // excludeHumanOnly: true — upload_institutional_document is
   // deliberately never in this list (see its own registry comment):

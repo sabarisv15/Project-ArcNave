@@ -69,7 +69,7 @@ async function listOwnArtifactVersions(client, id, { userId }) {
 }
 
 async function createArtifact(client, {
-  title, content, conversationId, sourceMessageId,
+  title, content, conversationId, sourceMessageId, artifactType,
 }, { userId, collegeId }) {
   const trimmedTitle = (title || '').trim();
   if (!trimmedTitle) {
@@ -85,6 +85,7 @@ async function createArtifact(client, {
     conversationId: conversationId || null,
     sourceMessageId: sourceMessageId || null,
     title: trimmedTitle,
+    artifactType: artifactType || null,
     content,
     versionNumber: 1,
   });
@@ -109,7 +110,7 @@ async function createArtifact(client, {
   return artifact;
 }
 
-async function updateArtifact(client, id, { title, content }, { userId }) {
+async function updateArtifact(client, id, { title, content, conversationId }, { userId }) {
   const existing = await resolveOwnArtifact(client, id, userId);
   assertNotPublished(existing);
 
@@ -120,7 +121,16 @@ async function updateArtifact(client, id, { title, content }, { userId }) {
     throw new ArtifactValidationError('content may not be cleared to empty');
   }
 
+  // Links a revision chat created AFTER the artifact already exists (the
+  // template-first flow — ArtifactCreate.jsx creates the artifact with no
+  // conversation, then a later message starts one) back onto the artifact
+  // row. `createArtifact`'s own conversationId param only covers the
+  // opposite direction (an artifact saved FROM an existing chat message);
+  // without this, conversation_id stayed null forever for a
+  // template-created artifact, so ArtifactEditor's revision chat only ever
+  // existed in the current browser's react-query cache — gone on reload.
   const patch = { title };
+  if (conversationId !== undefined) patch.conversationId = conversationId;
   const contentChanged = content !== undefined && content !== existing.content;
   if (contentChanged) {
     patch.content = content;

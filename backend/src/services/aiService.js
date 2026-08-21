@@ -96,6 +96,55 @@ const AGENT_SYSTEM_PROMPT = "You are ARCNAVE's campus assistant. Each tool is fo
   + 'names no explicit subject (e.g. "how is she doing?", "update her phone number") against that record. A '
   + 'question that clearly names a different student/staff/class always overrides the context hint.';
 
+// Conversational tone/continuity (CIP-1.0) — a real live-verification
+// gap: a user sending two vague messages in a row ("ena panra", then
+// "hh") got the SAME capability-list greeting twice, because
+// AGENT_SYSTEM_PROMPT's own "ask a short, specific question"
+// instruction for vague input has no memory of what it already asked.
+// `historyHint` (buildHistoryHint above) already puts the last 10
+// turns in front of the model on every call — this constant is what
+// tells it to actually use that history to avoid repeating itself, not
+// new plumbing. Appended to every systemPrompt that produces a final
+// user-facing answer (this file's own completeWithTools/
+// completeMaybeStreaming call sites), always LAST and framed as tone/
+// phrasing only: everything before it in the same prompt (tool
+// selection, never-invent-a-placeholder, context-hint resolution,
+// "answer using only the sanitized context") governs WHAT the agent is
+// allowed to say and stays authoritative; this governs HOW it phrases
+// what it already decided to say.
+const CONVERSATIONAL_POLICY = 'Everything above governs which tool to call, when to refuse, how to resolve an '
+  + "ambiguous subject, and what facts an answer may state — never relaxed by anything below. Everything below "
+  + "is tone, continuity, and phrasing once that decision is already made.\n\nTreat the current message as a "
+  + 'continuation of "Conversation so far" above, not a fresh start. Never repeat a greeting, self-introduction '
+  + '("I\'m your ARCNAVE AI assistant...", "I am Gemini..."), capability list, explanation, or question already '
+  + "given earlier in that history — build on what's already established instead, and use whatever the user "
+  + "already told you (their class, the record they're on) without asking them to repeat it. Follow the CURRENT "
+  + 'message\'s own topic: if the user moves on mid-task ("btw tomorrow holiday ah?"), answer that, don\'t pull '
+  + "them back to the earlier one. That's an interruption, not an abandonment: hold the interrupted task's state "
+  + "(what was being done, what's already been given, what's still missing) exactly the way this assistant "
+  + 'itself keeps a todo list running underneath an unrelated question, and when the user returns to it — '
+  + '"back to that", "continue", or simply supplying the information it was waiting for — resume from exactly '
+  + "that point using what was already established. Never restart the task from scratch, never re-ask for "
+  + "something already given before the interruption, and never treat the resumption as a brand-new request "
+  + 'needing its own fresh clarifying question. If they correct you ("no, 2nd year not 1st") or reject an '
+  + 'answer ("vendam", '
+  + '"athu illa", "no"), acknowledge briefly, update, and continue — no long apology, no defending the previous '
+  + 'answer, and never repeat the same rejected response verbatim. A short message ("ok", "hmm", "seri", '
+  + '"haha", "thanks", "wait") is very often just an acknowledgement or reaction, not a request to re-explain '
+  + 'anything — reply in kind ("ok" -> "👍", "thanks" -> "You\'re welcome.") rather than restating a menu of '
+  + 'features; only list capabilities when the user actually asks what you can do, and even then only what\'s '
+  + 'relevant, never the full menu. When a clarifying question is genuinely needed, ask the ONE specific thing '
+  + 'that\'s actually missing ("Which class?") rather than a generic "How can I help?". Report a completed tool '
+  + 'action the way a person would ("Done — 10-A attendance is updated, 3 absent") rather than narrating the '
+  + 'mechanism ("Tool invocation successful..."); report a failed one by its actual cause in plain terms '
+  + '("Couldn\'t update attendance right now, try again"), never a raw status code, stack trace, tool name, or '
+  + "provider detail. Respond in whatever mix of Tamil/Tanglish/English the user is actually using — don't force "
+  + "a language the conversation isn't in. Match response length and format to what was actually asked (a "
+  + "casual message gets a short casual reply, a data request gets structured data) — don't add headings/"
+  + 'bullets/markdown a plain question didn\'t call for, don\'t add a closing line ("Let me know if you need '
+  + "anything else\") unless it's genuinely useful, and don't reach for stock phrases (\"Sure!\", \"Absolutely!\", "
+  + '"Certainly!") or manufactured enthusiasm — vary the phrasing the way a person naturally would.';
+
 // Added for the summary step below (askAgent's tool_call branch only)
 // — a live UAT pass found two related gaps once a tool actually ran:
 // (1) the caller got no natural-language answer at all, only the raw
@@ -709,7 +758,7 @@ async function executeWorkflowPlan(client, resolvedSteps, question, {
   const maxRiskLevel = stepResults.reduce((max, r) => Math.max(max, r.tool.riskLevel), 0);
   const routedConfig = selectModelForPurpose(aiConfig, maxRiskLevel);
   const answer = await completeMaybeStreaming(client, identityContext, adapter, routedConfig, {
-    systemPrompt: `${identityBlock}\n\n${systemPrompt}\n\n${combinedSystemPrompt}`,
+    systemPrompt: `${identityBlock}\n\n${systemPrompt}\n\n${combinedSystemPrompt}\n\n${CONVERSATIONAL_POLICY}`,
     userPrompt,
   }, 'plan_synthesis', onDelta);
 
@@ -748,7 +797,7 @@ async function askAboutTool(client, toolName, params, question, { identityContex
   const { systemPrompt, userPrompt } = aiPromptSafetyLayer.renderForLlm(sanitizedContext, question);
   const identityBlock = await aiActorContext.describeIdentityContext(client, identityContext);
   const { adapter, config: aiConfig } = await configurationService.getAiConfig(client, identityContext.collegeId);
-  const answer = await completeMaybeStreaming(client, identityContext, adapter, aiConfig, { systemPrompt: `${identityBlock}\n\n${systemPrompt}`, userPrompt }, 'tool_question', onDelta);
+  const answer = await completeMaybeStreaming(client, identityContext, adapter, aiConfig, { systemPrompt: `${identityBlock}\n\n${systemPrompt}\n\n${CONVERSATIONAL_POLICY}`, userPrompt }, 'tool_question', onDelta);
 
   const presentation = aiExperienceLayer.buildPresentation({
     sanitizedContext, question, answer, toolUsed: toolName, tool: aiToolRegistry.getTool(toolName), actorRole: identityContext.role,
@@ -867,7 +916,7 @@ function selectModelForPurpose(aiConfig, riskLevel) {
 async function summarizeToolResult(client, identityContext, sanitizedContext, promptQuestion, tool, adapter, aiConfig, identityBlock, onDelta) {
   const { systemPrompt, userPrompt } = aiPromptSafetyLayer.renderForLlm(sanitizedContext, promptQuestion);
   const combinedSystemPrompt = `${identityBlock}\n\n${systemPrompt}\n\n${TOOL_RESULT_ANSWER_SYSTEM_PROMPT}\n\n`
-    + `The tool that was called: ${tool.name} — ${tool.description}`;
+    + `The tool that was called: ${tool.name} — ${tool.description}\n\n${CONVERSATIONAL_POLICY}`;
   const routedConfig = selectModelForPurpose(aiConfig, tool.riskLevel);
   return completeMaybeStreaming(client, identityContext, adapter, routedConfig, { systemPrompt: combinedSystemPrompt, userPrompt }, 'tool_answer', onDelta);
 }
@@ -954,8 +1003,8 @@ async function askAgent(client, question, {
   const imagesSupported = images.length > 0 && Boolean(adapter.supportsVision);
   const imageAnalysisUnavailable = images.length > 0 && !imagesSupported;
   const decisionSystemPrompt = imageAnalysisUnavailable
-    ? `${identityBlock}\n\n${AGENT_SYSTEM_PROMPT}\n\n${buildImageUnavailableNote(images.length)}`
-    : `${identityBlock}\n\n${AGENT_SYSTEM_PROMPT}`;
+    ? `${identityBlock}\n\n${AGENT_SYSTEM_PROMPT}\n\n${buildImageUnavailableNote(images.length)}\n\n${CONVERSATIONAL_POLICY}`
+    : `${identityBlock}\n\n${AGENT_SYSTEM_PROMPT}\n\n${CONVERSATIONAL_POLICY}`;
 
   const decisionStartedAt = Date.now();
   const decision = await adapter.completeWithTools(aiConfig, {

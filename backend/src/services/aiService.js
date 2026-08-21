@@ -992,7 +992,7 @@ function groupStepsByParallelizability(resolvedSteps) {
 
 async function executeWorkflowPlan(client, resolvedSteps, question, {
   identityContext, identityBlock: precomputedIdentityBlock, adapter: precomputedAdapter, aiConfig: precomputedAiConfig,
-}, onDelta) {
+}, onDelta, onStep = () => {}) {
   // Resolved up front now (used to happen after the step loop, only for
   // the synthesis call) so every step's own ai_tool_invoked audit row
   // can also carry provider/model — see runPlanStep's new params. Pure
@@ -1007,7 +1007,20 @@ async function executeWorkflowPlan(client, resolvedSteps, question, {
 
   const stepResults = [];
   const failures = [];
+  const totalSteps = resolvedSteps.length;
+  let stepsStarted = 0;
   for (const group of groupStepsByParallelizability(resolvedSteps)) {
+    // Real-time step visibility (the frontend's own "running X" status,
+    // not a business decision) — emitted right before each step's tools
+    // actually run, one event per step even when a read-only group runs
+    // its steps concurrently, so the UI can show every tool name rather
+    // than collapsing a parallel batch into one label.
+    group.steps.forEach((step, i) => {
+      onStep({
+        phase: 'running_tool', toolName: step.toolName, stepIndex: stepsStarted + i, totalSteps,
+      });
+    });
+    stepsStarted += group.steps.length;
     // eslint-disable-next-line no-await-in-loop
     const outcomes = group.isReadOnly
       ? await Promise.all(group.steps.map((step) => runPlanStep(client, identityContext, step, adapter, aiConfig)))
@@ -1275,7 +1288,7 @@ async function askGeneralChat(client, question, promptQuestion, {
 
 async function askAgent(client, question, {
   identityContext, focusContext, projectContext, history, attachmentIds, mode,
-} = {}, onDelta) {
+} = {}, onDelta, onStep = () => {}) {
   if (!question || typeof question !== 'string') {
     throw new AiServiceValidationError('question is required and must be a non-empty string');
   }
@@ -1395,7 +1408,7 @@ async function askAgent(client, question, {
 
     return executeWorkflowPlan(client, resolved, promptQuestion, {
       identityContext, identityBlock, adapter, aiConfig,
-    }, onDelta);
+    }, onDelta, onStep);
   }
 
   if (decision.type === 'tool_call') {
@@ -1449,6 +1462,7 @@ async function askAgent(client, question, {
       // the normal invoke path below with no pause.
     }
 
+    onStep({ phase: 'running_tool', toolName: decision.toolName, stepIndex: 0, totalSteps: 1 });
     const sanitizedContext = await invokeTool(client, decision.toolName, decision.arguments || {}, {
       identityContext, provider: adapter.name, model: aiConfig.model,
     });

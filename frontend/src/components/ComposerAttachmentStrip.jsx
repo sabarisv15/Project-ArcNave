@@ -30,8 +30,11 @@ const TILE = 'w-[64px] h-[64px] sm:w-[72px] sm:h-[72px]';
 /** The band the tiles sit in — fixed, so the composer never moves under them. */
 const TRAY = 'h-[80px] sm:h-[88px]';
 
-/** The glyph stands for what the file *is*, so a CSV is not just "a file". */
-function iconFor(type = '', name = '') {
+/** The glyph stands for what the file *is*, so a CSV is not just "a file".
+ *  Exported: ChatMessage.jsx's sent-attachment chip uses the same mapping,
+ *  so a document reads as the same kind of thing in the tray and the
+ *  transcript. */
+export function iconFor(type = '', name = '') {
   const ext = name.split('.').pop()?.toLowerCase() ?? '';
   if (type.startsWith('image/')) return ImageIcon;
   if (ext === 'csv' || ext === 'tsv') return Paperclip;

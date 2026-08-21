@@ -6,9 +6,12 @@ const BASE_URL = '/api/v1';
 /**
  * Reads a text/event-stream response body (POST /ai/ask/stream, P0.5) and
  * calls `onEvent` once per SSE event — `{ type: 'delta', delta }` as each
- * answer chunk arrives, then `{ type: 'done', result }` once with the exact
- * same JSON shape POST /ai/ask itself returns (toolUsed, evidence, plan,
- * pendingConfirmation, ...). Auth/401-refresh mirrors client.js's own
+ * answer chunk arrives, `{ type: 'step', step }` right before a tool call
+ * (single-tool or a workflow plan's step) actually runs
+ * (`{phase, toolName, stepIndex, totalSteps}`, aiService.js's own real
+ * progress, not a synthetic guess), then `{ type: 'done', result }` once
+ * with the exact same JSON shape POST /ai/ask itself returns (toolUsed,
+ * evidence, plan, pendingConfirmation, ...). Auth/401-refresh mirrors client.js's own
  * request() (same single-flight refreshOnce), duplicated rather than
  * reused because a streaming fetch can't go through request()'s
  * res.json()-only response handling.
@@ -68,6 +71,8 @@ async function streamRequest(path, body, onEvent, { isRetry = false } = {}) {
           const data = JSON.parse(payload);
           if (currentEvent === 'delta') {
             onEvent({ type: 'delta', delta: data.delta });
+          } else if (currentEvent === 'step') {
+            onEvent({ type: 'step', step: data });
           } else if (currentEvent === 'done') {
             result = data;
             onEvent({ type: 'done', result: data });

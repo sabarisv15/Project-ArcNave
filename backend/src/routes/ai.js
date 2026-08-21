@@ -454,14 +454,19 @@ function createAiRouter() {
   }));
 
   // Streaming variant of /ai/ask (P0.5) — same tool-select/plan/
-  // confirmation logic (aiService.askAgent, unchanged), only the FINAL
-  // natural-language answer streams: an SSE `delta` event per chunk as
-  // it arrives, then one `done` event carrying the exact same full
-  // JSON shape /ai/ask itself returns (toolUsed, evidence, plan,
-  // pendingConfirmation, ...) so the frontend reconciles state
-  // identically regardless of which route it used. A separate route,
-  // not a content-negotiated branch of /ai/ask itself, so that route's
-  // existing contract/tests stay byte-for-byte untouched.
+  // confirmation logic (aiService.askAgent, unchanged): the final
+  // natural-language answer streams as an SSE `delta` event per chunk,
+  // and (P1) a `step` event fires just before each tool in a single-tool
+  // or multi-step plan call actually runs (`{phase, toolName, stepIndex,
+  // totalSteps}`) — real progress, not a synthetic status string, since
+  // it's emitted from the exact same call site `invokeTool`/
+  // `executeWorkflowPlan` already use, never a guess about what's
+  // happening. One `done` event still carries the exact full JSON shape
+  // /ai/ask itself returns (toolUsed, evidence, plan, pendingConfirmation,
+  // ...) so the frontend reconciles state identically regardless of which
+  // route it used. A separate route, not a content-negotiated branch of
+  // /ai/ask itself, so that route's existing contract/tests stay
+  // byte-for-byte untouched.
   router.post('/ai/ask/stream', requireAuth, asyncHandler(async (req, res) => {
     if (!requireResolvedTenant(req, res)) return;
     const {
@@ -480,7 +485,7 @@ function createAiRouter() {
     try {
       const result = await aiService.askAgent(req.dbClient, question, {
         identityContext, focusContext, projectContext, history, attachmentIds, mode,
-      }, (delta) => writeEvent('delta', { delta }));
+      }, (delta) => writeEvent('delta', { delta }), (step) => writeEvent('step', step));
       writeEvent('done', result);
     } catch (err) {
       // The response has already started (headers sent) by the time

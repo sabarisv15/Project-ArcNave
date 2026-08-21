@@ -157,6 +157,13 @@ export default {
           '0%,100%': { opacity: '.45' },
           '50%': { opacity: '1' },
         },
+        /* The streaming caret — a hard on/off blink (a real cursor, not a
+           soft pulse), so it reads as "still writing here" beside text
+           useTypewriter is already revealing smoothly. */
+        caretBlink: {
+          '0%,49%': { opacity: '1' },
+          '50%,100%': { opacity: '0' },
+        },
         rowIn: {
           from: { opacity: '0', transform: 'translateY(4px)' },
           to: { opacity: '1', transform: 'none' },
@@ -213,6 +220,7 @@ export default {
         fadeUp: 'fadeUp 160ms ease',
         viewIn: 'fadeUp 180ms ease',
         pulseSoft: 'pulseSoft 1.5s ease-in-out infinite',
+        caretBlink: 'caretBlink 1s step-end infinite',
         rowIn: 'rowIn 240ms ease-out both',
         composerDock: 'composerDock 200ms ease-out both',
         velTravel: 'velTravel 620ms cubic-bezier(.22,.61,.36,1) both',

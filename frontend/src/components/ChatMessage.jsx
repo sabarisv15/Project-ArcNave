@@ -5,8 +5,11 @@ import { Markdown } from './Markdown';
 import { CollapsibleContent } from './CollapsibleContent';
 import { GenerationState, ANMessageMark } from './GenerationState';
 import { CopyButton } from './ui/CopyButton';
+import { iconFor } from './ComposerAttachmentStrip';
 import { useRelativeTime } from '../hooks/useRelativeTime';
+import { useTypewriter } from '../hooks/useTypewriter';
 import { cn } from '../lib/utils';
+import { formatBytes } from '../lib/composerAttachments';
 import { downloadFile } from '../api/client';
 
 const ACTION =
@@ -243,9 +246,62 @@ function useJustFinished(generating, ms = 700) {
   return settling;
 }
 
+/**
+ * A sent, non-image attachment (PDF/DOCX/XLSX/...) — the composer only
+ * gives it a file-type glyph, never an `<img>` thumbnail, so the transcript
+ * needs its own row: name, size, and a real Download hitting the same
+ * `GET /documents/:id/download` route `DocumentAttachmentCard` uses.
+ * `serverId` is the backend document id `useComposerAttachments` recorded
+ * once the upload finished — the same id already sent as this message's
+ * own `attachment_ids` entry, not a second reference.
+ */
+function SentFileChip({ attachment }) {
+  const [downloading, setDownloading] = useState(false);
+  const Icon = iconFor(attachment.type, attachment.name);
+
+  return (
+    <div className="flex items-center gap-[8px] w-[220px] max-w-full px-[9px] py-[7px] rounded-[10px] bg-tint2 border border-line">
+      <span className="flex-none w-[28px] h-[28px] grid place-items-center rounded-[8px] bg-paper text-ink-ghost">
+        <Icon size={14} strokeWidth={1.8} aria-hidden="true" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[11.5px] font-[500] text-ink-soft truncate" title={attachment.name}>
+          {attachment.name}
+        </span>
+        <span className="block text-[10.5px] text-ink-faint">{formatBytes(attachment.size)}</span>
+      </span>
+      {attachment.serverId && (
+        <button
+          type="button"
+          aria-label={`Download ${attachment.name}`}
+          title="Download"
+          disabled={downloading}
+          onClick={async () => {
+            setDownloading(true);
+            try {
+              await downloadFile(`/documents/${attachment.serverId}/download`, attachment.name);
+            } catch {
+              toast('Could not download this file — please try again.');
+            } finally {
+              setDownloading(false);
+            }
+          }}
+          className="flex-none w-[26px] h-[26px] grid place-items-center border-0 bg-transparent rounded-[7px] text-ink-muted cursor-pointer transition-colors duration-200 hover:bg-paper hover:text-accent disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Download size={13} strokeWidth={2} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function ChatMessage({ message, selected = false, onSelect, onEdit }) {
   const settling = useJustFinished(Boolean(message.generating));
   const [editing, setEditing] = useState(false);
+  // See useTypewriter's own file comment — smooths a bursty SSE chunk into
+  // an actual typing motion. A no-op once generation is done: it renders
+  // `message.body` immediately for any settled/history message.
+  const displayedBody = useTypewriter(message.body ?? '', { active: Boolean(message.generating) });
 
   if (message.role === 'user') {
     const editable = typeof onEdit === 'function' && Boolean(message.text);
@@ -259,14 +315,18 @@ export function ChatMessage({ message, selected = false, onSelect, onEdit }) {
             An edit never touches them: they belong to what was sent. */}
         {message.attachments?.length > 0 && (
           <div className="flex flex-wrap justify-end gap-[6px] max-w-[70%]">
-            {message.attachments.map((a) => (
-              <img
-                key={a.id}
-                src={a.previewUrl}
-                alt={a.name}
-                className="w-[72px] h-[72px] object-cover rounded-[8px] border border-line"
-              />
-            ))}
+            {message.attachments.map((a) =>
+              a.previewUrl ? (
+                <img
+                  key={a.id}
+                  src={a.previewUrl}
+                  alt={a.name}
+                  className="w-[72px] h-[72px] object-cover rounded-[8px] border border-line"
+                />
+              ) : (
+                <SentFileChip key={a.id} attachment={a} />
+              )
+            )}
           </div>
         )}
         {editing ? (
@@ -341,10 +401,14 @@ export function ChatMessage({ message, selected = false, onSelect, onEdit }) {
             // still empty and the skeleton is the honest state.
             message.body ? (
               <div className="py-[5px]">
-                <Markdown>{message.body}</Markdown>
+                <Markdown>{displayedBody}</Markdown>
+                {/* A blinking caret at the writing edge — the one thing that
+                    still says "still typing" once useTypewriter has already
+                    smoothed the text itself into a steady reveal. */}
+                <span className="inline-block w-[2px] h-[15px] -mb-[2px] ml-px bg-ink-faint animate-caretBlink" aria-hidden="true" />
               </div>
             ) : (
-              <GenerationState status={message.status} />
+              <GenerationState status={message.status} phase={message.stepPhase} />
             )
           ) : (
             <div

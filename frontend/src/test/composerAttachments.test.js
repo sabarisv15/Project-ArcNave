@@ -6,8 +6,10 @@ import {
   buildAttachment,
   clipboardHasText,
   imagesFromClipboard,
+  isAcceptedAttachment,
   isAcceptedImage,
   pastedImageName,
+  resolveAttachmentType,
 } from '../lib/composerAttachments';
 
 /** A stand-in for the `File` a clipboard hands over. */
@@ -38,6 +40,36 @@ describe('accepted types', () => {
     for (const type of ['application/pdf', 'text/plain', 'image/tiff', 'image/svg+xml', '']) {
       expect(isAcceptedImage(type)).toBe(false);
     }
+  });
+
+  it('isAcceptedAttachment accepts every document format the backend already extracts text from', () => {
+    for (const type of [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/vnd.oasis.opendocument.text',
+      'application/vnd.oasis.opendocument.spreadsheet',
+      'text/markdown',
+      'text/plain',
+      'text/csv',
+      'image/png',
+    ]) {
+      expect(isAcceptedAttachment(type)).toBe(true);
+    }
+  });
+
+  it('isAcceptedAttachment still rejects a real non-starter (e.g. a bare zip)', () => {
+    expect(isAcceptedAttachment('application/zip')).toBe(false);
+  });
+
+  it('resolveAttachmentType falls back to the extension when the browser gave no usable type (routine for .md)', () => {
+    expect(resolveAttachmentType('', 'notes.md')).toBe('text/markdown');
+    expect(resolveAttachmentType('application/octet-stream', 'report.pdf')).toBe('application/pdf');
+  });
+
+  it('resolveAttachmentType never overrides a type the browser already supplied correctly', () => {
+    expect(resolveAttachmentType('image/png', 'photo.md')).toBe('image/png');
   });
 });
 
@@ -137,26 +169,41 @@ describe('buildAttachment', () => {
   it('rejects an unsupported type with the announced wording', () => {
     const result = buildAttachment({ ...png, type: 'image/tiff' }, 0);
     expect(result.ok).toBe(false);
-    expect(result.reason).toBe('This image type is not supported.');
+    expect(result.reason).toBe('This file type is not supported.');
   });
 
-  it('rejects an oversized image', () => {
+  it('rejects an oversized file', () => {
     const big = { ...png, file: blob({ type: 'image/png', size: MAX_ATTACHMENT_BYTES + 1 }) };
     const result = buildAttachment(big, 0);
     expect(result.ok).toBe(false);
-    expect(result.reason).toBe('Image exceeds the size limit.');
+    expect(result.reason).toBe('File exceeds the size limit.');
   });
 
   it('enforces the count limit against what is already attached', () => {
     expect(buildAttachment(png, MAX_ATTACHMENTS - 1).ok).toBe(true);
     expect(buildAttachment(png, MAX_ATTACHMENTS).ok).toBe(false);
   });
+
+  it('accepts a PDF, with no preview URL (documents never get an <img> thumbnail)', () => {
+    const pdf = { file: blob({ type: 'application/pdf', size: 4096 }), type: 'application/pdf', name: 'report.pdf' };
+    const result = buildAttachment(pdf, 0);
+    expect(result.ok).toBe(true);
+    expect(result.attachment.previewUrl).toBe('');
+    expect(result.attachment.type).toBe('application/pdf');
+  });
+
+  it('accepts a .md file even when the browser reports no MIME type at all', () => {
+    const md = { file: blob({ type: '', size: 512 }), type: '', name: 'notes.md' };
+    const result = buildAttachment(md, 0);
+    expect(result.ok).toBe(true);
+    expect(result.attachment.type).toBe('text/markdown');
+  });
 });
 
 describe('attachedAnnouncement', () => {
   it('matches the wording to the count', () => {
-    expect(attachedAnnouncement(1)).toBe('Image attached');
-    expect(attachedAnnouncement(3)).toBe('3 images attached');
+    expect(attachedAnnouncement(1)).toBe('File attached');
+    expect(attachedAnnouncement(3)).toBe('3 files attached');
     expect(attachedAnnouncement(0)).toBe('');
   });
 });

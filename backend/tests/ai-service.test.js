@@ -1389,6 +1389,48 @@ test('aiService.askAgent: a 2-step plan runs both tools through the real Policy 
   assert.equal(synthesisCallCount, 1);
 });
 
+test('aiService.askAgent: the 5th onStep callback fires once, with the real tool name, right before the single-tool path actually invokes it', async (t) => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const steps = [];
+
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponse('get_college_profile', {}),
+      mockAnswerResponse('This is ARCNAVE Demo College.'),
+    ]), async () => {
+      await aiService.askAgent(client, 'What college is this?', { identityContext }, undefined, (step) => steps.push(step));
+    });
+  });
+
+  assert.deepEqual(steps, [{
+    phase: 'running_tool', toolName: 'get_college_profile', stepIndex: 0, totalSteps: 1,
+  }]);
+});
+
+test('aiService.askAgent: onStep fires one event per plan step, in order, before that step actually runs', async (t) => {
+  t.mock.method(collegeProfileService, 'getProfile', async () => ({ name: 'Test College' }));
+  t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }]));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const plan = { steps: [{ tool: 'get_college_profile' }, { tool: 'academic_class_timetable' }] };
+  const steps = [];
+
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponse('run_workflow_plan', plan),
+      mockAnswerResponse('Here is your combined report.'),
+    ]), async () => {
+      await aiService.askAgent(client, 'Give me the college profile and the timetable.', { identityContext }, undefined, (step) => steps.push(step));
+    });
+  });
+
+  assert.equal(steps.length, 2);
+  assert.deepEqual(steps.map((s) => s.toolName), ['get_college_profile', 'academic_class_timetable']);
+  assert.deepEqual(steps.map((s) => s.stepIndex), [0, 1]);
+  assert.ok(steps.every((s) => s.totalSteps === 2 && s.phase === 'running_tool'));
+});
+
 test('aiService.askAgent: a plan step naming a tool never offered to the LLM (role-filtered out, or hallucinated) is rejected before any step runs', async (t) => {
   // academic_class_timetable, not get_college_profile — describeIdentityContext
   // itself always calls collegeProfileService.getProfile once per

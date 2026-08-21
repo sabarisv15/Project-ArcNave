@@ -1,3 +1,4 @@
+import { Terminal } from 'lucide-react';
 import { ArcNaveVelMark } from './ArcNaveVelMark';
 
 /**
@@ -5,9 +6,21 @@ import { ArcNaveVelMark } from './ArcNaveVelMark';
  * generic spinner: the message's own Vel mark is already saying "thinking", so
  * a second circular indicator beside it would be the same information twice.
  * The status line stays plain text.
+ *
+ * `phase` (P1, from a real `step` SSE event — `lib/aiStepStatus.js`'s own
+ * comment) swaps the plain label for one with a small glyph once ArcNave is
+ * actually running something specific, the same "say the real thing, not a
+ * generic spinner" idea Claude Code's own status line follows — never a
+ * second animation competing with the Vel mark, just a static icon beside
+ * text that is itself already changing.
  */
-export function GenerationState({ status }) {
-  return <span className="text-[13.5px] text-ink-muted animate-pulseSoft">{status}</span>;
+export function GenerationState({ status, phase }) {
+  return (
+    <span className="inline-flex items-center gap-[6px] text-[13.5px] text-ink-muted animate-pulseSoft">
+      {phase === 'running_tool' && <Terminal size={13} strokeWidth={2} aria-hidden="true" />}
+      {status}
+    </span>
+  );
 }
 
 /**

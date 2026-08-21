@@ -16,6 +16,29 @@
 /** Formats a browser can render inline and the API accepts. */
 export const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 
+/**
+ * Document formats `aiService.js`'s `resolveChatAttachments` already
+ * extracts text from server-side (`DOCUMENT_ATTACHMENT_MIME_TYPES`) — the
+ * backend has supported these since the governed chat-attachment pass, this
+ * list is what finally lets the composer offer them. Kept in the browser's
+ * own MIME spelling; `EXTENSION_MIME_TYPES` below is the fallback for a
+ * file whose OS/browser never registered one (chiefly `.md`, which reports
+ * an empty `file.type` almost everywhere).
+ */
+export const ACCEPTED_DOCUMENT_TYPES = [
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
+  'application/vnd.oasis.opendocument.text', // .odt
+  'application/vnd.oasis.opendocument.spreadsheet', // .ods
+  'text/markdown',
+  'text/plain',
+  'text/csv',
+];
+
+export const ACCEPTED_ATTACHMENT_TYPES = [...ACCEPTED_IMAGE_TYPES, ...ACCEPTED_DOCUMENT_TYPES];
+
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
 /** Ten, because ten is what people actually paste — a set of screenshots from
  *  one session. The strip scrolls and the Attachment Manager lists them all;
@@ -29,8 +52,41 @@ const EXTENSION = {
   'image/gif': 'gif',
 };
 
+/**
+ * Extension → MIME, used only when the browser handed back an empty or
+ * generic `file.type` (routine for `.md`, and seen for `.csv`/`.odt`/`.ods`
+ * on some OSes) — never as an override of a type the browser *did* supply.
+ * Purely a client-side label: the upload route never trusts a declared
+ * `mime_type` either way (`routes/documents.js` sniffs the real bytes), so
+ * getting this exactly right only affects the local icon/validation, not
+ * what the server accepts.
+ */
+const EXTENSION_MIME_TYPES = {
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  odt: 'application/vnd.oasis.opendocument.text',
+  ods: 'application/vnd.oasis.opendocument.spreadsheet',
+  md: 'text/markdown',
+  txt: 'text/plain',
+  csv: 'text/csv',
+};
+
+/** The best MIME type available for a candidate file — its own, or one
+ *  inferred from the extension when the browser gave nothing usable. */
+export function resolveAttachmentType(type, name = '') {
+  if (ACCEPTED_ATTACHMENT_TYPES.includes(type)) return type;
+  const ext = name.split('.').pop()?.toLowerCase();
+  return (ext && EXTENSION_MIME_TYPES[ext]) || type;
+}
+
 export function isAcceptedImage(type) {
   return ACCEPTED_IMAGE_TYPES.includes(type);
+}
+
+export function isAcceptedAttachment(type) {
+  return ACCEPTED_ATTACHMENT_TYPES.includes(type);
 }
 
 export function formatBytes(bytes) {
@@ -109,11 +165,12 @@ export function clipboardHasText(clipboardData) {
  * anywhere, because the count that matters belongs to the calling scope.
  */
 export function buildAttachment({ file, type, name }, existingCount) {
-  if (!isAcceptedImage(type)) {
-    return { ok: false, reason: 'This image type is not supported.' };
+  const resolvedType = resolveAttachmentType(type, name);
+  if (!isAcceptedAttachment(resolvedType)) {
+    return { ok: false, reason: 'This file type is not supported.' };
   }
   if (file.size > MAX_ATTACHMENT_BYTES) {
-    return { ok: false, reason: 'Image exceeds the size limit.' };
+    return { ok: false, reason: 'File exceeds the size limit.' };
   }
   if (existingCount >= MAX_ATTACHMENTS) {
     return { ok: false, reason: `You can attach up to ${MAX_ATTACHMENTS} files.` };
@@ -123,11 +180,13 @@ export function buildAttachment({ file, type, name }, existingCount) {
     attachment: {
       id: nextId(),
       name,
-      type,
+      type: resolvedType,
       size: file.size,
-      // Kept only for the thumbnail. Revoked when the attachment is removed or
+      // Only ever set for a real image — a document's object URL would just
+      // be a broken <img>, so the strip/manager fall back to a file-type
+      // glyph for anything else. Revoked when the attachment is removed or
       // the composer unmounts, so a long session can't leak object URLs.
-      previewUrl: previewUrlFor(file),
+      previewUrl: isAcceptedImage(resolvedType) ? previewUrlFor(file) : '',
       status: 'uploading', // uploading → ready | failed
       progress: 0,
       file,
@@ -138,7 +197,7 @@ export function buildAttachment({ file, type, name }, existingCount) {
 /** Screen-reader wording for a batch, so the announcement matches the count. */
 export function attachedAnnouncement(count) {
   if (count <= 0) return '';
-  return count === 1 ? 'Image attached' : `${count} images attached`;
+  return count === 1 ? 'File attached' : `${count} files attached`;
 }
 
 /**

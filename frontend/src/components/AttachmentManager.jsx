@@ -52,7 +52,7 @@ export function AttachmentManager({ open, onOpenChange, attachments, onRemove, o
           <div className="flex-1 min-h-0 overflow-y-auto scroll-quiet px-[9px] pb-[16px]">
             {total === 0 ? (
               <p className="px-[7px] py-[8px] m-0 text-[12.5px] text-ink-faint">
-                Nothing attached yet. Attach or paste an image in the composer.
+                Nothing attached yet. Attach a file, or paste an image, in the composer.
               </p>
             ) : (
               <ul className="flex flex-col gap-[2px] m-0 p-0 list-none">

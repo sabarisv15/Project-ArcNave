@@ -5,7 +5,7 @@ import { ComposerAttachmentStrip } from './ComposerAttachmentStrip';
 import { IconButton } from './ui/IconButton';
 import { useComposerAttachments } from '../hooks/useComposerAttachments';
 import { useSpeechToText } from '../hooks/useSpeechToText';
-import { ACCEPTED_IMAGE_TYPES } from '../lib/composerAttachments';
+import { ACCEPTED_ATTACHMENT_TYPES } from '../lib/composerAttachments';
 import { markdownFromClipboard } from '../lib/richPaste';
 import { countLines, isLongContent, lineCountLabel, showMoreLabel } from '../lib/longContent';
 import { cn, hasTypedContent } from '../lib/utils';
@@ -266,7 +266,7 @@ export const AIComposer = forwardRef(function AIComposer(
               ref={fileInputRef}
               type="file"
               multiple
-              accept={ACCEPTED_IMAGE_TYPES.join(',')}
+              accept={ACCEPTED_ATTACHMENT_TYPES.join(',')}
               className="hidden"
               onChange={(e) => {
                 pickFiles(e.target.files);

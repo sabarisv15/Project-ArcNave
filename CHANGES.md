@@ -4,6 +4,42 @@
 
 ---
 
+## 2026-08-21 — Composer document attachments, downloadable sent files, streaming typewriter/caret, and real-time step trace
+
+The user's own direct feedback after round 25's `/ai-memory` verification: the composer could still only attach images (round 24's own P2, still not wired), sent PDFs/spreadsheets had no way to be downloaded back out of the transcript, a streaming reply "pasted" into view instead of animating, and the "Thinking…" label never changed to say what ArcNave was actually doing — unlike Claude Code's own status line, which names the real step ("ran a command," "reading repo"). All four are wiring/UX passes over already-existing backend capability (the P0 attachment pipeline, P0.5 streaming, P0.3 workflow-plan execution) except the last, which required one small, additive backend change (a new `step` SSE event).
+
+**Composer accepts every format the backend already extracts text from** — `composerAttachments.js` gained `ACCEPTED_DOCUMENT_TYPES`/`ACCEPTED_ATTACHMENT_TYPES` (PDF/DOCX/XLSX/PPTX/ODT/ODS/MD/TXT/CSV, mirroring `aiService.js`'s own `DOCUMENT_ATTACHMENT_MIME_TYPES`) and `resolveAttachmentType` (an extension-based fallback for browsers that hand back no MIME type at all, routine for `.md`) — `AIComposer.jsx`'s file-picker `accept` attribute and `buildAttachment`'s validation both widened accordingly. `previewUrlFor` now only mints an object URL for a real image, so a document falls through to `ComposerAttachmentStrip.jsx`'s existing file-type glyph instead of a broken `<img>`. Clipboard paste stays image-only by design (documents come via the picker or drag-drop, both already funneling through the same `addFiles`/`buildAttachment` path — no separate upload mechanism).
+
+**Sent documents are downloadable from the transcript** — `ChatMessage.jsx`'s attachment row used to assume every sent attachment was an image (`<img src={a.previewUrl}>`, which would have rendered broken for a PDF). New `SentFileChip` renders a document's name/size with a real Download button hitting the same `GET /documents/:id/download` route `DocumentAttachmentCard` (AI-generated documents) already uses — same backend authorization (`assertCanViewDocument`'s uploader-or-principal check already covers a chat attachment, since it has no `student_id`/`category_id`), no new route needed.
+
+**Streaming replies type instead of pasting** — new `useTypewriter` hook decouples *when a chunk arrives* from *when it's revealed*: `ChatMessage.jsx` renders a smoothed `displayed` string that catches up to the real streamed `message.body` on every animation frame (faster the further behind it is, so a large provider-side chunk doesn't take seconds to reveal), plus a blinking caret (new `caretBlink` keyframe) at the writing edge. Only active while `message.generating` — a message loaded from history renders instantly, never replaying a typewriter effect nobody asked to watch again.
+
+**Real-time step trace, not a static "Thinking…"** — `aiService.js`'s `askAgent`/`executeWorkflowPlan` gained a 5th `onStep` callback (default no-op, so every existing caller/test is untouched), invoked with `{phase:'running_tool', toolName, stepIndex, totalSteps}` at the exact call site right before a tool actually runs — for the single-tool path and once per step in a multi-step workflow plan (even a concurrent read-only group still emits one event per step, never collapsed into one label). `routes/ai.js`'s `/ai/ask/stream` forwards this as a new SSE `event: step`, ahead of the `delta` events. Frontend: `api/ai.js` parses it, `WorkspaceProvider.jsx` turns it into a human label via new `lib/aiStepStatus.js` (`"Step 2 of 3: Academic class timetable…"`), and `GenerationState.jsx` shows a small terminal glyph beside it once a real step is running — replacing the generic pulsing "Thinking…" with what ArcNave is actually doing, the same idea Claude Code's own status line follows. Verified live against the real SSE wire format (not just the UI): a 2-step plan emits exactly 2 `step` events, in order, with correct `stepIndex`/`totalSteps`, before any `delta`.
+
+A real collateral bug caught mid-verification: the backend dev server used for the round-25 `/ai-memory` live check had been left running from before these code changes (plain `node src/index.js`, no file-watching) — the first live attempt showed zero `step` events on the wire despite a 2-step plan actually running, because the process was still serving the pre-`onStep` code. Restarting it (and re-verifying at the raw SSE level via the browser's network inspector, not just the rendered UI) is what caught it — a reminder that "the UI looks right" and "the server is running current code" are two different claims.
+
+Full backend suite: **1937/1939 passing** (same 2 pre-existing, unrelated `fetch_trusted_web_page` failures every recent round has flagged). Frontend: build clean, test suite unchanged from baseline (384 passed/106 failed — the 6 new composer-attachment tests are the only count change from the prior round; the pre-existing `AuthProvider`/`localStorage` gap is untouched).
+
+| Area | Change |
+|---|---|
+| `frontend/src/lib/composerAttachments.js` | `ACCEPTED_DOCUMENT_TYPES`/`ACCEPTED_ATTACHMENT_TYPES`/`resolveAttachmentType`/`isAcceptedAttachment`; `buildAttachment` validates against the full allowlist and only sets `previewUrl` for a real image; generic wording ("This file type is not supported.", "File exceeds the size limit.", "N files attached"). |
+| `frontend/src/components/AIComposer.jsx` | File-picker `accept` now `ACCEPTED_ATTACHMENT_TYPES`. |
+| `frontend/src/components/ComposerAttachmentStrip.jsx` | `iconFor` exported for reuse by `ChatMessage.jsx`'s sent-file chip. |
+| `frontend/src/components/AttachmentManager.jsx` | Empty-state copy generalized past "paste an image." |
+| `frontend/src/components/ChatMessage.jsx` | New `SentFileChip` (name/size/Download) for a sent non-image attachment; new `useTypewriter`-smoothed `displayedBody` + blinking caret while `message.generating`; `GenerationState` now receives `phase` for the step-trace icon. |
+| `frontend/src/hooks/useTypewriter.js` (new) | Smoothing hook — see its own file comment. |
+| `frontend/src/components/GenerationState.jsx` | Accepts `phase`; shows a `Terminal` glyph beside the status label once a real tool step is running. |
+| `frontend/src/lib/aiStepStatus.js` (new) | `stepStatusLabel` — turns a `step` SSE event into the human status line. |
+| `frontend/src/api/ai.js` | `streamRequest` parses the new `step` SSE event. |
+| `frontend/src/store/WorkspaceProvider.jsx` | `askStream`'s event callback handles `type: 'step'`, patching `message.status`/`message.stepPhase`. |
+| `frontend/tailwind.config.js` | New `caretBlink` keyframe/animation. |
+| `backend/src/services/aiService.js` | `askAgent`/`executeWorkflowPlan` gain a 5th `onStep` callback (default no-op); emitted before the single-tool `invokeTool` call and before each workflow-plan step (including once per step within a concurrent read-only group). |
+| `backend/src/routes/ai.js` | `/ai/ask/stream` forwards `onStep` as a new SSE `event: step`. |
+| `backend/tests/ai-service.test.js` | 2 new tests proving `onStep` fires with the real tool name/order for both the single-tool and multi-step-plan paths. |
+| `frontend/src/test/composerAttachments.test.js`, `frontend/src/test/composerPaste.test.jsx` | Updated for the generalized wording; new tests for document-type acceptance, the extension-based MIME fallback, and a PDF never getting a preview URL. |
+
+---
+
 ## 2026-08-21 — P1: PPTX/ODT/ODS attachment formats + Scoped AI Preference Memory (consent-gated)
 
 Closes both items the previous round's chat-attachment pass explicitly deferred as P1, per the user's own P0/P1/P2 ordering.

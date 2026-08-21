@@ -101,7 +101,7 @@ describe('pasting an image into a composer', () => {
     });
 
     expect(result.current.a.attachments).toHaveLength(3);
-    expect(result.current.aFiles.announcement).toBe('3 images attached');
+    expect(result.current.aFiles.announcement).toBe('3 files attached');
   });
 
   it('leaves an ordinary text paste alone', () => {

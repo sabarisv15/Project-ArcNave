@@ -16,6 +16,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { CHAT_FILES } from '../lib/mockData';
 import { formatBytes } from '../lib/composerAttachments';
 import { titleFromPrompt } from '../lib/utils';
+import { stepStatusLabel } from '../lib/aiStepStatus';
 
 /** "PNG image", "JPEG image" — the label a file row shows beside its size. */
 function imageKind(type) {
@@ -272,6 +273,15 @@ export function WorkspaceProvider({ children }) {
             if (event.type === 'delta') {
               streamedText += event.delta;
               patchAiMessage({ body: streamedText, generating: true });
+            } else if (event.type === 'step') {
+              // Real-time progress (P1) — a step fires right before its
+              // tool actually runs (aiService.js's own onStep), so this
+              // replaces the generic "Thinking…" with what ArcNave is
+              // really doing right now. Only shown before the first delta
+              // arrives — once streamedText is non-empty ChatMessage.jsx
+              // already renders the growing answer instead of this status.
+              const label = stepStatusLabel(event.step);
+              if (label) patchAiMessage({ status: label, stepPhase: event.step.phase });
             }
           }
         );

@@ -246,6 +246,13 @@ export function WorkspaceProvider({ children }) {
                 // (see runAiTurn above) — round-tripped back out here so
                 // a reloaded transcript still shows the download card.
                 document: m.raw_data?.document,
+                // messages.input_tokens/output_tokens (P1.6/ADL-048) —
+                // undefined (not 0) when either is null, so a reloaded
+                // pre-migration or usage-unknown message renders no line
+                // rather than a fabricated zero.
+                usage: (m.input_tokens != null || m.output_tokens != null)
+                  ? { inputTokens: m.input_tokens ?? undefined, outputTokens: m.output_tokens ?? undefined }
+                  : undefined,
               }
           ));
           setThreads((prev) => ({ ...prev, [chat.id]: messages }));
@@ -311,7 +318,7 @@ export function WorkspaceProvider({ children }) {
             // this as pdf" inside an artifact's revision chat had no id to
             // call that tool with.
             focusContext: scope === 'artifact' && artifactId ? { entityType: 'artifact', id: artifactId } : undefined,
-            // General/Curriculum (ScopeToggle.jsx) — the composer's own mode
+            // Research/Curriculum (ScopeToggle.jsx) — the composer's own mode
             // for THIS message, not a session-wide setting. Missing/anything
             // other than 'general' falls through to aiService.askAgent's
             // unchanged Curriculum path (that function's own comment).
@@ -397,6 +404,11 @@ export function WorkspaceProvider({ children }) {
           // card so the file is reachable from the transcript itself,
           // not only from the Documents module it was also saved into.
           document: result.document || undefined,
+          // Real per-vendor usage (P1.6/ADL-048) — {inputTokens,
+          // outputTokens} or undefined when genuinely unknown (never a
+          // guessed/estimated number). ChatMessage.jsx renders this as a
+          // small, unobtrusive line, never a prominent $ figure.
+          usage: result.usage || undefined,
           createdAt: new Date().toISOString(),
         });
 
@@ -413,6 +425,8 @@ export function WorkspaceProvider({ children }) {
             // rebuild the same download card rather than losing it the
             // moment the in-memory thread is replaced by a fresh fetch.
             rawData: result.document ? { document: result.document } : undefined,
+            inputTokens: result.usage?.inputTokens,
+            outputTokens: result.usage?.outputTokens,
           },
           { turnLabel: 'this reply' }
         );

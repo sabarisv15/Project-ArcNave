@@ -12,7 +12,7 @@ import { ME } from '../lib/substituteData';
  * ever see its own slice — there is no shared slot left to leak through.
  *
  * A scope owns everything the user typed or chose while in it: text, the
- * General/Curriculum scope mode, attachments, context chips, and any
+ * Research/Curriculum scope mode, attachments, context chips, and any
  * mention/command state. It
  * is kept in memory for the session (so returning to a conversation restores
  * what was being written) and mirrored into `sessionStorage` under the

@@ -1953,6 +1953,26 @@ test('fetch_trusted_web_page: a permitted role reaches the real service, which r
   );
 });
 
+// generate_image (RS-AIG-025) — mirrors fetch_trusted_web_page's own
+// structural tests immediately above: registered L2/Internal, and a
+// permitted role reaches the real Business Service, which itself
+// rejects because no college has opted in by default (the tool stays
+// listed — the service is the real gate, same verified precedent).
+test('generate_image: registered as L2/Internal with prompt required, and a permitted role reaches the real service, which rejects because no college has opted in by default', async () => {
+  const tool = aiToolRegistry.getTool('generate_image');
+  assert.ok(tool, 'generate_image must be registered');
+  assert.equal(tool.level, 'L2');
+  assert.equal(tool.dataClassification, 'Internal');
+  assert.deepEqual(tool.params.required, ['prompt']);
+
+  await assert.rejects(
+    () => aiToolRegistry.invokeTool('generate_image', {
+      client: fakeClient(), identityContext: { userId: 'u1', role: 'staff', collegeId: 'college-a' }, params: { prompt: 'a red bicycle' },
+    }),
+    require('../src/services/imageGenerationService').ImageGenerationNotEnabledError,
+  );
+});
+
 test('aiToolRegistry: listTools includes draft_notification (L2/Confidential) and request_notification_send (L3/Confidential) with their params schemas', () => {
   const tools = aiToolRegistry.listTools();
   const draft = tools.find((t) => t.name === 'draft_notification');
@@ -2780,6 +2800,45 @@ test('buildHistoryHint: empty/missing history -> empty string', () => {
   assert.equal(aiService.buildHistoryHint(undefined), '');
 });
 
+// Provider-aware history budget (ADL-047) — the old flat 20-message cap
+// is gone; a character budget now decides how much survives, keeping the
+// most recent turns and dropping the oldest first once the budget is
+// exceeded, never the other way around (the whole point was to stop
+// losing a recent, still-relevant detour just because it wasn't among
+// the last N messages by count).
+test('buildHistoryHint: over-budget history keeps the most recent turns and drops the oldest first', () => {
+  const history = [
+    { role: 'user', content: 'A'.repeat(40) },
+    { role: 'assistant', content: 'B'.repeat(40) },
+    { role: 'user', content: 'C'.repeat(40) },
+    { role: 'assistant', content: 'D'.repeat(40) },
+  ];
+  const hint = aiService.buildHistoryHint(history, 100);
+  assert.ok(!hint.includes('A'.repeat(40)), 'oldest turn should be dropped');
+  assert.ok(hint.includes('D'.repeat(40)), 'most recent turn must survive');
+  assert.match(hint, /earlier turn\(s\) omitted/);
+});
+
+test('buildHistoryHint: within-budget history is unchanged and carries no truncation note', () => {
+  const history = [
+    { role: 'user', content: 'short question' },
+    { role: 'assistant', content: 'short answer' },
+  ];
+  const hint = aiService.buildHistoryHint(history, 100_000);
+  assert.ok(!hint.includes('omitted'));
+  assert.ok(hint.includes('short question'));
+  assert.ok(hint.includes('short answer'));
+});
+
+test('buildHistoryHint: always keeps at least the single most recent turn even if it alone exceeds the budget', () => {
+  const history = [
+    { role: 'user', content: 'a normal question' },
+    { role: 'assistant', content: 'Z'.repeat(500) },
+  ];
+  const hint = aiService.buildHistoryHint(history, 10);
+  assert.ok(hint.includes('Z'.repeat(500)), 'must never return empty just because the newest turn is itself large');
+});
+
 test('buildMemoryHint: no identityContext -> empty string, no DB call', async () => {
   const hint = await aiService.buildMemoryHint(fakeClient(), null);
   assert.equal(hint, '');
@@ -2952,11 +3011,11 @@ test("aiService.askAgent: mode 'general' never sends a tools/tool_choice field �
     });
   });
 
-  assert.equal(toolInvoked, false, 'no ARCNAVE tool is ever offered to the model in General mode');
-  assert.equal(capturedBody.tools, undefined, 'General mode never sends a tools field — nothing for the model to call');
+  assert.equal(toolInvoked, false, 'no ARCNAVE tool is ever offered to the model in Research mode');
+  assert.equal(capturedBody.tools, undefined, 'Research mode never sends a tools field — nothing for the model to call');
   assert.equal(capturedBody.tool_choice, undefined);
   const systemMessage = capturedBody.messages.find((m) => m.role === 'system');
-  assert.match(systemMessage.content, /General mode/);
+  assert.match(systemMessage.content, /Research mode/);
 });
 
 test("aiService.askAgent: mode 'curriculum' (and no mode at all) is byte-for-byte the unchanged tool-selecting path", async () => {

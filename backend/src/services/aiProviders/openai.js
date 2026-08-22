@@ -130,7 +130,9 @@ async function complete(cfg, prompts) {
 // only cover the initial connection). Same OpenAI-compatible SSE shape
 // nim.js/selfHosted.js speak, since this adapter targets the real
 // vendor those two imitate.
-async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, onDelta) {
+// onUsage (optional, P1.6) — see nim.js's own comment for the shared
+// OpenAI-compatible `stream_options.include_usage` reasoning.
+async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, onDelta, onUsage) {
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -154,6 +156,7 @@ async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, on
           max_tokens: MAX_TOKENS,
           temperature: 0.2,
           stream: true,
+          stream_options: { include_usage: true },
         }),
         signal: controller.signal,
       });
@@ -170,6 +173,7 @@ async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, on
   }
 
   let full = '';
+  let usage;
   for await (const payload of iterateSseLines(response)) {
     if (payload === '[DONE]') break;
     let event;
@@ -183,6 +187,12 @@ async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, on
       full += delta;
       onDelta(delta);
     }
+    if (event && event.usage) {
+      usage = { inputTokens: event.usage.prompt_tokens, outputTokens: event.usage.completion_tokens };
+    }
+  }
+  if (typeof onUsage === 'function' && usage) {
+    onUsage(usage);
   }
   return full;
 }
@@ -258,10 +268,37 @@ async function embed(cfg, texts) {
     .map((item) => item.embedding);
 }
 
+// Image generation (RS-AIG-025) — OpenAI's real Images API
+// (/v1/images/generations, documented `response_format: 'b64_json'`
+// convention). NOT live-verified against a real OpenAI API key (same
+// caveat this file's own header comment already carries for chat) — the
+// request/response shape is the documented convention, not fabricated.
+// Always PNG per this endpoint's own documented output format.
+const IMAGE_MODEL = 'gpt-image-1';
+
+async function generateImage(cfg, { prompt }) {
+  if (!isConfigured(cfg)) {
+    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
+  }
+  const payload = await postJson(cfg, '/images/generations', {
+    model: cfg.imageModel || IMAGE_MODEL,
+    prompt,
+    n: 1,
+    size: '1024x1024',
+  });
+  const item = payload && Array.isArray(payload.data) ? payload.data[0] : null;
+  const b64 = item && (item.b64_json || item.b64Json);
+  if (!b64) {
+    throw new LlmRequestError('OpenAI image response did not contain data[0].b64_json');
+  }
+  return { imageBuffer: Buffer.from(b64, 'base64'), mimeType: 'image/png' };
+}
+
 module.exports = {
   name: 'openai',
   supportsVision,
   isConfigured,
+  generateImage,
   complete,
   completeWithMeta,
   completeStream,

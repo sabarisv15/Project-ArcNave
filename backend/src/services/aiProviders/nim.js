@@ -9,7 +9,7 @@
 // global-default fallback (ConfigurationService.getAiConfig builds
 // `cfg` from config.nim.* when no college_ai_config row exists).
 
-const { LlmNotConfiguredError, LlmRequestError } = require('./errors');
+const { LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError } = require('./errors');
 const { withRetry } = require('./retry');
 const { iterateSseLines } = require('./sse');
 
@@ -112,7 +112,13 @@ async function complete(cfg, prompts) {
 // read — once streaming starts, a transient failure surfaces as
 // whatever's already been streamed plus a thrown error, never a silent
 // retry after partial output already reached the caller.
-async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
+// onUsage (optional, P1.6) — called at most once, after the stream ends,
+// with {inputTokens, outputTokens}, only if the API actually returned a
+// usage block. `stream_options.include_usage: true` (OpenAI-compatible)
+// asks the server to emit one extra final chunk carrying a top-level
+// `usage` and an empty `choices` array, just before `[DONE]` — every
+// other chunk's `usage` is absent, so the last one seen wins.
+async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta, onUsage) {
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -136,6 +142,7 @@ async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
           max_tokens: MAX_TOKENS,
           temperature: 0.2,
           stream: true,
+          stream_options: { include_usage: true },
         }),
         signal: controller.signal,
       });
@@ -152,6 +159,7 @@ async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
   }
 
   let full = '';
+  let usage;
   for await (const payload of iterateSseLines(response)) {
     if (payload === '[DONE]') break;
     let event;
@@ -165,6 +173,12 @@ async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
       full += delta;
       onDelta(delta);
     }
+    if (event && event.usage) {
+      usage = { inputTokens: event.usage.prompt_tokens, outputTokens: event.usage.completion_tokens };
+    }
+  }
+  if (typeof onUsage === 'function' && usage) {
+    onUsage(usage);
   }
   return full;
 }
@@ -246,6 +260,13 @@ async function embed(cfg, texts, { inputType } = {}) {
     .map((item) => item.embedding);
 }
 
+// No image-generation endpoint (RS-AIG-025): NVIDIA NIM's chat-completion
+// API has no image-generation capability — honest limitation, same
+// AiProviderCapabilityError shape claude.js's own missing embed() uses.
+async function generateImage() {
+  throw new AiProviderCapabilityError('nim has no image-generation endpoint — configure a different provider for this feature');
+}
+
 module.exports = {
   name: 'nim',
   EMBEDDING_DIMENSIONS,
@@ -256,6 +277,7 @@ module.exports = {
   completeStream,
   completeWithTools,
   embed,
+  generateImage,
   // Back-compat aliases — existing tests/callers reference these off
   // the module directly (same identity as ./errors', re-exported here
   // rather than duplicated).

@@ -10,7 +10,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const aiProviders = require('../src/services/aiProviders');
 
-const REQUIRED_METHODS = ['isConfigured', 'complete', 'completeWithTools', 'embed'];
+const REQUIRED_METHODS = ['isConfigured', 'complete', 'completeWithTools', 'embed', 'generateImage'];
 
 test('aiProviders: every registered adapter implements the full common interface', () => {
   for (const providerName of aiProviders.KNOWN_PROVIDERS) {
@@ -70,6 +70,96 @@ test('claude adapter: embed() throws AiProviderCapabilityError — a real vendor
     () => claude.embed({ apiKey: 'k' }, ['text'], { inputType: 'passage' }),
     aiProviders.AiProviderCapabilityError,
   );
+});
+
+// Image generation (RS-AIG-025) — claude/nim/self_hosted have no real
+// vendor image API, same honest-limitation shape claude's own embed()
+// already established above; openai/gemini have real ones.
+test('claude/nim/self_hosted adapters: generateImage() throws AiProviderCapabilityError, no fetch attempted', async () => {
+  const originalFetch = global.fetch;
+  let fetchCalled = false;
+  global.fetch = async () => { fetchCalled = true; };
+  try {
+    await assert.rejects(
+      () => aiProviders.getAdapter('claude').generateImage({ apiKey: 'k' }, { prompt: 'a red bicycle' }),
+      aiProviders.AiProviderCapabilityError,
+    );
+    await assert.rejects(
+      () => aiProviders.getAdapter('nim').generateImage({ apiKey: 'k', baseUrl: 'https://example.com' }, { prompt: 'a red bicycle' }),
+      aiProviders.AiProviderCapabilityError,
+    );
+    await assert.rejects(
+      () => aiProviders.getAdapter('self_hosted').generateImage({ baseUrl: 'https://example.com' }, { prompt: 'a red bicycle' }),
+      aiProviders.AiProviderCapabilityError,
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+  assert.equal(fetchCalled, false);
+});
+
+test('openai adapter.generateImage: posts to /images/generations and decodes data[0].b64_json into a PNG buffer', async () => {
+  const openai = aiProviders.getAdapter('openai');
+  const originalFetch = global.fetch;
+  let capturedBody;
+  let capturedPath;
+  global.fetch = async (url, options) => {
+    capturedPath = url;
+    capturedBody = JSON.parse(options.body);
+    return {
+      ok: true,
+      json: async () => ({ data: [{ b64_json: Buffer.from('fake-png').toString('base64') }] }),
+    };
+  };
+  try {
+    const result = await openai.generateImage({ apiKey: 'k' }, { prompt: 'a red bicycle' });
+    assert.ok(capturedPath.includes('/images/generations'));
+    assert.equal(capturedBody.prompt, 'a red bicycle');
+    assert.equal(result.mimeType, 'image/png');
+    assert.equal(result.imageBuffer.toString(), 'fake-png');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('openai adapter.generateImage: unconfigured -> LlmNotConfiguredError, no fetch attempted', async () => {
+  const openai = aiProviders.getAdapter('openai');
+  const originalFetch = global.fetch;
+  let fetchCalled = false;
+  global.fetch = async () => { fetchCalled = true; };
+  try {
+    await assert.rejects(
+      () => openai.generateImage({}, { prompt: 'a red bicycle' }),
+      /LlmNotConfiguredError|no LLM provider is configured/,
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+  assert.equal(fetchCalled, false);
+});
+
+test('gemini adapter.generateImage: posts to the Imagen :predict endpoint and decodes predictions[0].bytesBase64Encoded', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const originalFetch = global.fetch;
+  let capturedPath;
+  let capturedBody;
+  global.fetch = async (url, options) => {
+    capturedPath = url;
+    capturedBody = JSON.parse(options.body);
+    return {
+      ok: true,
+      json: async () => ({ predictions: [{ bytesBase64Encoded: Buffer.from('fake-png').toString('base64'), mimeType: 'image/png' }] }),
+    };
+  };
+  try {
+    const result = await gemini.generateImage({ projectId: 'p', accessToken: 't' }, { prompt: 'a red bicycle' });
+    assert.ok(capturedPath.includes(':predict'));
+    assert.equal(capturedBody.instances[0].prompt, 'a red bicycle');
+    assert.equal(result.mimeType, 'image/png');
+    assert.equal(result.imageBuffer.toString(), 'fake-png');
+  } finally {
+    global.fetch = originalFetch;
+  }
 });
 
 test('claude adapter.completeWithTools: a cache_control breakpoint is set on the LAST tool only, and the caching beta header is sent (P1.2)', async () => {

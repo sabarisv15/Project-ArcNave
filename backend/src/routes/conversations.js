@@ -121,14 +121,14 @@ function createConversationsRouter() {
     const {
       role, content, tool_used: toolUsed, tool_params: toolParams,
       presentation, raw_data: rawData, parent_message_id: parentMessageId,
-      attachments,
+      attachments, input_tokens: inputTokens, output_tokens: outputTokens,
     } = req.body || {};
     try {
       const message = await conversationService.addMessage(
         req.dbClient,
         req.params.id,
         {
-          role, content, toolUsed, toolParams, presentation, rawData, parentMessageId, attachments,
+          role, content, toolUsed, toolParams, presentation, rawData, parentMessageId, attachments, inputTokens, outputTokens,
         },
         { userId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
       );

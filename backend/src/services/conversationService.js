@@ -78,7 +78,7 @@ async function listMessages(client, conversationId, { userId, limit, offset }) {
 }
 
 async function addMessage(client, conversationId, {
-  role, content, toolUsed, toolParams, presentation, rawData, parentMessageId, attachments,
+  role, content, toolUsed, toolParams, presentation, rawData, parentMessageId, attachments, inputTokens, outputTokens,
 }, { userId, collegeId }) {
   await resolveOwnConversation(client, conversationId, userId);
 
@@ -108,6 +108,12 @@ async function addMessage(client, conversationId, {
     // ever ran — this is a display record of what was already sent, not
     // a new access grant.
     attachments: Array.isArray(attachments) && attachments.length > 0 ? attachments : null,
+    // Real per-vendor usage (ADL-048) if the caller's own LLM call
+    // reported one, or genuinely undefined otherwise — never fabricated
+    // as 0 (a user message never carries these at all; the client simply
+    // never sends them for that role).
+    inputTokens: typeof inputTokens === 'number' ? inputTokens : null,
+    outputTokens: typeof outputTokens === 'number' ? outputTokens : null,
   });
 }
 

@@ -9,6 +9,7 @@ const aiProviders = require('../services/aiProviders');
 const conversationService = require('../services/conversationService');
 const notificationService = require('../services/notificationService');
 const webRetrievalService = require('../services/webRetrievalService');
+const imageGenerationService = require('../services/imageGenerationService');
 const assessmentService = require('../services/assessmentService');
 const calendarService = require('../services/calendarService');
 const financeService = require('../services/financeService');
@@ -22,22 +23,17 @@ const artifactService = require('../services/artifactService');
 const documentService = require('../services/documentService');
 const { IdentifierResolutionError } = require('../identifierResolution');
 
-// Short-session conversation memory (P0.1) — how many of the most
-// recent messages get threaded into the prompt as background context.
-// A count, not a token budget: bounds worst-case prompt growth without
-// needing a tokenizer here, same reasoning maxAffectedRows uses a row
-// count rather than trying to price a query up front.
-// Raised from 10 (5 exchanges): a real complaint traced to this —
-// interrupt a task with a short side conversation, come back to it a
-// few turns later, and the interrupted task had already scrolled out
-// of the window entirely, so CONVERSATIONAL_POLICY's own "resume from
-// exactly that point" instruction had nothing left to resume FROM, not
-// a case of the model simply ignoring the instruction. 20 (10
-// exchanges) covers a realistic detour without needing a tokenizer or
-// per-message truncation here — still a deliberate bound, not "the
-// whole conversation," so raise further only with the same cost/
-// latency tradeoff in mind this constant has always carried.
-const HISTORY_LIMIT = 20;
+// Short-session conversation memory (P0.1) — the outer ceiling on how
+// many of the most recent messages are even fetched from the DB before
+// aiService.buildHistoryHint applies the real, character-budget-based
+// trim (ADL-047). This constant now only bounds query/memory cost, not
+// how much context the model actually sees — a genuinely long
+// conversation used to get chopped to exactly 20 messages regardless of
+// their length (a real complaint: a short side-conversation could still
+// push a much older, unfinished topic entirely out of the window). 200
+// is generous headroom for that outer fetch; buildHistoryHint's own char
+// budget is what actually governs prompt size now.
+const HISTORY_MESSAGE_CEILING = 200;
 
 function requireResolvedTenant(req, res) {
   if (req.collegeId === null) {
@@ -217,6 +213,17 @@ function mapAiToolError(err, res) {
   }
   if (err instanceof webRetrievalService.WebRetrievalRequestError) {
     res.status(502).json({ detail: err.message });
+    return true;
+  }
+  // generate_image (RS-AIG-025) — same 400 category as the web-retrieval
+  // not-enabled case just above: this college hasn't opted in, or the
+  // prompt itself was invalid, either way "this request can't be served
+  // as configured/asked," not a server or upstream-provider fault.
+  if (
+    err instanceof imageGenerationService.ImageGenerationNotEnabledError
+    || err instanceof imageGenerationService.ImageGenerationValidationError
+  ) {
+    res.status(400).json({ detail: err.message });
     return true;
   }
 
@@ -430,9 +437,10 @@ function createAiRouter() {
     // this) sees byte-for-byte the same behavior as before. Same
     // graceful-degrade shape as projectContext above — an invalid/
     // not-owned conversation_id just means no history, never a failed
-    // ask. Bounded to the last HISTORY_LIMIT messages (not the whole
-    // conversation) to keep the prompt this adds bounded regardless of
-    // how long the conversation has run.
+    // ask. Bounded to the last HISTORY_MESSAGE_CEILING messages here only
+    // to cap query/memory cost — aiService.buildHistoryHint applies the
+    // real, character-budget-based trim that actually governs how much
+    // reaches the prompt (ADL-047).
     let history;
     if (conversationId) {
       try {
@@ -442,7 +450,7 @@ function createAiRouter() {
         // reusable attachmentId — see that function's own comment for why
         // dropping this here was the actual bug behind "asks to re-upload/
         // re-state the file on the very next turn".
-        history = messages.slice(-HISTORY_LIMIT).map((m) => ({ role: m.role, content: m.content, attachments: m.attachments || undefined }));
+        history = messages.slice(-HISTORY_MESSAGE_CEILING).map((m) => ({ role: m.role, content: m.content, attachments: m.attachments || undefined }));
       } catch {
         // graceful degrade — see comment above
       }

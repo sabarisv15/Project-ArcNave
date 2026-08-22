@@ -45,13 +45,13 @@ describe('AIComposer', () => {
     expect(onSend).toHaveBeenCalledTimes(1);
   });
 
-  it('renders General and Curriculum with identical dimensions', () => {
+  it('renders Research and Curriculum with identical dimensions', () => {
     setup();
-    const general = screen.getByRole('button', { name: 'General' });
+    const research = screen.getByRole('button', { name: 'Research' });
     const curriculum = screen.getByRole('button', { name: 'Curriculum' });
-    expect(general.className).toContain('w-[92px]');
+    expect(research.className).toContain('w-[92px]');
     expect(curriculum.className).toContain('w-[92px]');
-    expect(general.className).toContain('h-[28px]');
+    expect(research.className).toContain('h-[28px]');
     expect(curriculum.className).toContain('h-[28px]');
   });
 });

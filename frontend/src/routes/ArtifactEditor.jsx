@@ -141,9 +141,10 @@ export function ArtifactEditor() {
    *
    * Artifacts open on **Curriculum**: the work here is producing and changing
    * an institutional document via the real ARCNAVE tools (export_artifact,
-   * update_artifact_content), which General mode never offers the model at
+   * update_artifact_content), which Research mode never offers the model at
    * all. That is a property of these two scopes alone — Home, chats and
-   * projects keep opening on General, and neither can see the other's mode.
+   * projects keep opening on Research (wire value still 'general'), and
+   * neither can see the other's mode.
    */
   const composer = useComposer(
     convId ? composerScope.artifactRevision(artifactId) : composerScope.artifactCreate(artifactId),

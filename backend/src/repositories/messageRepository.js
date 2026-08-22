@@ -24,6 +24,8 @@ const COLUMNS = [
   ['presentation', 'presentation'],
   ['rawData', 'raw_data'],
   ['attachments', 'attachments'],
+  ['inputTokens', 'input_tokens'],
+  ['outputTokens', 'output_tokens'],
 ];
 
 // tool_params/presentation/raw_data/attachments are JSONB — pg does

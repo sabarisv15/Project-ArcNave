@@ -97,6 +97,8 @@ test('ConversationService (no DB)', async (t) => {
         presentation: null,
         rawData: null,
         attachments: null,
+        inputTokens: null,
+        outputTokens: null,
       });
       return { id: 'm1', ...fields };
     });

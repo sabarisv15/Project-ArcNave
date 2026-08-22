@@ -19,7 +19,7 @@
 // adapter has not been exercised against a live endpoint the way
 // nim.js's request shape was.
 
-const { LlmNotConfiguredError, LlmRequestError } = require('./errors');
+const { LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError } = require('./errors');
 const { withRetry } = require('./retry');
 const { iterateSseLines } = require('./sse');
 
@@ -111,7 +111,13 @@ async function complete(cfg, prompts) {
 // only cover the initial connection). Same OpenAI-compatible SSE shape
 // nim.js speaks, since a self-hosted deployment is defined as
 // implementing that same convention.
-async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
+// onUsage (optional, P1.6) — see nim.js's own comment for the shared
+// OpenAI-compatible `stream_options.include_usage` reasoning. Not
+// exercised against a live self-hosted endpoint (same caveat this
+// adapter's own header comment already carries) — a deployment that
+// ignores the unrecognized `stream_options` field simply never calls
+// onUsage, degrading to "no usage known" rather than an error.
+async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta, onUsage) {
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no self-hosted LLM provider is configured for this college (missing baseUrl)');
   }
@@ -135,6 +141,7 @@ async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
           max_tokens: MAX_TOKENS,
           temperature: 0.2,
           stream: true,
+          stream_options: { include_usage: true },
         }),
         signal: controller.signal,
       });
@@ -151,6 +158,7 @@ async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
   }
 
   let full = '';
+  let usage;
   for await (const payload of iterateSseLines(response)) {
     if (payload === '[DONE]') break;
     let event;
@@ -164,6 +172,12 @@ async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta) {
       full += delta;
       onDelta(delta);
     }
+    if (event && event.usage) {
+      usage = { inputTokens: event.usage.prompt_tokens, outputTokens: event.usage.completion_tokens };
+    }
+  }
+  if (typeof onUsage === 'function' && usage) {
+    onUsage(usage);
   }
   return full;
 }
@@ -237,6 +251,14 @@ async function embed(cfg, texts, { inputType } = {}) {
     .map((item) => item.embedding);
 }
 
+// No image-generation endpoint by default (RS-AIG-025): a self-hosted
+// OpenAI-compatible chat endpoint has no standard image-generation
+// convention this codebase can assume — honest limitation, same
+// AiProviderCapabilityError shape claude.js's own missing embed() uses.
+async function generateImage() {
+  throw new AiProviderCapabilityError('this self-hosted provider has no image-generation endpoint configured — configure a different provider for this feature');
+}
+
 module.exports = {
   name: 'self_hosted',
   supportsVision,
@@ -246,4 +268,5 @@ module.exports = {
   completeStream,
   completeWithTools,
   embed,
+  generateImage,
 };

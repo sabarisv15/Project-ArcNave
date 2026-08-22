@@ -18,10 +18,11 @@ export const conversationsApi = {
   remove: (id) => api.delete(`/conversations/${id}`),
   listMessages: (conversationId) => api.get(`/conversations/${conversationId}/messages`),
   addMessage: (conversationId, {
-    role, content, toolUsed, toolParams, presentation, rawData, parentMessageId, attachments,
+    role, content, toolUsed, toolParams, presentation, rawData, parentMessageId, attachments, inputTokens, outputTokens,
   }) => api.post(`/conversations/${conversationId}/messages`, {
     role, content, tool_used: toolUsed, tool_params: toolParams,
     presentation, raw_data: rawData, parent_message_id: parentMessageId, attachments,
+    input_tokens: inputTokens, output_tokens: outputTokens,
   }),
   // Real rewind: updates this ONE user message's content and deletes
   // every message after it in the conversation (server-side, atomically

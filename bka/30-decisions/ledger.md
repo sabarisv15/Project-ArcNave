@@ -56,6 +56,10 @@ traceability lives here.
 | [ADL-023](#adl-023) | Copilot/Workspace AI surface merger | Resolved — implemented |
 | [ADL-024](#adl-024) | Send Alert authority widened from Class Tutor to assigned staff | Resolved — implemented |
 | [ADL-034](#adl-034) | L2 login/session model — Position Account vs delegated-in-staff-login | Resolved — spec corrected to match shipped code |
+| [ADL-045](#adl-045) | General mode renamed to Research mode (label only) | Resolved — implemented |
+| [ADL-046](#adl-046) | New AI capability: opt-in image generation (L2) | Resolved — pending implementation |
+| [ADL-047](#adl-047) | Conversation history: character budget replaces flat message-count cap | Resolved — implemented |
+| [ADL-048](#adl-048) | Per-message visible token usage, captured on the streaming path | Resolved — implemented |
 
 ---
 
@@ -2316,3 +2320,251 @@ already resolved earlier in the function), `runPlanStep` (new
 `adapter`/`aiConfig` params, threaded from `executeWorkflowPlan`).
 
 **Status.** Resolved — implemented, 2026-08-21 (round 22).
+
+---
+
+## ADL-045
+
+### General mode renamed to Research mode (label only)
+
+**Decision.** The user-facing label for the tool-free chat mode changes
+from "General" to "Research". The wire-level `mode` parameter value stays
+the literal string `'general'` everywhere (routes, service, frontend
+state, `GENERAL_CHAT_SYSTEM_PROMPT`'s internal purpose name) — this is a
+presentation rename, not a protocol change. "Curriculum" (the DB-access,
+policy-gated mode) is unchanged.
+
+**Superseded position.** [RS-AIG-023](../10-specification/RS-AIG-ai-governance.md#rs-aig-023)
+previously named the two modes "Curriculum mode" and "General mode" in its
+own rule prose.
+
+**Rationale.** User's own framing (2026-08-22): "Research" more accurately
+describes the mode's purpose to campus staff than the internal engineering
+term "General" — the mode exists specifically for research/coursework/
+new-tech questions unrelated to any college record, per round 18's
+original design intent. Resolved directly by user answer to
+`AskUserQuestion` (no ambiguity — "Research (no DB) / Curriculum (DB
+access)" was the explicit, only chosen option), not a case the workflow's
+§15 threshold would otherwise have escalated on its own (a label is
+cosmetic), but recorded here because it changes a system-invariant rule's
+own prose, not just UI copy.
+
+**Affected artefacts.**
+[RS-AIG-023](../10-specification/RS-AIG-ai-governance.md#rs-aig-023)
+(prose only — mechanism unchanged); `frontend/src/components/ScopeToggle.jsx`
+(`LABEL.general`); `backend/src/services/aiService.js`
+(`GENERAL_CHAT_SYSTEM_PROMPT` text referring to "General mode").
+
+**Migration impact.** None. No schema, no API contract change — `mode`
+values, DB columns, and stored conversation data are untouched.
+
+**Implementation notes.** Change the label string only; grep for every
+literal "General mode"/"General" occurrence in user-facing (not
+wire-level) text before considering this done, since a partial rename
+would leave the product referring to itself by two different names.
+
+**Status.** Resolved — implemented, 2026-08-22.
+
+---
+
+## ADL-046
+
+### New AI capability: opt-in image generation (L2)
+
+**Decision.** A new AI tool, `generate_image`, is added: classified `L2`
+(Generate — RS-AIG-001's ceiling for artifact-producing tools with no
+external effect, same class as `generate_document`), per-college opt-in
+(off by default), provider-limited to adapters with a real
+vendor image-generation API (OpenAI, Gemini at launch — Claude/NIM/
+self-hosted raise the existing `AiProviderCapabilityError`, the same
+mechanism `claude.js` already uses for its missing `embed()`). Generated
+binaries are stored via the existing `documentService.uploadPersonalDocument`
+path — no new storage mechanism (CLAUDE.md rule 2).
+
+**Superseded position.** None — this is a genuinely new AI capability.
+Per [RS-AIG](../10-specification/RS-AIG-ai-governance.md)'s own governing
+principle ("if a new AI capability is proposed and it is not obviously
+covered by this domain, it is not built until it is"), a new rule
+(`RS-AIG-025`) is required before this is built, not an extension of an
+existing one.
+
+**Rationale.** User's explicit request (2026-08-22), scoped through three
+rounds of `AskUserQuestion` clarification confirming this is a genuinely
+new capability, not vision/analysis of an uploaded image (already built,
+unrelated). Authority level, opt-in posture, and provider-limitation are
+each settled by an already-established pattern rather than a fresh design
+choice: `L2` follows directly from RS-AIG-001's existing table (no
+external effect, same class as PDF/Word/Excel generation); per-college
+opt-in mirrors RS-AIG-020's Trusted Web Retrieval precedent (a costly,
+potentially-abusable capability, off by default, no new migration —
+reuses the existing `configurationService`/`configurations` table);
+provider-limitation follows RS-AIG-008's "provider is configurable, never
+architecturally load-bearing" principle — the capability's presence is a
+property of which adapter object exposes `generateImage`, never a
+hardcoded provider-name branch outside `aiProviders/`.
+
+**Affected artefacts.**
+[RS-AIG-025](../10-specification/RS-AIG-ai-governance.md#rs-aig-025) (new);
+[RS-AIG-001](../10-specification/RS-AIG-ai-governance.md#rs-aig-001),
+[RS-AIG-008](../10-specification/RS-AIG-ai-governance.md#rs-aig-008),
+[RS-AIG-020](../10-specification/RS-AIG-ai-governance.md#rs-aig-020)
+(`Governs` cross-references added, no rule text changed);
+`aiToolRegistry.js` (new `generate_image` tool); `aiProviders/openai.js`,
+`aiProviders/gemini.js` (new `generateImage` method); `documentService.js`
+(no change — existing `uploadPersonalDocument` reused); `configurationService`
+(no change — existing category mechanism reused, new category name
+`image_generation` only).
+
+**Migration impact.** None. Opt-in flag reuses the existing generic
+`configurations` table (same mechanism as Trusted Web Retrieval's
+allowlist) — no new table or column.
+
+**Implementation notes.** Register `generate_image` following
+`generate_document`'s exact shape (`aiToolRegistry.js:2764-2794`) —
+`params: { prompt }` only, `additionalProperties: false`, no free-form
+fields (RS-AIG-002). Gate the opt-in check exactly where Trusted Web
+Retrieval's own precedent actually puts it (verified against the real
+registration, not assumed): `fetch_trusted_web_page` is always present in
+the offered tool list, and `webRetrievalService.fetchTrustedPage` itself
+throws `WebRetrievalNotEnabledError` at invocation time when the college
+hasn't opted in — a real, already-shipped, already-tested runtime check
+inside the Business Service, not list-filtering. `generate_image` mirrors
+this exactly: always listed, `imageGenerationService` (or the tool's own
+handler calling `configurationService`'s new `image_generation` category
+read) throws the equivalent not-enabled error at call time. A provider
+lacking `generateImage` must fail the same structural way `claude.js`'s
+missing `embed()` already does — no adapter-specific branch anywhere
+outside `aiProviders/`.
+
+**Status.** Resolved — pending implementation.
+
+---
+
+## ADL-047
+
+### Conversation history: character budget replaces flat message-count cap
+
+**Decision.** `routes/ai.js`'s `HISTORY_LIMIT = 20` (a raw message-count
+slice, applied before `aiService.js` ever sees the data) is replaced by a
+two-stage design: `routes/ai.js`'s renamed `HISTORY_MESSAGE_CEILING = 200`
+now bounds only DB/memory fetch cost, and `aiService.buildHistoryHint`
+applies the real limit — a character budget (`DEFAULT_HISTORY_CHAR_BUDGET
+= 100,000`), keeping the most recent turns and dropping the oldest first
+once exceeded, always preserving at least the single most recent turn.
+
+**Superseded position.** [RS-AIG-017](../10-specification/RS-AIG-ai-governance.md#rs-aig-017)'s
+own implementation note named `HISTORY_LIMIT = 10` (later raised to 20 in
+round 29, per `CHECKPOINT.md`, never reconciled back into the rule text) —
+the rule's actual invariant ("bounded, per-conversation, never a
+persistent cross-session memory") is unchanged; only the mechanism that
+enforces "bounded" changes, from a raw count to a character budget.
+
+**Rationale.** User's own framing (2026-08-22): a flat 20-message cap
+behaves nothing like a real large-context assistant (their own comparison:
+"Claude Code has a 1M context window") — a fixed count discards context
+inconsistently (20 short messages could still lose an old, unfinished,
+still-relevant topic; 20 long messages could overflow a small-window
+provider). A character budget is the direct fix and mirrors an already-
+established pattern in this exact file: `ATTACHMENT_BUDGET_BY_PROVIDER`/
+`allocateAttachmentBudget` (round 27) already solved the identical
+"provider window varies, a raw count doesn't account for it" problem for
+attachments. **Deliberately not made provider-aware at this call site**,
+for the same reason `buildAttachmentHint`'s own existing comment already
+gives: the provider adapter isn't resolved yet at the point `askAgent`
+builds this hint (`askGeneralChat` vs. the Curriculum tool-selection path
+each resolve their own adapter independently, later), and disturbing that
+test-asserted call order to learn the provider a few lines earlier isn't
+worth it for this pass — `buildHistoryHint` accepts an explicit
+`charBudget` override for any future caller that already knows its
+adapter. `DEFAULT_HISTORY_CHAR_BUDGET = 100,000` was chosen to leave real
+headroom stacked alongside `DEFAULT_ATTACHMENT_TOTAL_CHAR_BUDGET`'s own up
+to 200,000 chars, the system prompt, and tool schemas, within NIM's
+128K-token default window (ADR-028) — the same provider whose real,
+previously-caught context-overflow incident (round 27) is why the
+attachment budget's default is conservative in the first place.
+
+**Affected artefacts.**
+[RS-AIG-017](../10-specification/RS-AIG-ai-governance.md#rs-aig-017)
+(implementation note only — mechanism, not the invariant); `routes/ai.js`
+(`HISTORY_LIMIT` renamed `HISTORY_MESSAGE_CEILING`, 20 → 200);
+`aiService.js`'s `buildHistoryHint` (new `charBudget` parameter,
+`DEFAULT_HISTORY_CHAR_BUDGET`).
+
+**Migration impact.** None — no schema or API contract change.
+
+**Implementation notes.** Truncation walks the turns list from the end
+(most recent) backward, accumulating length, and always keeps at least
+one turn (the newest) even if that single turn alone exceeds the budget —
+never returns an empty hint just because the newest turn is large. A
+truncation note ("N earlier turn(s) omitted") is appended only when
+turns were actually dropped, so the model (and, transitively, a human
+reading a transcript) can tell the difference between "nothing older
+existed" and "older context was trimmed."
+
+**Status.** Resolved — implemented, 2026-08-22.
+
+---
+
+## ADL-048
+
+### Per-message visible token usage, captured on the streaming path
+
+**Decision.** Real per-vendor token usage (`{inputTokens, outputTokens}`)
+is now captured on the streaming path too (previously non-streaming only,
+`aiService.js`'s own `logLlmCall` comment had flagged this gap as
+deliberately deferred, not an oversight) and persisted on the assistant's
+own `messages` row (new nullable `input_tokens`/`output_tokens` columns),
+rendered as a small, understated line under the reply — a plain token
+count, never a dollar figure.
+
+**Superseded position.** None directly — this closes an already-recorded,
+explicitly-deferred gap (`CHECKPOINT.md`'s P1 item 6: "User-facing usage
+display is a separate, later concern from internal billing").
+
+**Rationale.** User's own request (2026-08-22), explicitly framed as
+"however Claude handles this" — Claude Code's own usage indicator is
+understated and developer-adjacent, never a prominent cost figure, which
+is why this renders `"120 in · 45 out tokens"`-style text, not a `$`
+amount (the existing `logLlmCall` comment already gives the reason $
+estimation is out of scope: pricing drifts per model/vendor faster than
+this codebase should hardcode a table). Each provider adapter's own
+`completeStream` reports usage only when the real vendor stream actually
+carried it — Anthropic's `message_start`/`message_delta` events, an
+OpenAI-compatible `stream_options.include_usage` final chunk (nim, openai,
+self-hosted), Gemini's per-chunk cumulative `usageMetadata` — via a new
+optional `onUsage` callback mirroring the existing `onDelta` pattern
+exactly, so `completeStream`'s own return value (a plain string) is
+unchanged and no existing test asserting that shape breaks.
+`completeMaybeStreaming`'s return shape changes internally, from a bare
+string to `{text, usage}` — safe because it is not itself exported or
+directly unit-tested (only exercised indirectly through `askAgent`'s full
+result), so every one of its ~5 call sites inside `aiService.js` was
+updated together, in the same pass, to thread `usage` into its own
+returned result object.
+
+**Affected artefacts.** `aiProviders/{nim,openai,selfHosted}.js`
+(`stream_options.include_usage`, final-chunk `usage`);
+`aiProviders/claude.js` (`message_start`/`message_delta` usage);
+`aiProviders/gemini.js` (`attemptStream`'s per-chunk `usageMetadata`,
+only the succeeding attempt's usage ever reported); `aiService.js`
+(`completeMaybeStreaming`, `askGeneralChat`, `askAboutTool`,
+`executeWorkflowPlan`'s synthesis, `summarizeToolResult`/askAgent's
+tool_call branch — each now returns/threads `usage`); new migration
+`1763300000000_message-token-usage.js`; `messageRepository.js`
+(`COLUMNS`); `conversationService.addMessage`; `routes/conversations.js`
+(`input_tokens`/`output_tokens` wire fields); frontend
+`api/conversations.js`, `WorkspaceProvider.jsx` (`runAiTurn`/`seedThread`),
+`ChatMessage.jsx` (`UsageLine`).
+
+**Migration impact.** Additive only — two new nullable `INTEGER` columns
+on `messages`, populated at INSERT time (never a later UPDATE), so no
+column-level `UPDATE` grant is needed beyond the existing table-level
+`INSERT` grant.
+
+**Implementation notes.** Usage is genuinely absent (never fabricated as
+`0`) for: a message sent before this migration, a provider/path whose
+vendor stream never returned a usage block, a stream interrupted before
+the usage-bearing final event arrived, or Gemini's own discarded
+empty-thinking-budget retry attempts (only the attempt that actually
+`sawAnyText` ever reports usage). `UsageLine` (`ChatMessage.jsx`) renders
+nothing in every one of these cases rather than a placeholder.

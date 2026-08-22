@@ -39,7 +39,7 @@ directly through the normal dashboard is not gated by it.
 | **Owner** | AI Tool Registry |
 | **Authority** | System invariant |
 | **Depends on** | — |
-| **Governs** | [RS-AIG-004](RS-AIG-ai-governance.md#rs-aig-004), [RS-AIG-006](RS-AIG-ai-governance.md#rs-aig-006), [RS-AIG-007](RS-AIG-ai-governance.md#rs-aig-007), [RS-AIG-012](RS-AIG-ai-governance.md#rs-aig-012), [RS-AIG-013](RS-AIG-ai-governance.md#rs-aig-013), [RS-AIG-015](RS-AIG-ai-governance.md#rs-aig-015), [RS-ANL-002](RS-ANL-analytics-governance.md#rs-anl-002), [RS-AIG-018](#rs-aig-018), [RS-AIG-021](#rs-aig-021), [RS-AIG-022](#rs-aig-022), [RS-AIG-023](#rs-aig-023), [RS-AIG-024](#rs-aig-024) |
+| **Governs** | [RS-AIG-004](RS-AIG-ai-governance.md#rs-aig-004), [RS-AIG-006](RS-AIG-ai-governance.md#rs-aig-006), [RS-AIG-007](RS-AIG-ai-governance.md#rs-aig-007), [RS-AIG-012](RS-AIG-ai-governance.md#rs-aig-012), [RS-AIG-013](RS-AIG-ai-governance.md#rs-aig-013), [RS-AIG-015](RS-AIG-ai-governance.md#rs-aig-015), [RS-ANL-002](RS-ANL-analytics-governance.md#rs-anl-002), [RS-AIG-018](#rs-aig-018), [RS-AIG-021](#rs-aig-021), [RS-AIG-022](#rs-aig-022), [RS-AIG-023](#rs-aig-023), [RS-AIG-024](#rs-aig-024), [RS-AIG-025](#rs-aig-025) |
 | **Lifecycle** | — |
 | **Workflow** | L3 → `WorkflowService` |
 | **AI** | Definitional |
@@ -289,7 +289,7 @@ and nowhere else.
 | **Owner** | LLM provider adapter |
 | **Authority** | System invariant |
 | **Depends on** | [RS-AIG-002](RS-AIG-ai-governance.md#rs-aig-002) |
-| **Governs** | [RS-ASM-008](RS-ASM-assessment-documents.md#rs-asm-008), [RS-AIG-022](#rs-aig-022) |
+| **Governs** | [RS-ASM-008](RS-ASM-assessment-documents.md#rs-asm-008), [RS-AIG-022](#rs-aig-022), [RS-AIG-025](#rs-aig-025) |
 | **Lifecycle** | — |
 | **Workflow** | — |
 | **AI** | Definitional |
@@ -611,9 +611,9 @@ does not reintroduce it as a fresh, unvetted input.
 | **AI** | Definitional |
 | **Modules** | 9 |
 | **Data effect** | Read-only (no new data effect beyond the conversation's own existing storage) |
-| **Implementation** | `routes/ai.js`'s `resolveAskContext` (`HISTORY_LIMIT = 10`), `conversationService.resolveOwnConversation` (ownership check), `aiService.js`'s `buildHistoryHint` |
+| **Implementation** | `routes/ai.js`'s `resolveAskContext` (`HISTORY_MESSAGE_CEILING = 200`, an outer fetch-cost bound only), `conversationService.resolveOwnConversation` (ownership check), `aiService.js`'s `buildHistoryHint` (real limit: `DEFAULT_HISTORY_CHAR_BUDGET = 100,000` chars, most-recent-first — [ADL-047](../30-decisions/ledger.md#adl-047)) |
 | **Conformance** | Conformant |
-| **Decisions** | [ADL-035](../30-decisions/ledger.md#adl-035) |
+| **Decisions** | [ADL-035](../30-decisions/ledger.md#adl-035), [ADL-047](../30-decisions/ledger.md#adl-047) |
 
 ---
 
@@ -740,7 +740,7 @@ unreachable otherwise. Response size and fetch time are bounded.
 | **Owner** | AI Tool Registry |
 | **Authority** | System invariant |
 | **Depends on** | [RS-AIG-003](#rs-aig-003) |
-| **Governs** | — |
+| **Governs** | [RS-AIG-025](#rs-aig-025) |
 | **Lifecycle** | — |
 | **Workflow** | — |
 | **AI** | L1 read-only |
@@ -830,7 +830,7 @@ which has no code path that reads which model produced the request.
 
 ## RS-AIG-023
 
-**General mode is a structurally separate path that offers the model zero
+**Research mode is a structurally separate path that offers the model zero
 ARCNAVE tools — not a narrower prompt over the same tool-scoped path —
 so the Policy Gate has nothing to re-fire against, by construction, not
 by instruction.**
@@ -840,17 +840,23 @@ a blend. **Curriculum mode** is the pre-existing tool-scoped path,
 unchanged: role/relevance-filtered tools are offered, and every call an
 [RS-AIG-001](#rs-aig-001) authority level, [RS-AIG-004](#rs-aig-004)'s
 approval gate, and every other rule in this domain apply exactly as they
-always have. **General mode** never builds a tool list at all — the code
+always have. **Research mode** never builds a tool list at all — the code
 path it uses has no branch that could attach one — so there is no tool
 for the model to select, no handler for `invokeTool` to run, and nothing
 for the Policy Gate to gate. This is deliberately not the same design as
 "a system prompt telling the model not to use tools," which a sufficiently
 adversarial or confused model could ignore; here the capability is simply
-absent from the call. General mode retains the same identity-masking
+absent from the call. Research mode retains the same identity-masking
 instruction as Curriculum mode and is told explicitly that it has no
 access to this college's own data. The default is Curriculum everywhere a
-caller does not explicitly select General, so no existing behaviour shifts
+caller does not explicitly select Research, so no existing behaviour shifts
 for any caller that has not adopted the new parameter.
+
+**Naming note (2026-08-22).** "Research" is the user-facing label only —
+the wire-level `mode` parameter value is still the literal string
+`'general'` throughout the codebase (routes, service, frontend state).
+This mode was originally named "General" at introduction; see
+[ADL-045](../30-decisions/ledger.md#adl-045) for the rename rationale.
 
 | | |
 |---|---|
@@ -860,7 +866,7 @@ for any caller that has not adopted the new parameter.
 | **Governs** | — |
 | **Lifecycle** | — |
 | **Workflow** | — |
-| **AI** | Definitional — General mode is definitionally tool-free, not merely tool-discouraged |
+| **AI** | Definitional — Research mode is definitionally tool-free, not merely tool-discouraged |
 | **Modules** | 9 |
 | **Data effect** | — |
 | **Implementation** | `routes/ai.js`'s `mode` passthrough; `aiService.js`'s `askAgent` branch (`mode === 'general'` → `askGeneralChat`, using `completeMaybeStreaming` — never `completeWithTools`); `GENERAL_CHAT_SYSTEM_PROMPT` |
@@ -911,3 +917,47 @@ fact the response already carries.
 | **Implementation** | `aiToolRegistry.js`'s `invokeTool` (try/catch around `tool.handler`, new `ai_tool_handler_failed` action); `aiService.js`'s `invokeTool` (`provider`/`model`/`workflowRequestId` in `ai_tool_invoked` metadata, threaded from `askAgent`/`askAboutTool`/`executeWorkflowPlan`'s already-resolved adapter/config) |
 | **Conformance** | Conformant |
 | **Decisions** | [ADL-044](../30-decisions/ledger.md#adl-044) |
+
+---
+
+## RS-AIG-025
+
+**Image generation is a registered `L2` tool, per-college opt-in
+(off by default), and available only through adapters that expose a real
+vendor image-generation method — never a hardcoded per-provider branch
+outside the adapter layer.**
+
+This is the domain's own governing principle applied to a genuinely new
+capability class (image, not text/document, output): classified `L2`
+(Generate) under [RS-AIG-001](#rs-aig-001) — it produces an artifact with
+no effect reaching outside the system, the same class as
+`generate_document`'s Excel/PDF/Word output, never `L3`. Because a new
+model-backed capability carries real cost and misuse surface before any
+college has asked for it, it follows the same off-by-default, explicit
+per-college opt-in posture [RS-AIG-020](#rs-aig-020) already established
+for Trusted Web Retrieval — reusing the identical `configurationService`
+mechanism, not a new one. Provider availability is never asserted in
+product/spec text (per [RS-AIG-008](#rs-aig-008)): a given provider
+adapter either exposes a `generateImage` method or it does not, and the
+tool is structurally unavailable through an adapter that doesn't, via the
+same `AiProviderCapabilityError` mechanism already used for an adapter
+missing `embed()`.
+
+The generated binary is stored through the existing
+`DocumentService`-owned path (CLAUDE.md rule 2) — no parallel storage
+mechanism is introduced for this capability.
+
+| | |
+|---|---|
+| **Owner** | AI Tool Registry |
+| **Authority** | System invariant |
+| **Depends on** | [RS-AIG-001](#rs-aig-001), [RS-AIG-008](#rs-aig-008), [RS-AIG-020](#rs-aig-020) |
+| **Governs** | — |
+| **Lifecycle** | — |
+| **Workflow** | Not permitted at any level to bypass the per-college opt-in check |
+| **AI** | `L2` generate ceiling, same as every other artifact-producing tool |
+| **Modules** | 9 |
+| **Data effect** | Creates one document row via the existing `DocumentService` path |
+| **Implementation** | `aiToolRegistry.js`'s `generate_image` tool; `aiProviders/openai.js`/`aiProviders/gemini.js`'s `generateImage`; `configurationService` category `image_generation` |
+| **Conformance** | Conformant |
+| **Decisions** | [ADL-046](../30-decisions/ledger.md#adl-046) |

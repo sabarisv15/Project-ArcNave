@@ -12,7 +12,7 @@ import { useRelativeTime } from '../hooks/useRelativeTime';
 import { useTypewriter } from '../hooks/useTypewriter';
 import { cn } from '../lib/utils';
 import { formatBytes } from '../lib/composerAttachments';
-import { downloadFile } from '../api/client';
+import { downloadFile, fetchBlobUrl } from '../api/client';
 
 const ACTION =
   'w-[26px] h-[26px] grid place-items-center border-0 bg-transparent rounded-[7px] text-ink-ghost cursor-pointer transition-colors duration-200 hover:bg-tint2 hover:text-ink-soft focus-visible:opacity-100';
@@ -283,6 +283,108 @@ function EvidenceTrail({ trail }) {
 }
 
 /**
+ * Same file/download shape as DocumentAttachmentCard, plus an inline
+ * preview — a generated image (RS-AIG-025) is the one document type
+ * worth actually seeing in the transcript rather than only a filename
+ * chip. The preview can't be a plain `<img src="/documents/:id/download">`
+ * — that endpoint requires a Bearer token — so this fetches the same
+ * authenticated blob once on mount (api/client.js's fetchBlobUrl) and
+ * revokes the object URL on unmount, never leaking it across messages.
+ */
+function GeneratedImageCard({ document: doc }) {
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [downloading, setDownloading] = useState(false);
+
+  useEffect(() => {
+    let objectUrl;
+    let cancelled = false;
+    fetchBlobUrl(`/documents/${doc.id}/download`)
+      .then((url) => {
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        objectUrl = url;
+        setPreviewUrl(url);
+      })
+      .catch(() => {
+        // No preview — the download button below still works independently.
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [doc.id]);
+
+  return (
+    <div className="mt-[8px] w-[min(70ch,100%)] max-w-full">
+      {previewUrl && (
+        <img
+          src={previewUrl}
+          alt={doc.title || doc.fileName}
+          className="block max-w-full max-h-[360px] rounded-[12px] border border-line object-contain bg-tint2"
+        />
+      )}
+      <div className="mt-[8px] flex items-center gap-[10px] px-[12px] py-[9px] border border-line rounded-[12px] bg-paper">
+        <span className="flex-none w-[32px] h-[32px] grid place-items-center rounded-[9px] bg-accent-soft text-accent">
+          <FileText size={15} strokeWidth={1.9} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[12.5px] font-[500] text-ink truncate" title={doc.fileName}>{doc.fileName}</span>
+          <span className="block text-[11px] text-ink-faint">Saved to your Documents</span>
+        </span>
+        <button
+          type="button"
+          aria-label={`Download ${doc.fileName}`}
+          title="Download"
+          disabled={downloading}
+          onClick={async () => {
+            setDownloading(true);
+            try {
+              await downloadFile(`/documents/${doc.id}/download`, doc.fileName);
+            } catch {
+              toast('Could not download this file — please try again.');
+            } finally {
+              setDownloading(false);
+            }
+          }}
+          className="flex-none inline-flex items-center gap-[6px] h-[30px] px-[11px] border-0 rounded-[9px] bg-accent text-white font-sans text-[12px] font-[500] cursor-pointer transition-colors duration-200 hover:bg-accent-hover disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          <Download size={13} strokeWidth={2} />
+          {downloading ? 'Downloading…' : 'Download'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Real per-vendor token usage (P1.6/ADL-048) — {inputTokens, outputTokens}
+ * captured off the actual streamed provider response, never estimated
+ * client-side. Renders nothing when usage is genuinely unknown (an older
+ * message, or a provider/path that never returned one) rather than a
+ * fabricated number. Deliberately understated — a plain token count, the
+ * same restrained, developer-adjacent style Claude Code's own usage
+ * indicator uses, never a prominent $ figure (pricing drifts per model/
+ * vendor faster than this UI should hardcode — same reasoning
+ * aiService.js's own logLlmCall comment already gives for not computing
+ * one server-side).
+ */
+function UsageLine({ usage }) {
+  if (!usage) return null;
+  const { inputTokens, outputTokens } = usage;
+  if (inputTokens == null && outputTokens == null) return null;
+  const parts = [];
+  if (inputTokens != null) parts.push(`${inputTokens.toLocaleString()} in`);
+  if (outputTokens != null) parts.push(`${outputTokens.toLocaleString()} out`);
+  return (
+    <p className="mt-[6px] mb-0 text-[11px] text-ink-faint" title="Tokens reported by the AI provider for this reply">
+      {parts.join(' · ')} tokens
+    </p>
+  );
+}
+
+/**
  * A CONFLICT verification result (aiService.verifyNumericClaims) means the
  * reply's own text states a number that does not match any count/value the
  * grounding tool call(s) actually returned — computed and stored on every
@@ -539,9 +641,14 @@ export function ChatMessage({ message, selected = false, onSelect, onEdit }) {
                   The AI model configured for this college can't view images, so the attached photo was not analyzed.
                 </p>
               )}
-              {message.document && <DocumentAttachmentCard document={message.document} />}
+              {message.document && (
+                message.document.mimeType?.startsWith('image/')
+                  ? <GeneratedImageCard document={message.document} />
+                  : <DocumentAttachmentCard document={message.document} />
+              )}
               <VerificationNotice verification={message.verification} />
               <EvidenceTrail trail={message.evidenceTrail} />
+              <UsageLine usage={message.usage} />
             </div>
           )}
           {!message.generating && <ResponseActions message={message} />}

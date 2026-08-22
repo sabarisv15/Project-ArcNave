@@ -232,7 +232,15 @@ async function complete(cfg, prompts) {
 // payload's own `type` field, so nothing here needs it), so only
 // `content_block_delta` events with a `text_delta` are real answer
 // text; every other event type is legitimately ignored, not an error.
-async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, onDelta) {
+// onUsage (optional, P1.6) — called at most once, after the stream ends,
+// with {inputTokens, outputTokens} when the API actually reported them.
+// Anthropic's Messages API reports input tokens once on message_start
+// (message.usage.input_tokens) and cumulative output tokens on every
+// message_delta (delta.usage.output_tokens, growing as generation
+// proceeds) — the LAST message_delta's value is the final total, so this
+// simply keeps overwriting rather than summing. Never called if neither
+// event carried a usage block, rather than reporting a fabricated zero.
+async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, onDelta, onUsage) {
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey/projectId)');
   }
@@ -252,6 +260,8 @@ async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, on
   }
 
   let full = '';
+  let inputTokens;
+  let outputTokens;
   for await (const payload of iterateSseLines(response)) {
     let event;
     try {
@@ -265,7 +275,14 @@ async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, on
         full += text;
         onDelta(text);
       }
+    } else if (event && event.type === 'message_start' && event.message && event.message.usage) {
+      inputTokens = event.message.usage.input_tokens;
+    } else if (event && event.type === 'message_delta' && event.usage) {
+      outputTokens = event.usage.output_tokens;
     }
+  }
+  if (typeof onUsage === 'function' && (inputTokens !== undefined || outputTokens !== undefined)) {
+    onUsage({ inputTokens, outputTokens });
   }
   return full;
 }
@@ -315,6 +332,13 @@ async function embed() {
   throw new AiProviderCapabilityError('claude has no embeddings endpoint — configure a different provider for RAG/embedding features');
 }
 
+// No image-generation endpoint (RS-AIG-025): Anthropic's Messages API has
+// no first-party image-generation capability, same honest-limitation
+// treatment embed() above already gets — never a silent no-op.
+async function generateImage() {
+  throw new AiProviderCapabilityError('claude has no image-generation endpoint — configure a different provider for this feature');
+}
+
 module.exports = {
   name: 'claude',
   supportsVision,
@@ -324,4 +348,5 @@ module.exports = {
   completeStream,
   completeWithTools,
   embed,
+  generateImage,
 };

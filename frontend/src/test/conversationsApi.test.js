@@ -34,4 +34,14 @@ describe('conversationsApi.addMessage', () => {
       role: 'user', content: 'no attachment', attachments: undefined,
     }));
   });
+
+  it('sends inputTokens/outputTokens through as input_tokens/output_tokens (P1.6)', async () => {
+    await conversationsApi.addMessage('conv1', {
+      role: 'assistant', content: 'answer', inputTokens: 120, outputTokens: 45,
+    });
+
+    expect(api.post).toHaveBeenCalledWith('/conversations/conv1/messages', expect.objectContaining({
+      role: 'assistant', content: 'answer', input_tokens: 120, output_tokens: 45,
+    }));
+  });
 });

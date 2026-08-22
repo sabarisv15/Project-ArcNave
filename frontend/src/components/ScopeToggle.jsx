@@ -1,16 +1,18 @@
 import { cn } from '../lib/utils';
 
 /**
- * General | Curriculum — what used to be Ask/Act (read vs write). Redefined:
+ * Research | Curriculum — what used to be Ask/Act (read vs write). Redefined:
  * this now controls how broad the AI is allowed to be, not whether it can
- * write. General is a pure open-domain assistant (research, new tech,
+ * write. Research is a pure open-domain assistant (research, new tech,
  * subject knowledge — no ARCNAVE tool ever offered to the model, see
  * aiService.js's own GENERAL_CHAT_SYSTEM_PROMPT comment). Curriculum is the
  * unchanged, Policy-Gate-scoped campus assistant — same behavior this
  * toggle already had under its old name. Equal width/height, compact, never
  * dominant — unchanged visual language from the toggle this replaces.
+ *
+ * Label only — the wire-level mode value stays 'general' (ADL-045).
  */
-const LABEL = { general: 'General', curriculum: 'Curriculum' };
+const LABEL = { general: 'Research', curriculum: 'Curriculum' };
 
 export function ScopeToggle({ mode, onMode }) {
   const base =

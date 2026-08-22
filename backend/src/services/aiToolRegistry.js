@@ -2603,6 +2603,7 @@ registerTool({
 // other entity type; this tool's description tells the model to read the
 // id from there rather than asking the user to repeat it.
 const artifactService = require('./artifactService');
+const imageGenerationService = require('./imageGenerationService');
 
 // A deeper gap behind the same live-caught moment: the model's replies
 // inside an artifact's revision chat ("Here is a one-page draft on
@@ -2791,6 +2792,41 @@ registerTool({
       client, artifact.id, { userId: actor.userId, collegeId: actor.collegeId, format: params.format },
     );
   },
+});
+
+// Image generation (RS-AIG-025) — thin wrapper over imageGenerationService,
+// the same one-Business-Service-method-per-tool shape every other tool
+// in this file follows. Registered L2 (Generate) per RS-AIG-001's own
+// table — an artifact-producing tool with no effect reaching outside the
+// system, same class as generate_document above. (generate_document
+// itself is registered L1 in this file — a pre-existing discrepancy
+// against RS-AIG-001's table this pass does not resolve, the same class
+// of finding round 20's "AI capability reconciliation" flagged once
+// already for a different tool, not silently copied here.) Off by
+// default per college — imageGenerationService.generateImage itself
+// throws ImageGenerationNotEnabledError at call time, mirroring
+// fetch_trusted_web_page's own real precedent (verified against that
+// registration, not assumed): the tool stays listed, the Business
+// Service is the actual gate.
+registerTool({
+  name: 'generate_image',
+  level: 'L2',
+  dataClassification: 'Internal',
+  description: 'Generates an image from a text prompt and saves it as a real, downloadable file in the acting '
+    + 'user\'s own Documents. Only available if this college has opted into image generation and the configured '
+    + 'AI provider supports it — if not, say so plainly rather than pretending an image was created.',
+  allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
+  params: {
+    type: 'object',
+    properties: {
+      prompt: { type: 'string', description: 'A clear description of the image to generate.' },
+    },
+    required: ['prompt'],
+    additionalProperties: false,
+  },
+  handler: (client, params, actor) => imageGenerationService.generateImage(
+    client, { prompt: params.prompt }, { collegeId: actor.collegeId, actorUserId: actor.userId },
+  ),
 });
 
 registerTool({

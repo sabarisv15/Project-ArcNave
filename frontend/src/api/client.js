@@ -120,7 +120,7 @@ export async function postMultipart(path, formData) {
   return data;
 }
 
-export async function downloadFile(path, fallbackFileName) {
+async function fetchAuthenticatedBlob(path) {
   const token = getAccessToken();
   const collegeCode = getCollegeCode();
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -133,14 +133,27 @@ export async function downloadFile(path, fallbackFileName) {
     const data = await res.json().catch(() => null);
     throw new ApiError(res.status, data && data.detail, data);
   }
-  const disposition = res.headers.get('content-disposition') || '';
-  const match = /filename="?([^"]+)"?/.exec(disposition);
-  const fileName = (match && match[1]) || fallbackFileName || 'download';
-  const blob = await res.blob();
+  return res.blob();
+}
+
+export async function downloadFile(path, fallbackFileName) {
+  const blob = await fetchAuthenticatedBlob(path);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = fileName;
+  a.download = fallbackFileName || 'download';
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// A generated image needs an in-page <img src> preview, not just a
+// save-to-disk click — the download endpoint requires a Bearer token
+// (GET /documents/:id/download), so a plain <img src="..."> can never
+// work; this fetches the same authenticated blob and hands back an
+// object URL the caller owns and must revoke (URL.revokeObjectURL) once
+// it's no longer displayed, same lifecycle discipline downloadFile's own
+// short-lived object URL above already follows.
+export async function fetchBlobUrl(path) {
+  const blob = await fetchAuthenticatedBlob(path);
+  return URL.createObjectURL(blob);
 }

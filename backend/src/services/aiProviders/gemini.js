@@ -257,6 +257,7 @@ async function attemptStream(cfg, { systemPrompt, userPrompt, images } = {}, dea
 
   let full = '';
   let sawAnyText = false;
+  let usage;
   for await (const payload of iterateSseLines(response)) {
     let event;
     try {
@@ -272,8 +273,14 @@ async function attemptStream(cfg, { systemPrompt, userPrompt, images } = {}, dea
       full += text;
       onDelta(text);
     }
+    // usageMetadata rides along on each chunk, cumulative — the last one
+    // seen (the final chunk before the stream ends) is the real total,
+    // same as completeWithMeta's own non-streaming usage read.
+    if (event && event.usageMetadata) {
+      usage = { inputTokens: event.usageMetadata.promptTokenCount, outputTokens: event.usageMetadata.candidatesTokenCount };
+    }
   }
-  return { full, sawAnyText };
+  return { full, sawAnyText, usage };
 }
 
 // A real, live-caught failure mode: Gemini's hybrid reasoning can spend
@@ -310,7 +317,11 @@ const MAX_TOTAL_STREAM_MS = 45000;
 // for the shared reasoning (only the final answer streams). Vertex
 // AI's streaming path is the same `:streamGenerateContent?alt=sse`
 // shape the public Gemini API uses — only the host/auth above differ.
-async function completeStream(cfg, prompts, onDelta) {
+// onUsage (optional, P1.6) — called at most once, with whichever
+// attempt actually succeeded (sawAnyText) reported it. A discarded
+// empty-thinking-budget attempt's usage (if any) is never reported —
+// it described tokens spent on an answer the caller never saw.
+async function completeStream(cfg, prompts, onDelta, onUsage) {
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
   }
@@ -321,8 +332,11 @@ async function completeStream(cfg, prompts, onDelta) {
   for (let attempt = 0; attempt <= MAX_EMPTY_RETRIES; attempt++) {
     if (Date.now() >= deadline) break;
     // eslint-disable-next-line no-await-in-loop
-    const { full, sawAnyText } = await attemptStream(cfg, prompts, deadline, onDelta);
-    if (sawAnyText) return full;
+    const { full, sawAnyText, usage } = await attemptStream(cfg, prompts, deadline, onDelta);
+    if (sawAnyText) {
+      if (typeof onUsage === 'function' && usage) onUsage(usage);
+      return full;
+    }
   }
   throw new LlmRequestError(`Gemini streamed no visible answer text within ${cfg.maxTotalStreamMs || MAX_TOTAL_STREAM_MS}ms (thinking budget exhausted before any output, or the overall time budget was exceeded)`);
 }
@@ -417,6 +431,34 @@ async function embed(cfg, texts, { inputType } = {}) {
   return predictions.map((item) => item && item.embeddings && item.embeddings.values);
 }
 
+// Image generation (RS-AIG-025) — Vertex AI's Imagen `:predict` endpoint,
+// the same `instances[]`/`predictions[]` shape embed() above already
+// uses for this vendor's non-generateContent models. NOT live-verified
+// against a real GCP project (same caveat this file's own header comment
+// already carries) — the request/response shape is Google's documented
+// Imagen-on-Vertex REST convention, not fabricated. `cfg.imageModel`
+// lets a college override the model id; Imagen is a separate publisher
+// model from whatever `cfg.model` names for chat, so this never reuses
+// that field.
+const DEFAULT_IMAGE_MODEL = 'imagen-4.0-generate-001';
+
+async function generateImage(cfg, { prompt }) {
+  if (!isConfigured(cfg)) {
+    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
+  }
+  const payload = await postJson(cfg, modelUrl(cfg, cfg.imageModel || DEFAULT_IMAGE_MODEL, 'predict'), {
+    instances: [{ prompt }],
+    parameters: { sampleCount: 1 },
+  });
+  const prediction = Array.isArray(payload && payload.predictions) ? payload.predictions[0] : null;
+  const b64 = prediction && prediction.bytesBase64Encoded;
+  if (!b64) {
+    throw new LlmRequestError('Gemini (Vertex AI) image response did not contain predictions[0].bytesBase64Encoded');
+  }
+  const mimeType = (prediction && prediction.mimeType) || 'image/png';
+  return { imageBuffer: Buffer.from(b64, 'base64'), mimeType };
+}
+
 module.exports = {
   name: 'gemini',
   supportsVision,
@@ -426,5 +468,6 @@ module.exports = {
   completeStream,
   completeWithTools,
   embed,
+  generateImage,
   AiProviderCapabilityError,
 };

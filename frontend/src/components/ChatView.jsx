@@ -14,7 +14,7 @@ import { composerScope, useComposer } from '../store/ComposerProvider';
  * as the primary scroll area, one bottom-docked compact composer.
  *
  * `onSend` is handed this chat's own draft text, its own attachments, and its
- * own General/Curriculum scope mode, and is responsible for clearing them —
+ * own Research/Curriculum scope mode, and is responsible for clearing them —
  * the composer state belongs to `chat:<chatId>` and to nothing else.
  *
  * ## Sources

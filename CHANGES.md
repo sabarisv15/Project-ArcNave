@@ -4,6 +4,59 @@
 
 ---
 
+## 2026-08-22 — Research-mode rename, provider-aware history budget, streaming token usage, opt-in image generation
+
+Four asks from a compressed Tanglish request, resolved through `AskUserQuestion` into concrete scope, spec'd in `bka/60-product-reasoning/ai-copilot-research-mode-usage-imagegen-approved-spec.md` ([ADL-045](bka/30-decisions/ledger.md#adl-045)–[048](bka/30-decisions/ledger.md#adl-048), new `RS-AIG-025`).
+
+### 1 — "General" mode renamed to "Research" (label only)
+
+| File | Change |
+|---|---|
+| `frontend/src/components/ScopeToggle.jsx` | `LABEL.general`: `'General'` → `'Research'`. Wire value stays the literal string `'general'` everywhere. |
+| `backend/src/services/aiService.js` | `GENERAL_CHAT_SYSTEM_PROMPT` text and internal comments updated to say "Research mode". |
+| `frontend/src/routes/ArtifactEditor.jsx`, `store/ComposerProvider.jsx`, `store/WorkspaceProvider.jsx`, `components/ChatView.jsx` | Comment-only renames for consistency. |
+| `frontend/src/test/AIComposer.test.jsx`, `backend/tests/ai-service.test.js` | Updated to assert the new label/prompt text. |
+
+### 2 — Conversation history: character budget replaces the flat 20-message cap
+
+| File | Change |
+|---|---|
+| `backend/src/routes/ai.js` | `HISTORY_LIMIT` renamed `HISTORY_MESSAGE_CEILING` (20 → 200) — now only bounds the DB fetch, not the real prompt size. |
+| `backend/src/services/aiService.js` | `buildHistoryHint` gained a `charBudget` parameter (`DEFAULT_HISTORY_CHAR_BUDGET = 100,000`) — keeps the most recent turns, drops the oldest first once exceeded, always keeps at least the single newest turn. |
+| `backend/tests/ai-service.test.js` | 3 new tests: over-budget truncation keeps newest/drops oldest, within-budget is unchanged, a single oversized newest turn still survives. |
+
+### 3 — Real per-message token usage, captured on the streaming path
+
+| File | Change |
+|---|---|
+| `backend/src/services/aiProviders/{claude,nim,openai,selfHosted,gemini}.js` | Every `completeStream` gained an optional `onUsage` callback, called once if the real vendor stream reported usage — Claude's `message_start`/`message_delta`, OpenAI-compatible `stream_options.include_usage` (nim/openai/self_hosted), Gemini's per-chunk `usageMetadata` (only the attempt that actually produced visible text ever reports it). Return value (a plain string) is unchanged — no existing `completeStream` test broke. |
+| `backend/src/services/aiService.js` | `completeMaybeStreaming` now returns `{text, usage}` (was a bare string) — updated all 5 internal call sites (`askGeneralChat`, `askAboutTool`, `executeWorkflowPlan`'s synthesis, `summarizeToolResult`/askAgent's tool_call branch) to thread `usage` into their own returned result. Streaming calls are now also `logLlmCall`-audited, closing a gap that comment had explicitly flagged as deferred. |
+| `backend/migrations/1763300000000_message-token-usage.js` | New — nullable `messages.input_tokens`/`output_tokens`. Verified reversible (up/down/up) against real Postgres. |
+| `backend/src/repositories/messageRepository.js`, `services/conversationService.js`, `routes/conversations.js` | Thread `inputTokens`/`outputTokens` through `create`/`addMessage`/the `POST /conversations/:id/messages` wire shape (`input_tokens`/`output_tokens`). |
+| `frontend/src/api/conversations.js`, `store/WorkspaceProvider.jsx` | `addMessage` sends/`seedThread` reads the new fields; `runAiTurn` threads `result.usage` from the stream's `done` event into the persisted save call and live thread state. |
+| `frontend/src/components/ChatMessage.jsx` | New `UsageLine` — a small, understated `"120 in · 45 out tokens"` line, renders nothing when usage is unknown. Never a `$` figure. |
+| `backend/tests/{ai-providers,ai-providers-streaming,conversation-service}.test.js`, `frontend/src/test/conversationsApi.test.js` | New/updated tests for the usage wire-through at every layer. |
+
+### 4 — New capability: opt-in AI image generation
+
+| File | Change |
+|---|---|
+| `backend/src/services/imageGenerationService.js` | New — mirrors `webRetrievalService.js`'s exact pattern: per-college opt-in via the existing `configurationService`/`configurations` table (category `image_generation`, no new migration), `generateImage` throws `ImageGenerationNotEnabledError` at call time if not opted in. Calls whatever adapter `configurationService.getAiConfig` resolves, saves the result via `documentService.uploadPersonalDocument` (no ArtifactService wrapper — an image has no markdown/JSON form to publish from). |
+| `backend/src/services/aiProviders/openai.js`, `gemini.js` | New `generateImage` — OpenAI's real `/images/generations` (`b64_json`), Vertex AI's Imagen `:predict` endpoint (`bytesBase64Encoded`). Neither live-verified against a real key/project (documented vendor shape, same caveat this file's own header already carries for chat). |
+| `backend/src/services/aiProviders/{claude,nim,selfHosted}.js` | New `generateImage` stub — throws `AiProviderCapabilityError`, same shape `claude.js`'s missing `embed()` already used. |
+| `backend/src/services/aiToolRegistry.js` | New `generate_image` tool (`L2`/`Internal`, `params: {prompt}`), mirroring `generate_document`'s registration shape. |
+| `backend/src/services/aiService.js` | `extractDocumentAttachment` gained a `generate_image` branch (same raw-row shape `export_artifact_as` already reads). |
+| `backend/src/routes/ai.js` | `mapAiToolError` maps `ImageGenerationNotEnabledError`/`ImageGenerationValidationError` to 400. |
+| `frontend/src/api/client.js` | New `fetchBlobUrl` — an authenticated blob fetch returning a caller-owned, caller-revoked object URL (refactored out of `downloadFile`'s existing authenticated-fetch logic). |
+| `frontend/src/components/ChatMessage.jsx` | New `GeneratedImageCard` — inline `<img>` preview (via `fetchBlobUrl`, revoked on unmount) + the same download affordance `DocumentAttachmentCard` already has. Rendered instead of `DocumentAttachmentCard` when `message.document.mimeType` starts with `image/`. |
+| `backend/tests/{image-generation-service,ai-providers,ai-service}.test.js` | New tests: opt-in gating, adapter capability errors, real request/response shape for openai/gemini's `generateImage`, structural Policy-Gate-then-service-gate proof mirroring `fetch_trusted_web_page`'s own existing test. |
+
+### Verification
+
+Full backend suite: 2046/2048 (same 2 pre-existing, unrelated `fetch_trusted_web_page` failures). Frontend: build clean, same pre-existing 106-failure baseline, all new/updated tests passing. `bka/tools/validate.py`: 0/0. Migration verified reversible (up/down/up) against real Postgres. Live-verified in a real browser session (login, Research/Curriculum labels, a real `/ai/ask/stream` round-trip against this sandbox's real Gemini-backed `demo` college) — the already-running shared backend container was deliberately not restarted to pick up this session's code (it's fronting another concurrent session), so the new usage-capture/`generate_image` mechanisms are verified via mocked adapter/service tests only, not a live provider call; worth confirming once that container is naturally restarted.
+
+---
+
 ## 2026-08-22 — Cross-turn artifact/attachment reference bug + AI document export formats
 
 Two live-reported bugs, traced and fixed in the same session, then a same-day amendment once the second fix's own output was compared side-by-side against Gemini given the identical prompt.

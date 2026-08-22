@@ -46,9 +46,49 @@ test('aggregate: rejects an invalid regex pattern rather than letting it throw u
   );
 });
 
-test('aggregate: "sum" is a declared-but-not-yet-implemented operation — throws clearly rather than silently returning zeros', () => {
+test('aggregate: "sum" totals each match\'s captured group as a number, per record', () => {
+  const records = [
+    { key: '1', block: 'Total Arrears: 4 Total Arrears: 3' },
+    { key: '2', block: 'Total Arrears: 0' },
+  ];
+  const results = aggregate(records, { operation: 'sum', filter: { pattern: 'Total Arrears:\\s*(\\d+)' } });
+  assert.deepEqual(results.map((r) => r.sum), [7, 0]);
+});
+
+test('aggregate: "sum" with no capturing group sums the whole match text as a number', () => {
+  const records = [{ key: '1', block: 'arrear counts: 2 5 9' }];
+  const results = aggregate(records, { operation: 'sum', filter: { pattern: '\\d+' } });
+  assert.equal(results[0].sum, 16);
+});
+
+test('aggregate: "sum" skips a matched/captured value that is not a plain number rather than fabricating a total', () => {
+  const records = [{ key: '1', block: 'RA RA Total Arrears: 5' }];
+  const results = aggregate(records, { operation: 'sum', filter: { pattern: 'RA|Total Arrears:\\s*(\\d+)' } });
+  assert.equal(results[0].sum, 5);
+});
+
+test('aggregate: filter.mode "include" returns only records with a non-zero count, a real filtered list', () => {
+  const results = aggregate(RECORDS, { filter: { pattern: 'RA', mode: 'include' }, operation: 'count' });
+  assert.deepEqual(results.map((r) => r.key), ['819:25400122', '820:25400123']);
+});
+
+test('aggregate: filter.mode "include" works for "sum" the same way — non-zero sum, not non-zero match count', () => {
+  const records = [
+    { key: '1', block: 'Total Arrears: 0' },
+    { key: '2', block: 'Total Arrears: 3' },
+  ];
+  const results = aggregate(records, { operation: 'sum', filter: { pattern: 'Total Arrears:\\s*(\\d+)', mode: 'include' } });
+  assert.deepEqual(results.map((r) => r.key), ['2']);
+});
+
+test('aggregate: filter.mode defaults to "annotate" (every record returned) when omitted', () => {
+  const results = aggregate(RECORDS, { filter: { pattern: 'RA' }, operation: 'count' });
+  assert.equal(results.length, RECORDS.length);
+});
+
+test('aggregate: rejects a filter.mode outside the fixed enum', () => {
   assert.throws(
-    () => aggregate(RECORDS, { operation: 'sum', filter: { pattern: 'RA' } }),
+    () => aggregate(RECORDS, { operation: 'count', filter: { pattern: 'RA', mode: 'exec' } }),
     DocumentAggregateValidationError,
   );
 });

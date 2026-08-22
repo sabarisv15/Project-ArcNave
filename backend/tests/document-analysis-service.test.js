@@ -112,3 +112,66 @@ test('analyzeAttachment: a serialRange matching nothing degrades to no_matching_
   }, IDENTITY);
   assert.deepEqual(result, { status: 'no_matching_records' });
 });
+
+// A live comparison against a direct Gemini upload of the same real
+// result sheet found a named cohort ("ECE Sandwich") at a serial range
+// nowhere near the one the user actually knew ("818 to 872") — sectionPattern
+// exists so the model can name the cohort instead of guessing a range.
+const TWO_SECTION_DOC = `818 25400121 AKASH B
+4 R2023 B
+
+111 GOVERNMENT POLYTECHNIC COLLEGE, COIMBATORE 1040 ELECTRONICS AND COMMUNICATION ENGINEERING (FULL TIME) 10
+
+111 GOVERNMENT POLYTECHNIC COLLEGE, COIMBATORE 2040 ELECTRONICS AND COMMUNICATION ENGINEERING (SANDWICH) 24
+
+1133 24700311 ABINAV VISHAL R
+1 R2023 RA`;
+
+test('analyzeAttachment: sectionPattern scopes to a named cohort without the caller knowing its serial range', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: TWO_SECTION_DOC, method: 'text_layer' }));
+  const result = await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count', sectionPattern: 'sandwich',
+  }, IDENTITY);
+  assert.equal(result.status, 'ok');
+  assert.deepEqual(result.results.map((r) => r.serialNo), ['1133']);
+});
+
+test('analyzeAttachment: a sectionPattern matching no real section degrades to no_matching_records, never a hallucinated cohort', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: TWO_SECTION_DOC, method: 'text_layer' }));
+  const result = await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count', sectionPattern: 'no such cohort',
+  }, IDENTITY);
+  assert.deepEqual(result, { status: 'no_matching_records' });
+});
+
+test('analyzeAttachment: sectionPattern combines with serialRange as an AND, not an OR', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: TWO_SECTION_DOC, method: 'text_layer' }));
+  const result = await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID,
+    filter: { pattern: 'RA' },
+    operation: 'count',
+    sectionPattern: 'sandwich',
+    serialRange: { from: 1, to: 900 },
+  }, IDENTITY);
+  assert.deepEqual(result, { status: 'no_matching_records' });
+});
+
+test('analyzeAttachment: operation "breakdown" returns per-semester counts, not just a per-record total', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: '819 25400122 ANBARASAN V\nDoB: 24.04.2008 2 R2023 Absent\nRA RA\n3 R2023 RA\n4 R2023 RA B A+ A+ A O O',
+    method: 'text_layer',
+  }));
+  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'breakdown' }, IDENTITY);
+  assert.equal(result.status, 'ok');
+  assert.deepEqual(result.results, [{
+    key: '819:25400122',
+    serialNo: '819',
+    regNo: '25400122',
+    breakdown: [{ semester: 2, count: 2 }, { semester: 3, count: 1 }, { semester: 4, count: 1 }],
+    total: 4,
+  }]);
+});

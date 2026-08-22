@@ -1111,10 +1111,13 @@ registerTool({
   name: 'analyze_document_table',
   level: 'L1',
   dataClassification: 'Internal',
-  description: 'Deterministically counts pattern occurrences across the rows of an already-uploaded chat-attached '
-    + "tabular document (e.g. a result sheet, attendance roster, or fee list) — use this instead of counting "
-    + 'yourself whenever a question asks "how many"/"count"/consolidate across rows of an attached document. '
-    + 'Returns one count per row/record; the model never computes the count itself.',
+  description: 'Deterministically counts, sums, or breaks down pattern matches across the rows of an already-uploaded '
+    + "chat-attached tabular document (e.g. a result sheet, attendance roster, or fee list) — use this instead of "
+    + 'counting/summing yourself whenever a question asks "how many"/"count"/"total"/consolidate across rows of an '
+    + 'attached document. Set filter.mode to "include" to get back only the rows matching filter.pattern (e.g. only '
+    + 'ABSENT/RA rows) instead of every row annotated with a mostly-zero column. If you don\'t know the exact serial '
+    + 'range for a named cohort (e.g. "the Sandwich section"), use sectionPattern instead of guessing a range. The '
+    + 'model never computes the count/sum/breakdown/filter itself — this tool does.',
   allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
   params: {
     type: 'object',
@@ -1123,12 +1126,13 @@ registerTool({
       filter: {
         type: 'object',
         properties: {
-          pattern: { type: 'string', description: "A regular expression matched against each row's text — every match counts toward that row's result (e.g. \"RA|Absent RA\" for exam arrears)." },
+          pattern: { type: 'string', description: 'A regular expression matched against each row\'s text. For operation "count", every match counts toward that row\'s result (e.g. "RA|Absent RA" for exam arrears). For operation "sum", each match\'s first capturing group (or the whole match if it has none) is parsed as a number and totaled per row (e.g. "Total Arrears\\s*:?\\s*(\\d+)"). For operation "breakdown", every match within each semester\'s own span is counted separately (e.g. "RA" to get a per-semester arrear count).' },
+          mode: { type: 'string', enum: ['annotate', 'include'], description: '"annotate" (default) returns every row with its count/sum/breakdown. "include" returns only the rows where the pattern matched at least once — use this for a real filtered list, not just an annotated total.' },
         },
         required: ['pattern'],
         additionalProperties: false,
       },
-      operation: { type: 'string', enum: ['count'], description: "The aggregate operation — 'count' (occurrences of filter.pattern per row) is the only one implemented so far." },
+      operation: { type: 'string', enum: ['count', 'sum', 'breakdown'], description: "The aggregate operation — 'count' (occurrences of filter.pattern per row), 'sum' (total of the numbers filter.pattern captures/matches per row), or 'breakdown' (occurrences of filter.pattern per semester within each row, for a document that lists a semester number before each exam attempt)." },
       serialRange: {
         type: 'object',
         properties: {
@@ -1137,7 +1141,11 @@ registerTool({
         },
         required: ['from', 'to'],
         additionalProperties: false,
-        description: 'Optional — restricts analysis to a serial-number range (e.g. "serial 818 to 872").',
+        description: 'Optional — restricts analysis to a serial-number range (e.g. "serial 818 to 872"). Combine with sectionPattern, or use alone if you already know the exact range.',
+      },
+      sectionPattern: {
+        type: 'string',
+        description: 'Optional — a regular expression matched against the document\'s own course/section header text (e.g. "Sandwich" or "Full Time"), to scope analysis to a named cohort when you don\'t already know its serial-number range. Combine with serialRange to narrow further within that section.',
       },
     },
     required: ['attachmentId', 'filter', 'operation'],

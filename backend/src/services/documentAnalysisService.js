@@ -65,15 +65,44 @@ function filterBySerialRange(records, serialRange) {
   });
 }
 
-// attachmentId, filter ({ pattern }), operation, serialRange — see
-// aiToolRegistry's analyze_document_table entry for the param schema an
-// LLM actually sees (this function's own params mirror it 1:1, thin
-// wrapper per CLAUDE.md rule 1). groupBy is accepted but never exposed to
-// the LLM in this slice — documentAggregateService only supports the
-// default 'key' grouping (one group per extracted record) today, so
-// there is nothing yet for a caller to usefully choose.
+// sectionPattern: a plain regex the caller supplies to name a course/
+// section by its header text (e.g. "Sandwich") instead of a numeric
+// serial range it may not already know — see
+// documentTableExtractionService.detectSections' own comment for why
+// this exists (a real document was found to have a named section outside
+// any range the caller could have guessed). A record belongs to whichever
+// detected section most recently precedes it by line position; sections
+// is already sorted by startLine, so the loop below just needs the last
+// one at or before the record's own startLine. Never evaluated as code,
+// same discipline as documentAggregateService's filter.pattern.
+function filterBySection(records, sections, sectionPattern) {
+  if (!sectionPattern) return records;
+  let re;
+  try {
+    re = new RegExp(sectionPattern, 'i');
+  } catch {
+    throw new DocumentAnalysisValidationError(`sectionPattern is not a valid pattern: ${JSON.stringify(sectionPattern)}`);
+  }
+  const matchingStartLines = new Set(sections.filter((s) => re.test(s.courseName)).map((s) => s.startLine));
+  if (matchingStartLines.size === 0) return [];
+  return records.filter((record) => {
+    let active = null;
+    for (const section of sections) {
+      if (section.startLine <= record.startLine) active = section; else break;
+    }
+    return active !== null && matchingStartLines.has(active.startLine);
+  });
+}
+
+// attachmentId, filter ({ pattern, mode }), operation, serialRange,
+// sectionPattern — see aiToolRegistry's analyze_document_table entry for
+// the param schema an LLM actually sees (this function's own params
+// mirror it 1:1, thin wrapper per CLAUDE.md rule 1). groupBy is accepted
+// but never exposed to the LLM in this slice — documentAggregateService
+// only supports the default 'key' grouping (one group per extracted
+// record) today, so there is nothing yet for a caller to usefully choose.
 async function analyzeAttachment(client, {
-  attachmentId, groupBy, filter, operation, serialRange,
+  attachmentId, groupBy, filter, operation, serialRange, sectionPattern,
 } = {}, identityContext) {
   const downloaded = await loadOwnedAttachment(client, attachmentId, identityContext);
   const { document, buffer } = downloaded;
@@ -83,12 +112,13 @@ async function analyzeAttachment(client, {
     return { status: 'extraction_failed', reason: extraction.failureReason };
   }
 
-  const { strategy, records } = documentTableExtractionService.extractRecords(extraction.text);
+  const { strategy, records, sections } = documentTableExtractionService.extractRecords(extraction.text);
   if (strategy === 'none') {
     return { status: 'unrecognized_layout' };
   }
 
-  const scoped = filterBySerialRange(records, serialRange);
+  const bySerial = filterBySerialRange(records, serialRange);
+  const scoped = filterBySection(bySerial, sections, sectionPattern);
   if (scoped.length === 0) {
     return { status: 'no_matching_records' };
   }

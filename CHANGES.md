@@ -4,6 +4,54 @@
 
 ---
 
+## 2026-08-22 — Cross-turn artifact/attachment reference bug + AI document export formats
+
+Two live-reported bugs, traced and fixed in the same session, then a same-day amendment once the second fix's own output was compared side-by-side against Gemini given the identical prompt.
+
+### Bug 1 — a file's reference vanished across chat turns
+
+| File | Change |
+|---|---|
+| `backend/src/routes/ai.js` | `resolveAskContext`'s history builder now carries each message's `attachments` field through (previously stripped to `role`/`content` only) — the actual cause of "reread the document" always needing a fresh upload. |
+| `backend/src/services/aiService.js` | `buildHistoryHint` now renders a `[attached: filename (attachmentId: ...)]` note on any history turn that had one, telling the model the id is still valid and reusable (e.g. via `analyze_document_table`) without asking the user to re-upload. Exported for direct unit testing, matching `buildAttachmentHint`'s own precedent. |
+
+### Bug 2 — AI-generated reports were always markdown, never the requested format
+
+Confirmed via a live report: a user asked for a docx report, got `.md`, with no way to get docx/pdf/etc. `docx`/`pdfkit`/`exceljs` were already installed dependencies, unused for this path — a wiring gap, not a missing capability. Scoped via a full Product Reasoning pass (`bka/60-product-reasoning/ai-artifact-export-formats-approved-spec.md`).
+
+| File | Change |
+|---|---|
+| `backend/src/generators/markdownTableParser.js` | New — finds a GFM pipe-table in markdown, returns it as the same `ReportModel` shape (`{columns, rows}`) `csvGenerator.js`/`excelGenerator.js` already consume. |
+| `backend/src/generators/markdownDocxGenerator.js`, `markdownPdfGenerator.js` | New — markdown-aware Generator Modules (ADR-008) for free-text AI content, distinct from `wordGenerator.js`/`pdfGenerator.js` (those two are tabular-`ReportModel`-only, for Module 7's structured reports). |
+| `backend/src/generators/markdownFormatConverter.js` | New — the single dispatcher/format-vocabulary owner (`markdown`/`txt`/`docx`/`pdf`/`csv`/`xlsx`, later `pptx`); csv/xlsx reuse the existing tabular generators unmodified via the table parser, and throw a clear `MarkdownConversionError` when the content has no table (a resolved product decision — the user chose "table required" over "AI-force-restructure prose into rows"). |
+| `backend/src/services/artifactService.js` | `publishArtifact` gained an optional `format` param (default markdown — byte-identical for every existing caller). New `exportArtifactAs` — the separate, repeatable "give me this AS docx too" action for an artifact regardless of publish status, creating a new document each call without touching the original's `status`/`publishedDocumentId`. |
+| `backend/src/routes/artifacts.js` | `/publish` accepts `format`; new `POST /artifacts/:id/export` wraps `exportArtifactAs`. |
+| `backend/src/services/aiToolRegistry.js` | `generate_document` now creates a real `Artifact` first (`createArtifact`+`publishArtifact`) instead of calling `documentService.uploadPersonalDocument` directly — closes a pre-existing CLAUDE.md rule 2 gap (AI-generated structured content must be `ArtifactService`-owned) and is what makes a chat-generated report re-exportable later. `export_artifact` gained `format`. New `export_artifact_as` (chat-facing retroactive re-export) and `list_own_artifacts` (thin read-only wrap, lets the model resolve "that report from earlier" to a real id across turns). |
+| `backend/tests/artifact-service.test.js`, `ai-service.test.js` | New tests for format-aware `publishArtifact`, `exportArtifactAs` (published + draft + ownership), the `generate_document` plan-surfacing regression test updated to mock at the new `artifactService` boundary. |
+| `frontend/src/api/artifacts.js`, `store/WorkspaceProvider.jsx`, `routes/ArtifactEditor.jsx` | New `artifactsApi.export`; `publishArtifact`/`exportArtifactAs` workspace actions. "Export to Documents" is now a format-choice submenu (`DropdownMenu.Sub`, same pattern `ChatHeaderMenu`'s "Add to project" already uses); once published, the same control becomes "Download as ▾" for additional formats. |
+
+### Same-day amendment — PPT generation + visual polish
+
+A live side-by-side against a same-prompt Gemini-generated PDF/docx showed two real gaps beyond format-wiring: no PPT output at all, and the v1 generators (plain headings/paragraphs/grid table) reading as noticeably less finished than Gemini's colored banners/styled tables. Both confirmed by the user and folded into this round rather than a separate pass — neither changes the spec's architecture.
+
+| File | Change |
+|---|---|
+| `backend/package.json` | New dependency `pptxgenjs`. Flagged, accepted gap: its transitive `image-size` dependency carries an unfixed high-severity DoS advisory (upstream, no patched version yet) — this codebase never embeds an image via this generator, only text/tables, so the vulnerable parsing path is never exercised (same treatment `excelGenerator.js`'s own `uuid` advisory already established here). |
+| `backend/src/generators/markdownPptxGenerator.js` | New — one slide per H1/H2 section (an H3 becomes a bold bullet on its parent slide, not its own slide), paragraph lines become bullets, an embedded table renders as a real pptx table. A v1 mechanical prose→slide mapping, not a second AI call to re-summarize for presentation pacing. |
+| `backend/src/generators/documentTheme.js` | New — one shared color palette for docx/pdf/pptx, lifted from `frontend/src/index.css`'s own `--c-*` tokens (ARCNAVE's actual paper/teal-accent system), not a copy of Gemini's blue or an invented one. |
+| `backend/src/generators/markdownDocxGenerator.js`, `markdownPdfGenerator.js` | Rewritten with the shared theme: colored title banner, section accent bars (docx: left border; pdf: a small filled rect), styled table header row with alternating row tints, header/footer with page numbers. |
+| `backend/src/generators/markdownFormatConverter.js` | `pptx` added to the format vocabulary. |
+| `backend/src/services/aiToolRegistry.js` | `EXPORT_FORMAT_PARAM` enum gained `pptx`, with tool-description guidance for "make this a presentation" / "N slides on X" requests. |
+| `frontend/src/routes/ArtifactEditor.jsx` | PowerPoint added to the format-choice submenu. |
+| `backend/tests/markdown-format-converter.test.js` | New — 15 tests: table-parser edge cases (multiple tables, non-table pipe rows, endIndex correctness), all 7 formats produce real non-trivial output, csv/xlsx table extraction + no-table error, unsupported-format error. |
+| `docker-compose.yml` (no diff — operational note) | The anonymous `node_modules` volume (there to stop the dev bind-mount from shadowing the image's installed packages) doesn't auto-refresh on image rebuild; picking up the new `pptxgenjs` dependency required `docker compose up -d --force-recreate -V app`, not just `--build`. |
+
+### Verification
+
+Both the format-wiring fix and the amendment were verified **live in the running app**, not just unit tests: a real chat request ("microcontroller pathi oru 5 slide ppt generate pannu") produced a genuine 5-slide `.pptx` with a sensible outline; a follow-up ("idha docx ah kuda kudu") produced a second, polished `.docx` without touching the original `.pdf`/`.docx` — all downloads confirmed `200 OK` with distinct document ids via the browser's network inspector. New tests: 15/15 (`markdown-format-converter.test.js`) + updated `artifact-service.test.js`/`ai-service.test.js`. Full backend suite: **2033/2035 passing** (same 2 pre-existing, unrelated `fetch_trusted_web_page` failures — confirmed via `git stash` against the clean baseline, the same technique also confirmed the pre-existing 106-failure frontend baseline is unrelated to this round's frontend changes).
+
+---
+
 ## 2026-08-22 — Chat UX audit: 12 user-reported issues, root-caused and fixed across 4 batches
 
 Started from a screenshot of a live conversation derailing mid-topic (a document-analysis follow-up got answered with fabricated names/register numbers in the wrong language). Root-caused to three stacked bugs, then widened into a 12-item Tanglish UX list from the user; each item was researched (parallel background agents), reported back with root cause + recommendation, then implemented across 4 user-approved batches. Two items (real rewind, general AI memory) required a genuine product decision and were asked via `AskUserQuestion` before any code was written, since both meant reversing a previously deliberate design boundary (message immutability; AI memory's PII-scope limit).

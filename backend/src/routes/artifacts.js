@@ -125,11 +125,32 @@ function createArtifactsRouter() {
 
   router.post('/artifacts/:id/publish', requireAuth, asyncHandler(async (req, res) => {
     if (!requireResolvedTenant(req, res)) return;
+    const { format } = req.body || {};
     try {
       const artifact = await artifactService.publishArtifact(
-        req.dbClient, req.params.id, { userId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
+        req.dbClient, req.params.id,
+        { userId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId, format },
       );
       res.json(artifact);
+    } catch (err) {
+      if (mapArtifactServiceError(err, res)) return;
+      throw err;
+    }
+  }));
+
+  // The retroactive "give me this as docx too" action — mirrors
+  // /publish's shape (same response shape, a document reference) but
+  // never touches the artifact's own status/publishedDocumentId, and
+  // works on a draft artifact too. See artifactService.exportArtifactAs.
+  router.post('/artifacts/:id/export', requireAuth, asyncHandler(async (req, res) => {
+    if (!requireResolvedTenant(req, res)) return;
+    const { format } = req.body || {};
+    try {
+      const document = await artifactService.exportArtifactAs(
+        req.dbClient, req.params.id, format,
+        { userId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
+      );
+      res.status(201).json(document);
     } catch (err) {
       if (mapArtifactServiceError(err, res)) return;
       throw err;

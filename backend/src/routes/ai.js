@@ -437,7 +437,12 @@ function createAiRouter() {
     if (conversationId) {
       try {
         const messages = await conversationService.listMessages(req.dbClient, conversationId, { userId: identityContext.userId });
-        history = messages.slice(-HISTORY_LIMIT).map((m) => ({ role: m.role, content: m.content }));
+        // attachments rides along (not just role/content) so buildHistoryHint
+        // can remind the model a file from an earlier turn still has a live,
+        // reusable attachmentId — see that function's own comment for why
+        // dropping this here was the actual bug behind "asks to re-upload/
+        // re-state the file on the very next turn".
+        history = messages.slice(-HISTORY_LIMIT).map((m) => ({ role: m.role, content: m.content, attachments: m.attachments || undefined }));
       } catch {
         // graceful degrade — see comment above
       }

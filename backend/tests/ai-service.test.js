@@ -32,6 +32,7 @@ const financeService = require('../src/services/financeService');
 const academicService = require('../src/services/academicService');
 const collegeProfileService = require('../src/services/collegeProfileService');
 const documentService = require('../src/services/documentService');
+const artifactService = require('../src/services/artifactService');
 const documentTextExtractionService = require('../src/services/documentTextExtractionService');
 const documentAnalysisService = require('../src/services/documentAnalysisService');
 const configurationService = require('../src/services/configurationService');
@@ -1562,8 +1563,18 @@ test('aiService.executeWorkflowPlan: fail-transparent — one step failing does 
 // askAgent's single-tool path already renders never appeared here.
 test('aiService.executeWorkflowPlan: a generate_document step\'s real downloadable file is surfaced on the result, same as the single-tool path', async (t) => {
   t.mock.method(collegeProfileService, 'getProfile', async () => ({ name: 'Test College' }));
-  t.mock.method(documentService, 'uploadPersonalDocument', async () => ({
-    id: 'doc-1', file_name: 'Profile Summary.md', mime_type: 'text/markdown', title: 'Profile Summary',
+  // generate_document now creates a real Artifact first (createArtifact +
+  // publishArtifact), rather than calling documentService directly —
+  // mocked at that boundary, matching artifactService's own return shape
+  // (extractDocumentAttachment reads published_document_id/
+  // document_file_name/document_mime_type off exactly this).
+  t.mock.method(artifactService, 'createArtifact', async () => ({ id: 'a1' }));
+  t.mock.method(artifactService, 'publishArtifact', async () => ({
+    id: 'a1',
+    title: 'Profile Summary',
+    published_document_id: 'doc-1',
+    document_file_name: 'Profile Summary.md',
+    document_mime_type: 'text/markdown',
   }));
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
@@ -2737,6 +2748,36 @@ test('buildAttachmentHint: no providerName given (unknown/unconfigured) also fal
   const bigText = 'x'.repeat(500_000);
   const hint = aiService.buildAttachmentHint([{ fileName: 'a.pdf', mimeType: 'application/pdf', text: bigText }]);
   assert.ok(hint.includes('[truncated'));
+});
+
+// Bug fix, this round: a document uploaded on turn 1 became unreachable
+// on turn 2+ because history only ever replayed role/content, never the
+// attachmentId — the model had nothing to hand analyze_document_table on
+// a follow-up and had to ask the user to re-upload/restate instead.
+test('buildHistoryHint: a prior turn\'s attachment surfaces its filename and attachmentId so a later turn can reuse it', () => {
+  const history = [
+    {
+      role: 'user',
+      content: 'here is the roster',
+      attachments: [{ id: 'att-123', serverId: 'att-123', name: 'roster.pdf', type: 'application/pdf', size: 1000 }],
+    },
+    { role: 'assistant', content: 'Got it, what would you like to know?' },
+  ];
+  const hint = aiService.buildHistoryHint(history);
+  assert.ok(hint.includes('roster.pdf'));
+  assert.ok(hint.includes('attachmentId: att-123'));
+  assert.ok(hint.includes('analyze_document_table'));
+});
+
+test('buildHistoryHint: a turn with no attachments gets no "[attached: ...]" note', () => {
+  const history = [{ role: 'user', content: 'hello' }];
+  const hint = aiService.buildHistoryHint(history);
+  assert.ok(!hint.includes('[attached:'));
+});
+
+test('buildHistoryHint: empty/missing history -> empty string', () => {
+  assert.equal(aiService.buildHistoryHint([]), '');
+  assert.equal(aiService.buildHistoryHint(undefined), '');
 });
 
 test('buildMemoryHint: no identityContext -> empty string, no DB call', async () => {

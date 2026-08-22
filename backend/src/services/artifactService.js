@@ -21,6 +21,7 @@ const artifactRepository = require('../repositories/artifactRepository');
 const artifactVersionRepository = require('../repositories/artifactVersionRepository');
 const auditLogRepository = require('../repositories/auditLogRepository');
 const documentService = require('./documentService');
+const markdownFormatConverter = require('../generators/markdownFormatConverter');
 
 class ArtifactValidationError extends Error {}
 class ArtifactNotFoundError extends Error {}
@@ -168,17 +169,41 @@ async function deleteArtifact(client, id, { userId }) {
   });
 }
 
-async function publishArtifact(client, id, { userId, collegeId }) {
+// Converts an artifact's markdown `content` into the requested export
+// format, wrapping markdownFormatConverter's own error (e.g. "no table to
+// export as csv") into this file's existing ArtifactValidationError —
+// callers (routes/artifacts.js, aiToolRegistry.js) already know how to
+// map that one error class, no second mechanism needed.
+async function convertContent(title, content, format) {
+  try {
+    return await markdownFormatConverter.convert({ title, markdown: content }, format || 'markdown');
+  } catch (err) {
+    if (err instanceof markdownFormatConverter.MarkdownConversionError) {
+      throw new ArtifactValidationError(err.message);
+    }
+    throw err;
+  }
+}
+
+// `format` is optional (default 'markdown' — byte-identical to this
+// function's own pre-existing behavior for every caller that omits it).
+// Still terminal/one-shot per ADR-009 Amendment 1: this only changes
+// which byte format the one canonical published document lands in, never
+// the "publish once" rule itself — see exportArtifactAs below for the
+// separate, repeatable "give me this AS a different format too" action.
+async function publishArtifact(client, id, { userId, collegeId, format }) {
   const existing = await resolveOwnArtifact(client, id, userId);
   assertNotPublished(existing);
+
+  const { buffer, mimeType, extension } = await convertContent(existing.title, existing.content, format);
 
   const document = await documentService.uploadPersonalDocument(client, {
     collegeId,
     title: existing.title,
     folderName: 'AI Artifacts',
-    fileName: `${existing.title}.md`,
-    mimeType: 'text/markdown',
-    fileBuffer: Buffer.from(existing.content, 'utf8'),
+    fileName: `${existing.title}.${extension}`,
+    mimeType,
+    fileBuffer: buffer,
   }, { actorUserId: userId });
 
   const artifact = await artifactRepository.update(client, id, {
@@ -193,10 +218,50 @@ async function publishArtifact(client, id, { userId, collegeId }) {
     action: 'artifact_published',
     entity: 'artifact',
     entityId: id,
-    metadata: { documentId: document.id },
+    metadata: { documentId: document.id, format: format || 'markdown' },
   });
 
-  return artifact;
+  // document_file_name/document_mime_type are not real columns on the
+  // artifacts table — they ride along on this returned object only so
+  // aiService.js's extractDocumentAttachment (which builds the chat UI's
+  // downloadable-file card) never has to re-derive/guess the format this
+  // call actually used, now that format is caller-chosen rather than
+  // always markdown.
+  return { ...artifact, document_file_name: document.file_name, document_mime_type: document.mime_type };
+}
+
+// The retroactive "now give me this AS docx/pdf/..." action — unlike
+// publishArtifact above, this works on ANY owned artifact regardless of
+// publish status (draft or already-published), and never touches the
+// artifact's own status/publishedDocumentId: it always creates a NEW,
+// separate DocumentService document, exactly like asking Google Docs to
+// "download as" a second format leaves the original untouched. Audited
+// under a distinct action (artifact_exported, not artifact_published) so
+// the two are never conflated in the audit trail.
+async function exportArtifactAs(client, id, format, { userId, collegeId }) {
+  const existing = await resolveOwnArtifact(client, id, userId);
+
+  const { buffer, mimeType, extension } = await convertContent(existing.title, existing.content, format);
+
+  const document = await documentService.uploadPersonalDocument(client, {
+    collegeId,
+    title: existing.title,
+    folderName: 'AI Artifacts',
+    fileName: `${existing.title}.${extension}`,
+    mimeType,
+    fileBuffer: buffer,
+  }, { actorUserId: userId });
+
+  await auditLogRepository.createAuditLogEntry(client, {
+    collegeId,
+    userId,
+    action: 'artifact_exported',
+    entity: 'artifact',
+    entityId: id,
+    metadata: { documentId: document.id, format },
+  });
+
+  return document;
 }
 
 module.exports = {
@@ -211,4 +276,5 @@ module.exports = {
   updateArtifact,
   deleteArtifact,
   publishArtifact,
+  exportArtifactAs,
 };

@@ -124,10 +124,14 @@ per notable capability per page, not exhaustive to every checklist item.
 | Project detail | Staff | — | Memory (automatic AI memory extraction) | — | none | none | none | — | Not built | FUTURE | — | Own future Product Reasoning pass |
 | Artifacts | Staff | — | List/edit/publish/delete, save-as-artifact from AI response | Open `/artifacts` | `ArtifactsListPage` | `artifacts.js` | `artifacts`, `artifact_versions` | Owner-only | Built | CORE | — | — |
 | Artifacts | Staff | — | New-artifact dropdown → category picker → seeded conversation | Click "New artifact" | new UI | `conversations.js` (existing) | none new | Owner-only | Not built | CORE | List page | — |
+| Artifacts / AI chat | Staff | — | Export/publish an AI artifact or chat-generated report as docx/pdf/txt/csv/xlsx (not markdown-only) | Ask in chat, or pick format in Export control | `ArtifactEditor` export control (format choice) | `artifactService.publishArtifact`/`exportArtifactAs` (format param), `generate_document`/`export_artifact`/`export_artifact_as`/`list_own_artifacts` AI tools | none new | Owner-only | Not built | CORE | `ai-artifact-export-formats-approved-spec.md` | csv/xlsx behavior for prose content (resolved: only when a table exists) |
+| Artifacts / AI chat | Staff | — | AI image generation ("generate an image of X") | — | none | none | none | — | Not built | FUTURE | Own future Product Reasoning pass | Image-gen provider/cost decision deferred by user |
+| Artifacts / AI chat | Staff | — | AI presentation/slide (PPT) generation | Ask in chat (e.g. "N slide ppt on X") | none | `markdownPptxGenerator.js`, `pptx` format on `generate_document`/`export_artifact`/`export_artifact_as` | none new | Owner-only | Built | CORE | `ai-artifact-export-formats-approved-spec.md` amendment | Brought into scope same-day; `pptxgenjs` added as a dependency |
 
-No row above required a Product Refinement question — see the source doc's
-per-page "Product Refinement" sections for how each apparent conflict
-resolved automatically.
+No row above required a Product Refinement question, except the export-
+formats row (csv/xlsx-for-prose behavior, and the image/PPT phasing split)
+— see `ai-artifact-export-formats-approved-spec.md` and this workflow's
+own answered-question record for how those resolved.
 
 ---
 

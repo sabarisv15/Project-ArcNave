@@ -750,11 +750,14 @@ export function WorkspaceProvider({ children }) {
   // reached by a header action instead of asking in chat. Both existed only
   // as unused backend/API-layer code until now (artifactsApi.publish was
   // defined but never called from anywhere in this app).
+  //
+  // `format` is optional (defaults to markdown server-side) — the export
+  // format picker in ArtifactEditor's header menu passes one explicitly.
   const publishArtifact = useCallback(
-    async (id) => {
+    async (id, format) => {
       let row;
       try {
-        row = await artifactsApi.publish(id);
+        row = await artifactsApi.publish(id, format);
       } catch (err) {
         toast(err?.detail || 'Could not export this artifact — please try again.');
         return;
@@ -766,6 +769,21 @@ export function WorkspaceProvider({ children }) {
     },
     [qc]
   );
+
+  // The retroactive "give me this AS docx too" action — the deterministic
+  // counterpart to the export_artifact_as AI tool. Unlike publishArtifact
+  // above, this never touches the artifact's own status (it's not terminal
+  // — can be called any number of times, for any number of formats), so
+  // there is no query-cache update here beyond the confirmation toast.
+  const exportArtifactAs = useCallback(async (id, format) => {
+    try {
+      await artifactsApi.export(id, format);
+    } catch (err) {
+      toast(err?.detail || 'Could not export this artifact — please try again.');
+      return;
+    }
+    toast(`Saved as ${format.toUpperCase()} → Documents / AI Artifacts.`);
+  }, []);
 
   const addContextFile = useCallback(
     (file) => qc.setQueryData(queryKeys.contextFiles, (prev = []) => [...prev, file]),
@@ -796,7 +814,7 @@ export function WorkspaceProvider({ children }) {
       projConv, artConv,
       sendMessage, seedThread, editMessage,
       renameChat, deleteChat, addChatToProject,
-      createProject, deleteProject, togglePin, createArtifact, renameArtifact, publishArtifact,
+      createProject, deleteProject, togglePin, createArtifact, renameArtifact, publishArtifact, exportArtifactAs,
       addContextFile, removeContextFile,
     }),
     [
@@ -806,7 +824,7 @@ export function WorkspaceProvider({ children }) {
       recentQuery, recentFilter, projectQuery, projectSort, artifactQuery, artifactFilter,
       scheduleOpen, profileDrawerOpen, instructions, projConv, artConv,
       sendMessage, seedThread, editMessage, renameChat, deleteChat, addChatToProject,
-      createProject, deleteProject, togglePin, createArtifact, renameArtifact, publishArtifact,
+      createProject, deleteProject, togglePin, createArtifact, renameArtifact, publishArtifact, exportArtifactAs,
       addContextFile, removeContextFile,
     ]
   );

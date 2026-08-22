@@ -178,7 +178,41 @@ test('ArtifactService (no DB)', async (t) => {
     const result = await artifactService.publishArtifact({}, 'a1', { userId: 'u1', collegeId: 'c1' });
     assert.equal(result.status, 'published');
     assert.equal(auditMock.mock.calls[0].arguments[1].action, 'artifact_published');
-    assert.deepEqual(auditMock.mock.calls[0].arguments[1].metadata, { documentId: 'doc1' });
+    assert.deepEqual(auditMock.mock.calls[0].arguments[1].metadata, { documentId: 'doc1', format: 'markdown' });
+  });
+
+  await t.test('publishArtifact converts content to the requested format before uploading, and records it in the audit metadata', async () => {
+    const findMock = t.mock.method(artifactRepository, 'findById', async () => ({
+      id: 'a1', user_id: 'u1', college_id: 'c1', deleted_at: null, status: 'draft', title: 'Report', content: '# Report\n\nSome text.',
+    }));
+    const uploadMock = t.mock.method(documentService, 'uploadPersonalDocument', async (client, args) => {
+      assert.equal(args.fileName, 'Report.docx');
+      assert.equal(args.mimeType, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      assert.equal(Buffer.isBuffer(args.fileBuffer), true);
+      assert.ok(args.fileBuffer.length > 0);
+      return { id: 'doc2', file_name: args.fileName, mime_type: args.mimeType };
+    });
+    const updateMock = t.mock.method(artifactRepository, 'update', async (client, id, patch) => ({ id, ...patch }));
+    const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
+    t.after(() => {
+      findMock.mock.restore(); uploadMock.mock.restore(); updateMock.mock.restore(); auditMock.mock.restore();
+    });
+
+    const result = await artifactService.publishArtifact({}, 'a1', { userId: 'u1', collegeId: 'c1', format: 'docx' });
+    assert.equal(result.document_file_name, 'Report.docx');
+    assert.equal(auditMock.mock.calls[0].arguments[1].metadata.format, 'docx');
+  });
+
+  await t.test('publishArtifact rejects csv/xlsx when the content has no table, as ArtifactValidationError', async () => {
+    const findMock = t.mock.method(artifactRepository, 'findById', async () => ({
+      id: 'a1', user_id: 'u1', college_id: 'c1', deleted_at: null, status: 'draft', title: 'Report', content: 'Just prose, no table.',
+    }));
+    t.after(() => findMock.mock.restore());
+
+    await assert.rejects(
+      () => artifactService.publishArtifact({}, 'a1', { userId: 'u1', collegeId: 'c1', format: 'csv' }),
+      artifactService.ArtifactValidationError,
+    );
   });
 
   await t.test('publishArtifact rejects a second publish attempt', async () => {
@@ -188,6 +222,50 @@ test('ArtifactService (no DB)', async (t) => {
     await assert.rejects(
       () => artifactService.publishArtifact({}, 'a1', { userId: 'u1', collegeId: 'c1' }),
       artifactService.ArtifactAlreadyPublishedError,
+    );
+  });
+
+  await t.test('exportArtifactAs works on an ALREADY-published artifact — the retroactive "give me another format" case — without touching its status/publishedDocumentId', async () => {
+    const findMock = t.mock.method(artifactRepository, 'findById', async () => ({
+      id: 'a1', user_id: 'u1', college_id: 'c1', deleted_at: null, status: 'published',
+      title: 'Report', content: '# Report\n\nSome text.', published_document_id: 'doc-original',
+    }));
+    const uploadMock = t.mock.method(documentService, 'uploadPersonalDocument', async (client, args) => {
+      assert.equal(args.fileName, 'Report.pdf');
+      return { id: 'doc-new', file_name: args.fileName, mime_type: args.mimeType };
+    });
+    // Deliberately no artifactRepository.update mock — a real call would
+    // throw ("no such mock"), proving exportArtifactAs never touches the
+    // artifact row itself (unlike publishArtifact).
+    const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
+    t.after(() => { findMock.mock.restore(); uploadMock.mock.restore(); auditMock.mock.restore(); });
+
+    const result = await artifactService.exportArtifactAs({}, 'a1', 'pdf', { userId: 'u1', collegeId: 'c1' });
+    assert.equal(result.id, 'doc-new');
+    assert.equal(auditMock.mock.calls[0].arguments[1].action, 'artifact_exported');
+  });
+
+  await t.test('exportArtifactAs also works on a DRAFT (not yet published) artifact', async () => {
+    const findMock = t.mock.method(artifactRepository, 'findById', async () => ({
+      id: 'a1', user_id: 'u1', college_id: 'c1', deleted_at: null, status: 'draft', title: 'Draft', content: '# Draft\n\ntext',
+    }));
+    const uploadMock = t.mock.method(documentService, 'uploadPersonalDocument', async (client, args) => ({
+      id: 'doc-new', file_name: args.fileName, mime_type: args.mimeType,
+    }));
+    const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
+    t.after(() => { findMock.mock.restore(); uploadMock.mock.restore(); auditMock.mock.restore(); });
+
+    const result = await artifactService.exportArtifactAs({}, 'a1', 'txt', { userId: 'u1', collegeId: 'c1' });
+    assert.equal(result.id, 'doc-new');
+  });
+
+  await t.test('exportArtifactAs still enforces ownership — another user\'s artifact is rejected', async () => {
+    const findMock = t.mock.method(artifactRepository, 'findById', async () => ({ id: 'a1', user_id: 'OTHER', deleted_at: null }));
+    t.after(() => findMock.mock.restore());
+
+    await assert.rejects(
+      () => artifactService.exportArtifactAs({}, 'a1', 'pdf', { userId: 'u1', collegeId: 'c1' }),
+      artifactService.ArtifactForbiddenError,
     );
   });
 });

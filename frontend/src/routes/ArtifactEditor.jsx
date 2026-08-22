@@ -14,11 +14,24 @@ import { useWorkspace } from '../store/WorkspaceProvider';
 import { composerScope, useComposer } from '../store/ComposerProvider';
 import { artifactsApi } from '@/api/artifacts';
 import { ARTIFACT_CONTEXT } from '../lib/mockData';
+import { cn } from '../lib/utils';
 
 // Same class ProjectDetail.jsx's own extraSections items use — ChatHeader.jsx
 // doesn't export its MENU_ITEM constant, so each caller keeps its own copy.
 const MENU_ITEM =
   'flex items-center gap-[9px] h-[32px] px-[9px] rounded-[9px] font-sans text-[12.5px] text-ink cursor-pointer outline-none data-[highlighted]:bg-tint2 disabled:opacity-40 disabled:cursor-not-allowed';
+
+// markdownFormatConverter.js's own FORMATS vocabulary (backend), mirrored
+// here as display labels — six values, one shared enum end to end.
+const EXPORT_FORMATS = [
+  { value: 'markdown', label: 'Markdown (.md)' },
+  { value: 'docx', label: 'Word (.docx)' },
+  { value: 'pdf', label: 'PDF' },
+  { value: 'pptx', label: 'PowerPoint (.pptx)' },
+  { value: 'txt', label: 'Text (.txt)' },
+  { value: 'csv', label: 'CSV' },
+  { value: 'xlsx', label: 'Excel (.xlsx)' },
+];
 
 /** Must stay in step with `ArtifactContextPanel`'s own classes. */
 const hasColumn = (pinned) =>
@@ -41,8 +54,8 @@ const hasColumn = (pinned) =>
 export function ArtifactEditor() {
   const { artifactId } = useParams();
   const {
-    artifacts, threads, artConv, sendMessage, seedThread, renameArtifact, publishArtifact, deleteChat, editMessage,
-    sidebarMode,
+    artifacts, threads, artConv, sendMessage, seedThread, renameArtifact, publishArtifact, exportArtifactAs,
+    deleteChat, editMessage, sidebarMode,
   } = useWorkspace();
   const [contextOpen, setContextOpen] = useState(false);
   const [panelHidden, setPanelHidden] = useState(false);
@@ -149,19 +162,46 @@ export function ArtifactEditor() {
         onDelete={convId && (() => deleteChat(convId))}
         deleteLabel="Delete revision chat"
         extraSections={[
-          <DropdownMenu.Item
-            key="export"
-            disabled={artifact.status === 'published' || exporting}
-            onSelect={async () => {
-              setExporting(true);
-              await publishArtifact(artifact.id);
-              setExporting(false);
-            }}
-            className={MENU_ITEM}
-          >
-            <FileOutput size={14} strokeWidth={1.9} />
-            {artifact.status === 'published' ? 'Exported to Documents' : 'Export to Documents'}
-          </DropdownMenu.Item>,
+          // Draft: picking a format publishes it (terminal, one-shot —
+          // artifactService.publishArtifact). Already published: the same
+          // control becomes "Download as ▾", offering every OTHER format
+          // via the separate, repeatable exportArtifactAs action, which
+          // never touches the artifact's own status — same submenu shape
+          // as ChatHeaderMenu's own "Add to project" above.
+          <DropdownMenu.Sub key="export">
+            <DropdownMenu.SubTrigger
+              disabled={exporting}
+              className={cn(MENU_ITEM, 'justify-between data-[state=open]:bg-tint2')}
+            >
+              <span className="flex items-center gap-[9px]">
+                <FileOutput size={14} strokeWidth={1.9} />
+                {artifact.status === 'published' ? 'Download as' : 'Export to Documents'}
+              </span>
+            </DropdownMenu.SubTrigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.SubContent
+                sideOffset={4}
+                alignOffset={-4}
+                className="z-[60] w-[180px] p-[5px] bg-raised border border-line-strong rounded-[14px] shadow-pop data-[state=open]:animate-fadeUp motion-reduce:animate-none"
+              >
+                {EXPORT_FORMATS.map((f) => (
+                  <DropdownMenu.Item
+                    key={f.value}
+                    disabled={exporting}
+                    onSelect={async () => {
+                      setExporting(true);
+                      if (artifact.status === 'published') await exportArtifactAs(artifact.id, f.value);
+                      else await publishArtifact(artifact.id, f.value);
+                      setExporting(false);
+                    }}
+                    className={MENU_ITEM}
+                  >
+                    {f.label}
+                  </DropdownMenu.Item>
+                ))}
+              </DropdownMenu.SubContent>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Sub>,
         ]}
         sources={sources}
         sourcesPinned={pinned}

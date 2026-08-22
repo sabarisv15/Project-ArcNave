@@ -13,5 +13,9 @@ export const artifactsApi = {
     title, content, conversation_id: conversationId,
   }),
   remove: (id) => api.delete(`/artifacts/${id}`),
-  publish: (id) => api.post(`/artifacts/${id}/publish`),
+  publish: (id, format) => api.post(`/artifacts/${id}/publish`, { format }),
+  // Retroactive "give me this AS docx too" — never touches the artifact's
+  // own status, unlike publish (which is terminal, one-shot). Returns the
+  // new document, not the artifact.
+  export: (id, format) => api.post(`/artifacts/${id}/export`, { format }),
 };

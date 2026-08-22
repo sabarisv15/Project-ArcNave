@@ -2641,14 +2641,30 @@ registerTool({
   ),
 });
 
+// Shared by export_artifact/generate_document/export_artifact_as below —
+// one format vocabulary, matching markdownFormatConverter.FORMATS exactly
+// so a value that validates here is guaranteed to convert successfully
+// (modulo the csv/xlsx-needs-a-table content rule, which surfaces as its
+// own honest ArtifactValidationError, not a schema failure).
+const EXPORT_FORMAT_PARAM = {
+  type: 'string',
+  enum: ['markdown', 'docx', 'pdf', 'txt', 'csv', 'xlsx', 'pptx'],
+  description: 'Output file format. Defaults to markdown if omitted. csv/xlsx only work when the content actually '
+    + 'contains a table — if it does not, this fails with a clear message rather than producing an empty file; tell '
+    + 'the user plainly and suggest docx/pdf/txt/pptx instead of retrying the same format. pptx turns the content '
+    + 'into a real slide deck (one slide per major heading) — use it for requests like "make this a presentation" '
+    + 'or "N slides on X".',
+};
+
 registerTool({
   name: 'export_artifact',
   level: 'L1',
   dataClassification: 'Internal',
   description: "Publishes the artifact currently open in this workspace (see the \"Context:\" line naming its id) "
     + "into the acting user's own Documents, as a downloadable file — the actual answer to a request like \"export "
-    + 'this as a document/PDF/file\" or "save this." Produces a real document, not literally a PDF. Only works on '
-    + 'an artifact the acting user owns, and only once — an already-published artifact cannot be published again.',
+    + 'this as a document/PDF/Word/docx file\" or "save this." Pass `format` when the user names one (e.g. "as a '
+    + 'docx", "as PDF") — defaults to markdown otherwise. Only works on an artifact the acting user owns, and only '
+    + 'once — an already-published artifact cannot be published again; use export_artifact_as for a second format.',
   allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
   params: {
     type: 'object',
@@ -2656,12 +2672,70 @@ registerTool({
       artifact_id: {
         type: 'string', format: 'uuid', description: "The exact internal id of the artifact currently open, from this conversation's own \"Context:\" line — never guess or invent one.",
       },
+      format: EXPORT_FORMAT_PARAM,
     },
     required: ['artifact_id'],
     additionalProperties: false,
   },
   handler: (client, params, actor) => artifactService.publishArtifact(
-    client, params.artifact_id, { userId: actor.userId, collegeId: actor.collegeId },
+    client, params.artifact_id, { userId: actor.userId, collegeId: actor.collegeId, format: params.format },
+  ),
+});
+
+// The retroactive "now give me that AS docx too" tool — the live-caught
+// gap this round: a user who already got a report as markdown, then asked
+// for docx afterward, had no tool that could answer without re-publishing
+// (impossible — publish is terminal) or losing the artifact's identity.
+// Unlike export_artifact above, this does NOT require the artifact to be
+// the one currently open — artifact_id can come from list_own_artifacts
+// (below) when the model needs to resolve "that report from earlier" by
+// title/recency across turns.
+registerTool({
+  name: 'export_artifact_as',
+  level: 'L1',
+  dataClassification: 'Internal',
+  description: 'Creates a NEW downloadable document from an existing artifact in a different format than it was '
+    + 'already saved as — the answer to a follow-up like "now give me that as docx" or "I need it as PDF too," '
+    + 'asked after the artifact was already published (or even while still a draft). Works any number of times; '
+    + "each call adds a new document, never replaces or deletes what's already there. Requires the real "
+    + 'artifact_id — if it is not already known from this conversation\'s own "Context:" line, call '
+    + 'list_own_artifacts first to resolve it by title, never guess one.',
+  allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
+  params: {
+    type: 'object',
+    properties: {
+      artifact_id: {
+        type: 'string', format: 'uuid', description: 'The exact internal id of the artifact to export, from the "Context:" line or from list_own_artifacts — never guess or invent one.',
+      },
+      format: EXPORT_FORMAT_PARAM,
+    },
+    required: ['artifact_id', 'format'],
+    additionalProperties: false,
+  },
+  handler: (client, params, actor) => artifactService.exportArtifactAs(
+    client, params.artifact_id, params.format, { userId: actor.userId, collegeId: actor.collegeId },
+  ),
+});
+
+// A thin, read-only wrap of the existing ArtifactService.listOwnArtifacts
+// — no new business logic. Exists specifically so export_artifact_as
+// (above) can resolve an artifact created in an earlier turn (e.g. by
+// generate_document below) by title/recency, the same way the model would
+// look up any other entity it doesn't already have an id for — never a
+// reason to invent/guess an id.
+registerTool({
+  name: 'list_own_artifacts',
+  level: 'L1',
+  dataClassification: 'Internal',
+  description: "Lists the acting user's own AI artifacts (documents/reports the AI has created or saved for them), "
+    + 'most recent first, with each one\'s id/title/status — use this to resolve "that report from earlier" or '
+    + '"the ECE comparison" to a real artifact_id before calling export_artifact_as, never guess or invent one.',
+  allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
+  params: {
+    type: 'object', properties: {}, required: [], additionalProperties: false,
+  },
+  handler: (client, params, actor) => artifactService.listOwnArtifacts(
+    client, { userId: actor.userId, limit: 20 },
   ),
 });
 
@@ -2677,37 +2751,46 @@ registerTool({
 // artifact. This is that same mechanism, without requiring an artifact to
 // already exist — the actual answer whenever an ordinary chat gets asked to
 // save/export/download something as a document/PDF/Word file.
+//
+// Now creates a real Artifact first (createArtifact + publishArtifact),
+// instead of calling documentService.uploadPersonalDocument directly —
+// closes a pre-existing CLAUDE.md rule 2 gap (AI-generated structured
+// content must be ArtifactService-owned, not written to DocumentService
+// as a bare file) as a side effect, and is what makes a report created
+// this way re-exportable in another format later via export_artifact_as
+// (a bare, artifact-less document has no such path — list_own_artifacts
+// wouldn't even find it). Same external behavior otherwise: still lands
+// in the acting user's Documents, "AI Artifacts" folder.
 registerTool({
   name: 'generate_document',
   level: 'L1',
   dataClassification: 'Internal',
   description: 'Saves markdown content as a real, downloadable document in the acting user\'s own Documents — '
     + 'the actual mechanism behind a request like "give me this as a document/Word file/PDF/download" made in an '
-    + 'ordinary chat. Produces a real document, not literally a .docx or .pdf. Use what was already discussed in '
-    + "this conversation as the content when the user is asking to save something already written, rather than "
-    + 're-asking them to restate it.',
+    + 'ordinary chat. Pass `format` when the user names one (e.g. "as a docx report", "as a PDF") — defaults to '
+    + 'markdown otherwise. Use what was already discussed in this conversation as the content when the user is '
+    + 'asking to save something already written, rather than re-asking them to restate it.',
   allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
   params: {
     type: 'object',
     properties: {
       title: { type: 'string', description: 'A short, descriptive title for the document.' },
       content: { type: 'string', description: 'The full document content, in markdown.' },
+      format: EXPORT_FORMAT_PARAM,
     },
     required: ['title', 'content'],
     additionalProperties: false,
   },
-  handler: (client, params, actor) => documentService.uploadPersonalDocument(
-    client,
-    {
-      collegeId: actor.collegeId,
-      title: params.title,
-      folderName: 'AI Artifacts',
-      fileName: `${params.title}.md`,
-      mimeType: 'text/markdown',
-      fileBuffer: Buffer.from(params.content, 'utf8'),
-    },
-    { actorUserId: actor.userId },
-  ),
+  handler: async (client, params, actor) => {
+    const artifact = await artifactService.createArtifact(
+      client,
+      { title: params.title, content: params.content },
+      { userId: actor.userId, collegeId: actor.collegeId },
+    );
+    return artifactService.publishArtifact(
+      client, artifact.id, { userId: actor.userId, collegeId: actor.collegeId, format: params.format },
+    );
+  },
 });
 
 registerTool({

@@ -96,12 +96,38 @@ test('getAiConfig: an unrecognized DEFAULT_AI_PROVIDER (typo, or a provider with
   const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async () => null);
   t.after(() => findMock.mock.restore());
   const originalDefaultAiProvider = globalConfig.defaultAiProvider;
-  globalConfig.defaultAiProvider = 'claude'; // claude has no global env-backed block
+  // self_hosted has no global env-backed block (per-college-only by
+  // design — see GLOBAL_CONFIG_BUILDERS's own comment). claude gained one
+  // 2026-08-22 (Vertex AI, same ADC pattern as gemini) so it no longer
+  // fits this test's premise — see the dedicated claude test below.
+  globalConfig.defaultAiProvider = 'self_hosted';
   t.after(() => { globalConfig.defaultAiProvider = originalDefaultAiProvider; });
 
   const result = await configurationService.getAiConfig({}, 'college-with-no-row');
 
   assert.equal(result.provider, 'nim');
+});
+
+test('getAiConfig: DEFAULT_AI_PROVIDER=claude resolves via its own global Vertex AI block (projectId, not apiKey)', async (t) => {
+  const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async () => null);
+  t.after(() => findMock.mock.restore());
+  const originalDefaultAiProvider = globalConfig.defaultAiProvider;
+  const originalClaudeConfig = globalConfig.claude;
+  globalConfig.defaultAiProvider = 'claude';
+  globalConfig.claude = {
+    projectId: 'claude-real-project', location: null, model: 'claude-sonnet-5', fastModel: null,
+  };
+  t.after(() => {
+    globalConfig.defaultAiProvider = originalDefaultAiProvider;
+    globalConfig.claude = originalClaudeConfig;
+  });
+
+  const result = await configurationService.getAiConfig({}, 'college-with-no-row');
+
+  assert.equal(result.provider, 'claude');
+  assert.equal(result.adapter.name, 'claude');
+  assert.equal(result.config.projectId, 'claude-real-project');
+  assert.equal(result.config.model, 'claude-sonnet-5');
 });
 
 test('setAiConfig: rejects an unknown provider before any DB write', async (t) => {

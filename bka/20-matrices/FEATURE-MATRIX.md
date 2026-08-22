@@ -188,3 +188,24 @@ fixed), and the one answered `AskUserQuestion` (advisory vs. hard gate).
 | Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | Project Detail | Staff | — | Correct static "Chat · Act" + hardcoded model name | Passive (visual only) | `ProjectDetailPage.jsx` composer footer | none | none | — | Existing (incorrect per RS-AIG-008) | CORE (correction, composer-scoped only) | shared composer | — |
+
+## AI Assistant chat — Document evidence verification (Universal Document Intelligence, slice 1)
+
+Source: [`ai-chat-result-sheet-evidence.md`](../60-product-reasoning/ai-chat-result-sheet-evidence.md), analyzed 2026-08-22. Backend-only capability, no new page/screen. Target architecture: [ADR-029](../30-decisions/adr-register.md#adr-029).
+
+| Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| AI Assistant chat | Existing chat-attachment roles | — | Generic table/row extraction (structural CDR) + fixed aggregate ops (filter/group/count/sum) + evidence-backed answers | Upload a tabular document (any format), ask a count/sum/consolidation question | Existing composer/attachment UI (unchanged) | Two new Business Services (structural extraction, deterministic aggregate engine) + new L1 AI tool; extends `buildEvidence`/`verifyNumericClaims` (`aiService.js:868-912`) with a new evidence-entry shape | None (transient, per-request only) | Same as existing chat-attachment ownership chain (`resolveChatAttachments`) | Not built | CORE | `documentTextExtractionService.extractPlainText` (unchanged) | — |
+| AI Assistant chat | — | — | Semantic/entity-level CDR (per-college learned field mapping) | — | — | — | — | — | Not built | FUTURE | — | — |
+| AI Assistant chat | — | — | Private per-attachment search/retrieval index (RAG-style chunking) | — | — | — | — | — | Not built | FUTURE | — | — |
+| AI Assistant chat | — | — | Sandboxed/general-purpose code execution over document data | — | — | — | — | — | Barred | FUTURE — barred by RS-AIG-018/ADL-036/ADR-029, not deferred | — | — |
+| AI Assistant chat | — | — | Native PDF vision routing to Gemini (cost-aware) | — | — | — | — | — | Not built | RELATED / FUTURE | — | — |
+| AI Assistant chat | — | — | Aggregate-ops vocabulary beyond filter/group/count/sum (join/sort/validate) | — | — | — | — | — | Not built | FUTURE | — | — |
+
+No Product Refinement question was needed — Product Rules resolved every
+threshold-met item (RS-AIG-018/ADL-036/ADR-029 bars the sandbox tier
+outright; RS-AIG-002/RS-AIG-019/ADL-037 shape the tool/evidence-integration
+design; ADL-032 shapes any future cross-turn persistence). See the Approved
+Spec's own "Origin finding" section for the investigation this came from,
+and ADR-029 for the full target architecture this slice implements piece
+one of.

@@ -63,6 +63,7 @@ were corrected by that review: the LLM provider row
 | [ADR-026](#adr-026) | Document classification normalization | Accepted | [RS-ASM-008](../10-specification/RS-ASM-assessment-documents.md#rs-asm-008) |
 | [ADR-027](#adr-027) | Audit log as the student timeline read path | Accepted | [RS-DAT-006](../10-specification/RS-DAT-data-integrity.md#rs-dat-006) |
 | [ADR-028](#adr-028) | Production LLM provider | Accepted | [RS-AIG-008](../10-specification/RS-AIG-ai-governance.md#rs-aig-008) |
+| [ADR-029](#adr-029) | Universal Document Intelligence — structural CDR + deterministic analysis, no general execution | Accepted | [RS-AIG-002](../10-specification/RS-AIG-ai-governance.md#rs-aig-002), [RS-AIG-018](../10-specification/RS-AIG-ai-governance.md#rs-aig-018), [RS-AIG-019](../10-specification/RS-AIG-ai-governance.md#rs-aig-019) |
 
 ---
 
@@ -279,6 +280,69 @@ reconciles that reality; it does not change which provider a
 never-configured college gets. See
 [ADL-035 through ADL-040](ledger.md#adl-035) for the AI capability
 surface this session's work otherwise reconciled alongside this.
+
+### ADR-029
+**Universal Document Intelligence — target architecture, phased.** Every AI
+chat attachment (any format: PDF/DOCX/PPTX/XLSX/CSV/image) flows through one
+pipeline, not a per-format one-off: extraction/vision (existing, per
+mime-type) normalizes into a **structural-only** Common Document
+Representation — document/pages/sections/blocks/tables/rows/columns/cells/
+provenance, deliberately carrying **no semantic field labels** (no
+pre-learned "this column is a register number"). A Task/Intent Router then
+splits the user's question into either Deterministic Analysis (a fixed,
+enumerated Business Service — filter/group/count/sum/sort/join/validate —
+never AI-generated code) or Semantic Analysis (ordinary LLM reasoning:
+summarize/explain/classify/reason). Only the deterministic path's output is
+numeric-claim-checked, extending the existing `buildEvidence`/
+`verifyNumericClaims` mechanism ([RS-AIG-019](../10-specification/RS-AIG-ai-governance.md#rs-aig-019))
+to attachment-derived facts, not just tool-call results. Both paths converge
+on one LLM narration step before the final answer, so the pipeline never
+forks into two answer mechanisms a caller has to know about.
+
+**Why structural-only, not semantic CDR.** Field-level semantic mapping
+("Reg No" → `student.register_number`, learned per college) is not a
+learnable pattern from one observed document family — building it now would
+be either secretly hardcoded to the one format on hand, or non-functional
+scaffolding. Semantic mapping instead happens **per query**, as parameters
+the LLM supplies to the Deterministic Analysis tool call, never
+pre-computed and cached at extraction time. Revisit trigger: once real
+document-family variety (≥2-3 concrete formats beyond the first slice)
+exists to validate a mapping-learning design against.
+
+**Rejected: sandboxed/general-purpose code execution** (an LLM-authored
+Python/JS analysis step run against extracted data, the ChatGPT-Code-
+Interpreter/Claude-Analysis-tool pattern). Directly barred by
+[RS-AIG-018](../10-specification/RS-AIG-ai-governance.md#rs-aig-018)
+("the answer is a new deterministic tool — never a general-purpose
+execution capability") and [ADL-036](ledger.md#adl-036); would also need
+its own OS-level sandbox infrastructure (Node backend, no Python runtime
+today) this codebase doesn't have. Barred outright, not merely deferred —
+reconsidering it requires a new ADR explicitly superseding this one and
+RS-AIG-018 together, not a later phase of this one.
+
+**Rejected: building the full universal/multi-format layer immediately.**
+Only one concrete document family exists today (DTE examination
+result-sheets — see [ai-chat-result-sheet-evidence.md](../60-product-reasoning/ai-chat-result-sheet-evidence.md),
+the first implementation slice of this architecture). Generalizing a schema
+or an operation vocabulary from a single instance is unfalsifiable — there
+is no second data point to check the abstraction against — and historically
+gets reworked once a genuinely different format arrives anyway. This ADR
+fixes the **shape** (structural CDR, router, fixed-ops engine, verification)
+so slice 2 builds against an already-decided interface instead of
+reinventing it; it does not mandate building multi-format support ahead of
+a second real need.
+
+**Rejected: a private per-attachment search/retrieval index** (chunk +
+embed + semantic-search each chat attachment, mirroring `documentSearchService`'s
+existing RAG path for persistent institutional documents). Solves a
+context-window scale problem this use case doesn't have — a single chat
+attachment fits well within the existing `ATTACHMENT_TOTAL_CHAR_BUDGET`.
+Revisit only if attachment sizes routinely exceed that budget.
+
+**Origin:** a real-world discrepancy between two AI-narrated arrear counts
+over the same result-sheet PDF, traced to unverified LLM free-text counting,
+not to extraction quality (the actual production extraction, tested live
+against the running app, was already correct).
 
 ---
 

@@ -5,3 +5,4 @@ dist/
 *.log
 backend/storage/
 backend/storage-backups/
+backend/.gcp/

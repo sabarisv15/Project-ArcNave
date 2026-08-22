@@ -4,6 +4,45 @@
 
 ---
 
+## 2026-08-22 — ADR-029 Universal Document Intelligence (slice 1), Gemini/Claude-on-Vertex provider wiring
+
+Investigation of an AI chat consolidation answer over an uploaded DTE examination result-sheet PDF that disagreed with a direct Gemini-app upload's own answer for the same PDF. Root cause, verified live against the running app: extraction was correct (`documentTextExtractionService`'s real production output matched hand-verified ground truth exactly); the actual gap was that document-attachment answers never got the same "numeric claim checked against ground truth" discipline tool-call answers already have via `buildEvidence`/`verifyNumericClaims`. Ran a full Product Reasoning pass and a new ADR (**ADR-029**) to fix this properly rather than patch the one document family: a structural-only Common Document Representation (no per-college semantic field learning — resolved per-query instead) → Task/Intent Router → Deterministic Analysis (a fixed, enumerated operation vocabulary, explicitly never AI-generated code — barred outright by the already-baselined RS-AIG-018/ADL-036, not just deferred) → Verification, converging on one LLM narration step.
+
+**New Business Services (`documentTableExtractionService.js`, `documentAggregateService.js`, `documentAnalysisService.js`)** — format-agnostic table/row extraction (delimited-source splitting for XLSX/ODS; a sequential-serial-id detector for free PDF/DOCX text, with page-break-continuation record merging, verified against a real 16-page, 2-course-section, ~95-student result sheet) feeding a closed `count`/`sum` aggregate engine. A real bug caught by testing, not inspection: `filter.pattern: 'RA'` without word-boundary wrapping matched as a plain substring inside an ordinary student name ("ANBARASAN" contains "RA") — fixed with automatic `\b...\b` wrapping. New AI tool `analyze_document_table` (L1, `aiToolRegistry.js`) — the LLM supplies per-question column/pattern mapping as parameters, never performs the count itself.
+
+**Evidence/verification extended to attachment-derived facts** — `aiService.js`'s `buildEvidence` now recognizes a tool result's array nested under a conventional envelope key (`results`/`records`/`items`/`data`), not just a bare top-level array, and collects every numeric field value from array rows (`fieldValues`), not just row count — `verifyNumericClaims` now catches "right number of rows, wrong count on one of them," the actual bug class this ADR exists to fix (a live-caught real discrepancy: a model narrating 12 arrears for one student when the deterministic tool computed 13).
+
+**A real, previously-flagged gap closed**: `ATTACHMENT_TOTAL_CHAR_BUDGET` was sized for Gemini's 1M-token window regardless of which provider was actually configured — this repo's own seeded `demo` college (no `college_ai_config` row) silently fell back to NIM/Llama-3.1-8B (128K tokens), and a real request with the ~278K-char PDF 400'd with "maximum context length is 131072 tokens." `allocateAttachmentBudget`/`buildAttachmentHint` now take an optional `providerName` and a `DEFAULT_ATTACHMENT_TOTAL_CHAR_BUDGET` (200K, safe for every provider) applies automatically; a caller that already knows its adapter can still request the larger Gemini-specific one.
+
+**A second real live-caught bug**: the tool never surfaced the real chat-attachment id anywhere in the prompt, so the model reliably fabricated a placeholder string ("the chat attachment id of the uploaded file") as the literal param value — this then hit a raw Postgres "invalid input syntax for type uuid" that poisoned the rest of that request's transaction. Fixed two ways: `buildAttachmentHint` now includes each attachment's real `attachmentId` in its own bracket plus an explicit instruction to reuse it verbatim, and `documentAnalysisService.loadOwnedAttachment` validates UUID shape before ever reaching the DB, degrading to a clean `DocumentAnalysisValidationError` instead of a transaction-poisoning raw driver error.
+
+**End-to-end live verification**: uploaded the real PDF through the actual running app (not mocks), asked the same consolidation question, got back all 55 rows matching this session's independently hand-verified ground truth exactly, with `verification: PASS`.
+
+**Gemini wired as this dev sandbox's working default** — `DEFAULT_AI_PROVIDER=gemini` (already-supported per ADR-028 Amendment 1, no code change), with the host's own `gcloud auth application-default login` ADC mounted read-only into the app container (`docker-compose.yml`, `.env` — `GEMINI_ADC_PATH`/`GEMINI_PROJECT_ID`, dev-machine-specific, not present in a real deployment image).
+
+**Claude Sonnet 5 on Vertex AI added as a second, independently-selectable global-default provider** — `claude.js` now supports two transports (direct Anthropic API via `apiKey`, or Vertex via `projectId`/ADC — the same server-level-credential pattern `gemini.js` already uses), auto-selected by which credential shape `cfg` carries. Request/response shape (`.../publishers/anthropic/models/{model}:rawPredict`, `anthropic_version` as a body field, model in the URL never the body, `global` location's plain host) live-verified twice against a real project — a `429 RESOURCE_EXHAUSTED` naming the real base model confirms correct routing; this project's own Vertex quota for Claude is 0 pending a Google-reviewed increase, not a shape/auth problem. `DEFAULT_AI_PROVIDER` stays `gemini` (already proven working); Claude is wired and ready the moment quota is granted.
+
+Full backend suite: **1969/1971 passing** (2 pre-existing, unrelated `class_tutor`/`fetch_trusted_web_page` failures — confirmed present before this session's changes via `git stash`).
+
+| Area | Change |
+|---|---|
+| `bka/30-decisions/adr-register.md` | New **ADR-029** — Universal Document Intelligence target architecture, with each rejected alternative (general code execution, immediate full multi-format build, semantic learned mapping, private RAG index) recorded with its own revisit trigger. |
+| `bka/60-product-reasoning/ai-chat-result-sheet-evidence.md` (new) | Approved Spec, slice 1 of ADR-029. |
+| `bka/20-matrices/FEATURE-MATRIX.md` | New row set cross-linked to ADR-029. |
+| `backend/src/services/documentTableExtractionService.js` (new) | Structural CDR — delimited + sequential-id detectors, page-break merge. |
+| `backend/src/services/documentAggregateService.js` (new) | Fixed `count`/`sum` ops, word-boundary-safe pattern matching. |
+| `backend/src/services/documentAnalysisService.js` (new) | Orchestrating Business Service; ownership check; UUID validation. |
+| `backend/src/services/aiToolRegistry.js` | New `analyze_document_table` tool (L1). |
+| `backend/src/services/aiService.js` | `buildEvidence`/`verifyNumericClaims` recognize enveloped arrays + per-row `fieldValues`; `buildAttachmentHint`/`allocateAttachmentBudget` provider-aware budget; attachment hint surfaces real `attachmentId`. |
+| `backend/src/services/aiProviders/claude.js` | Vertex AI transport added alongside the existing direct API. |
+| `backend/src/services/aiProviders/gemini.js`, `backend/src/services/documentTextExtractionService.js` | Carried-forward round-in-progress fixes from before this session (`MAX_OUTPUT_TOKENS`, `ATTACHMENT_TOTAL_CHAR_BUDGET`/`MAX_RAW_EXTRACTED_CHARS` sizing, PDF `pages` field). |
+| `backend/src/config.js`, `backend/src/services/configurationService.js` | New global `claude` config block + `globalClaudeConfig`/`GLOBAL_CONFIG_BUILDERS` entry. |
+| `docker-compose.yml`, `.env` | `DEFAULT_AI_PROVIDER`, `GEMINI_PROJECT_ID`, `CLAUDE_PROJECT_ID`, ADC volume mount (dev-sandbox only). |
+| `backend/tests/document-table-extraction-service.test.js`, `document-aggregate-service.test.js`, `document-analysis-service.test.js` (new) | 22 tests, fixtures drawn from this session's verified ground truth. |
+| `backend/tests/ai-service.test.js` | Evidence/verification extension tests; provider-aware budget tests. |
+| `backend/tests/ai-providers.test.js` | Claude-on-Vertex request-shape tests. |
+| `backend/tests/configuration-service.test.js` | Fixed a test whose "provider with no global block" example (`claude`) stopped being true; added a Claude-Vertex resolution test. |
+
 ## 2026-08-21 — Composer document attachments, downloadable sent files, streaming typewriter/caret, and real-time step trace
 
 The user's own direct feedback after round 25's `/ai-memory` verification: the composer could still only attach images (round 24's own P2, still not wired), sent PDFs/spreadsheets had no way to be downloaded back out of the transcript, a streaming reply "pasted" into view instead of animating, and the "Thinking…" label never changed to say what ArcNave was actually doing — unlike Claude Code's own status line, which names the real step ("ran a command," "reading repo"). All four are wiring/UX passes over already-existing backend capability (the P0 attachment pipeline, P0.5 streaming, P0.3 workflow-plan execution) except the last, which required one small, additive backend change (a new `step` SSE event).

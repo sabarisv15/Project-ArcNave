@@ -36,8 +36,10 @@ class DocumentTextExtractionUnsupportedTypeError extends Error {}
 // ATTACHMENT_TOTAL_CHAR_BUDGET, applied after every attachment in a turn has
 // been extracted (this function can't know the eventual per-file share on its
 // own). This just stops one pathological single file from holding an
-// unbounded string in memory before that budget is ever applied.
-const MAX_RAW_EXTRACTED_CHARS = 100_000;
+// unbounded string in memory before that budget is ever applied. Sized for
+// Gemini's 1M-token context window (~4 chars/token) — see
+// ATTACHMENT_TOTAL_CHAR_BUDGET's comment for the full per-provider caveat.
+const MAX_RAW_EXTRACTED_CHARS = 1_000_000;
 
 // PDF text-first heuristic thresholds — conservative starting points, not
 // exact science: a genuinely scanned/image-only PDF's embedded text layer is
@@ -90,7 +92,10 @@ async function extractPdfText(buffer, { lang } = {}) {
   const numPages = result.total || Math.max((result.pages || []).length, 1);
   const avgCharsPerPage = text.length / Math.max(numPages, 1);
   if (text.length >= MIN_TEXT_LAYER_CHARS && avgCharsPerPage >= MIN_AVG_CHARS_PER_PAGE) {
-    return { text: truncateToMax(text), method: 'text_layer' };
+    // pages: exposed so a caller (aiService's native-vs-text cost
+    // decision) can estimate Gemini's native PDF-vision token cost
+    // (~flat per page) without re-parsing the PDF itself.
+    return { text: truncateToMax(text), method: 'text_layer', pages: numPages };
   }
 
   // Empty/near-empty embedded text -> treat as scanned/image-only and fall

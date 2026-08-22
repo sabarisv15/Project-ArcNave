@@ -43,11 +43,14 @@ const DEFAULT_LOCATION = 'global';
 // "sane default, never a hard requirement" treatment MAX_OUTPUT_TOKENS
 // already gets below.
 const DEFAULT_MODEL = 'gemini-3.7-flash';
-// Matches claude.js's own MAX_TOKENS — this adapter previously sent no
-// generationConfig at all, so output length was fully unbounded (relying
-// entirely on Gemini's own server-side default) with no cost ceiling
-// this codebase controlled.
-const MAX_OUTPUT_TOKENS = 1024;
+// Gemini 3.7 Flash's own hard ceiling (Vertex rejects anything higher with
+// a 400) — raised here from the previous 1024 because large consolidated
+// reports (e.g. a multi-hundred-row arrear list spanning several serial
+// number ranges) were hitting that cap mid-table and returning truncated
+// output with no error. LOW thinkingConfig below keeps this from also
+// inflating cost/latency on ordinary short replies, since thinking tokens
+// are drawn from this same budget.
+const MAX_OUTPUT_TOKENS = 65_536;
 const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 
 // Gemini 3.x's hybrid reasoning defaults to a HIGH thinking level for

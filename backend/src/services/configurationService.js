@@ -127,13 +127,31 @@ function globalGeminiConfig() {
   };
 }
 
+// Claude on Vertex AI — same "server-level ADC credential, not a
+// per-college secret" reasoning as globalGeminiConfig above. A college
+// row with provider='claude' still works via the per-college apiKey path
+// (direct Anthropic API, claude.js's other transport) — this global
+// block is additive, the Vertex path only, selectable deployment-wide via
+// DEFAULT_AI_PROVIDER=claude, not per college.
+function globalClaudeConfig() {
+  return {
+    projectId: globalConfig.claude.projectId,
+    location: globalConfig.claude.location,
+    model: globalConfig.claude.model,
+    fastModel: globalConfig.claude.fastModel,
+  };
+}
+
 // Only providers with a real env-backed global block (config.js) can
-// be a global default — claude/self_hosted/openai are per-college-only
-// by design (no global fallback makes sense for a self-hosted baseUrl
-// or a provider this codebase never shipped a global block for).
+// be a global default — self_hosted/openai are per-college-only by
+// design (no global fallback makes sense for a self-hosted baseUrl or a
+// provider this codebase never shipped a global block for). claude does
+// have one now (Vertex mode), alongside its existing per-college apiKey
+// path further down.
 const GLOBAL_CONFIG_BUILDERS = {
   nim: globalNimConfig,
   gemini: globalGeminiConfig,
+  claude: globalClaudeConfig,
 };
 
 // An unrecognized config.defaultAiProvider (typo, or a provider with

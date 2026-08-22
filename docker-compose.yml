@@ -76,6 +76,29 @@ services:
       # A different model from NIM_MODEL above (embeddings, not chat
       # completion); defaults to a model purpose-built for retrieval.
       NIM_EMBEDDING_MODEL: ${NIM_EMBEDDING_MODEL:-nvidia/nv-embedqa-e5-v5}
+      # Local dev override (2026-08-22): NIM/Llama-3.1-8B's tool-calling
+      # got unreliable over a large document attachment (echoed its own
+      # tool schema back instead of calling it — see ADR-029's origin
+      # finding). Defaulting this deployment to Gemini instead of NIM,
+      # per ADR-028 Amendment 1's already-supported "whole deployment
+      # defaults off NIM without a DB write" mechanism — not a code
+      # change, just this env var. Real production credentialing is a
+      # separate decision; this is this dev sandbox's own override.
+      DEFAULT_AI_PROVIDER: ${DEFAULT_AI_PROVIDER:-gemini}
+      GEMINI_PROJECT_ID: ${GEMINI_PROJECT_ID:-}
+      GEMINI_LOCATION: ${GEMINI_LOCATION:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+      # Claude on Vertex AI (2026-08-22) — same GCP project/ADC as Gemini
+      # above, a second independently-selectable global-default provider
+      # (claude.js's own comment on the Vertex-vs-direct-API branch).
+      CLAUDE_PROJECT_ID: ${CLAUDE_PROJECT_ID:-}
+      CLAUDE_LOCATION: ${CLAUDE_LOCATION:-}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-}
+      # ADC, never a static API key (gemini.js's own comment) — mounted
+      # read-only from the host's own `gcloud auth application-default
+      # login` output below. Shared by both Gemini and Claude-on-Vertex —
+      # same GCP project, same credential, no reason for two mounts.
+      GOOGLE_APPLICATION_CREDENTIALS: /app/.gcp/adc.json
       # DocumentService's local-disk root (ADR-017), stated explicitly
       # rather than left to config.js's default so this file and
       # config.js's own comment agree on exactly where uploaded files
@@ -89,6 +112,13 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      # Local dev only — the host's own `gcloud auth application-default
+      # login` ADC file, read-only, mounted at the path
+      # GOOGLE_APPLICATION_CREDENTIALS above points to. Never present in
+      # a real deployment image; this is this docker-compose.yml's own
+      # dev-sandbox convenience, not something config.js or gemini.js
+      # depends on existing.
+      - ${GEMINI_ADC_PATH}:/app/.gcp/adc.json:ro
       # Anonymous volume over node_modules: the bind mount above would
       # otherwise shadow the node_modules installed into the image
       # during `npm install` (the host's backend/ has none), since bind

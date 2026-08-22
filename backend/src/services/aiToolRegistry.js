@@ -1092,6 +1092,60 @@ registerTool({
   handler: (client, params) => documentService.getDocumentLineage(client, params.document_id),
 });
 
+// --- ADR-029 — Universal Document Intelligence, slice 1 ----------------
+// analyze_document_table: L1/Inform — read-only computation over an
+// already-uploaded, already-authorized chat attachment (ownership is
+// re-checked inside documentAnalysisService itself, the same chain
+// aiService.resolveChatAttachments already enforces). RS-AIG-018's
+// "never a general-purpose execution capability" is satisfied by
+// construction: operation is a closed enum (documentAggregateService.
+// OPERATIONS), filter.pattern is a plain RegExp string, never executed as
+// code. The LLM's job is to supply the per-question mapping (which
+// pattern counts as "arrear," which serial range to scope to) as these
+// plain params — it never performs the count itself, which is the actual
+// fix for the miscounting this tool exists to prevent (see
+// bka/60-product-reasoning/ai-chat-result-sheet-evidence.md).
+const documentAnalysisService = require('./documentAnalysisService');
+
+registerTool({
+  name: 'analyze_document_table',
+  level: 'L1',
+  dataClassification: 'Internal',
+  description: 'Deterministically counts pattern occurrences across the rows of an already-uploaded chat-attached '
+    + "tabular document (e.g. a result sheet, attendance roster, or fee list) — use this instead of counting "
+    + 'yourself whenever a question asks "how many"/"count"/consolidate across rows of an attached document. '
+    + 'Returns one count per row/record; the model never computes the count itself.',
+  allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
+  params: {
+    type: 'object',
+    properties: {
+      attachmentId: { type: 'string', description: 'The chat attachment id (from this turn\'s uploaded file) to analyze.' },
+      filter: {
+        type: 'object',
+        properties: {
+          pattern: { type: 'string', description: "A regular expression matched against each row's text — every match counts toward that row's result (e.g. \"RA|Absent RA\" for exam arrears)." },
+        },
+        required: ['pattern'],
+        additionalProperties: false,
+      },
+      operation: { type: 'string', enum: ['count'], description: "The aggregate operation — 'count' (occurrences of filter.pattern per row) is the only one implemented so far." },
+      serialRange: {
+        type: 'object',
+        properties: {
+          from: { type: 'number', description: 'Lowest serial/row number to include (inclusive).' },
+          to: { type: 'number', description: 'Highest serial/row number to include (inclusive).' },
+        },
+        required: ['from', 'to'],
+        additionalProperties: false,
+        description: 'Optional — restricts analysis to a serial-number range (e.g. "serial 818 to 872").',
+      },
+    },
+    required: ['attachmentId', 'filter', 'operation'],
+    additionalProperties: false,
+  },
+  handler: (client, params, actor) => documentAnalysisService.analyzeAttachment(client, params, actor),
+});
+
 // --- Real tool #5 — AI attendance assistant ----------------------------
 // mark_attendance_nl: BusinessRules.md AI Attendance Management. AI-
 // Governance.md §1 lists "modify attendance" as its own L3 example

@@ -106,6 +106,99 @@ test('claude adapter.completeWithTools: a cache_control breakpoint is set on the
   assert.deepEqual(capturedBody.tools[1].cache_control, { type: 'ephemeral' });
 });
 
+// Claude-on-Vertex (added 2026-08-22) — the request-shape contract
+// live-verified against a real project (project-8bcf740a-a7bd-4aea-974,
+// claude-sonnet-5: a 429 RESOURCE_EXHAUSTED naming the real base model
+// confirms correct routing; this project's Vertex quota for Claude is 0
+// pending a Google-reviewed increase, not a shape/auth problem).
+
+test('claude adapter: isConfigured is true with projectId alone, no apiKey needed (Vertex mode)', () => {
+  const claude = aiProviders.getAdapter('claude');
+  assert.equal(claude.isConfigured({ projectId: 'p' }), true);
+  assert.equal(claude.isConfigured({ apiKey: 'k' }), true);
+  assert.equal(claude.isConfigured({}), false);
+});
+
+test('claude adapter (Vertex mode): posts to the real aiplatform.googleapis.com publisher-model URL, Bearer-authed, model in the URL not the body', async () => {
+  const claude = aiProviders.getAdapter('claude');
+  const originalFetch = global.fetch;
+  let capturedUrl;
+  let capturedHeaders;
+  let capturedBody;
+  global.fetch = async (url, options) => {
+    capturedUrl = url;
+    capturedHeaders = options.headers;
+    capturedBody = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) };
+  };
+  try {
+    await claude.completeWithMeta(
+      { projectId: 'project-8bcf740a-a7bd-4aea-974', accessToken: 't', model: 'claude-sonnet-5' },
+      { systemPrompt: 's', userPrompt: 'u' },
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+
+  assert.equal(
+    capturedUrl,
+    'https://aiplatform.googleapis.com/v1/projects/project-8bcf740a-a7bd-4aea-974/locations/global/publishers/anthropic/models/claude-sonnet-5:rawPredict',
+  );
+  assert.equal(capturedHeaders.authorization, 'Bearer t');
+  assert.equal(capturedHeaders['x-api-key'], undefined, 'Vertex mode must never send the direct-API key header');
+  assert.equal(capturedBody.model, undefined, 'model is in the URL on Vertex, never the body');
+  assert.equal(capturedBody.anthropic_version, 'vertex-2023-10-16');
+});
+
+test('claude adapter (Vertex mode): streaming uses :streamRawPredict and never sends a body-level stream flag', async () => {
+  const claude = aiProviders.getAdapter('claude');
+  const originalFetch = global.fetch;
+  let capturedUrl;
+  let capturedBody;
+  // eslint-disable-next-line require-yield -- an intentionally empty SSE
+  // body: iterateSseLines only needs response.body to be async-iterable
+  // (a real `for await` target, per sse.js's own comment), not a
+  // Streams-API reader.
+  async function* emptyBody() {}
+  global.fetch = async (url, options) => {
+    capturedUrl = url;
+    capturedBody = JSON.parse(options.body);
+    return { ok: true, body: emptyBody() };
+  };
+  try {
+    await claude.completeStream(
+      { projectId: 'p', accessToken: 't', model: 'claude-sonnet-5' },
+      { systemPrompt: 's', userPrompt: 'u' },
+      () => {},
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+
+  assert.match(capturedUrl, /:streamRawPredict$/);
+  assert.equal(capturedBody.stream, undefined, 'Vertex has no body-level stream flag — the URL verb selects it');
+});
+
+test('claude adapter: projectId wins over apiKey when both are present (Vertex is configurationService\'s only mechanism for this provider today)', async () => {
+  const claude = aiProviders.getAdapter('claude');
+  const originalFetch = global.fetch;
+  let capturedHeaders;
+  global.fetch = async (url, options) => {
+    capturedHeaders = options.headers;
+    return { ok: true, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) };
+  };
+  try {
+    await claude.completeWithMeta(
+      { projectId: 'p', accessToken: 't', apiKey: 'should-be-ignored', model: 'claude-sonnet-5' },
+      { systemPrompt: 's', userPrompt: 'u' },
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+  assert.equal(capturedHeaders.authorization, 'Bearer t');
+  assert.equal(capturedHeaders['x-api-key'], undefined);
+});
+
 test('nim/gemini/selfHosted/openai adapters: complete()/embed() throw LlmNotConfiguredError when unconfigured, no fetch attempted', async () => {
   const originalFetch = global.fetch;
   let fetchCalled = false;
@@ -315,7 +408,7 @@ test('every provider adapter sends an explicit output-token bound on the wire (r
     { projectId: 'p', accessToken: 't', model: 'gemini-x' },
     { systemPrompt: 's', userPrompt: 'u' },
   ).catch(() => {}));
-  assert.equal(geminiBody.generationConfig.maxOutputTokens, 1024);
+  assert.equal(geminiBody.generationConfig.maxOutputTokens, 65_536);
 
   const selfHostedBody = await capturedRequestBody(() => aiProviders.getAdapter('self_hosted').completeWithMeta(
     { baseUrl: 'http://localhost:1', model: 'sh-x' },

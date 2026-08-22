@@ -1,19 +1,39 @@
 'use strict';
 
-// Anthropic Claude adapter (Messages API). Real request/response
-// shapes per Anthropic's documented REST API — NOT live-verified
-// against a real Claude API key (none exists in this environment); the
-// shape is real, not fabricated, but unlike nim.js this hasn't been
-// exercised against a live endpoint.
+// Anthropic Claude adapter — two real, independently-verified transports
+// behind one module, selected by which credential shape `cfg` carries:
 //
-// No embed(): Anthropic has no first-party embeddings endpoint. This
-// is a real, structural limitation of the vendor, not something this
-// adapter chose to skip — it throws AiProviderCapabilityError loudly
-// rather than silently returning a fake vector, so a college that
-// picks 'claude' as its provider and then tries to use a RAG/search
-// feature gets a clear error naming the actual cause, not a wrong
-// answer.
+//   cfg.apiKey    -> direct Anthropic Messages API (api.anthropic.com).
+//                    Request/response shapes are real, per Anthropic's
+//                    documented REST API, but NOT live-verified against a
+//                    real key (none exists in this environment).
+//   cfg.projectId -> Claude on Vertex AI (same ADC/project pattern
+//                    gemini.js uses — a server-level GCP credential, not a
+//                    per-college secret). URL/body shape and the "global"
+//                    location's plain aiplatform.googleapis.com host (no
+//                    region prefix, same real exception gemini.js already
+//                    documents) were live-verified against a real project
+//                    (project-8bcf740a-a7bd-4aea-974, claude-sonnet-5): a
+//                    429 RESOURCE_EXHAUSTED naming the real base model
+//                    confirms the request reached and was correctly
+//                    routed by the real endpoint — this project's Vertex
+//                    quota for Claude is 0 pending a Google-reviewed
+//                    increase, not a shape/auth problem.
+//
+// If both are present, projectId wins — Vertex is configurationService's
+// only mechanism for this provider today (see its own globalClaudeConfig
+// comment: like Gemini, this is a global env-configured block, not a
+// per-college college_ai_config row, because ADC is server-level).
+//
+// No embed(): Anthropic has no first-party embeddings endpoint on either
+// transport. This is a real, structural limitation of the vendor, not
+// something this adapter chose to skip — it throws
+// AiProviderCapabilityError loudly rather than silently returning a fake
+// vector, so a college that picks 'claude' as its provider and then tries
+// to use a RAG/search feature gets a clear error naming the actual cause,
+// not a wrong answer.
 
+const { GoogleAuth } = require('google-auth-library');
 const { LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError } = require('./errors');
 const { withRetry } = require('./retry');
 const { iterateSseLines } = require('./sse');
@@ -23,10 +43,60 @@ const DEFAULT_BASE_URL = 'https://api.anthropic.com';
 const ANTHROPIC_VERSION = '2023-06-01';
 const MAX_TOKENS = 1024;
 
+// Vertex's own required body field naming this API version — a real,
+// distinct constant from ANTHROPIC_VERSION above (that one's a header,
+// direct-API-only; this one's a body field, Vertex-only), not a typo.
+const ANTHROPIC_VERTEX_VERSION = 'vertex-2023-10-16';
+// Same 'global' exception gemini.js's own DEFAULT_LOCATION comment
+// documents — live-verified here too, not assumed by analogy.
+const DEFAULT_VERTEX_LOCATION = 'global';
+const DEFAULT_VERTEX_MODEL = 'claude-sonnet-5';
+const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
+
 const supportsVision = true;
 
+function isVertexMode(cfg) {
+  return Boolean(cfg && cfg.projectId);
+}
+
 function isConfigured(cfg) {
-  return Boolean(cfg && cfg.apiKey);
+  return Boolean(cfg && (cfg.projectId || cfg.apiKey));
+}
+
+// One GoogleAuth instance reused across calls, same caching rationale as
+// gemini.js's own getAuth() (not a fresh ADC handshake every request).
+// A separate instance from gemini.js's — different adapters, no shared
+// module-level state assumed between them.
+let sharedAuth = null;
+function getAuth() {
+  if (!sharedAuth) {
+    sharedAuth = new GoogleAuth({ scopes: CLOUD_PLATFORM_SCOPE });
+  }
+  return sharedAuth;
+}
+
+async function getAccessToken(cfg) {
+  if (cfg.accessToken) {
+    return cfg.accessToken;
+  }
+  const client = await getAuth().getClient();
+  const { token } = await client.getAccessToken();
+  if (!token) {
+    throw new LlmRequestError('Google ADC did not return an access token for Claude-on-Vertex — run `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS');
+  }
+  return token;
+}
+
+// Vertex's publisher-model base path — the 'anthropic' publisher's own
+// mirror of gemini.js's modelUrl for the 'google' publisher. Verb is
+// 'rawPredict' (non-streaming) or 'streamRawPredict' (streaming) —
+// Anthropic-on-Vertex's own verbs, not Gemini's generateContent/
+// streamGenerateContent.
+function vertexModelUrl(cfg, verb) {
+  const location = cfg.location || DEFAULT_VERTEX_LOCATION;
+  const host = location === 'global' ? 'aiplatform.googleapis.com' : `${location}-aiplatform.googleapis.com`;
+  const model = cfg.model || DEFAULT_VERTEX_MODEL;
+  return `https://${host}/v1/projects/${cfg.projectId}/locations/${location}/publishers/anthropic/models/${model}:${verb}`;
 }
 
 // Builds the user message's `content` — a plain string when no images
@@ -51,26 +121,52 @@ function baseUrl(cfg) {
   return cfg.baseUrl || DEFAULT_BASE_URL;
 }
 
-async function postJson(cfg, path, body) {
-  const response = await withRetry(async () => {
+// bodyFields: { model, max_tokens, system, messages, tools? } — the
+// transport-agnostic request shape both completeWithMeta and
+// completeWithTools already build. Vertex's rawPredict/streamRawPredict
+// takes the model from the URL (never the body — a real, live-verified
+// difference from the direct API, which takes it from the body and has
+// no per-model URL segment at all) and needs anthropic_version as a body
+// field instead of a header; prompt-caching's anthropic-beta header has
+// no Vertex equivalent in this adapter yet (not exercised — this project
+// has zero Vertex quota for Claude to verify caching behavior against).
+async function buildRequest(cfg, bodyFields, verb) {
+  if (isVertexMode(cfg)) {
+    // model: encoded in the URL, never the body, on Vertex. stream: the
+    // URL verb (rawPredict vs streamRawPredict) is what selects
+    // streaming here — Vertex has no body-level `stream` flag the way
+    // the direct API does.
+    const { model, stream, ...rest } = bodyFields;
+    const token = await getAccessToken(cfg);
+    return {
+      url: vertexModelUrl(cfg, verb === 'stream' ? 'streamRawPredict' : 'rawPredict'),
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: { anthropic_version: ANTHROPIC_VERTEX_VERSION, ...rest },
+    };
+  }
+  return {
+    url: `${baseUrl(cfg)}/v1/messages`,
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': cfg.apiKey,
+      'anthropic-version': ANTHROPIC_VERSION,
+      // Prompt caching (P1.2) — additive/harmless on any request that
+      // doesn't use cache_control (Anthropic ignores it), so this is set
+      // unconditionally rather than only on the one call site that
+      // actually adds a cache_control breakpoint (completeWithTools).
+      'anthropic-beta': 'prompt-caching-2024-07-31',
+    },
+    body: bodyFields,
+  };
+}
+
+async function doFetch(url, headers, body) {
+  return withRetry(async () => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      return await fetch(`${baseUrl(cfg)}${path}`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': cfg.apiKey,
-          'anthropic-version': ANTHROPIC_VERSION,
-          // Prompt caching (P1.2) — additive/harmless on any request
-          // that doesn't use cache_control (Anthropic ignores it), so
-          // this is set unconditionally rather than only on the one
-          // call site that actually adds a cache_control breakpoint
-          // (completeWithTools).
-          'anthropic-beta': 'prompt-caching-2024-07-31',
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
+      return await fetch(url, {
+        method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal,
       });
     } catch (err) {
       throw new LlmRequestError(`request to Claude failed: ${err.message}`);
@@ -78,6 +174,11 @@ async function postJson(cfg, path, body) {
       clearTimeout(timeout);
     }
   });
+}
+
+async function postJson(cfg, bodyFields) {
+  const { url, headers, body } = await buildRequest(cfg, bodyFields, 'json');
+  const response = await doFetch(url, headers, body);
 
   if (!response.ok) {
     const bodyText = await response.text().catch(() => '');
@@ -96,10 +197,10 @@ async function postJson(cfg, path, body) {
 // the OpenAI-compatible prompt_tokens/completion_tokens naming.
 async function completeWithMeta(cfg, { systemPrompt, userPrompt, images } = {}) {
   if (!isConfigured(cfg)) {
-    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
+    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey/projectId)');
   }
 
-  const payload = await postJson(cfg, '/v1/messages', {
+  const payload = await postJson(cfg, {
     model: cfg.model,
     max_tokens: MAX_TOKENS,
     system: systemPrompt,
@@ -133,41 +234,17 @@ async function complete(cfg, prompts) {
 // text; every other event type is legitimately ignored, not an error.
 async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, onDelta) {
   if (!isConfigured(cfg)) {
-    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
+    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey/projectId)');
   }
 
-  const response = await withRetry(async () => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    try {
-      return await fetch(`${baseUrl(cfg)}/v1/messages`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': cfg.apiKey,
-          'anthropic-version': ANTHROPIC_VERSION,
-          // Prompt caching (P1.2) — additive/harmless on any request
-          // that doesn't use cache_control (Anthropic ignores it), so
-          // this is set unconditionally rather than only on the one
-          // call site that actually adds a cache_control breakpoint
-          // (completeWithTools).
-          'anthropic-beta': 'prompt-caching-2024-07-31',
-        },
-        body: JSON.stringify({
-          model: cfg.model,
-          max_tokens: MAX_TOKENS,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: buildUserContent(userPrompt, images) }],
-          stream: true,
-        }),
-        signal: controller.signal,
-      });
-    } catch (err) {
-      throw new LlmRequestError(`request to Claude failed: ${err.message}`);
-    } finally {
-      clearTimeout(timeout);
-    }
-  });
+  const { url, headers, body } = await buildRequest(cfg, {
+    model: cfg.model,
+    max_tokens: MAX_TOKENS,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: buildUserContent(userPrompt, images) }],
+    stream: true,
+  }, 'stream');
+  const response = await doFetch(url, headers, body);
 
   if (!response.ok) {
     const bodyText = await response.text().catch(() => '');
@@ -195,10 +272,10 @@ async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, on
 
 async function completeWithTools(cfg, { systemPrompt, userPrompt, tools, images } = {}) {
   if (!isConfigured(cfg)) {
-    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
+    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey/projectId)');
   }
 
-  const payload = await postJson(cfg, '/v1/messages', {
+  const payload = await postJson(cfg, {
     model: cfg.model,
     max_tokens: MAX_TOKENS,
     system: systemPrompt,

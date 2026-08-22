@@ -33,6 +33,7 @@ const academicService = require('../src/services/academicService');
 const collegeProfileService = require('../src/services/collegeProfileService');
 const documentService = require('../src/services/documentService');
 const documentTextExtractionService = require('../src/services/documentTextExtractionService');
+const documentAnalysisService = require('../src/services/documentAnalysisService');
 const configurationService = require('../src/services/configurationService');
 const claudeAdapter = require('../src/services/aiProviders/claude');
 
@@ -1696,6 +1697,62 @@ test('aiService.askAgent: a number that is not in count-noun context (a year, a 
   });
 });
 
+// --- ADR-029 — Universal Document Intelligence: per-row value
+// verification, not just row-count verification -------------------------
+// The real bug this ADR exists to catch: an AI-narrated per-student
+// arrear count (e.g. "13 arrears") that disagrees with the deterministic
+// tool's own computed value for that student, even though the RIGHT
+// NUMBER OF STUDENTS came back (recordCount alone would miss this —
+// fieldValues is what catches it).
+test('aiService.askAgent: analyze_document_table path — a per-student count the model narrates that matches the tool\'s own computed value -> PASS', async (t) => {
+  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
+    status: 'ok',
+    strategy: 'sequential_id',
+    results: [
+      { key: '1156:25700148', serialNo: '1156', regNo: '25700148', count: 7 },
+      { key: '1157:25700154', serialNo: '1157', regNo: '25700154', count: 13 },
+    ],
+  }));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponse('analyze_document_table', { attachmentId: 'a1', filter: { pattern: 'RA' }, operation: 'count' }),
+      mockAnswerResponse('MUHAMMED ASHIK P A (serial 1157) has 13 arrears.'),
+    ]), async () => {
+      const result = await aiService.askAgent(client, 'How many arrears does serial 1157 have?', { identityContext });
+      assert.deepEqual(result.verification, { status: 'PASS' });
+    });
+  });
+});
+
+test('aiService.askAgent: analyze_document_table path — a per-student count the model narrates that does NOT match the tool\'s own computed value -> CONFLICT, even though the row count is otherwise correct', async (t) => {
+  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
+    status: 'ok',
+    strategy: 'sequential_id',
+    results: [
+      { key: '1156:25700148', serialNo: '1156', regNo: '25700148', count: 7 },
+      { key: '1157:25700154', serialNo: '1157', regNo: '25700154', count: 13 },
+    ],
+  }));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponse('analyze_document_table', { attachmentId: 'a1', filter: { pattern: 'RA' }, operation: 'count' }),
+      // The real-world bug: the model free-narrates 12 instead of the
+      // tool's actual computed 13.
+      mockAnswerResponse('MUHAMMED ASHIK P A (serial 1157) has 12 arrears.'),
+    ]), async () => {
+      const result = await aiService.askAgent(client, 'How many arrears does serial 1157 have?', { identityContext });
+      assert.equal(result.verification.status, 'CONFLICT');
+      assert.deepEqual(result.verification.claimedNumbers, [12]);
+    });
+  });
+});
+
 test('aiService.executeWorkflowPlan: verification checks the claim against the RIGHT step\'s count when a plan has multiple array-returning steps', async (t) => {
   t.mock.method(collegeProfileService, 'getProfile', async () => ({ name: 'Test College' }));
   t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }, { id: 't2' }]));
@@ -2586,21 +2643,40 @@ test('buildAttachmentHint: a failed extraction produces an honest note, never fa
   assert.ok(hint.includes('password_protected'));
 });
 
-test('buildAttachmentHint: shared 40,000-char budget is divided across multiple attachments, never N x the full cap', () => {
-  const bigText = 'x'.repeat(30_000);
+test('buildAttachmentHint: Gemini\'s shared 1,000,000-char budget is divided across multiple attachments, never N x the full cap', () => {
+  const bigText = 'x'.repeat(500_000);
   const documents = [
     { fileName: 'a.txt', mimeType: 'text/plain', text: bigText },
     { fileName: 'b.txt', mimeType: 'text/plain', text: bigText },
     { fileName: 'c.txt', mimeType: 'text/plain', text: bigText },
   ];
-  const hint = aiService.buildAttachmentHint(documents);
+  const hint = aiService.buildAttachmentHint(documents, 'gemini');
   // Total serialized attachment text must stay within the shared budget,
-  // not 3 x bigText.length (90,000) — each JSON-escaped block is roughly
-  // its truncated length, well under 3x30,000.
-  const totalDataChars = documents.length * Math.floor(40_000 / 3);
+  // not 3 x bigText.length (1,500,000) — each JSON-escaped block is roughly
+  // its truncated length, well under 3x500,000.
+  const totalDataChars = documents.length * Math.floor(1_000_000 / 3);
   assert.ok(hint.length < bigText.length * 3, 'must not include all 3 files in full');
   assert.ok(hint.includes('[truncated'));
-  assert.ok(totalDataChars <= 40_000);
+  assert.ok(totalDataChars <= 1_000_000);
+});
+
+// ADR-029's origin bug: NIM (ARCNAVE's zero-configuration default per
+// ADR-028 — a college with no college_ai_config row/DEFAULT_AI_PROVIDER
+// override, the common case) has a 128K-token context, not Gemini's 1M.
+// Caught live against this repo's own seeded 'demo' college: a real
+// request with a ~278K-char PDF attachment 400'd with "maximum context
+// length is 131072 tokens... resulted in 138900 tokens" because the
+// budget was a flat 1,000,000 chars regardless of provider.
+test('buildAttachmentHint: a non-Gemini provider (e.g. nim, the zero-config default) gets the smaller, conservative default budget, not Gemini\'s 1,000,000', () => {
+  const bigText = 'x'.repeat(500_000);
+  const hintForNim = aiService.buildAttachmentHint([{ fileName: 'a.pdf', mimeType: 'application/pdf', text: bigText }], 'nim');
+  assert.ok(hintForNim.includes('[truncated'), 'a 500K-char attachment must be truncated for a smaller-context provider');
+});
+
+test('buildAttachmentHint: no providerName given (unknown/unconfigured) also falls back to the conservative default, never the Gemini-sized one', () => {
+  const bigText = 'x'.repeat(500_000);
+  const hint = aiService.buildAttachmentHint([{ fileName: 'a.pdf', mimeType: 'application/pdf', text: bigText }]);
+  assert.ok(hint.includes('[truncated'));
 });
 
 test('buildMemoryHint: no identityContext -> empty string, no DB call', async () => {

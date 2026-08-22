@@ -225,6 +225,22 @@ module.exports = {
     fastModel: process.env.GEMINI_FAST_MODEL || null,
   },
 
+  // Claude on Vertex AI — a third, optional global-default provider, same
+  // shape/reasoning as gemini above (ADC/projectId, not a secret this
+  // block holds; unset means unavailable, never a startup failure).
+  // CLAUDE_PROJECT_ID is deliberately its own var, not a reuse of
+  // GEMINI_PROJECT_ID, even though a deployment will often set both to
+  // the same GCP project — the two providers are independently
+  // selectable (DEFAULT_AI_PROVIDER names exactly one), and this adapter
+  // has no embed() (see claude.js's own comment), so embeddingModel is
+  // intentionally absent here, not just defaulted null.
+  claude: {
+    projectId: process.env.CLAUDE_PROJECT_ID || null,
+    location: process.env.CLAUDE_LOCATION || null,
+    model: process.env.CLAUDE_MODEL || null,
+    fastModel: process.env.CLAUDE_FAST_MODEL || null,
+  },
+
   // Which provider a college with no college_ai_config row of its own
   // falls back to (configurationService.getAiConfig). Defaults to
   // 'nim' — this app's pre-existing global behavior, unchanged unless

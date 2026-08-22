@@ -210,14 +210,20 @@ async function complete(cfg, prompts) {
   return text;
 }
 
-// One streamGenerateContent HTTP call, collected into a single string.
-// Never calls onDelta until the CALLER decides the attempt is worth
-// keeping (see completeStream below) — safe to do because an attempt
-// that ends up empty by construction never accumulated any non-empty
-// chunk to defer in the first place (the loop below only appends when
-// text.length > 0), so a caller retrying a fully-empty attempt never
-// double-emits or emits-then-discards a real delta.
-async function attemptStream(cfg, { systemPrompt, userPrompt, images } = {}, deadline) {
+// One streamGenerateContent HTTP call. Calls onDelta inline, per SSE
+// chunk, as soon as real text arrives — not buffered into one big
+// string and released at the end (that made every Gemini/Vertex answer
+// arrive as a single paste instead of a smooth stream, unlike the
+// OpenAI/Claude adapters' own inline onDelta calls). This stays safe
+// against completeStream's own empty-attempt retry below: retry only
+// ever fires for an attempt that produced ZERO non-empty chunks (see
+// that constant's own comment on Gemini's "thinking budget exhausted"
+// failure mode), and this function's first non-empty chunk is the
+// exact moment that can no longer be true for the CURRENT attempt — so
+// nothing streamed here is ever later discarded/retried out from under
+// the caller; an attempt is only ever retried before its first real
+// chunk, never after.
+async function attemptStream(cfg, { systemPrompt, userPrompt, images } = {}, deadline, onDelta) {
   const token = await getAccessToken(cfg);
   const response = await withRetry(async () => {
     const remaining = deadline - Date.now();
@@ -249,7 +255,8 @@ async function attemptStream(cfg, { systemPrompt, userPrompt, images } = {}, dea
     throw new LlmRequestError(`Gemini (Vertex AI) returned ${response.status}: ${bodyText.slice(0, 500)}`);
   }
 
-  const deltas = [];
+  let full = '';
+  let sawAnyText = false;
   for await (const payload of iterateSseLines(response)) {
     let event;
     try {
@@ -260,9 +267,13 @@ async function attemptStream(cfg, { systemPrompt, userPrompt, images } = {}, dea
     const parts = event && event.candidates && event.candidates[0]
       && event.candidates[0].content && event.candidates[0].content.parts;
     const text = Array.isArray(parts) ? parts.map((p) => p.text).filter(Boolean).join('') : '';
-    if (text.length > 0) deltas.push(text);
+    if (text.length > 0) {
+      sawAnyText = true;
+      full += text;
+      onDelta(text);
+    }
   }
-  return deltas;
+  return { full, sawAnyText };
 }
 
 // A real, live-caught failure mode: Gemini's hybrid reasoning can spend
@@ -310,15 +321,8 @@ async function completeStream(cfg, prompts, onDelta) {
   for (let attempt = 0; attempt <= MAX_EMPTY_RETRIES; attempt++) {
     if (Date.now() >= deadline) break;
     // eslint-disable-next-line no-await-in-loop
-    const deltas = await attemptStream(cfg, prompts, deadline);
-    if (deltas.length > 0) {
-      let full = '';
-      for (const delta of deltas) {
-        full += delta;
-        onDelta(delta);
-      }
-      return full;
-    }
+    const { full, sawAnyText } = await attemptStream(cfg, prompts, deadline, onDelta);
+    if (sawAnyText) return full;
   }
   throw new LlmRequestError(`Gemini streamed no visible answer text within ${cfg.maxTotalStreamMs || MAX_TOTAL_STREAM_MS}ms (thinking budget exhausted before any output, or the overall time budget was exceeded)`);
 }

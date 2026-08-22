@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Download, FileText, Pencil, Share2, ThumbsDown, ThumbsUp } from 'lucide-react';
+import {
+  AlertTriangle, ChevronDown, ChevronUp, Download, FileText, Pencil, Share2, ThumbsDown, ThumbsUp,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { Markdown } from './Markdown';
 import { CollapsibleContent } from './CollapsibleContent';
@@ -113,6 +115,13 @@ function ResponseActions({ message }) {
  */
 function MessageEditor({ message, onSave, onCancel }) {
   const [draft, setDraft] = useState(message.text ?? '');
+  // Saving now means a real PATCH + truncate-forward + a fresh AI turn
+  // starting (WorkspaceProvider.editMessage), not a local text swap —
+  // worth a visible "Regenerating…" state so a slow/failed save doesn't
+  // read as a frozen editor. onSave resolves false on failure (network
+  // error, or a still-unsaved placeholder id) and this stays open/editable
+  // rather than silently discarding the draft.
+  const [saving, setSaving] = useState(false);
   const ref = useRef(null);
 
   useEffect(() => {
@@ -132,12 +141,23 @@ function MessageEditor({ message, onSave, onCancel }) {
   const dirty = draft.trim() !== (message.text ?? '').trim();
   const valid = Boolean(draft.trim());
 
+  const save = async () => {
+    if (!valid || !dirty || saving) return;
+    setSaving(true);
+    try {
+      await onSave(draft);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="w-[min(70ch,100%)] max-w-full bg-accent-soft rounded-[12px] py-[8px] px-[11px]">
       <textarea
         ref={ref}
         aria-label="Edit your message"
         value={draft}
+        disabled={saving}
         onChange={(e) => {
           setDraft(e.target.value);
           grow(e.target);
@@ -145,30 +165,31 @@ function MessageEditor({ message, onSave, onCancel }) {
         onKeyDown={(e) => {
           if (e.key === 'Escape') {
             e.preventDefault();
-            onCancel();
+            if (!saving) onCancel();
           }
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
-            if (valid) onSave(draft);
+            save();
           }
         }}
-        className="w-full block resize-none border-0 outline-none focus:outline-none focus-visible:outline-none bg-transparent font-chat text-[14.5px] leading-[1.48] text-ink scroll-quiet"
+        className="w-full block resize-none border-0 outline-none focus:outline-none focus-visible:outline-none bg-transparent font-chat text-[14.5px] leading-[1.48] text-ink scroll-quiet disabled:opacity-70"
       />
       <div className="flex items-center justify-end gap-[6px] pt-[6px]">
         <button
           type="button"
           onClick={onCancel}
-          className="h-[26px] px-[10px] rounded-[8px] border-0 bg-transparent text-[12px] font-[500] text-ink-muted cursor-pointer transition-colors duration-200 hover:bg-accent-soft2 hover:text-ink"
+          disabled={saving}
+          className="h-[26px] px-[10px] rounded-[8px] border-0 bg-transparent text-[12px] font-[500] text-ink-muted cursor-pointer transition-colors duration-200 hover:bg-accent-soft2 hover:text-ink disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Cancel
         </button>
         <button
           type="button"
-          onClick={() => valid && onSave(draft)}
-          disabled={!valid || !dirty}
+          onClick={save}
+          disabled={!valid || !dirty || saving}
           className="h-[26px] px-[11px] rounded-[8px] border-0 bg-accent text-[12px] font-[500] text-white cursor-pointer transition-colors duration-200 hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          Save
+          {saving ? 'Regenerating…' : 'Save'}
         </button>
       </div>
     </div>
@@ -218,6 +239,65 @@ function DocumentAttachmentCard({ document: doc }) {
         {downloading ? 'Downloading…' : 'Download'}
       </button>
     </div>
+  );
+}
+
+/**
+ * "Based on" — the same evidence trail aiService.buildEvidenceTrail
+ * already computes for every tool-grounded answer (one line per tool
+ * call: name, record count, when it was retrieved). Sent to the frontend
+ * and stored on every message since P0.4, but never actually rendered
+ * anywhere — the Sources popover (SourcesPopover.jsx) shows the same
+ * underlying evidence, but only once the reader selects this specific
+ * reply and opens a separate header control; this is the same
+ * provenance, inline, with no interaction required to know it exists.
+ * Collapsed by default — a one-line "Based on N source(s)" toggle, not a
+ * permanent block competing with the answer for attention.
+ */
+function EvidenceTrail({ trail }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = (trail || '').split('\n').map((l) => l.replace(/^-\s*/, '').trim()).filter(Boolean);
+  if (!lines.length) return null;
+  const Chevron = expanded ? ChevronUp : ChevronDown;
+
+  return (
+    <div className="mt-[6px]">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className="inline-flex items-center gap-[4px] border-0 bg-transparent p-0 font-sans text-[11.5px] text-ink-faint cursor-pointer transition-colors duration-200 hover:text-ink-muted"
+      >
+        Based on {lines.length} source{lines.length === 1 ? '' : 's'}
+        <Chevron size={12} strokeWidth={2} aria-hidden="true" />
+      </button>
+      {expanded && (
+        <ul className="mt-[4px] mb-0 pl-[15px] text-[11.5px] text-ink-faint leading-[1.5]">
+          {lines.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A CONFLICT verification result (aiService.verifyNumericClaims) means the
+ * reply's own text states a number that does not match any count/value the
+ * grounding tool call(s) actually returned — computed and stored on every
+ * message since P0.4, same as evidenceTrail above, but never surfaced
+ * either. Deliberately quiet and rare: PASS/INSUFFICIENT_EVIDENCE (the
+ * overwhelming majority of replies) render nothing at all — this is a
+ * real "double-check this one" signal, not a badge every answer carries.
+ */
+function VerificationNotice({ verification }) {
+  if (!verification || verification.status !== 'CONFLICT') return null;
+  return (
+    <p className="flex items-start gap-[6px] mt-[6px] mb-0 text-[12px] leading-[1.4] text-warning">
+      <AlertTriangle size={13} strokeWidth={2} className="flex-none mt-[1px]" aria-hidden="true" />
+      This reply mentions a number that doesn&apos;t match the data ArcNave actually retrieved — worth double-checking.
+    </p>
   );
 }
 
@@ -333,10 +413,14 @@ export function ChatMessage({ message, selected = false, onSelect, onEdit }) {
           <MessageEditor
             message={message}
             onCancel={() => setEditing(false)}
-            onSave={(next) => {
-              // The message is replaced where it stands: same id, same
-              // position, same attachments, no second message appended.
-              if (onEdit(message.id, next) !== false) setEditing(false);
+            onSave={async (next) => {
+              // Real rewind now (WorkspaceProvider.editMessage): the
+              // message is replaced where it stands, everything after it
+              // is discarded, and a fresh reply generates in its place —
+              // not just a local text swap. A failed save (network error,
+              // or a still-unsaved placeholder id) resolves false and
+              // leaves the editor open rather than pretending it worked.
+              if ((await onEdit(message.id, next)) !== false) setEditing(false);
             }}
           />
         ) : (
@@ -456,6 +540,8 @@ export function ChatMessage({ message, selected = false, onSelect, onEdit }) {
                 </p>
               )}
               {message.document && <DocumentAttachmentCard document={message.document} />}
+              <VerificationNotice verification={message.verification} />
+              <EvidenceTrail trail={message.evidenceTrail} />
             </div>
           )}
           {!message.generating && <ResponseActions message={message} />}

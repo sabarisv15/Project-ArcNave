@@ -125,6 +125,41 @@ test('gemini adapter.completeStream: streams candidates[0].content.parts[].text 
   });
 });
 
+// Regression: attemptStream used to collect every chunk into an array
+// and only call onDelta in a tight loop AFTER the whole SSE stream had
+// ended, so a real caller (the chat UI's typewriter effect) saw the
+// entire answer arrive in one burst instead of a smooth stream. Proven
+// here by timing, not just by the final delta values (which the old
+// buffered code also produced correctly, just all at once at the end):
+// the first delta must fire before the second SSE chunk is even
+// available on the wire.
+test('gemini adapter.completeStream: emits each delta inline as its own SSE chunk arrives, not buffered until the stream ends', async () => {
+  let secondChunkReleased = false;
+  const firstDeltaSawSecondChunkReleased = [];
+  const response = {
+    ok: true,
+    text: async () => '',
+    body: (async function* body() {
+      yield Buffer.from('data: {"candidates":[{"content":{"parts":[{"text":"Hello"}]}}]}\n\n');
+      await new Promise((resolve) => { setTimeout(resolve, 30); });
+      secondChunkReleased = true;
+      yield Buffer.from('data: {"candidates":[{"content":{"parts":[{"text":" world"}]}}]}\n\n');
+    }()),
+  };
+  await withMockFetch(async () => response, async () => {
+    await geminiAdapter.completeStream(
+      { projectId: 'p', accessToken: 't' },
+      { systemPrompt: 's', userPrompt: 'u' },
+      () => firstDeltaSawSecondChunkReleased.push(secondChunkReleased),
+    );
+  });
+  assert.equal(
+    firstDeltaSawSecondChunkReleased[0],
+    false,
+    'the first onDelta call must happen before the second SSE chunk is even available — proves per-chunk inline emission, not buffer-then-burst',
+  );
+});
+
 // Real live-caught bug (2026-08-21): Gemini 3.7 Flash's hybrid
 // reasoning can spend its entire thinking budget and stream a final
 // chunk shaped `{ parts: [{ text: "", thoughtSignature: "..." }],

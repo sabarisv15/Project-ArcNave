@@ -205,14 +205,23 @@ async function softDelete(client, id) {
 // own "Dept" column) without a per-row N+1 lookup — same join shape
 // findByClassId/findByDepartmentId already use, just unscoped by class/
 // department here since this is the principal/unscoped roster.
-async function list(client, { limit = 50, offset = 0 } = {}) {
+// rollNumbers: optional array — when given, narrows the roster to exactly
+// those roll numbers instead of the whole college ordered by created_at.
+// Added so a caller that already knows which specific students it means
+// (e.g. the AI students_roster tool resolving names for roll numbers a
+// document analysis already surfaced) can ask for those records
+// specifically, rather than only ever getting an arbitrary unfiltered
+// page of the full roster.
+async function list(client, { limit = 50, offset = 0, rollNumbers } = {}) {
+  const hasRollFilter = Array.isArray(rollNumbers) && rollNumbers.length > 0;
   const result = await client.query(
     `SELECT students.*, classes.department AS department
      FROM students
      LEFT JOIN classes ON classes.id = students.class_id
      WHERE students.deleted_at IS NULL
+     ${hasRollFilter ? 'AND students.roll_no = ANY($3)' : ''}
      ORDER BY students.created_at LIMIT $1 OFFSET $2`,
-    [limit, offset],
+    hasRollFilter ? [limit, offset, rollNumbers] : [limit, offset],
   );
   return result.rows;
 }

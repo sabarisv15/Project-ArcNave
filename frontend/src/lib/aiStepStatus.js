@@ -16,10 +16,23 @@ function humanizeToolName(toolName = '') {
 }
 
 export function stepStatusLabel(step) {
-  if (!step || step.phase !== 'running_tool') return null;
-  const name = humanizeToolName(step.toolName);
-  if (step.totalSteps > 1) {
-    return `Step ${(step.stepIndex ?? 0) + 1} of ${step.totalSteps}: ${name}…`;
+  if (!step) return null;
+  if (step.phase === 'running_tool') {
+    const name = humanizeToolName(step.toolName);
+    if (step.totalSteps > 1) {
+      return `Step ${(step.stepIndex ?? 0) + 1} of ${step.totalSteps}: ${name}…`;
+    }
+    return `Running ${name}…`;
   }
-  return `Running ${name}…`;
+  // Fires once a tool (or every step of a plan) has already finished and
+  // a separate LLM call is turning that result into the actual answer —
+  // without this, the last 'running_tool' label (e.g. "Running Students
+  // Roster…") stayed on screen for the whole synthesis call too, which
+  // reads as stuck/stale once that tool is genuinely done.
+  if (step.phase === 'synthesizing') return 'Putting the answer together…';
+  // Fires before the tool-selection decision call itself — mainly so a
+  // slow decision call is never silently unaccounted for, even though it
+  // renders the same as the default "Thinking…" status today.
+  if (step.phase === 'deciding') return 'Thinking…';
+  return null;
 }

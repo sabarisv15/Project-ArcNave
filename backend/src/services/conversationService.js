@@ -78,7 +78,7 @@ async function listMessages(client, conversationId, { userId, limit, offset }) {
 }
 
 async function addMessage(client, conversationId, {
-  role, content, toolUsed, toolParams, presentation, rawData, parentMessageId,
+  role, content, toolUsed, toolParams, presentation, rawData, parentMessageId, attachments,
 }, { userId, collegeId }) {
   await resolveOwnConversation(client, conversationId, userId);
 
@@ -99,7 +99,46 @@ async function addMessage(client, conversationId, {
     toolParams: toolParams || null,
     presentation: presentation || null,
     rawData: rawData !== undefined ? rawData : null,
+    // The user's own sent files — small display objects
+    // ({id, serverId, name, type, size}), not just documents.id values,
+    // so a reloaded transcript can re-render the same SentFileChip
+    // without a second lookup. Not authorization-checked here:
+    // resolveChatAttachments already validated every one of these ids
+    // belongs to this user/college before the AI turn that used them
+    // ever ran — this is a display record of what was already sent, not
+    // a new access grant.
+    attachments: Array.isArray(attachments) && attachments.length > 0 ? attachments : null,
   });
+}
+
+// Real rewind (product decision, this round): edit an earlier USER
+// message and delete everything that came after it in that conversation
+// — the caller (routes/ai.js's normal /ai/ask(/stream) flow, driven from
+// the frontend after this call succeeds) generates a fresh reply from
+// the edited point, the same way a brand-new message would. Only a
+// 'user' message may be edited: editing an assistant reply has no
+// "rewind" meaning here, and would let a caller silently rewrite what
+// the AI is recorded as having said.
+async function editMessage(client, conversationId, messageId, { content }, { userId }) {
+  await resolveOwnConversation(client, conversationId, userId);
+
+  if (!content || !String(content).trim()) {
+    throw new ConversationValidationError('content is required');
+  }
+
+  const message = await messageRepository.findById(client, messageId);
+  if (!message || message.conversation_id !== conversationId) {
+    throw new ConversationNotFoundError(`message ${JSON.stringify(messageId)} does not exist in conversation ${JSON.stringify(conversationId)}`);
+  }
+  if (message.role !== 'user') {
+    throw new ConversationValidationError('only a user message can be edited');
+  }
+
+  const updated = await messageRepository.update(client, messageId, { content });
+  // Strictly after the edited message's own (unchanged) created_at —
+  // never touches the edited message itself, only what came after it.
+  await messageRepository.deleteAfter(client, conversationId, updated.created_at);
+  return updated;
 }
 
 module.exports = {
@@ -112,4 +151,5 @@ module.exports = {
   deleteConversation,
   listMessages,
   addMessage,
+  editMessage,
 };

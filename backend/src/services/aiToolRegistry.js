@@ -1294,12 +1294,29 @@ registerTool({
   dataClassification: 'Internal',
   description: "Lists students within the acting user's own scope — their own taught/tutored class(es), their own "
     + 'department (HOD), or the whole college (principal). Roster/profile data only — never includes attendance '
-    + 'or marks; use attendance_summary or assessment_marks_summary for those.',
+    + 'or marks; use attendance_summary or assessment_marks_summary for those. Only ever returns a name for a '
+    + "roll number that's actually enrolled in THIS college's own student records — it has no knowledge of "
+    + "roll/register numbers that only appear in a document you've separately analyzed (analyze_document_table), "
+    + "since a document's own roll numbers aren't necessarily this college's own enrolled students. If the roll "
+    + "numbers a document analysis surfaced don't resolve to real students here, say so — never substitute an "
+    + 'unrelated/unfiltered roster as if it answered the question.',
   allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
-  params: { type: 'object', properties: {}, additionalProperties: false },
+  params: {
+    type: 'object',
+    properties: {
+      roll_numbers: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional — narrow the roster to exactly these roll numbers (e.g. ones already named earlier '
+          + 'in this conversation or by the user) instead of returning the whole scope unfiltered. Omit to list '
+          + 'everyone in scope.',
+      },
+    },
+    additionalProperties: false,
+  },
   handler: (client, params, actor) => studentService.listStudents(
     client,
-    { limit: 500 },
+    { limit: 500, rollNumbers: params.roll_numbers },
     aiActorContext.buildActorContextForIdentity(actor),
   ),
 });
@@ -2433,8 +2450,10 @@ registerTool({
 // above (that one is an AI-response *display* setting with no retention
 // risk; this one is the AI persisting something a human said in
 // conversation, which is exactly the "unbounded/unauditable PII retention"
-// risk CHECKPOINT.md's own roadmap flagged). Three tools, deliberately no
-// fourth: there is NO ai_memory_consent_set tool. Consent can only be
+// risk CHECKPOINT.md's own roadmap flagged). Five tools total (the three
+// below plus ai_memory_remember_fact/ai_memory_forget_fact further down,
+// general freeform memory added this round) — but still no sixth: there is
+// NO ai_memory_consent_set tool. Consent can only be
 // granted or revoked by the human directly, through routes/aiMemory.js —
 // see aiMemoryService.js's own file comment for why that split is the
 // actual safety property here, not a formality.
@@ -2506,6 +2525,67 @@ registerTool({
     }
     return aiMemoryService.forgetPreference(client, params.memory_type, { actorUserId: actor.userId });
   },
+});
+
+// General freeform AI Memory (product decision, this round) — the four
+// bounded types above only ever cover a fixed set of named categories; a
+// user telling the AI something worth remembering that doesn't fit one of
+// those (e.g. "I mostly work with the placement cell data") had nowhere to
+// go. Same consent gate, same per-user account scope, same "never a fact
+// about anyone but the acting user" boundary as ai_memory_remember — see
+// that boundary spelled out in this tool's own description below, since
+// there is no allowlist-of-types here to enforce it structurally the way
+// the bounded tool's enum does. aiMemoryService.rememberFact still enforces
+// what a schema-level enum can't: a hard MAX_GENERAL_FACTS cap, and a
+// narrow deterministic rejection of anything containing a bare identifier-
+// shaped number (roll/EMIS/admission/phone number) as a backstop under
+// this instruction, not a replacement for it.
+registerTool({
+  name: 'ai_memory_remember_fact',
+  level: 'L1',
+  dataClassification: 'Internal',
+  description: 'Remembers one freeform fact about the acting user themselves — their own role, working '
+    + 'context, standing instructions, or preferences not covered by ai_memory_remember\'s fixed categories '
+    + '(e.g. "I mostly handle the placement cell", "always double-check attendance numbers before reporting '
+    + 'them to me"). NEVER a fact, note, opinion, or observation about a student, staff member, or anyone '
+    + 'other than the acting user themselves — that is a hard line, not a style preference, regardless of how '
+    + 'the user phrases the request; if asked to remember something about someone else, decline and explain '
+    + 'why rather than rephrasing it to slip through. NEVER an identifier number (roll number, EMIS number, '
+    + 'admission number, phone number) even about the acting user themselves. Fails if the user has not opted '
+    + 'in to AI Memory yet, or if they are already remembering the maximum — in either case tell them plainly '
+    + 'and do not retry.',
+  allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
+  params: {
+    type: 'object',
+    properties: {
+      fact: { type: 'string', description: 'The fact itself, in the user\'s own words (short, one sentence).' },
+    },
+    required: ['fact'],
+    additionalProperties: false,
+  },
+  handler: (client, params, actor) => aiMemoryService.rememberFact(
+    client, params.fact, { actorUserId: actor.userId, collegeId: actor.collegeId },
+  ),
+});
+
+registerTool({
+  name: 'ai_memory_forget_fact',
+  level: 'L1',
+  dataClassification: 'Internal',
+  description: 'Deletes one previously remembered general fact (ai_memory_remember_fact), by its id. Fact ids '
+    + 'are only ever visible in the "Remembered preferences" background context this same acting user\'s own '
+    + 'session already carries — never guess or invent one. Always allowed, even if AI Memory is currently '
+    + 'turned off.',
+  allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
+  params: {
+    type: 'object',
+    properties: {
+      fact_id: { type: 'string', description: 'The id of the fact to forget, exactly as given in the background context.' },
+    },
+    required: ['fact_id'],
+    additionalProperties: false,
+  },
+  handler: (client, params, actor) => aiMemoryService.forgetFact(client, params.fact_id, { actorUserId: actor.userId }),
 });
 
 // A live-caught gap: a user typed "now i need it as pdf" inside an

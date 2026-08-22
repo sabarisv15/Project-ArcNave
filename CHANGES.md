@@ -4,6 +4,76 @@
 
 ---
 
+## 2026-08-22 — Chat UX audit: 12 user-reported issues, root-caused and fixed across 4 batches
+
+Started from a screenshot of a live conversation derailing mid-topic (a document-analysis follow-up got answered with fabricated names/register numbers in the wrong language). Root-caused to three stacked bugs, then widened into a 12-item Tanglish UX list from the user; each item was researched (parallel background agents), reported back with root cause + recommendation, then implemented across 4 user-approved batches. Two items (real rewind, general AI memory) required a genuine product decision and were asked via `AskUserQuestion` before any code was written, since both meant reversing a previously deliberate design boundary (message immutability; AI memory's PII-scope limit).
+
+### Root cause: conversation drift (the triggering bug report)
+
+| File | Change |
+|---|---|
+| `frontend/src/store/WorkspaceProvider.jsx` | New `saveMessageWithRetry` — retries a failed conversation-history save 3× before giving up and toasting, instead of `.catch(() => {})` silently dropping the turn. A dropped turn doesn't just lose a display row: it erases that turn from every later prompt's `historyHint`, so a follow-up question has nothing real to ground itself in. |
+| `backend/src/services/aiService.js` | `AGENT_SYSTEM_PROMPT`: new rule — if a follow-up needs a field the last tool result/history doesn't have, say so plainly instead of calling an unrelated tool that merely sounds like it might have it. |
+| `backend/src/services/aiToolRegistry.js`, `studentService.js`, `studentRepository.js` | `students_roster` gained an optional `roll_numbers` filter (repository/service/tool schema) — previously unscoped/unfilterable, so a substitution always returned an arbitrary unfiltered page of the whole college roster. |
+
+### Batch 1 — items 1/5/6/7/9
+
+| File | Change |
+|---|---|
+| `backend/src/services/aiService.js` | `runPlanStep`/`executeWorkflowPlan` now carry a step's `.document` through `mergedSanitizedContext` — a `generate_document`/`export_artifact` step inside a multi-step plan previously created the real file server-side but the chat bubble never mentioned it. New `onStep({phase:'deciding'})` before the tool-decision call and `onStep({phase:'synthesizing'})` after a tool/plan finishes and before the follow-up answer call — the UI previously showed a stale "Running X…" through that second call too. |
+| `backend/src/services/aiProviders/gemini.js` | `attemptStream`/`completeStream`: `onDelta` now fires inline per SSE chunk as it arrives, not buffered into one string and released in a burst at stream end — the actual cause of Gemini/Vertex-configured colleges seeing replies "paste" instead of stream. Empty-attempt retry safety (Gemini's "thinking budget exhausted" failure mode) is preserved: retry only ever fires before an attempt's first real chunk, never after. |
+| `frontend/src/lib/aiStepStatus.js`, `frontend/src/components/GenerationState.jsx` | New `deciding`/`synthesizing` step-phase labels + a `Sparkles` icon for `synthesizing` (`Terminal` stays for `running_tool`). |
+| `backend/migrations/1763000000000_message-attachments.js` | New `messages.attachments` JSONB column (small display objects `{id, serverId, name, type, size}`, not just ids) — `sendMessage` previously computed the sent attachments' metadata but never persisted it, so a reload showed the prompt text with the attached file silently gone. |
+| `backend/src/repositories/messageRepository.js`, `services/conversationService.js`, `routes/conversations.js` | Thread `attachments` through create/read. |
+| `frontend/src/api/conversations.js`, `store/WorkspaceProvider.jsx` | `sendMessage` now sends `attachments`; `seedThread` reconstructs them on reload, reusing the existing `SentFileChip` render path unchanged. |
+
+### Batch 2 — items 4/10
+
+| File | Change |
+|---|---|
+| `frontend/src/components/ChatMessage.jsx` | New `EvidenceTrail` (collapsed "Based on N source(s)" toggle) and `VerificationNotice` (only for a real `verification.status === 'CONFLICT'`) — `aiService.buildEvidenceTrail`/`verifyNumericClaims` were already computed and shipped to the frontend on every turn since P0.4 but never rendered anywhere. |
+| `frontend/src/store/WorkspaceProvider.jsx` | `runAiTurn`'s `sources` now also includes the turn's own sent attachments and any AI-generated document (`kind: 'uploaded'`, real `documentId`) — previously only internal tool-call evidence (`kind: 'tool'`) ever reached the Sources panel. |
+| `frontend/src/components/SourcesPopover.jsx` | `SourceRow` gained a real download path for `kind: 'uploaded'` sources, via the same authenticated `downloadFile()` call `ChatMessage.jsx`'s `SentFileChip` already uses — a bare `window.open(href)` (the pre-existing mechanism for `uploaded`/`web` kinds) can't carry the Bearer token `/documents/:id/download` requires, so it could never have worked for this kind. Added an explicit `tool` KIND entry (was silently falling back to `record`'s icon/label). |
+
+### Batch 3 — items 8/2 (both asked via `AskUserQuestion` first — real product decisions)
+
+Item 8: user chose "delete trailing replies, regenerate fresh" over a non-destructive soft-branch alternative, explicitly accepting that this reverses the `messages` table's previous immutable/append-only design (`1761500000000_ai-conversations-and-projects.js`'s own comment: "no update/remove function exists here on purpose").
+
+| File | Change |
+|---|---|
+| `backend/migrations/1763100000000_message-edit-and-rewind.js` | `GRANT UPDATE (content)` — column-scoped, every other column (role/tool_used/attachments/etc.) stays unchangeable even now — and `GRANT DELETE` on `messages`, plus a symmetric `AFTER DELETE` trigger (`untouch_conversation_on_message_delete`) keeping `message_count`/`last_message_preview` correct, closing the exact gap that migration's own comment had flagged as a consequence of ever allowing this. |
+| `backend/src/repositories/messageRepository.js` | New `update`/`deleteAfter`. |
+| `backend/src/services/conversationService.js` | New `editMessage` — ownership check, only a `role: 'user'` message may be edited, updates content, deletes everything strictly after its own `created_at`. |
+| `backend/src/routes/conversations.js` | New `PATCH /conversations/:id/messages/:messageId`. |
+| `frontend/src/store/WorkspaceProvider.jsx` | `saveMessageWithRetry` now returns the saved row so the real server id can replace the client-generated `'u'+Date.now()` placeholder once a send round-trips — a message sent earlier in the same session had no real id to edit-by until this. `editMessage` rewritten: real PATCH, truncates local thread state, starts a genuinely fresh AI turn (reusing the edited message's own attachments) instead of a local text swap. Signature changed to an options object (`scope`/`convId`/`projectId`/`artifactId`/`messageId`/`text`/`mode`), matching `sendMessage`'s own shape. |
+| `frontend/src/components/ChatMessage.jsx`, `routes/ChatView.jsx`, `ProjectDetail.jsx`, `ArtifactEditor.jsx` | `MessageEditor` shows a "Regenerating…" pending state and stays open with the draft intact on failure; the 3 `onEdit` call sites updated to the new options-object call. |
+| `backend/src/routes/ai.js` | `HISTORY_LIMIT` 10 → 20 — a real, structural cause of item 2 ("AI drops an interrupted topic"): a side conversation longer than 5 exchanges scrolled the interrupted task out of the window the model could even see, independent of what the prompt told it to do. |
+| `backend/src/services/aiService.js` | `CONVERSATIONAL_POLICY`: new clause — once an interruption's own question is fully answered, briefly resurface a still-unfinished task and offer to continue, instead of only ever resuming when the user brings it up again. |
+
+### Batch 4 — items 3/11 (item 3 asked via `AskUserQuestion` first — a real product decision)
+
+User chose full freeform AI Memory ("like Claude's/ChatGPT's") over the existing narrow 4-type allowlist, explicitly accepting the PII-scope tradeoff `aiMemoryService.js`'s own comment had originally flagged as the reason to stay narrow. Built as a new, separately-bounded capability alongside the existing one, not a removal of it.
+
+| File | Change |
+|---|---|
+| `backend/migrations/1763200000000_ai-general-memory.js` | New `ai_general_memory` table (id/college_id/user_id/fact/created_at), same RLS/consent-gate posture as `ai_scoped_memory`, `SELECT`/`INSERT`/`DELETE` only (no `UPDATE` — a fact is remembered or forgotten, never edited in place). |
+| `backend/src/repositories/aiMemoryRepository.js` | `insertGeneralFact`/`listGeneralFacts`/`countGeneralFacts`/`removeGeneralFact`/`removeAllGeneralFactsForUser`. |
+| `backend/src/services/aiMemoryService.js` | `MAX_GENERAL_FACTS = 30` (refuses outright at the cap, never silently evicts); `GENERAL_FACT_IDENTIFIER_PATTERN` rejects any fact containing a bare 5–12 digit identifier-shaped number (roll/EMIS/admission/phone number) as a deterministic backstop under the tool description's own "never about anyone but the acting user" instruction. `rememberFact`/`recallGeneralFacts`/`forgetFact`; `setConsent`'s revoke path now also wipes general facts. |
+| `backend/src/services/aiToolRegistry.js` | New `ai_memory_remember_fact`/`ai_memory_forget_fact` tools; `CLASS_TUTOR_GRANTED_TOOLS` test audit list updated (also closed a pre-existing gap where all 3 bounded-memory tools were already missing from it). |
+| `backend/src/services/aiService.js` | `buildMemoryHint` now also fetches general facts (`Promise.all` alongside the existing preference lookup) and includes each fact's real id inline so `ai_memory_forget_fact` has something to reference. `CONVERSATIONAL_POLICY`: new warmth clause (a brief, genuine reaction to real bad/good news before the facts, without reintroducing the stock-phrase pattern the file already bans) — item 11. |
+| `backend/src/routes/aiMemory.js` | New `GET /ai/memory/facts`, `DELETE /ai/memory/facts/:factId` — read + forget only, same "AI-tool-remembers, human-reads/deletes" shape the bounded preferences already have. |
+| `frontend/src/api/aiMemory.js`, `routes/AiMemorySettingsView.jsx` | New "Remembered facts" section (view + forget). Caught and fixed a real bug while wiring this up: the turn-off confirmation dialog's guard only ever checked bounded-preference count, so a user with only general facts and no bounded preferences would have had them silently wiped with zero warning. |
+
+### Honest scope note
+
+Three of the above are prompt-text changes only (the tool-substitution rule, the proactive-resurfacing clause, the warmth clause) — verified for correct syntax and correct threading into every prompt path (full test suite unaffected), but **not** live-verified against a real configured model this session (no live provider access available). Consistent with this project's own "live-verified before done" discipline for prompt changes; worth confirming in practice.
+
+### Verification
+
+Full backend suite: **2010/2012 passing** (same 2 pre-existing, unrelated `class_tutor`/`fetch_trusted_web_page` Policy Gate failures, reconfirmed via `git stash` early in the session). Frontend: same pre-existing 106-failure baseline (also confirmed via `git stash`), all new tests passing — 8 new test files (`aiStepStatus`, `chatMessageEvidence`, `conversationsApi`, `sourcesPopoverDownload`, `messageEditorRewind`, `aiMemorySettings`, plus additions to existing files). 3 new migrations, each verified reversible (`up`/`down`/`up`); the AI Memory routes (new + existing) additionally live-tested end to end against real Postgres — RLS, and revoking consent wiping both memory tables, not just the one that existed before this round.
+
+---
+
 ## 2026-08-22 — ADR-029 slice 1, closed further: real filter/sum/breakdown, named-section search, extraction false-positive fix
 
 Live-testing round 27's `analyze_document_table` slice against a real user request ("ece sandwich?" filtered arrear list, semester-wise) surfaced it was narrower than what the user actually needed, then a direct side-by-side comparison against a raw Gemini upload of the same PDF made the gap concrete and measurable. Four fixes, each verified against the real ~300-page document (not just fixtures) before being called done, closing every gap that comparison exposed — the same `gemini-3.7-flash` model, but ARCNAVE's answer only looked "less intelligent" because the deterministic tool underneath it couldn't yet do what the question needed, not because the model was weaker.

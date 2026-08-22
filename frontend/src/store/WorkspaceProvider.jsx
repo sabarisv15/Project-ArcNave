@@ -24,6 +24,45 @@ function imageKind(type) {
   return sub ? `${sub.toUpperCase()} image` : 'Image';
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** A real server-issued messages.id (Postgres gen_random_uuid()) vs. the client-generated 'u'+Date.now() placeholder. */
+function isUuidLike(id) {
+  return typeof id === 'string' && UUID_RE.test(id);
+}
+
+// Conversation-history persistence must not be silently best-effort: a
+// dropped save here doesn't just lose a display row, it erases that turn
+// from every future prompt's historyHint (aiService.js), so a later
+// follow-up question has nothing real to ground itself in and the model
+// fabricates instead. Retries a transient failure (network blip, DB
+// hiccup) a few times before giving up; only surfaces a toast on the
+// final failure so an ordinary single retry-succeeds case stays silent,
+// matching this function's callers' existing "don't block the real
+// answer" behavior — this only adds resilience, never blocks on it.
+// Returns the saved row (real server id and all) on success, null on
+// final failure — callers that need the real id (editMessage's rewind,
+// which PATCHes /conversations/:id/messages/:realId) can't work off the
+// client-generated 'u'+Date.now() placeholder the optimistic bubble uses.
+async function saveMessageWithRetry(conversationId, payload, { attempts = 3, turnLabel } = {}) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await conversationsApi.addMessage(conversationId, payload);
+    } catch {
+      if (attempt < attempts) {
+        await delay(attempt * 800);
+      }
+    }
+  }
+  toast(
+    `Couldn't save ${turnLabel} to this conversation's history — later follow-up questions in this chat may lose that context. Try resending if this matters.`
+  );
+  return null;
+}
+
 const WorkspaceContext = createContext(null);
 
 export function WorkspaceProvider({ children }) {
@@ -190,7 +229,16 @@ export function WorkspaceProvider({ children }) {
           const list = Array.isArray(rows) ? rows : (rows?.messages ?? []);
           const messages = list.map((m) => (
             m.role === 'user'
-              ? { id: String(m.id), role: 'user', text: m.content, createdAt: m.created_at }
+              ? {
+                id: String(m.id), role: 'user', text: m.content, createdAt: m.created_at,
+                // Round-tripped from the same `attachments` JSONB column
+                // sendMessage's own addMessage call above just wrote —
+                // without this, a reloaded transcript showed the prompt
+                // text but silently dropped which file(s) had been sent
+                // with it (SentFileChip/the image thumbnail above both
+                // need this array, not just the ids).
+                attachments: m.attachments || undefined,
+              }
               : {
                 id: String(m.id), role: 'ai', generating: false, body: m.content, createdAt: m.created_at,
                 // raw_data is the same generic JSONB column addMessage's
@@ -239,7 +287,7 @@ export function WorkspaceProvider({ children }) {
    */
   const runAiTurn = useCallback(
     async (id, {
-      scope, projectId, artifactId, body, aiId, attachmentIds, mode,
+      scope, projectId, artifactId, body, aiId, attachmentIds, sentAttachments = [], mode,
     }) => {
       const patchAiMessage = (patch) => {
         setThreads((prev) => ({
@@ -291,9 +339,15 @@ export function WorkspaceProvider({ children }) {
         /*
          * Sources belong to the *response*: each piece of real evidence
          * (P0.4 — aiService.buildEvidence) the backend actually queried
-         * to produce this answer, not a claim to trust blindly.
+         * to produce this answer, plus (P1) the real files this specific
+         * turn actually put in front of the model — the attachment(s) sent
+         * with this question, and the document a generate_document/
+         * export_artifact tool call just produced. `kind: 'uploaded'` +
+         * `documentId` is what SourcesPopover.jsx's SourceRow needs to
+         * offer a real download, the same documents.id
+         * ChatMessage.jsx's own SentFileChip already downloads through.
          */
-        const sources = (result.evidence || []).map((e) => ({
+        const evidenceSources = (result.evidence || []).map((e) => ({
           id: `src-${e.toolName}-${e.retrievedAt}`,
           title: e.toolName,
           kind: 'tool',
@@ -302,6 +356,25 @@ export function WorkspaceProvider({ children }) {
               ? `${e.recordCount} record(s) · retrieved ${e.retrievedAt}`
               : `retrieved ${e.retrievedAt}`,
         }));
+        const attachmentSources = sentAttachments.map((a) => ({
+          id: `attachment-${a.id}`,
+          title: a.name,
+          kind: 'uploaded',
+          documentId: a.serverId,
+          type: a.type,
+          origin: 'Attached to this message',
+        }));
+        const documentSource = result.document
+          ? [{
+            id: `document-${result.document.id}`,
+            title: result.document.fileName || result.document.title,
+            kind: 'uploaded',
+            documentId: result.document.id,
+            type: result.document.mimeType,
+            origin: 'Generated by ArcNave',
+          }]
+          : [];
+        const sources = [...evidenceSources, ...attachmentSources, ...documentSource];
 
         patchAiMessage({
           generating: false,
@@ -327,8 +400,9 @@ export function WorkspaceProvider({ children }) {
           createdAt: new Date().toISOString(),
         });
 
-        conversationsApi
-          .addMessage(id, {
+        saveMessageWithRetry(
+          id,
+          {
             role: 'assistant',
             content: finalText,
             toolUsed: result.toolUsed,
@@ -339,8 +413,9 @@ export function WorkspaceProvider({ children }) {
             // rebuild the same download card rather than losing it the
             // moment the in-memory thread is replaced by a fresh fetch.
             rawData: result.document ? { document: result.document } : undefined,
-          })
-          .catch(() => {});
+          },
+          { turnLabel: 'this reply' }
+        );
       } catch {
         patchAiMessage({
           generating: false,
@@ -409,12 +484,13 @@ export function WorkspaceProvider({ children }) {
       }
 
       const aiId = 'm' + Date.now();
+      const localUserId = 'u' + Date.now();
       const sentAt = new Date().toISOString();
       setThreads((prev) => ({
         ...prev,
         [id]: [
           ...(prev[id] || []),
-          { id: 'u' + Date.now(), role: 'user', text: body, attachments: sent, createdAt: sentAt },
+          { id: localUserId, role: 'user', text: body, attachments: sent, createdAt: sentAt },
           // GenerationState (ChatMessage.jsx) renders this as the "still
           // resolving which tool to call" skeleton — its own comment says so
           // — but nothing ever supplied the text, so it always rendered a
@@ -430,27 +506,53 @@ export function WorkspaceProvider({ children }) {
         ],
       }));
 
-      // Persisting the user's own turn is a separate, best-effort write —
-      // conversationService is a transcript store for display/history, not
-      // what the AI itself reads this turn (that's the conversation_id the
-      // askStream call below sends; the backend loads history itself). A
-      // failed save here must not block the actual answer.
-      conversationsApi
-        .addMessage(id, { role: 'user', content: body })
-        .catch(() => {});
-
-      // Only the backend-issued serverId is ever sent to the AI turn — the
+      // Only the backend-issued serverId is ever sent to the server — the
       // local att-... id (`a.id`) is a React key/removal handle only, never
       // a valid attachment reference on the server (useComposerAttachments'
       // own comment on runUpload). An attachment that finished uploading
       // always has a serverId by the time it reaches 'ready' — filtering
       // again here is just defense against a shape this codebase doesn't
-      // currently produce, not a real expected case.
-      const attachmentIds = sent.map((a) => a.serverId).filter(Boolean);
+      // currently produce, not a real expected case. Small display objects
+      // (not just ids) so a reloaded transcript's seedThread can re-render
+      // the same SentFileChip (ChatMessage.jsx) without a second lookup —
+      // same {id, serverId, name, type, size} shape that component already
+      // expects from the live-send path above.
+      const sentAttachments = sent
+        .filter((a) => a.serverId)
+        .map((a) => ({
+          id: a.serverId, serverId: a.serverId, name: a.name, type: a.type, size: a.size,
+        }));
+      const attachmentIds = sentAttachments.map((a) => a.id);
+
+      // Persisting the user's own turn is a separate, best-effort write —
+      // conversationService is a transcript store for display/history, not
+      // what the AI itself reads this turn (that's the conversation_id the
+      // askStream call below sends; the backend loads history itself). A
+      // failed save here must not block the actual answer. On success, the
+      // real server-issued id replaces the client-generated localUserId
+      // placeholder in local state — editMessage's rewind PATCHes
+      // /conversations/:id/messages/:realId, which a 'u'+Date.now() id
+      // could never match; without this swap, editing a message sent
+      // earlier in the same session (before any reload re-fetches real
+      // ids via seedThread) would silently fail.
+      saveMessageWithRetry(
+        id,
+        { role: 'user', content: body, attachments: sentAttachments.length ? sentAttachments : undefined },
+        { turnLabel: 'your message' }
+      ).then((saved) => {
+        if (!saved?.id) return;
+        setThreads((prev) => ({
+          ...prev,
+          [id]: (prev[id] || []).map((m) => (m.id === localUserId ? { ...m, id: String(saved.id) } : m)),
+        }));
+      });
 
       // Deliberately not awaited — see this function's own comment above.
+      // sentAttachments (not just attachmentIds) rides along so runAiTurn
+      // can list the real files this turn attached as Sources — the ids
+      // alone have no name/type to show.
       runAiTurn(id, {
-        scope, projectId, artifactId, body, aiId, attachmentIds, mode,
+        scope, projectId, artifactId, body, aiId, attachmentIds, sentAttachments, mode,
       });
 
       return id;
@@ -459,31 +561,79 @@ export function WorkspaceProvider({ children }) {
   );
 
   /**
-   * Edit a message already in the transcript, in place.
+   * Real rewind (product decision): edit an earlier user message, discard
+   * every reply that came after it, and generate a fresh one from the
+   * edited text — the standard ChatGPT/Claude "edit" behavior, not just a
+   * local text swap. `conversationsApi.editMessage` does the update +
+   * truncate atomically server-side (conversationService.editMessage);
+   * this only reflects that same truncation locally and starts a new AI
+   * turn, reusing runAiTurn exactly the way sendMessage does for a brand
+   * new message. An edit that clears the message is refused, since a
+   * blank message is a delete wearing an edit's clothes.
    *
-   * Deliberately narrow: it replaces the text of one message and records when
-   * that happened. It does not add a message, remove one, touch the message's
-   * attachments, or re-run the reply that followed — this prototype has no
-   * server-side history or regeneration rules to honour, and inventing them
-   * here would be making up conversation behaviour rather than editing text.
-   * An edit that clears the message is refused, since a blank message is a
-   * delete wearing an edit's clothes.
+   * Options object mirrors sendMessage's own shape (scope/convId/
+   * projectId/artifactId/mode) — a route wires this up the same way it
+   * already wires onSend, since the AI turn this triggers needs the exact
+   * same project/artifact/mode context a brand-new send would.
    */
   const editMessage = useCallback(
-    (convId, messageId, text) => {
+    async ({
+      scope = 'chat', convId, projectId, artifactId, messageId, text, mode,
+    }) => {
       const next = (text ?? '').trim();
       if (!convId || !next) return false;
-      setThreads((prev) => ({
-        ...prev,
-        [convId]: (prev[convId] || []).map((m) =>
-          m.id === messageId && m.role === 'user'
-            ? { ...m, text: next, editedAt: new Date().toISOString() }
-            : m
-        ),
-      }));
+      // A message sent earlier THIS session keeps its client-generated
+      // 'u'+Date.now() placeholder id until saveMessageWithRetry's own
+      // success handler swaps in the real one (WorkspaceProvider's own
+      // sendMessage) — editing before that swap lands has no real row to
+      // PATCH yet, so this refuses rather than sending a request the
+      // backend can only 404.
+      if (!isUuidLike(messageId)) {
+        toast("Still saving your message — try editing again in a moment.");
+        return false;
+      }
+
+      const thread = (qc.getQueryData(queryKeys.threads) || {})[convId] || [];
+      const idx = thread.findIndex((m) => m.id === messageId && m.role === 'user');
+      if (idx === -1) return false;
+      const sentAttachments = thread[idx].attachments || [];
+
+      try {
+        await conversationsApi.editMessage(convId, messageId, next);
+      } catch {
+        toast('Could not save that edit — please try again.');
+        return false;
+      }
+
+      const aiId = 'm' + Date.now();
+      const editedAt = new Date().toISOString();
+      setThreads((prev) => {
+        const current = prev[convId] || [];
+        const i = current.findIndex((m) => m.id === messageId);
+        if (i === -1) return prev;
+        const kept = current.slice(0, i + 1);
+        kept[i] = { ...kept[i], text: next, editedAt };
+        return {
+          ...prev,
+          [convId]: [
+            ...kept,
+            {
+              id: aiId, role: 'ai', generating: true, body: '', status: 'Thinking…', createdAt: editedAt,
+            },
+          ],
+        };
+      });
+
+      const attachmentIds = sentAttachments.map((a) => a.serverId).filter(Boolean);
+      // Deliberately not awaited — see sendMessage's own comment on why
+      // runAiTurn is fire-and-forget from its caller's point of view.
+      runAiTurn(convId, {
+        scope, projectId, artifactId, body: next, aiId, attachmentIds, sentAttachments, mode,
+      });
+
       return true;
     },
-    [setThreads]
+    [qc, setThreads, runAiTurn]
   );
 
   const renameChat = useCallback(

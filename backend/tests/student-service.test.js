@@ -817,6 +817,24 @@ test('StudentService validation and audit logging (no DB)', async (t) => {
     assert.deepEqual(result, [STUDENT]);
   });
 
+  // Regression for the "AI substitutes an unrelated, unfiltered roster"
+  // bug: students_roster previously had no way to narrow its result to
+  // specific roll numbers a document analysis (or the user) already
+  // named, so it always returned an arbitrary unfiltered page of the
+  // whole roster — real data, but unrelated to what was actually asked.
+  await t.test('listStudents (principal, rollNumbers given) forwards the filter to the repository', async () => {
+    const listMock = t.mock.method(studentRepository, 'list', async () => [STUDENT]);
+    t.after(() => listMock.mock.restore());
+
+    const result = await studentService.listStudents(
+      {},
+      { limit: 500, rollNumbers: ['26700160', '26700162'] },
+      { actorUserId: 'principal-u1', actorRole: 'principal' },
+    );
+    assert.deepEqual(result, [STUDENT]);
+    assert.deepEqual(listMock.mock.calls[0].arguments[1], { limit: 500, offset: 0, rollNumbers: ['26700160', '26700162'] });
+  });
+
   await t.test('listStudents (staff/tutor) returns only their own class\'s roster', async () => {
     mockStaffCapabilities(t, ['class-1']);
     const findByClassMock = t.mock.method(studentRepository, 'findByClassId', async () => [STUDENT]);
@@ -825,6 +843,21 @@ test('StudentService validation and audit logging (no DB)', async (t) => {
     const result = await studentService.listStudents({}, {}, { actorUserId: 'tutor-u1', actorRole: 'staff' });
     assert.deepEqual(result, [STUDENT]);
     assert.equal(findByClassMock.mock.calls[0].arguments[1], 'class-1');
+  });
+
+  await t.test('listStudents (staff/tutor, rollNumbers given) filters the merged roster down to just those roll numbers', async () => {
+    mockStaffCapabilities(t, ['class-1']);
+    const OTHER = { id: 'student-2', college_id: 'c1', class_id: 'class-1', roll_no: 'OTHER-1', created_at: '2024-02-01' };
+    const MATCH = { ...STUDENT, roll_no: '26700160', created_at: '2024-01-01' };
+    const findByClassMock = t.mock.method(studentRepository, 'findByClassId', async () => [MATCH, OTHER]);
+    t.after(() => findByClassMock.mock.restore());
+
+    const result = await studentService.listStudents(
+      {},
+      { rollNumbers: ['26700160'] },
+      { actorUserId: 'tutor-u1', actorRole: 'staff' },
+    );
+    assert.deepEqual(result, [MATCH]);
   });
 
   await t.test('listStudents (staff with no class assigned and no faculty allocations) returns an empty list, not an error', async () => {
@@ -925,6 +958,24 @@ test('StudentService validation and audit logging (no DB)', async (t) => {
     const result = await studentService.listStudents({}, {}, classTutorActorContext);
     assert.deepEqual(result, [STUDENT]);
     assert.equal(findByClassMock.mock.calls[0].arguments[1], 'class-1');
+  });
+
+  await t.test('listStudents (hod, rollNumbers given) filters the department roster down to just those roll numbers', async () => {
+    const OTHER = { id: 'student-3', college_id: 'c1', class_id: 'class-1', roll_no: 'OTHER-2', created_at: '2024-02-01' };
+    const MATCH = { ...STUDENT, roll_no: '26700162', created_at: '2024-01-01' };
+    const deptMock = t.mock.method(staffService, 'findHodDepartmentId', async () => 'dept-1');
+    const findByDeptMock = t.mock.method(studentRepository, 'findByDepartmentId', async () => [MATCH, OTHER]);
+    t.after(() => {
+      deptMock.mock.restore();
+      findByDeptMock.mock.restore();
+    });
+
+    const result = await studentService.listStudents(
+      {},
+      { rollNumbers: ['26700162'] },
+      { actorUserId: 'hod-u1', actorRole: 'hod', collegeId: 'c1' },
+    );
+    assert.deepEqual(result, [MATCH]);
   });
 
   await t.test('listStudents (hod) returns only their own department\'s roster', async () => {

@@ -86,7 +86,13 @@ export function ChatView({ chatId, title, meta, messages, placeholder, onSend, b
                 message={m}
                 selected={selected?.id === m.id}
                 onSelect={setSelectedId}
-                onEdit={chatId ? (id, text) => editMessage(chatId, id, text) : undefined}
+                onEdit={
+                  chatId
+                    ? (id, text) => editMessage({
+                      scope: 'chat', convId: chatId, messageId: id, text, mode: composer.mode,
+                    })
+                    : undefined
+                }
               />
             ))}
           </ChatTranscriptScrollArea>

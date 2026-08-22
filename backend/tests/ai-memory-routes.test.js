@@ -99,6 +99,7 @@ async function seedTenant(adminPool) {
 async function cleanupTenant(adminPool, college) {
   await adminPool.query('DELETE FROM audit_log WHERE college_id = $1', [college.collegeId]);
   await adminPool.query('DELETE FROM ai_scoped_memory WHERE college_id = $1', [college.collegeId]);
+  await adminPool.query('DELETE FROM ai_general_memory WHERE college_id = $1', [college.collegeId]);
   await adminPool.query('DELETE FROM ai_memory_consent WHERE college_id = $1', [college.collegeId]);
   await adminPool.query('DELETE FROM refresh_tokens WHERE college_id = $1', [college.collegeId]);
   await adminPool.query('DELETE FROM users WHERE college_id = $1', [college.collegeId]);
@@ -199,5 +200,68 @@ test('ai memory routes', async (t) => {
     await put(baseUrl, '/api/v1/ai/memory/consent', headersFor(tokenOne), { consented: true });
     const userTwoConsent = await get(baseUrl, '/api/v1/ai/memory/consent', headersFor(tokenTwo));
     assert.equal(userTwoConsent.body.consented, false, "user two's own consent is unaffected by user one's opt-in");
+  });
+
+  // General freeform facts (product decision, this round) — same RLS/
+  // ownership proof shape as ai_scoped_memory above, plus the real
+  // "revoking consent wipes this too" property that only lives at the
+  // service layer's setConsent, proven here end to end against real
+  // Postgres rather than the mocked unit test.
+  await t.test('GET /ai/memory/facts is empty before any fact is remembered', async () => {
+    const token = await login('userone');
+    const resp = await get(baseUrl, '/api/v1/ai/memory/facts', headersFor(token));
+    assert.equal(resp.status, 200);
+    assert.deepEqual(resp.body, []);
+  });
+
+  await t.test('a general fact round-trips through GET /ai/memory/facts and DELETE forgets it for real', async () => {
+    const token = await login('userone');
+    await put(baseUrl, '/api/v1/ai/memory/consent', headersFor(token), { consented: true });
+
+    // Simulate what ai_memory_remember_fact would have written (the AI
+    // tool path itself is proven separately in ai-memory-service.test.js).
+    const userRow = await adminPool.query('SELECT id FROM users WHERE college_id = $1 AND username = $2', [college.collegeId, 'userone']);
+    const userId = userRow.rows[0].id;
+    const insertResp = await adminPool.query(
+      'INSERT INTO ai_general_memory (college_id, user_id, fact) VALUES ($1, $2, $3) RETURNING id',
+      [college.collegeId, userId, 'I mostly handle the placement cell'],
+    );
+    const factId = insertResp.rows[0].id;
+
+    const listed = await get(baseUrl, '/api/v1/ai/memory/facts', headersFor(token));
+    assert.equal(listed.body.length, 1);
+    assert.equal(listed.body[0].fact, 'I mostly handle the placement cell');
+
+    const deleteResp = await del(baseUrl, `/api/v1/ai/memory/facts/${factId}`, headersFor(token));
+    assert.equal(deleteResp.status, 204);
+
+    const afterDelete = await get(baseUrl, '/api/v1/ai/memory/facts', headersFor(token));
+    assert.deepEqual(afterDelete.body, []);
+  });
+
+  await t.test('revoking consent wipes previously stored general facts too, not just the bounded preferences', async () => {
+    const token = await login('userone');
+    await put(baseUrl, '/api/v1/ai/memory/consent', headersFor(token), { consented: true });
+
+    const userRow = await adminPool.query('SELECT id FROM users WHERE college_id = $1 AND username = $2', [college.collegeId, 'userone']);
+    const userId = userRow.rows[0].id;
+    await adminPool.query(
+      'INSERT INTO ai_general_memory (college_id, user_id, fact) VALUES ($1, $2, $3)',
+      [college.collegeId, userId, 'I prefer answers in Tanglish'],
+    );
+
+    const beforeRevoke = await get(baseUrl, '/api/v1/ai/memory/facts', headersFor(token));
+    assert.equal(beforeRevoke.body.length, 1);
+
+    await put(baseUrl, '/api/v1/ai/memory/consent', headersFor(token), { consented: false });
+
+    const afterRevoke = await get(baseUrl, '/api/v1/ai/memory/facts', headersFor(token));
+    assert.deepEqual(afterRevoke.body, []);
+  });
+
+  await t.test('DELETE /ai/memory/facts/:factId always succeeds, even with no consent on record', async () => {
+    const token = await login('userone');
+    const resp = await del(baseUrl, '/api/v1/ai/memory/facts/00000000-0000-0000-0000-000000000000', headersFor(token));
+    assert.equal(resp.status, 204);
   });
 });

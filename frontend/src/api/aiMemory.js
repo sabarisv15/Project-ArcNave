@@ -12,4 +12,10 @@ export const aiMemoryApi = {
   setConsent: (consented) => api.put('/ai/memory/consent', { consented }),
   list: () => api.get('/ai/memory'),
   remove: (memoryType) => api.delete(`/ai/memory/${memoryType}`),
+  // General freeform facts (product decision, this round) — remembering
+  // happens only via the ai_memory_remember_fact AI tool in chat, same
+  // "no human-driven add" shape the bounded preferences above already
+  // have; this is read + forget only, same as `remove` above.
+  listFacts: () => api.get('/ai/memory/facts'),
+  removeFact: (factId) => api.delete(`/ai/memory/facts/${factId}`),
 };

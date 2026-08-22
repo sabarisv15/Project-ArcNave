@@ -158,7 +158,13 @@ export function ProjectDetail() {
                   message={m}
                   selected={selectedResponse?.id === m.id}
                   onSelect={setSelectedId}
-                  onEdit={convId ? (id, text) => editMessage(convId, id, text) : undefined}
+                  onEdit={
+                    convId
+                      ? (id, text) => editMessage({
+                        scope: 'project', convId, projectId, messageId: id, text, mode: composer.mode,
+                      })
+                      : undefined
+                  }
                 />
               ))}
             </ChatTranscriptScrollArea>

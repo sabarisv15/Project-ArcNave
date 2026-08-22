@@ -121,17 +121,36 @@ function createConversationsRouter() {
     const {
       role, content, tool_used: toolUsed, tool_params: toolParams,
       presentation, raw_data: rawData, parent_message_id: parentMessageId,
+      attachments,
     } = req.body || {};
     try {
       const message = await conversationService.addMessage(
         req.dbClient,
         req.params.id,
         {
-          role, content, toolUsed, toolParams, presentation, rawData, parentMessageId,
+          role, content, toolUsed, toolParams, presentation, rawData, parentMessageId, attachments,
         },
         { userId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
       );
       res.status(201).json(message);
+    } catch (err) {
+      if (mapConversationServiceError(err, res)) return;
+      throw err;
+    }
+  }));
+
+  router.patch('/conversations/:id/messages/:messageId', requireAuth, asyncHandler(async (req, res) => {
+    if (!requireResolvedTenant(req, res)) return;
+    const { content } = req.body || {};
+    try {
+      const message = await conversationService.editMessage(
+        req.dbClient,
+        req.params.id,
+        req.params.messageId,
+        { content },
+        { userId: identityService.resolveActorUserId(req.capabilities) },
+      );
+      res.json(message);
     } catch (err) {
       if (mapConversationServiceError(err, res)) return;
       throw err;

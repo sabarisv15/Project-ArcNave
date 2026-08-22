@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Code2,
   Database,
+  Download,
   Eye,
   FileSpreadsheet,
   FileText,
@@ -16,7 +17,9 @@ import {
   Paperclip,
   X,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { SourcePreviewDrawer } from './SourcePreviewDrawer';
+import { downloadFile } from '../api/client';
 import { cn } from '../lib/utils';
 
 /**
@@ -62,6 +65,10 @@ const KIND = {
   institutional: { icon: Building2, label: 'Institutional document', group: 'files' },
   personal: { icon: FileText, label: 'Personal document', group: 'files' },
   record: { icon: Database, label: 'Record', group: 'files' },
+  // A tool-call result the reply was grounded in (aiService.buildEvidence)
+  // — real provenance, but never a document: nothing to open, so this
+  // stays a plain (non-clickable) row, same as `record`'s own icon.
+  tool: { icon: Database, label: 'Data lookup', group: 'files' },
 };
 
 /** An attachment's glyph follows the file, not the fact that it was attached. */
@@ -104,16 +111,32 @@ function previewable(source) {
 }
 
 /**
+ * A chat attachment or an AI-generated document (`kind: 'uploaded'`) is a
+ * real `documents` row — `source.documentId` is that row's real id, the
+ * same one ChatMessage.jsx's own SentFileChip already downloads through.
+ * There is no separate "open" surface for these in the app yet (no
+ * in-browser document viewer), so the one real action is the same
+ * authenticated download SentFileChip already proves out — never a bare
+ * `window.open(href)`, which can't carry the Bearer token this endpoint
+ * requires.
+ */
+function downloadable(source) {
+  return source.kind === 'uploaded' && Boolean(source.documentId);
+}
+
+/**
  * One compact 46px line: glyph, title, one subdued line, and a quiet arrow
  * that says the row opens something. No card, no border, no shadow — a source
  * list is an index, and an index whose entries are each a panel shows two of
  * them per screen.
  */
 function SourceRow({ source, onPreview }) {
+  const [downloading, setDownloading] = useState(false);
   const Icon = iconFor(source);
   const href = source.href || source.previewUrl;
   const opensPreview = previewable(source);
-  const openable = opensPreview || Boolean(href);
+  const opensDownload = downloadable(source);
+  const openable = opensPreview || opensDownload || Boolean(href);
   // Websites name their domain; a file names where it came from, falling back
   // to what kind of thing it is when it has no stated origin.
   const secondary =
@@ -143,7 +166,7 @@ function SourceRow({ source, onPreview }) {
           </span>
         )}
       </span>
-      {openable && !opensPreview && (
+      {openable && !opensPreview && !opensDownload && (
         <ArrowUpRight
           size={13}
           strokeWidth={1.9}
@@ -159,6 +182,17 @@ function SourceRow({ source, onPreview }) {
           className="flex-none text-ink-ghost opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100"
         />
       )}
+      {opensDownload && (
+        <Download
+          size={13}
+          strokeWidth={1.9}
+          aria-hidden="true"
+          className={cn(
+            'flex-none text-ink-ghost transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100',
+            downloading ? 'opacity-100 animate-pulseSoft' : 'opacity-0'
+          )}
+        />
+      )}
     </>
   );
 
@@ -166,19 +200,41 @@ function SourceRow({ source, onPreview }) {
 
   if (!openable) return <li className={ROW}>{body}</li>;
 
+  const handleClick = async () => {
+    if (opensPreview) {
+      onPreview?.(source);
+      return;
+    }
+    if (opensDownload) {
+      if (downloading) return;
+      setDownloading(true);
+      try {
+        await downloadFile(`/documents/${source.documentId}/download`, source.title);
+      } catch {
+        toast(`Could not download ${source.title} — please try again.`);
+      } finally {
+        setDownloading(false);
+      }
+      return;
+    }
+    window.open(href, '_blank', 'noopener');
+  };
+
   return (
     <li>
       <button
         type="button"
-        // Web sources leave in a new browsing context with the opener severed,
-        // exactly as they did before; a document source opens ArcNave's own
-        // preview instead of a tab.
-        onClick={() => (opensPreview ? onPreview?.(source) : window.open(href, '_blank', 'noopener'))}
-        aria-label={`${opensPreview ? 'Preview' : 'Open'} ${source.title}`}
+        // Web sources leave in a new browsing context with the opener severed;
+        // a document source opens ArcNave's own preview instead of a tab; an
+        // uploaded/generated file downloads for real, the same authenticated
+        // call SentFileChip already uses.
+        onClick={handleClick}
+        disabled={opensDownload && downloading}
+        aria-label={`${opensPreview ? 'Preview' : opensDownload ? 'Download' : 'Open'} ${source.title}`}
         title={source.title}
         className={cn(
           ROW,
-          'group border-0 bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent'
+          'group border-0 bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent disabled:opacity-70 disabled:cursor-wait'
         )}
       >
         {body}

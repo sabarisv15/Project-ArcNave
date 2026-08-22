@@ -198,7 +198,13 @@ export function ArtifactEditor() {
                     message={m}
                     selected={selectedResponse?.id === m.id}
                     onSelect={setSelectedId}
-                    onEdit={convId ? (id, text) => editMessage(convId, id, text) : undefined}
+                    onEdit={
+                      convId
+                        ? (id, text) => editMessage({
+                          scope: 'artifact', convId, artifactId, messageId: id, text, mode: composer.mode,
+                        })
+                        : undefined
+                    }
                   />
                 ))}
               </div>

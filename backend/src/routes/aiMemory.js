@@ -71,6 +71,29 @@ function createAiMemoryRouter() {
     }
   }));
 
+  // General freeform facts (product decision, this round) — a real path
+  // segment ('/facts'), never colliding with the single-segment
+  // ':memoryType' routes above (Express only matches those against
+  // exactly one path segment). Remembering happens only via the
+  // ai_memory_remember_fact AI tool, same "no human-driven add" shape
+  // the bounded preferences above already have — this route surface is
+  // read + forget only.
+  router.get('/ai/memory/facts', requireAuth, asyncHandler(async (req, res) => {
+    if (!requireResolvedTenant(req, res)) return;
+    const facts = await aiMemoryService.recallGeneralFacts(req.dbClient, { actorUserId: identityService.resolveActorUserId(req.capabilities) });
+    res.json(facts);
+  }));
+
+  router.delete('/ai/memory/facts/:factId', requireAuth, asyncHandler(async (req, res) => {
+    if (!requireResolvedTenant(req, res)) return;
+    await aiMemoryService.forgetFact(
+      req.dbClient,
+      req.params.factId,
+      { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+    );
+    res.status(204).end();
+  }));
+
   return router;
 }
 

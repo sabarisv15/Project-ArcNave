@@ -831,14 +831,14 @@ async function removeStudent(client, id, { userId, actorRole }) {
 // allowedRoles already include 'class_tutor' — aiToolRegistry.js) fell
 // through to an empty roster in both the legacy shape and an
 // ActorContext alike.
-async function listStudents(client, { limit = 50, offset = 0 } = {}, actorInput = {}) {
+async function listStudents(client, { limit = 50, offset = 0, rollNumbers } = {}, actorInput = {}) {
   const isActorContext = 'scopeLevel' in actorInput;
   const actorRole = isActorContext ? actorInput.role : actorInput.actorRole;
   const actorUserId = isActorContext ? actorInput.actorId : actorInput.actorUserId;
   const collegeId = isActorContext ? actorInput.tenantId : actorInput.collegeId;
 
   if (actorRole === undefined || actorRole === 'principal') {
-    return studentRepository.list(client, { limit, offset });
+    return studentRepository.list(client, { limit, offset, rollNumbers });
   }
   if (actorRole === 'staff' || actorRole === 'class_tutor') {
     // Same broader read rule as assertCanViewStudent: a tutor's own
@@ -863,7 +863,10 @@ async function listStudents(client, { limit = 50, offset = 0 } = {}, actorInput 
     const rosters = await Promise.all(
       classIds.map((classId) => studentRepository.findByClassId(client, classId)),
     );
-    const all = rosters.flat().sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    let all = rosters.flat().sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    if (Array.isArray(rollNumbers) && rollNumbers.length > 0) {
+      all = all.filter((s) => rollNumbers.includes(s.roll_no));
+    }
     return all.slice(offset, offset + limit);
   }
   if (actorRole === 'hod') {
@@ -871,7 +874,10 @@ async function listStudents(client, { limit = 50, offset = 0 } = {}, actorInput 
     if (departmentId === null) {
       return [];
     }
-    const all = await studentRepository.findByDepartmentId(client, departmentId);
+    let all = await studentRepository.findByDepartmentId(client, departmentId);
+    if (Array.isArray(rollNumbers) && rollNumbers.length > 0) {
+      all = all.filter((s) => rollNumbers.includes(s.roll_no));
+    }
     return all.slice(offset, offset + limit);
   }
   return [];

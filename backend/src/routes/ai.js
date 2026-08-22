@@ -27,7 +27,17 @@ const { IdentifierResolutionError } = require('../identifierResolution');
 // A count, not a token budget: bounds worst-case prompt growth without
 // needing a tokenizer here, same reasoning maxAffectedRows uses a row
 // count rather than trying to price a query up front.
-const HISTORY_LIMIT = 10;
+// Raised from 10 (5 exchanges): a real complaint traced to this —
+// interrupt a task with a short side conversation, come back to it a
+// few turns later, and the interrupted task had already scrolled out
+// of the window entirely, so CONVERSATIONAL_POLICY's own "resume from
+// exactly that point" instruction had nothing left to resume FROM, not
+// a case of the model simply ignoring the instruction. 20 (10
+// exchanges) covers a realistic detour without needing a tokenizer or
+// per-message truncation here — still a deliberate bound, not "the
+// whole conversation," so raise further only with the same cost/
+// latency tradeoff in mind this constant has always carried.
+const HISTORY_LIMIT = 20;
 
 function requireResolvedTenant(req, res) {
   if (req.collegeId === null) {

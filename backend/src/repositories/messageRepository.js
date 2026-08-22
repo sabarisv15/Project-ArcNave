@@ -1,12 +1,17 @@
 'use strict';
 
-// Query mechanics for `messages` only. Immutable, append-only — same
-// shape as timetableRevisionRepository.js: "a revision is permanently
-// retained and never changes once created." No update/remove function
-// exists here on purpose, and the table's own GRANT (see the
-// ai-conversations-and-projects migration) omits UPDATE/DELETE at the
-// DB level too. A conversation delete still removes its messages via
-// the FK's own ON DELETE CASCADE action, not through this file.
+// Query mechanics for `messages`. Was fully immutable/append-only until
+// the message-edit-and-rewind migration (real "edit and regenerate"
+// rewind, a deliberate product decision): `update` writes ONLY the
+// `content` column, matching that migration's own column-level GRANT
+// (every other column — role/tool_used/tool_params/presentation/
+// raw_data/attachments/parent_message_id — stays unchangeable, enforced
+// at the database level, not just by this file only ever passing
+// `content`). `deleteAfter` is conversationService.editMessage's own
+// truncate-forward step, always scoped to one conversation_id and a
+// `created_at` cutoff, never an unscoped delete. A conversation delete
+// still removes its messages via the FK's own ON DELETE CASCADE action,
+// not through either of these.
 
 const COLUMNS = [
   ['collegeId', 'college_id'],
@@ -18,13 +23,14 @@ const COLUMNS = [
   ['toolParams', 'tool_params'],
   ['presentation', 'presentation'],
   ['rawData', 'raw_data'],
+  ['attachments', 'attachments'],
 ];
 
-// tool_params/presentation/raw_data are JSONB — pg does not serialize
-// a plain JS object/array into valid JSON on its own, so these three
-// need an explicit JSON.stringify before binding, same convention
+// tool_params/presentation/raw_data/attachments are JSONB — pg does
+// not serialize a plain JS object/array into valid JSON on its own, so
+// these need an explicit JSON.stringify before binding, same convention
 // auditLogRepository.js's own `metadata` column already establishes.
-const JSONB_FIELDS = new Set(['toolParams', 'presentation', 'rawData']);
+const JSONB_FIELDS = new Set(['toolParams', 'presentation', 'rawData', 'attachments']);
 
 async function create(client, fields) {
   const entries = COLUMNS.filter(([key]) => fields[key] !== undefined);
@@ -67,8 +73,29 @@ async function listByConversation(client, conversationId, { limit, offset } = {}
   return result.rows;
 }
 
+async function update(client, id, { content }) {
+  const result = await client.query(
+    'UPDATE messages SET content = $2 WHERE id = $1 RETURNING *',
+    [id, content],
+  );
+  return result.rows[0] || null;
+}
+
+// Strictly-greater-than: the edited message itself (at `createdAt`)
+// is never touched by this, only what came after it — matches
+// listByConversation's own `ORDER BY created_at ASC` as the single
+// source of truth for "what came after" a given message.
+async function deleteAfter(client, conversationId, createdAt) {
+  await client.query(
+    'DELETE FROM messages WHERE conversation_id = $1 AND created_at > $2',
+    [conversationId, createdAt],
+  );
+}
+
 module.exports = {
   create,
   findById,
   listByConversation,
+  update,
+  deleteAfter,
 };

@@ -61,6 +61,46 @@ async function removeAllMemoryForUser(client, userId) {
   await client.query('DELETE FROM ai_scoped_memory WHERE user_id = $1', [userId]);
 }
 
+// --- General freeform facts (ai_general_memory) — see the migration's ---
+// --- own comment for why this is a separate table, not a reshape of -----
+// --- ai_scoped_memory's one-row-per-type shape. -------------------------
+
+async function insertGeneralFact(client, { collegeId, userId, fact }) {
+  const result = await client.query(
+    'INSERT INTO ai_general_memory (college_id, user_id, fact) VALUES ($1, $2, $3) RETURNING *',
+    [collegeId, userId, fact],
+  );
+  return result.rows[0];
+}
+
+async function listGeneralFacts(client, userId) {
+  const result = await client.query(
+    'SELECT * FROM ai_general_memory WHERE user_id = $1 ORDER BY created_at',
+    [userId],
+  );
+  return result.rows;
+}
+
+async function countGeneralFacts(client, userId) {
+  const result = await client.query(
+    'SELECT count(*)::int AS count FROM ai_general_memory WHERE user_id = $1',
+    [userId],
+  );
+  return result.rows[0].count;
+}
+
+async function removeGeneralFact(client, userId, factId) {
+  const result = await client.query(
+    'DELETE FROM ai_general_memory WHERE user_id = $1 AND id = $2 RETURNING id',
+    [userId, factId],
+  );
+  return result.rows.length > 0;
+}
+
+async function removeAllGeneralFactsForUser(client, userId) {
+  await client.query('DELETE FROM ai_general_memory WHERE user_id = $1', [userId]);
+}
+
 module.exports = {
   getConsent,
   upsertConsent,
@@ -68,4 +108,9 @@ module.exports = {
   listMemoryByUser,
   removeMemory,
   removeAllMemoryForUser,
+  insertGeneralFact,
+  listGeneralFacts,
+  countGeneralFacts,
+  removeGeneralFact,
+  removeAllGeneralFactsForUser,
 };

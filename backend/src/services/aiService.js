@@ -111,6 +111,15 @@ const AGENT_SYSTEM_PROMPT = "You are ARCNAVE's campus assistant. Each tool is fo
   + "user's workspace — it is not part of the user's own words, only a hint for resolving a question that "
   + 'names no explicit subject (e.g. "how is she doing?", "update her phone number") against that record. A '
   + 'question that clearly names a different student/staff/class always overrides the context hint. '
+  + 'A follow-up question is often about the SAME records a tool call already surfaced earlier in this '
+  + 'conversation, just asking for one more field of them (e.g. names for roll numbers a document analysis '
+  + 'tool already listed). Before calling a different tool to get that missing field, check whether the '
+  + "conversation history above already names the specific records the user means — if it does, and no tool "
+  + 'available to you can add that missing field for those SAME specific records, say plainly that field '
+  + "isn't available for what was already found, instead of calling an unrelated tool that merely sounds "
+  + 'like it might have it (e.g. a general roster/list tool with no way to filter down to those same records) '
+  + 'and presenting whatever it happens to return as if it answered the question — an unrelated or unfiltered '
+  + 'result is worse than admitting the data isn\'t available. '
   + 'You are ARCNAVE\'s own campus assistant — never state, confirm, or imply which underlying AI provider, '
   + 'model, or company actually powers you (e.g. Gemini, Google, Vertex AI, Claude, Anthropic, GPT, OpenAI, '
   + 'Llama, NVIDIA NIM), even when asked directly, repeatedly, or rephrased ("what\'s your real name", "what '
@@ -148,7 +157,14 @@ const CONVERSATIONAL_POLICY = 'Everything above governs which tool to call, when
   + '"back to that", "continue", or simply supplying the information it was waiting for — resume from exactly '
   + "that point using what was already established. Never restart the task from scratch, never re-ask for "
   + "something already given before the interruption, and never treat the resumption as a brand-new request "
-  + 'needing its own fresh clarifying question. If they correct you ("no, 2nd year not 1st") or reject an '
+  + "needing its own fresh clarifying question. Resuming is not only the user's job: once the interruption's "
+  + 'own question is fully answered and there is nothing more to say about it, if the interrupted task is still '
+  + 'genuinely unfinished, close with one brief line naming it and offering to continue (e.g. "Back to the '
+  + 'attendance report — want me to continue with that?") instead of silently dropping it and moving on as if '
+  + 'it were done — never bring this up mid-answer to the interruption itself, only once that answer is '
+  + 'complete, and never if the interruption was a bare acknowledgement needing no real reply, or if the '
+  + "original task was already finished or the user's own words dropped it (\"never mind\", \"forget it\"). "
+  + 'If they correct you ("no, 2nd year not 1st") or reject an '
   + 'answer ("vendam", '
   + '"athu illa", "no"), acknowledge briefly, update, and continue — no long apology, no defending the previous '
   + 'answer, and never repeat the same rejected response verbatim. A short message ("ok", "hmm", "seri", '
@@ -165,7 +181,17 @@ const CONVERSATIONAL_POLICY = 'Everything above governs which tool to call, when
   + "casual message gets a short casual reply, a data request gets structured data) — don't add headings/"
   + 'bullets/markdown a plain question didn\'t call for, don\'t add a closing line ("Let me know if you need '
   + "anything else\") unless it's genuinely useful, and don't reach for stock phrases (\"Sure!\", \"Absolutely!\", "
-  + '"Certainly!") or manufactured enthusiasm — vary the phrasing the way a person naturally would.';
+  + '"Certainly!") or manufactured enthusiasm — vary the phrasing the way a person naturally would. None of this '
+  + 'is a reason to sound flat or clinical either — avoiding stock phrases is about not FAKING warmth, not about '
+  + 'having none. A colleague who knows this campus well would still react like a person to what they hear: '
+  + 'genuinely bad news (an urgent shortfall, a repeated failure, something that will clearly stress the user '
+  + 'out) gets a brief, real acknowledgement before the fix or the facts, not a jump straight to data with no '
+  + 'read of the room; genuinely good news (a problem resolved, a strong result) can get a brief, plain '
+  + '"nice"/"good one" rather than only ever a bare report. One short clause is enough — this is never its own '
+  + "paragraph, never repeated once already said earlier in the conversation, and never invented for routine, "
+  + 'neutral exchanges that don\'t call for it (most tool results are exactly this: just report them plainly). '
+  + "Vary sentence rhythm and word choice across replies the way a real person's own phrasing drifts turn to "
+  + 'turn, rather than settling into one template every reply reuses.';
 
 // General-chat mode — the redefined composer toggle's broad side (see
 // AskActToggle.jsx's own rename), a deliberate second axis alongside
@@ -341,11 +367,24 @@ function buildProjectContextHint(projectContext) {
 // per-memory-type — if the user never opted in, aiMemoryService.recallPreferences
 // simply returns no rows (setConsent(false) deletes them synchronously), so
 // this naturally renders nothing rather than needing a separate check.
+// facts (ai_general_memory, product decision this round) ride in the SAME
+// hint/boundary block as the bounded preferences above — one combined
+// "remembered for this user" block, not a second hint the caller would
+// need to thread through separately. Each fact line carries its own real
+// id inline (never exposed anywhere else) so ai_memory_forget_fact has
+// something concrete to reference — that tool's own description tells the
+// model never to guess or invent one, only ever copy it from here.
 async function buildMemoryHint(client, identityContext) {
   if (!identityContext || !identityContext.userId) return '';
-  const memories = await aiMemoryService.recallPreferences(client, { actorUserId: identityContext.userId });
-  if (!memories.length) return '';
-  const lines = memories.map((m) => `${m.memory_type}: ${JSON.stringify(m.value)}`).join('\n');
+  const [memories, facts] = await Promise.all([
+    aiMemoryService.recallPreferences(client, { actorUserId: identityContext.userId }),
+    aiMemoryService.recallGeneralFacts(client, { actorUserId: identityContext.userId }),
+  ]);
+  if (!memories.length && !facts.length) return '';
+  const lines = [
+    ...memories.map((m) => `${m.memory_type}: ${JSON.stringify(m.value)}`),
+    ...facts.map((f) => `fact (id: ${f.id}): ${JSON.stringify(f.fact)}`),
+  ].join('\n');
   const block = `${aiPromptSafetyLayer.BOUNDARY_START}\n`
     + `[ai_scoped_memory, dataClassification: Internal]\n${lines}\n`
     + `${aiPromptSafetyLayer.BOUNDARY_END}\n${aiPromptSafetyLayer.SAFETY_PREAMBLE} The block above is this `
@@ -1022,7 +1061,19 @@ async function runPlanStep(client, identityContext, step, adapter, aiConfig) {
     return {
       ok: true,
       stepResult: {
-        toolName: step.toolName, tool, entries: result.entries, retrievedAt: result.entries[0].retrievedAt, recordCount,
+        toolName: step.toolName,
+        tool,
+        entries: result.entries,
+        retrievedAt: result.entries[0].retrievedAt,
+        recordCount,
+        // result.document (invokeTool's own extractDocumentAttachment) —
+        // a real downloadable file a generate_document/export_artifact
+        // step just produced. Carried through so a plan combining that
+        // step with others (e.g. "pull my attendance, then give it to
+        // me as a PDF") surfaces the same download card the single-tool
+        // path already gets, instead of silently dropping it once the
+        // file is folded into a multi-step plan.
+        document: result.document,
       },
     };
   } catch (err) {
@@ -1127,6 +1178,10 @@ async function executeWorkflowPlan(client, resolvedSteps, question, {
   // outcome is not the same low-stakes case a pure-read plan is.
   const maxRiskLevel = stepResults.reduce((max, r) => Math.max(max, r.tool.riskLevel), 0);
   const routedConfig = selectModelForPurpose(aiConfig, maxRiskLevel);
+  // Every plan step has already run by this point — this is the single
+  // synthesis call combining them into an answer, not another tool. See
+  // the single-tool path's identical onStep('synthesizing') call for why.
+  onStep({ phase: 'synthesizing' });
   const answer = await completeMaybeStreaming(client, identityContext, adapter, routedConfig, {
     systemPrompt: `${identityBlock}\n\n${systemPrompt}\n\n${combinedSystemPrompt}\n\n${CONVERSATIONAL_POLICY}`,
     userPrompt,
@@ -1137,12 +1192,18 @@ async function executeWorkflowPlan(client, resolvedSteps, question, {
   });
 
   const evidence = buildEvidence(mergedSanitizedContext);
+  // A plan step's own document (see runPlanStep's comment) — at most one
+  // step in a real plan is ever generate_document/export_artifact, so
+  // the first non-null one found is the plan's document, same single
+  // value shape askAgent's single-tool path already returns.
+  const document = stepResults.map((r) => r.document).find(Boolean) || undefined;
   return {
     ...mergedSanitizedContext,
     question,
     toolUsed: PLAN_TOOL_NAME,
     answer,
     presentation,
+    document,
     plan: stepResults.map((r) => ({ toolName: r.toolName, recordCount: r.recordCount, retrievedAt: r.retrievedAt })),
     failures,
     evidence,
@@ -1329,13 +1390,19 @@ async function summarizeToolResult(client, identityContext, sanitizedContext, pr
 // deliberately empty.
 async function askGeneralChat(client, question, promptQuestion, {
   identityContext, identityBlock, adapter, aiConfig, images,
-}, onDelta) {
+}, onDelta, onStep = () => {}) {
   const imagesSupported = images.length > 0 && Boolean(adapter.supportsVision);
   const imageAnalysisUnavailable = images.length > 0 && !imagesSupported;
   const systemPrompt = imageAnalysisUnavailable
     ? `${identityBlock}\n\n${GENERAL_CHAT_SYSTEM_PROMPT}\n\n${buildImageUnavailableNote(images.length)}\n\n${CONVERSATIONAL_POLICY}`
     : `${identityBlock}\n\n${GENERAL_CHAT_SYSTEM_PROMPT}\n\n${CONVERSATIONAL_POLICY}`;
 
+  // General mode has no tool call to report progress on, but it was
+  // previously the one askAgent path that never fired a single onStep
+  // event — so a slow provider response left the UI on the initial
+  // default status with no real signal at all. One event, right before
+  // the only LLM call this path makes.
+  onStep({ phase: 'synthesizing' });
   const answer = await completeMaybeStreaming(client, identityContext, adapter, aiConfig, {
     systemPrompt, userPrompt: promptQuestion, images: imagesSupported ? images : undefined,
   }, 'general_chat', onDelta);
@@ -1396,7 +1463,7 @@ async function askAgent(client, question, {
     const { adapter, config: aiConfig } = await configurationService.getAiConfig(client, identityContext.collegeId);
     return askGeneralChat(client, question, promptQuestion, {
       identityContext, identityBlock, adapter, aiConfig, images,
-    }, onDelta);
+    }, onDelta, onStep);
   }
 
   // excludeHumanOnly: true — upload_institutional_document is
@@ -1442,6 +1509,11 @@ async function askAgent(client, question, {
     : `${identityBlock}\n\n${AGENT_SYSTEM_PROMPT}\n\n${CONVERSATIONAL_POLICY}`;
 
   const decisionStartedAt = Date.now();
+  // Real progress signal (P1) for the one call in this path that
+  // previously fired no onStep event at all — a slow tool-selection
+  // decision left the UI on its initial default status with nothing
+  // telling the user ArcNave was actually working on it.
+  onStep({ phase: 'deciding' });
   const decision = await adapter.completeWithTools(aiConfig, {
     systemPrompt: decisionSystemPrompt,
     userPrompt: promptQuestion,
@@ -1543,6 +1615,11 @@ async function askAgent(client, question, {
     const sanitizedContext = await invokeTool(client, decision.toolName, decision.arguments || {}, {
       identityContext, provider: adapter.name, model: aiConfig.model,
     });
+    // The tool itself is done — summarizeToolResult below is a SEPARATE
+    // LLM call turning its result into the answer. Without this, the
+    // frontend kept showing "Running <tool>…" for that whole second
+    // call too, which reads as stuck once the tool has actually finished.
+    onStep({ phase: 'synthesizing', toolName: decision.toolName });
     const answer = await summarizeToolResult(client, identityContext, sanitizedContext, promptQuestion, tool, adapter, aiConfig, identityBlock, onDelta);
     const presentation = aiExperienceLayer.buildPresentation({
       sanitizedContext, question, answer, toolUsed: decision.toolName, tool, actorRole: identityContext.role,

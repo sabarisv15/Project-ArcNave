@@ -1,4 +1,4 @@
-import { Terminal } from 'lucide-react';
+import { Sparkles, Terminal } from 'lucide-react';
 import { ArcNaveVelMark } from './ArcNaveVelMark';
 
 /**
@@ -18,6 +18,7 @@ export function GenerationState({ status, phase }) {
   return (
     <span className="inline-flex items-center gap-[6px] text-[13.5px] text-ink-muted animate-pulseSoft">
       {phase === 'running_tool' && <Terminal size={13} strokeWidth={2} aria-hidden="true" />}
+      {phase === 'synthesizing' && <Sparkles size={13} strokeWidth={2} aria-hidden="true" />}
       {status}
     </span>
   );

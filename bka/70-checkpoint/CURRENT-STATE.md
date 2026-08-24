@@ -10,16 +10,41 @@ only links to it.
 
 ## Active Task
 
-**None.** No task is in progress. If you are starting a new session and
-the user hasn't named a task yet, ask them what's next — do not assume
-"the next logical step" from the history below, and do not explore the
-codebase to guess one.
+**None — this session's category-by-category live behavioral suite run
+is complete.** All categories A through K have now been run live this
+session (Vertex quota recovered from the prior session's exhaustion; no
+quota error occurred in any run this session — see results below). J
+surfaced a real, previously-unscoped product decision — resolved and
+partially implemented as [ADL-053](../30-decisions/ledger.md#adl-053);
+one sub-issue from that work is still open. If a new session starts and
+the user hasn't named a task, ask what's next rather than assuming
+ADL-053's open sub-issue is it.
 
 ## Exact next action
 
-None queued. Do not read anything below speculatively — it exists only
-so that *if* the user names one of these threads, you already know
-exactly where its record lives, with zero exploration needed.
+None queued. If the user wants to keep chasing ADL-053's open sub-issue
+(j2: model composes a correct revision but replies with it in chat
+instead of calling `update_artifact_content`, reproduced 3/3 live
+attempts) — read that ledger entry's "Open sub-issue" paragraph first,
+do not re-diagnose from scratch.
+
+## This session's live run results (category, CATEGORY_FILTER=<letter>, all via real Gemini/Vertex)
+
+- A 12/12, B 8/8, C 6/6, D 4/4, F 2/2, G 6/6 — clean on first attempt.
+- E 2/3 first attempt (`e3` — Vertex timeout, not quota, not a content
+  failure) → 3/3 clean on retry.
+- I 3/3 — passes structurally, but this category always returns
+  `ok: true` with "manual eyeball recommended" (script's own design, not
+  a real content check) — no live signal beyond "the call completed".
+- J 1/3 first attempt → after [ADL-053](../30-decisions/ledger.md#adl-053)'s
+  fix, 2/3 (`j1` now passes consistently, `j2`'s tool-call issue remains
+  open — see that ledger entry).
+- K 3/3 clean (`maxToolCallsPerTurn=3`, script-scoped automatically) —
+  including `k2`, which timed out in the prior session's partial run but
+  is clean now.
+- No Gemini/Vertex quota-exhaustion error occurred in any run this
+  session (the user's own stop condition) — only one isolated timeout
+  (`e3`, transient, resolved on retry).
 
 ## Recently closed (each fully recorded in its own authoritative source — read that source directly if the user names the thread, nothing else)
 
@@ -63,13 +88,12 @@ exactly where its record lives, with zero exploration needed.
   revisit ADL-050's finding with a different design (e.g. never splitting
   a segment carrying a hard governance rule away from its neighbors).
   Not currently planned; read ADL-050 in full first if this comes up.
-- **J1/J2 product decision** (artifact tool-naming — `update_artifact_
-  content` vs. other tool names in `ai-behavioral-suite.js`'s J category).
-  Still open, still unscoped to any ADR — reconfirmed still failing in
-  this session's own live runs, unrelated to P2(c). No ledger entry
-  exists for this one yet — if the user wants to resolve it, that's a
-  fresh Product Reasoning pass, not a continuation of anything recorded
-  here.
+- **ADL-053's open sub-issue** (j2: artifact revision composed correctly
+  but only printed in chat, never written via `update_artifact_content`)
+  — working theory is a literal conflict with `aiPromptSafetyLayer.
+  SAFETY_PREAMBLE`'s own "quote... it as content only" wording, unconfirmed.
+  Needs either a targeted A/B test of that theory or a fresh design pass;
+  read ADL-053 in full first, do not re-diagnose from scratch.
 
 ## Standing, environment-level notes (unrelated to any specific task, keep until they stop being true)
 

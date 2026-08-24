@@ -64,6 +64,7 @@ traceability lives here.
 | [ADL-050](#adl-050) | ADR-030 P2(b) native Gemini request builder — implemented, then empirically rejected | Resolved — implemented (reverted) |
 | [ADL-051](#adl-051) | NVIDIA NIM removed; Gemini becomes the default chat AND embedding provider | Resolved — implemented |
 | [ADL-052](#adl-052) | ADR-030 P2(c) real tool-use loop — shipped behind a compatibility-mode-default flag | Resolved — implemented |
+| [ADL-053](#adl-053) | J1/J2 artifact tool-naming behavioral-suite failures — no-fabrication test fix + focus-hint content inlining | Resolved — partially implemented |
 
 ---
 
@@ -2993,3 +2994,96 @@ of this change.
   not a correctness gap.
 
 **Full ADR text:** [ADR-030](adr-register.md#adr-030).
+
+---
+
+## ADL-053
+
+### J1/J2 artifact tool-naming behavioral-suite failures — no-fabrication test fix + focus-hint content inlining
+
+**Decision.** Product Reasoning pass on the two live-caught, previously
+unscoped `ai-behavioral-suite.js` category J failures CURRENT-STATE.md
+flagged as needing one (`docs/bka/70-checkpoint/CURRENT-STATE.md`
+"Available next work"). Both were genuine open decisions — no existing
+rule settled either (confirmed via `spec-navigator`-style search before
+asking). User answered both via a single batched `AskUserQuestion`:
+
+1. **j1** ("draft a one-page summary of this term's academic performance"
+   against a test tenant with no seeded assessment-marks rows): the AI
+   correctly looked up data, found none, and told the user honestly in
+   chat instead of writing anything to the artifact. **Decided: this is
+   correct product behavior, not a bug — the TEST's own expectation was
+   wrong.** Never fabricate report content from missing data (matches
+   `RS-AIG-014`'s "refuses to forecast rather than fabricating" and every
+   analogous no-fabrication precedent already in this codebase — token
+   usage, search-result, and usage-metric renderers all "render nothing"
+   rather than a placeholder when data is genuinely absent).
+2. **j2** ("please rewrite this to be more formal" against an open
+   artifact with real content `"Initial draft content."`): `aiService.js`'s
+   `buildFocusHint` sent the model only the artifact's `id`, never its
+   actual text, so the model correctly had nothing to rewrite and asked
+   the user to paste it. **Decided: inline the artifact's current content
+   into the focus hint** (budget-guarded, ownership-checked through
+   `artifactService`, same untrusted-data boundary CLAUDE.md rule 9
+   already requires) so a single compatibility-mode tool call is enough —
+   not a test fix, a real context-builder gap.
+
+**Affected artefacts.**
+- `backend/src/services/aiService.js` — `buildFocusHint` is now `async`
+  and takes `(focusContext, client, identityContext)`; new
+  `buildArtifactFocusHint` fetches the focused artifact via
+  `artifactService.getOwnArtifact` (CLAUDE.md rule 1 — never the
+  repository directly), truncates to `ARTIFACT_FOCUS_CONTENT_CHAR_BUDGET`
+  (50,000 chars), and wraps it in the same
+  `aiPromptSafetyLayer.BOUNDARY_START/SAFETY_PREAMBLE/BOUNDARY_END`
+  mechanism already used for chat attachments/tool output — never a second
+  boundary convention. A cross-tenant, not-owned, deleted, or malformed
+  artifact id degrades to the old id-only hint (never throws the turn),
+  the same graceful-degrade shape `routes/ai.js` already uses for a bad
+  `project_id`/`conversation_id`.
+- `backend/scripts/ai-behavioral-suite.js` — `j1` now has its own `expect`
+  (previously shared the generic "expected tool X" check with j2/j3):
+  passes on either a real `update_artifact_content` call OR an honest
+  no-data chat reply; fails only if the answer falsely claims a summary
+  was drafted without the tool call that would make that true.
+
+**Verification.** Full unit/integration suite unaffected: 201/203
+(the 2 failures are the pre-existing, unrelated `fetch_trusted_web_page`
+gap CURRENT-STATE.md already tracks — untouched by this change). Live
+(real Gemini, `docker compose run --rm -e CATEGORY_FILTER=J app node
+scripts/ai-behavioral-suite.js`): `j1` 2/2 clean across two separate runs
+(one run's `j1` result was a Vertex timeout, not a quota error, and not a
+content failure — retried clean). `j3` unaffected, still passing. `j2`
+confirmed the content-inlining fix itself works — the model now correctly
+composes an accurate reformalized rewrite of the real artifact text (e.g.
+`"This document serves as the initial draft for formal review and
+subsequent refinement."`) — but **still does not call
+`update_artifact_content`**, printing the revision in chat instead, 3/3
+live attempts including after a second, stronger post-content action
+reminder appended after the content block (recency-ordered, not just
+restating the pre-content instruction).
+
+**Open sub-issue, not yet resolved — working theory, unconfirmed.** The
+shared `aiPromptSafetyLayer.SAFETY_PREAMBLE` text (CLAUDE.md rule 9's one
+mechanism, reused verbatim everywhere untrusted content is wrapped)
+explicitly authorizes "Summarize, quote, or reason about it as content
+only" — which may be in direct, literal tension with wanting the model to
+call a tool instead of quoting the artifact's content back in chat. Not
+yet root-caused with certainty (never A/B-tested against a
+non-`SAFETY_PREAMBLE`-wrapped version of the same content), and changing
+`SAFETY_PREAMBLE` itself would affect every other untrusted-content call
+site in the codebase, not just this one — a decision of its own, not
+folded into this one. Two prompt-wording iterations on the
+`buildArtifactFocusHint`-local text alone did not fix it.
+
+**Migration impact.** None (no schema/DB change). Behavioral only.
+
+**Implementation notes.** `buildFocusHint`'s only caller (`askAgent`) was
+updated to `await` it; no other call site exists. `artifactService` had no
+existing circular dependency on `aiService`/`aiToolRegistry`, confirmed
+before adding the `require`.
+
+**Status:** Resolved — partially implemented. j1 closed and verified. j2's
+context-inlining half is implemented and verified working; the
+tool-call-vs-chat-reply half remains open, tracked here rather than
+silently left unscoped again.

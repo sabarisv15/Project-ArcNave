@@ -378,7 +378,29 @@ function stripAdditionalProperties(schema) {
   return schema;
 }
 
-async function completeWithTools(cfg, arcnaveContext) {
+// ADR-030 P2(c) — appends one {model:functionCall} + {user:functionResponse}
+// turn pair per prior tool execution, AFTER the unchanged base user turn
+// built above. This is the only thing priorTurns changes: the base
+// systemInstruction/first-user-turn construction above is byte-identical
+// whether or not priorTurns is empty (regression-locked by
+// ai-providers.test.js), satisfying ADL-050's constraint that the
+// governance-bearing system content never gets re-split/re-packaged
+// across a tool-use loop's iterations. No callId needed — Gemini matches
+// functionResponse to functionCall by name/order, not by an explicit id.
+function buildPriorTurnContents(priorTurns) {
+  return priorTurns.flatMap((turn) => [
+    // Prefer the verbatim part Gemini itself returned (turn.rawToolCall) —
+    // required live: it carries the thoughtSignature field a
+    // reconstructed {functionCall:{name,args}} part never has, and
+    // Vertex's real API 400s on a multi-turn request replaying a
+    // functionCall part without one, with thinking enabled. See
+    // completeWithTools' own comment on functionCallPart above.
+    { role: 'model', parts: [turn.rawToolCall || { functionCall: { name: turn.toolName, args: turn.arguments || {} } }] },
+    { role: 'user', parts: [{ functionResponse: { name: turn.toolName, response: { content: turn.resultText } } }] },
+  ]);
+}
+
+async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   const {
     systemPrompt, userPrompt, tools, images,
   } = flattenToPrompts(arcnaveContext);
@@ -388,7 +410,10 @@ async function completeWithTools(cfg, arcnaveContext) {
 
   const payload = await postJson(cfg, modelUrl(cfg, model(cfg), 'generateContent'), {
     systemInstruction: { parts: [{ text: systemPrompt }] },
-    contents: [{ role: 'user', parts: buildUserParts(userPrompt, images) }],
+    contents: [
+      { role: 'user', parts: buildUserParts(userPrompt, images) },
+      ...buildPriorTurnContents(priorTurns),
+    ],
     tools: [{
       functionDeclarations: tools.map((tool) => ({
         name: tool.name,
@@ -416,8 +441,21 @@ async function completeWithTools(cfg, arcnaveContext) {
     const usage = payload && payload.usageMetadata
       ? { inputTokens: payload.usageMetadata.promptTokenCount, outputTokens: payload.usageMetadata.candidatesTokenCount }
       : undefined;
+    // rawToolCall carries the ENTIRE part as Gemini returned it — not
+    // just {name, args} — because with thinking enabled (GENERATION_
+    // CONFIG's thinkingLevel above) Vertex's real API attaches a sibling
+    // `thoughtSignature` field to this same part and REJECTS a later
+    // multi-turn request that replays this functionCall without it: a
+    // real 400 ("Function call is missing a thought_signature..."),
+    // caught live against the actual endpoint the first time ADR-030
+    // P2(c)'s tool-use loop ran a genuine 2-tool live scenario — invisible
+    // to any mocked-fetch unit test, since a hand-built mock response
+    // never carries a field the test author didn't think to add.
+    // buildPriorTurnContents below replays this whole part verbatim on a
+    // continuation call, never reconstructing {functionCall:{name,args}}
+    // alone when the original part is available.
     return {
-      type: 'tool_call', toolName: functionCallPart.functionCall.name, arguments: functionCallPart.functionCall.args || {}, usage,
+      type: 'tool_call', toolName: functionCallPart.functionCall.name, arguments: functionCallPart.functionCall.args || {}, rawToolCall: functionCallPart, usage,
     };
   }
 

@@ -466,7 +466,8 @@ module set above; rewrite only `CORE`'s wording. P2: introduce the
 shape (a) [done]; native per-adapter request builders, Gemini first (b)
 [attempted 2026-08-24, empirically rejected — see the "Rejected" entry
 above and ADL-050]; a real tool-use loop replacing today's two duplicated
-one-shot decision/answer calls (c) [not started]. P3: provider-specific
+one-shot decision/answer calls (c) [implemented 2026-08-24, shipped behind
+`config.maxToolCallsPerTurn` — see ADL-052]. P3: provider-specific
 caching, only after P0's telemetry shows what a clean prefix actually buys
 — not budgeted as a project until
 measured.

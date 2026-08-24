@@ -290,7 +290,31 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
   return full;
 }
 
-async function completeWithTools(cfg, arcnaveContext) {
+// ADR-030 P2(c) — one {assistant:tool_use} + {user:tool_result} message
+// pair per prior tool execution, appended AFTER the unchanged base user
+// message. `callId` (Claude's own tool_use.id, threaded back in by the
+// caller via decision.callId) lets Claude match the result to the right
+// call — required by the API, unlike Gemini's name/order matching.
+// Prefers turn.rawToolCall (the literal tool_use block Claude itself
+// produced, when the caller kept it) over reconstructing {name, input}
+// from the parsed arguments object, since JSON.stringify/re-parse round
+// trips aren't guaranteed byte-identical to what the model actually sent.
+function buildPriorTurnMessages(priorTurns) {
+  return priorTurns.flatMap((turn) => [
+    {
+      role: 'assistant',
+      content: [turn.rawToolCall || {
+        type: 'tool_use', id: turn.callId, name: turn.toolName, input: turn.arguments || {},
+      }],
+    },
+    {
+      role: 'user',
+      content: [{ type: 'tool_result', tool_use_id: turn.callId, content: turn.resultText }],
+    },
+  ]);
+}
+
+async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   const {
     systemPrompt, userPrompt, tools, images,
   } = flattenToPrompts(arcnaveContext);
@@ -302,7 +326,10 @@ async function completeWithTools(cfg, arcnaveContext) {
     model: cfg.model,
     max_tokens: MAX_TOKENS,
     system: systemPrompt,
-    messages: [{ role: 'user', content: buildUserContent(userPrompt, images) }],
+    messages: [
+      { role: 'user', content: buildUserContent(userPrompt, images) },
+      ...buildPriorTurnMessages(priorTurns),
+    ],
     // Prompt caching (P1.2): a cache_control breakpoint on the LAST
     // tool caches this entire tools array — the ~10k-token role-
     // filtered tool schema list, unlike the system/user prompt which
@@ -329,7 +356,7 @@ async function completeWithTools(cfg, arcnaveContext) {
       ? { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens }
       : undefined;
     return {
-      type: 'tool_call', toolName: toolUse.name, arguments: toolUse.input || {}, usage,
+      type: 'tool_call', toolName: toolUse.name, arguments: toolUse.input || {}, callId: toolUse.id, rawToolCall: toolUse, usage,
     };
   }
 

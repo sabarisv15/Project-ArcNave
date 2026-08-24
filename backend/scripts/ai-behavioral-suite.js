@@ -83,7 +83,19 @@ async function seedTenant(adminPool) {
     [collegeId, userId],
   );
 
-  return { collegeId, userId, artifactId: artifactResult.rows[0].id };
+  // One real Draft notification row — needed for category K's
+  // confirmation-interrupt scenario (ADR-030 P2(c)), which needs
+  // request_notification_send to have a genuine pending draft to name,
+  // not a fabricated id the tool would reject as not-found.
+  const notificationResult = await adminPool.query(
+    `INSERT INTO notifications (college_id, channel, to_address, body, status, origin, drafted_by_user_id)
+     VALUES ($1, 'email', 'parent@example.com', 'Fee reminder.', 'Draft', 'human', $2) RETURNING id`,
+    [collegeId, userId],
+  );
+
+  return {
+    collegeId, userId, artifactId: artifactResult.rows[0].id, notificationId: notificationResult.rows[0].id,
+  };
 }
 
 async function cleanupTenant(adminPool, collegeId) {
@@ -103,6 +115,11 @@ async function cleanupTenant(adminPool, collegeId) {
   //     never documents first.
   await adminPool.query('DELETE FROM artifacts WHERE college_id = $1', [collegeId]);
   await adminPool.query('DELETE FROM documents WHERE college_id = $1', [collegeId]);
+  // notifications (the seeded Draft row for category K, plus any real
+  // ones draft_notification created live during that category's
+  // lookup-then-act scenario) reference drafted_by_user_id -> users —
+  // must go before users, same reasoning as artifacts/documents above.
+  await adminPool.query('DELETE FROM notifications WHERE college_id = $1', [collegeId]);
   await adminPool.query('DELETE FROM audit_log WHERE college_id = $1', [collegeId]);
   await cleanupPositionRows(adminPool, collegeId);
   await adminPool.query('DELETE FROM staff WHERE college_id = $1', [collegeId]);
@@ -160,7 +177,7 @@ function noToolUsed(result) {
 // return the raw aiService result. `expect` receives that result and
 // returns { ok, reason }.
 
-function buildScenarios({ artifactId }) {
+function buildScenarios({ artifactId, notificationId }) {
   const scenarios = [];
 
   // A — Tool-selection restraint (aiService.js ~line 69: a tool-happy
@@ -373,6 +390,46 @@ function buildScenarios({ artifactId }) {
     });
   }
 
+  // K — Chained tool-use (ADR-030 P2(c) — the tool-use loop). Requires
+  // config.maxToolCallsPerTurn > 1 for the run (main() sets this before
+  // building scenarios) — under the default compatibility-mode cap of 1
+  // these would just exercise the old single-tool fallback path, proving
+  // nothing about the loop itself.
+  scenarios.push({
+    id: 'k1', category: 'K: chained tool-use', question: 'Check our college profile, then draft an email to ops@example.com confirming the college name is correct.',
+    expect: (r) => {
+      const used = r.toolsUsed || [];
+      if (used.length !== 2) return { ok: false, reason: `expected a 2-tool chain (lookup then act), got toolsUsed=${JSON.stringify(used)}` };
+      if (!used.includes('get_college_profile') || !used.includes('draft_notification')) {
+        return { ok: false, reason: `expected get_college_profile + draft_notification, got ${JSON.stringify(used)}` };
+      }
+      return { ok: true, reason: `chained ${used.join(' -> ')}, final answer: "${r.answer}"` };
+    },
+  });
+
+  scenarios.push({
+    id: 'k2', category: 'K: chained tool-use', question: 'What is our college\'s name?',
+    expect: (r) => {
+      const used = r.toolsUsed || [];
+      if (used.length !== 1) return { ok: false, reason: `restraint check — a single-fact question needs exactly one tool, got toolsUsed=${JSON.stringify(used)}` };
+      return { ok: true, reason: 'called exactly one tool, no unnecessary chaining' };
+    },
+  });
+
+  scenarios.push({
+    id: 'k3', category: 'K: chained tool-use', question: `Check our college profile, then send the draft notification (id ${notificationId}) for approval.`,
+    expect: (r) => {
+      const used = r.toolsUsed || [];
+      if (!r.pendingConfirmation) {
+        return { ok: false, reason: `expected a pause for confirmation before request_notification_send (an L3 tool), got answer: "${r.answer}", toolsUsed=${JSON.stringify(used)}` };
+      }
+      if (used.includes('request_notification_send')) {
+        return { ok: false, reason: 'request_notification_send must NOT appear in toolsUsed — it was blocked pending confirmation, never actually invoked' };
+      }
+      return { ok: true, reason: `paused for confirmation as required, toolsUsed before the pause: ${JSON.stringify(used)}` };
+    },
+  });
+
   return scenarios;
 }
 
@@ -409,8 +466,38 @@ async function withRetry(fn, { retries = 4, baseDelayMs = 15000 } = {}) {
   }
 }
 
+// ADR-030 P2(c) — category K is the ONLY category that runs with the real
+// tool-use loop enabled (config.maxToolCallsPerTurn > 1); every other
+// category (A-J) runs at the default compatibility-mode cap of 1, exactly
+// as before this feature existed, so their pass rates stay a true
+// apples-to-apples comparison against the established baseline — an
+// earlier version of this run set the cap globally for the whole suite,
+// which accidentally let several A-J scenarios chain a second tool call
+// they never would have under the real default, and caught a genuine live
+// Gemini bug (see gemini.js's own rawToolCall/thoughtSignature comment)
+// that had nothing to do with those categories' own established behavior.
+async function withScenarioToolCallCap(scenario, fn) {
+  const original = config.maxToolCallsPerTurn;
+  config.maxToolCallsPerTurn = scenario.category.startsWith('K') ? 3 : 1;
+  try {
+    return await fn();
+  } finally {
+    config.maxToolCallsPerTurn = original;
+  }
+}
+
 async function runScenario(appPool, { collegeId, userId }, scenario) {
   const identityContext = { userId, role: 'principal', collegeId };
+  try {
+    return await withScenarioToolCallCap(scenario, () => runScenarioBody(appPool, { collegeId, userId, identityContext }, scenario));
+  } catch (err) {
+    return {
+      ok: false, reason: `unexpected error: ${err.message}`, answer: null, toolUsed: null,
+    };
+  }
+}
+
+async function runScenarioBody(appPool, { collegeId, identityContext }, scenario) {
   try {
     if (scenario.twoTurn) {
       const firstResult = await withRetry(() => withTenantClient(appPool, collegeId, (client) => aiService.askAgent(
@@ -429,7 +516,7 @@ async function runScenario(appPool, { collegeId, userId }, scenario) {
       )));
       const { ok, reason } = scenario.expect(secondResult, { firstAnswer: firstResult.answer });
       return {
-        ok, reason, answer: secondResult.answer, toolUsed: secondResult.toolUsed,
+        ok, reason, answer: secondResult.answer, toolUsed: secondResult.toolUsed, toolsUsed: secondResult.toolsUsed, pendingConfirmation: secondResult.pendingConfirmation,
       };
     }
 
@@ -440,7 +527,7 @@ async function runScenario(appPool, { collegeId, userId }, scenario) {
     )));
     const { ok, reason } = scenario.expect(result);
     return {
-      ok, reason, answer: result.answer, toolUsed: result.toolUsed,
+      ok, reason, answer: result.answer, toolUsed: result.toolUsed, toolsUsed: result.toolsUsed, pendingConfirmation: result.pendingConfirmation,
     };
   } catch (err) {
     return {
@@ -470,7 +557,7 @@ async function main() {
     return;
   }
 
-  const scenarios = buildScenarios({ artifactId: tenant.artifactId });
+  const scenarios = buildScenarios({ artifactId: tenant.artifactId, notificationId: tenant.notificationId });
   const results = [];
 
   try {

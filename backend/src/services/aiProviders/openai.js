@@ -215,7 +215,28 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
   return full;
 }
 
-async function completeWithTools(cfg, arcnaveContext) {
+// ADR-030 P2(c) — one {assistant:tool_calls} + {tool:result} message pair
+// per prior tool execution, appended AFTER the unchanged base system+user
+// messages. Prefers turn.rawToolCall (the literal tool_calls[0] entry
+// OpenAI itself returned, when the caller kept it) over reconstructing
+// {id, type:'function', function:{name, arguments}} from the parsed
+// arguments object — JSON.stringify(parsedArguments) isn't guaranteed to
+// reproduce the model's original argument-string formatting/key order.
+// Same shape selfHosted.js's OpenAI-compatible continuation uses.
+function buildPriorTurnMessages(priorTurns) {
+  return priorTurns.flatMap((turn) => [
+    {
+      role: 'assistant',
+      content: null,
+      tool_calls: [turn.rawToolCall || {
+        id: turn.callId, type: 'function', function: { name: turn.toolName, arguments: JSON.stringify(turn.arguments || {}) },
+      }],
+    },
+    { role: 'tool', tool_call_id: turn.callId, content: turn.resultText },
+  ]);
+}
+
+async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   const {
     systemPrompt, userPrompt, tools, images,
   } = flattenToPrompts(arcnaveContext);
@@ -228,6 +249,7 @@ async function completeWithTools(cfg, arcnaveContext) {
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: buildUserContent(userPrompt, images) },
+      ...buildPriorTurnMessages(priorTurns),
     ],
     tools: tools.map((tool) => ({
       type: 'function',
@@ -258,7 +280,7 @@ async function completeWithTools(cfg, arcnaveContext) {
       ? { inputTokens: payload.usage.prompt_tokens, outputTokens: payload.usage.completion_tokens }
       : undefined;
     return {
-      type: 'tool_call', toolName: fn.name, arguments: toolArguments, usage,
+      type: 'tool_call', toolName: fn.name, arguments: toolArguments, callId: toolCalls[0].id, rawToolCall: toolCalls[0], usage,
     };
   }
 

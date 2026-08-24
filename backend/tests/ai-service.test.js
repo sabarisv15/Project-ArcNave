@@ -982,11 +982,12 @@ function mockAnswerResponse(text) {
 // (completeWithTools) already picked the tool — a caller expecting a
 // single fetch per askAgent call needs a fetch mock that returns a
 // different response on each successive call, not the same one twice.
-function sequentialMockFetch(responses) {
+function sequentialMockFetch(responses, onCall) {
   let call = 0;
   return async () => {
     const response = responses[Math.min(call, responses.length - 1)];
     call += 1;
+    if (onCall) onCall(call);
     return response;
   };
 }
@@ -2048,6 +2049,261 @@ test('aiService.askAgent: a write tool (L2/L3, riskLevel > 1) never routes to fa
   }).finally(() => { config.openai.fastModel = originalFastModel; });
 
   assert.equal(capturedModels[1], config.openai.model, 'an L2 write tool\'s synthesis call must stay on the full model');
+});
+
+// --- ADR-030 P2(c): the tool-use loop ---
+// All mocked at the fetch layer, same openai fixture-provider shape every
+// other askAgent test in this file uses. config.maxToolCallsPerTurn
+// defaults to 1 (compatibility mode) unless a test below overrides it.
+
+function withMaxToolCallsPerTurn(n, fn) {
+  const original = config.maxToolCallsPerTurn;
+  config.maxToolCallsPerTurn = n;
+  return fn().finally(() => { config.maxToolCallsPerTurn = original; });
+}
+
+function mockToolCallResponseWithUsage(toolName, args, usage) {
+  return {
+    ok: true,
+    json: async () => ({
+      choices: [{ message: { tool_calls: [{ id: `call_${toolName}`, function: { name: toolName, arguments: JSON.stringify(args) } }] } }],
+      usage,
+    }),
+  };
+}
+
+function mockAnswerResponseWithUsage(text, usage) {
+  return { ok: true, json: async () => ({ choices: [{ message: { content: text } }], usage }) };
+}
+
+test('aiService.askAgent: a 2-tool-call chain — the model sees the first tool\'s result and calls a second before answering, in the SAME conversation, no separate synthesis call', async (t) => {
+  t.mock.method(notificationRepository, 'create', async (c, fields) => ({ id: 'notif-chain-1', ...fields }));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const steps = [];
+
+  // cap=2 (not 3): with exactly 2 real tool calls, the loop's third
+  // completeWithTools call (the one returning 'answer') happens BEFORE
+  // the cap would ever be checked again, since invokedTools.length (2)
+  // already equals the cap right after the second invoke — but the
+  // model volunteers 'answer' on its own on the very next decision this
+  // mock provides, so the cap is never actually the reason the loop
+  // stopped here. This isolates "the model chose to stop" from "the cap
+  // forced a stop" (that's the separate cap-enforcement test below).
+  await withMaxToolCallsPerTurn(3, () => withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponseWithUsage('get_college_profile', {}, { prompt_tokens: 100, completion_tokens: 10 }),
+      mockToolCallResponseWithUsage('draft_notification', { channel: 'email', toAddress: 'a@b.com', body: 'hi' }, { prompt_tokens: 150, completion_tokens: 20 }),
+      mockAnswerResponseWithUsage('Drafted a reminder, based on the college profile.', { prompt_tokens: 200, completion_tokens: 30 }),
+    ]), async () => {
+      const result = await aiService.askAgent(client, 'Look up the college then draft a reminder.', { identityContext }, undefined, (step) => steps.push(step));
+
+      assert.deepEqual(result.toolsUsed, ['get_college_profile', 'draft_notification']);
+      assert.equal(result.toolUsed, 'get_college_profile', 'toolUsed stays the FIRST tool, same field shape as the pre-loop single-tool path');
+      assert.equal(result.answer, 'Drafted a reminder, based on the college profile.');
+      assert.equal(result.entries.length, 2, 'both tools\' data merged into one evidence set');
+      assert.deepEqual(result.entries.map((e) => e.toolName), ['get_college_profile', 'draft_notification']);
+      assert.equal(result.evidence.length, 2);
+      assert.ok(result.evidenceTrail.includes('get_college_profile'));
+      assert.ok(result.evidenceTrail.includes('draft_notification'));
+      // usage sums all 3 completeWithTools calls (decision + 1 continuation
+      // + the final answer-bearing decision itself — no separate synthesis
+      // call ran at all since the model answered directly).
+      assert.deepEqual(result.usage, { inputTokens: 450, outputTokens: 60 });
+    });
+  }));
+
+  const auditQueries = client.queries.filter((q) => q.text.includes('INSERT INTO audit_log') && q.params[2] === 'ai_tool_invoked');
+  assert.equal(auditQueries.length, 2, 'invokeTool ran exactly twice');
+
+  const toolSteps = steps.filter((s) => s.phase === 'running_tool');
+  assert.equal(toolSteps.length, 2);
+  assert.deepEqual(toolSteps.map((s) => s.toolName), ['get_college_profile', 'draft_notification']);
+  assert.deepEqual(toolSteps.map((s) => s.stepIndex), [0, 1]);
+  // No 'synthesizing' phase — the model answered directly after the
+  // second tool's result, the actual P2(c) cost win. Three 'deciding'
+  // events: the initial decision plus one continuation per tool call
+  // (the second continuation is the one that returned 'answer').
+  assert.deepEqual(steps.map((s) => s.phase), ['deciding', 'running_tool', 'deciding', 'running_tool', 'deciding']);
+});
+
+test('aiService.askAgent: cap enforcement — the loop stops at exactly MAX_TOOL_CALLS_PER_TURN tool executions, fallback synthesis runs exactly once', async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  let fetchCallCount = 0;
+
+  // The model returns tool_call on BOTH of its own decision calls (it
+  // never voluntarily stops) — the cap, not the model, is what ends the
+  // loop after 2 tool executions. The 3rd response is for the fallback
+  // synthesis call, a separate tool-less completeWithMeta completion —
+  // it was never offered the choice to return a tool_call at all.
+  await withMaxToolCallsPerTurn(2, () => withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponse('get_college_profile', {}),
+      mockToolCallResponse('get_college_profile', {}),
+      mockAnswerResponse('Here is what I found so far.'),
+    ], () => { fetchCallCount += 1; }), async () => {
+      const result = await aiService.askAgent(client, 'Keep looking things up.', { identityContext });
+      assert.deepEqual(result.toolsUsed, ['get_college_profile', 'get_college_profile']);
+    });
+  }));
+
+  const auditQueries = client.queries.filter((q) => q.text.includes('INSERT INTO audit_log') && q.params[2] === 'ai_tool_invoked');
+  assert.equal(auditQueries.length, 2, 'exactly the cap, never cap+1');
+  // decision (iter 0) + 1 continuation (iter 1, reaches cap) + 1 fallback
+  // synthesis call = 3 total fetch calls, never a 4th.
+  assert.equal(fetchCallCount, 3);
+});
+
+test('aiService.askAgent: confirmation needed at iteration 0 still pauses exactly as before, even with the loop enabled (cap > 1)', async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const notificationId = '11111111-1111-4111-8111-111111111111';
+
+  await withMaxToolCallsPerTurn(3, () => withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(async () => mockToolCallResponse('request_notification_send', { notificationId }), async () => {
+      const result = await aiService.askAgent(client, 'Send that notification.', { identityContext });
+      assert.ok(result.pendingConfirmation, 'must pause for confirmation, never invoke directly');
+      assert.equal(result.pendingConfirmation.toolName, 'request_notification_send');
+    });
+  }));
+
+  const auditQueries = client.queries.filter((q) => q.text.includes('INSERT INTO audit_log') && q.params[2] === 'ai_tool_invoked');
+  assert.equal(auditQueries.length, 0, 'the L3 tool never actually ran');
+});
+
+test('aiService.askAgent: a tool needing confirmation appears mid-loop (iteration > 0) — it is NOT run, and the answer says so plainly', async (t) => {
+  t.mock.method(collegeProfileService, 'getProfile', async () => ({ name: 'Test College' }));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const notificationId = '11111111-1111-4111-8111-111111111111';
+
+  await withMaxToolCallsPerTurn(3, () => withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponse('get_college_profile', {}),
+      mockToolCallResponse('request_notification_send', { notificationId }),
+      mockAnswerResponse('I looked up the college, but sending the notification needs your confirmation first.'),
+    ]), async () => {
+      const result = await aiService.askAgent(client, 'Look up the college, then send that notification.', { identityContext });
+      assert.equal(result.toolUsed, 'get_college_profile');
+      assert.equal(result.answer, 'I looked up the college, but sending the notification needs your confirmation first.');
+      assert.equal(result.pendingConfirmation, undefined, 'the turn completes with an answer, not a pause — the blocked tool is reported in the text, not queued');
+    });
+  }));
+
+  const auditQueries = client.queries.filter((q) => q.text.includes('INSERT INTO audit_log') && q.params[2] === 'ai_tool_invoked');
+  assert.equal(auditQueries.length, 1, 'only get_college_profile ran — the L3 tool was never invoked');
+});
+
+test('aiService.askAgent: a regular tool_call followed by run_workflow_plan mid-loop routes into the real, unmodified executeWorkflowPlan', async (t) => {
+  t.mock.method(collegeProfileService, 'getProfile', async () => ({ name: 'Test College' }));
+  t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }]));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const plan = { steps: [{ tool: 'academic_class_timetable' }] };
+
+  await withMaxToolCallsPerTurn(3, () => withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponse('get_college_profile', {}),
+      mockToolCallResponse('run_workflow_plan', plan),
+      mockAnswerResponse('Here is the timetable, combining what we already found.'),
+    ]), async () => {
+      const result = await aiService.askAgent(client, 'Look up the college, then run a plan for the timetable.', { identityContext });
+      assert.equal(result.toolUsed, 'run_workflow_plan', 'executeWorkflowPlan\'s own return shape, unmodified');
+      assert.equal(result.plan.length, 1);
+      assert.equal(result.plan[0].toolName, 'academic_class_timetable');
+      assert.equal(result.answer, 'Here is the timetable, combining what we already found.');
+    });
+  }));
+});
+
+test('aiService.askAgent: no model switching across continuation calls — every completeWithTools call in the loop uses the identical raw aiConfig, never selectModelForPurpose', async (t) => {
+  t.mock.method(notificationRepository, 'create', async (c, fields) => ({ id: 'notif-2', ...fields }));
+  const originalFastModel = config.openai.fastModel;
+  config.openai.fastModel = 'cheap-fast-model';
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const capturedModels = [];
+
+  await withMaxToolCallsPerTurn(2, () => withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(async (url, options) => {
+      const body = JSON.parse(options.body);
+      capturedModels.push(body.model);
+      if (capturedModels.length === 1) return mockToolCallResponse('get_college_profile', {});
+      if (capturedModels.length === 2) return mockToolCallResponse('get_college_profile', {});
+      return mockAnswerResponse('Looked twice.');
+    }, async () => {
+      await aiService.askAgent(client, 'Look up the college twice.', { identityContext });
+    });
+  })).finally(() => { config.openai.fastModel = originalFastModel; });
+
+  assert.equal(capturedModels[0], config.openai.model, 'iteration 0 (decision) never downgraded');
+  assert.equal(capturedModels[1], config.openai.model, 'the continuation call uses the identical raw aiConfig, never a different/downgraded model');
+  assert.equal(capturedModels[2], 'cheap-fast-model', 'only the fallback synthesis call (a genuinely separate, non-conversational completion) routes through fastModel');
+});
+
+test('aiService.askAgent: wire-level prefix identity — the system+user prefix in the continuation request is byte-identical to iteration 0\'s, not just the same in-memory Context object', async (t) => {
+  t.mock.method(notificationRepository, 'create', async (c, fields) => ({ id: 'notif-3', ...fields }));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const capturedBodies = [];
+
+  await withMaxToolCallsPerTurn(2, () => withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(async (url, options) => {
+      const body = JSON.parse(options.body);
+      capturedBodies.push(body);
+      if (capturedBodies.length === 1) return mockToolCallResponse('get_college_profile', {});
+      if (capturedBodies.length === 2) return mockToolCallResponse('draft_notification', { channel: 'email', toAddress: 'a@b.com', body: 'hi' });
+      return mockAnswerResponse('Done.');
+    }, async () => {
+      await aiService.askAgent(client, 'Look up the college then draft a reminder.', { identityContext });
+    });
+  }));
+
+  assert.equal(capturedBodies.length, 3);
+  const [decisionBody, continuationBody] = capturedBodies;
+  // messages[0] = system, messages[1] = user (the base turn) — the actual
+  // wire-level invariant P2(c) exists to establish: byte-identical across
+  // every iteration, never re-split/re-packaged (ADL-050's constraint).
+  assert.deepEqual(continuationBody.messages[0], decisionBody.messages[0], 'system prompt must be byte-identical');
+  assert.deepEqual(continuationBody.messages[1], decisionBody.messages[1], 'user prompt must be byte-identical');
+  // And the continuation appended real prior-turn messages after that
+  // unchanged prefix, never replacing it.
+  assert.equal(continuationBody.messages.length, 4);
+  assert.equal(continuationBody.messages[2].role, 'assistant');
+  assert.equal(continuationBody.messages[3].role, 'tool');
+  // Tool definitions are chain-equal too — never narrowed on continuation.
+  assert.deepEqual(continuationBody.tools, decisionBody.tools);
+});
+
+test('aiService.askAgent: compatibility mode (default cap 1) — the fallback synthesis request is unchanged from the pre-loop single-tool call shape', async () => {
+  assert.equal(config.maxToolCallsPerTurn, 1, 'this test is only meaningful against the real default');
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const capturedBodies = [];
+
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(async (url, options) => {
+      const body = JSON.parse(options.body);
+      capturedBodies.push(body);
+      if (capturedBodies.length === 1) return mockToolCallResponse('get_college_profile', {});
+      return mockAnswerResponse('This is ARCNAVE Demo College.');
+    }, async () => {
+      await aiService.askAgent(client, 'What college is this?', { identityContext });
+    });
+  });
+
+  assert.equal(capturedBodies.length, 2, 'exactly decision + one synthesis call, same as before this change');
+  const synthesisBody = capturedBodies[1];
+  // The synthesis call offers no tools (a plain completion, same as the
+  // original summarizeToolResult) and carries the tool-result data as a
+  // single system+user pair — not a multi-turn priorTurns shape, since
+  // compatibility mode never calls completeWithTools a second time.
+  assert.equal(synthesisBody.tools, undefined, 'the fallback synthesis call must never offer tools, same as the original summarizeToolResult');
+  assert.equal(synthesisBody.messages.length, 2);
+  assert.equal(synthesisBody.messages[0].role, 'system');
+  assert.equal(synthesisBody.messages[1].role, 'user');
+  assert.ok(synthesisBody.messages[1].content.includes('get_college_profile'), 'the boundary-wrapped tool result must be present');
 });
 
 // --- fetch_trusted_web_page (P2.3) ---

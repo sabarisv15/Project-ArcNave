@@ -184,7 +184,24 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
   return full;
 }
 
-async function completeWithTools(cfg, arcnaveContext) {
+// ADR-030 P2(c) — same OpenAI-compatible continuation shape openai.js's
+// own buildPriorTurnMessages uses (this adapter targets the same wire
+// convention). See that file's comment for the rawToolCall-preference
+// reasoning.
+function buildPriorTurnMessages(priorTurns) {
+  return priorTurns.flatMap((turn) => [
+    {
+      role: 'assistant',
+      content: null,
+      tool_calls: [turn.rawToolCall || {
+        id: turn.callId, type: 'function', function: { name: turn.toolName, arguments: JSON.stringify(turn.arguments || {}) },
+      }],
+    },
+    { role: 'tool', tool_call_id: turn.callId, content: turn.resultText },
+  ]);
+}
+
+async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   const { systemPrompt, userPrompt, tools } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no self-hosted LLM provider is configured for this college (missing baseUrl)');
@@ -195,6 +212,7 @@ async function completeWithTools(cfg, arcnaveContext) {
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
+      ...buildPriorTurnMessages(priorTurns),
     ],
     tools: tools.map((tool) => ({
       type: 'function',
@@ -225,7 +243,7 @@ async function completeWithTools(cfg, arcnaveContext) {
       ? { inputTokens: payload.usage.prompt_tokens, outputTokens: payload.usage.completion_tokens }
       : undefined;
     return {
-      type: 'tool_call', toolName: fn.name, arguments: toolArguments, usage,
+      type: 'tool_call', toolName: fn.name, arguments: toolArguments, callId: toolCalls[0].id, rawToolCall: toolCalls[0], usage,
     };
   }
 

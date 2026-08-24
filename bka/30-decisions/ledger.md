@@ -61,6 +61,9 @@ traceability lives here.
 | [ADL-047](#adl-047) | Conversation history: character budget replaces flat message-count cap | Resolved — implemented |
 | [ADL-048](#adl-048) | Per-message visible token usage, captured on the streaming path | Resolved — implemented |
 | [ADL-049](#adl-049) | ARCNAVE Context Architecture — structured context replaces flat prompt strings | Resolved — pending implementation |
+| [ADL-050](#adl-050) | ADR-030 P2(b) native Gemini request builder — implemented, then empirically rejected | Resolved — implemented (reverted) |
+| [ADL-051](#adl-051) | NVIDIA NIM removed; Gemini becomes the default chat AND embedding provider | Resolved — implemented |
+| [ADL-052](#adl-052) | ADR-030 P2(c) real tool-use loop — shipped behind a compatibility-mode-default flag | Resolved — implemented |
 
 ---
 
@@ -2843,3 +2846,150 @@ assertions naming NIM as the live default — updated to name Gemini.
 (ADR-028/ADL-002) are left unedited, per this project's established
 convention of recording a reversal as a new entry rather than rewriting
 history (same convention [ADL-050](#adl-050) followed).
+
+## ADL-052
+
+### ADR-030 P2(c) real tool-use loop — shipped behind a compatibility-mode-default flag
+
+**Decision.** `askAgent`'s single-tool_call branch (`backend/src/services/
+aiService.js`) is now a bounded, adaptive loop: after a tool runs, its
+result is fed back into the SAME conversation (same `decisionContext`,
+same model, same tool list) and the model may either answer directly or
+call one more tool, up to `config.maxToolCallsPerTurn` tool executions.
+This replaces the two-call shape ADR-030's own review flagged as most
+expensive (a `completeWithTools` decision call, followed unconditionally
+by a separately-built `summarizeToolResult` synthesis call). Scope was
+explicitly minimal, confirmed with the user before implementation: only
+the single-tool_call path changes. `executeWorkflowPlan` (the pre-planned
+`run_workflow_plan` meta-tool path) is untouched — it already does its own
+bounded, LLM-proposed-once sequencing and was never part of the
+"duplicated calls" problem.
+
+**Superseded position.** ADR-030's own phasing text, which listed P2(c) as
+"not started" with no design. That line now reads "implemented
+2026-08-24, shipped behind `config.maxToolCallsPerTurn` — see ADL-052."
+
+**Design, in brief (full detail: the approved plan this session's
+implementation followed).** `completeWithTools(cfg, arcnaveContext,
+priorTurns = [])` — every adapter (`gemini.js`/`claude.js`/`openai.js`/
+`selfHosted.js`) gains a third, optional parameter: a plain,
+provider-agnostic array of `{toolName, arguments, callId, rawToolCall,
+resultText}` records, appended as native multi-turn messages AFTER the
+unchanged base system+user turn — `decisionContext` itself is built once
+and reused unchanged across every iteration, so the governance-bearing
+system segments are packaged identically every call (the exact invariant
+ADL-050's P2(b) rejection showed was unsafe to violate). No model
+switching across continuation calls — every completeWithTools call in the
+loop uses the same raw `aiConfig`; `selectModelForPurpose` fast-model
+routing is confined to the fallback/compatibility synthesis path only (a
+mid-loop model swap would ask a different model to continue a conversation
+containing a tool-call turn it did not itself generate). The L3/bulk
+confirmation gate (RS-AIG-005) re-runs on every iteration, not just the
+first; a tool needing confirmation at iteration > 0 stops the loop without
+running it, surfacing an explicit "would need confirmation, not taken"
+note rather than silently dropping it.
+`config.maxToolCallsPerTurn` (env `MAX_TOOL_CALLS_PER_TURN`, strict
+`^[1-9]\d*$` validation, hard ceiling 5, default 1) is the rollout
+mechanism: at `1` ("compatibility mode"), the loop's first iteration hits
+the cap immediately after one tool executes and falls into
+`summarizeToolResult` (generalized from a single `tool` to a `tools`
+array, but collapsing to the exact same construction for one tool) — the
+same call sequence as before this change existed. Raising it to 2-5 turns
+on the real adaptive loop.
+
+**A real live-only bug found and fixed mid-implementation, not just
+theorized.** The first live multi-tool-call run against real Vertex AI
+(not caught by any mocked-fetch unit test) surfaced a genuine Gemini API
+rejection: with thinking enabled (this codebase's `GENERATION_CONFIG`
+default), a real `functionCall` response part carries a sibling
+`thoughtSignature` field, and Vertex's real API returns 400 ("Function
+call is missing a thought_signature...") on any continuation request that
+replays a `functionCall` part without it. `gemini.js`'s `completeWithTools`
+now returns the ENTIRE response part as `decision.rawToolCall` (not just
+`{name, args}`), and `buildPriorTurnContents` replays that exact part
+verbatim on a continuation call rather than reconstructing a bare
+`{functionCall:{name,args}}` — locked in by a new adapter unit test
+(`ai-providers.test.js`) asserting a `thoughtSignature`-bearing part
+survives a round trip unchanged. `claude.js`/`openai.js`/`selfHosted.js`
+also carry `rawToolCall` (their own native tool-call payload) for the same
+fidelity reason, preferred over `JSON.stringify`-reconstructing arguments
+when available.
+
+**A second bug caught in the verification harness itself, not production
+code.** `scripts/ai-behavioral-suite.js`'s first version set
+`config.maxToolCallsPerTurn = 3` once, globally, for the whole suite run —
+not scoped to the new category K — which let several long-established A-J
+scenarios chain a second tool call they never would have under the real
+default (`1`), corrupting the baseline comparison and making the
+thought_signature bug (above) look like it affected unrelated categories.
+Fixed via `withScenarioToolCallCap`, which sets the cap to `3` only for
+category K's own scenarios and leaves every other category at the true
+default of `1`.
+
+**Verification.**
+- `docker compose run --rm app npm test` (full suite): 2112/2114 (same 2
+  pre-existing, unrelated `fetch_trusted_web_page` failures every prior
+  checkpoint has recorded; +28 new tests — 14 adapter-level in
+  `ai-providers.test.js` (13 for the priorTurns contract, 1 locking in the
+  live-caught `thoughtSignature` fix below), 8 control-flow in
+  `ai-service.test.js`, 7 config validation in the new
+  `tests/config.test.js` — zero regressions).
+- `docker compose run --rm app node --test tests/admission-drafts.test.js
+  tests/ai.test.js tests/ai-config.test.js` (live DB): 45/45.
+- Compatibility-mode equivalence is asserted directly, not just inferred
+  from "tests still pass": a dedicated test captures the actual outbound
+  synthesis request at the default cap of 1 and asserts its
+  system/user/model/tools shape — not a claim of byte-identity with a now-
+  deleted code path, since `summarizeToolResult`'s generalization changed
+  several construction details that happen to collapse to the same output
+  for exactly one tool.
+- **Live behavioral suite, three runs, real Gemini via Vertex ADC.** Run 1
+  (before the two bugs above were found): 32/50, dominated by the global-
+  cap-scoping bug's fallout plus scattered thought_signature 400s. Run 2
+  (after both fixes): the new category K's core mechanism proved correct —
+  `k1` chained `get_college_profile` → `draft_notification` in one turn
+  with a coherent combined answer, `k3` correctly paused for confirmation
+  before the L3 tool and never invoked it (`k2` failed on a plain timeout);
+  zero thought_signature errors anywhere in this or any later run. A-J
+  categories in run 2 were themselves contaminated by leftover quota
+  pressure from run 1 (mass "fetch failed"/timeout errors, not content
+  failures). Run 3 (after a 4-minute wait for quota recovery): B (identity
+  masking) 8/8, C (vague-request handling) 6/6, D (action truthfulness)
+  4/4 — all clean, zero regression signal; A (tool-selection restraint)
+  5 timeouts out of 12 (the same class of Vertex network-timeout flakiness
+  prior checkpoints already document as content-independent); E
+  (document-capability claim) 3/3 failures were explicit `429
+  RESOURCE_EXHAUSTED` responses, not content failures. Killed by user
+  instruction partway through category F once it was clear the project's
+  Vertex quota was genuinely exhausted for a sustained period (not a
+  transient per-minute limit) after three consecutive full-suite runs in
+  one session — continuing would have burned more quota for the same
+  quota-exhaustion signal, not new information. **A clean, uninterrupted
+  full A-J run (once quota resets) remains a real gap against ADR-030's
+  own go/no-go criteria and is recorded as follow-up work below, not
+  silently treated as passed.**
+
+**Migration impact.** None by default — `config.maxToolCallsPerTurn`
+defaults to `1`, and compatibility mode is the shipped behavior. No schema
+change, no data migration. Raising `MAX_TOOL_CALLS_PER_TURN` above `1` (2-5)
+turns on the real loop; this has NOT been done for any environment as part
+of this change.
+
+**Follow-up work (not done this session).**
+- A clean, uninterrupted live behavioral suite run (A-J at the true
+  default cap of 1, K at cap 3) once Vertex quota resets, to close the
+  go/no-go gap noted above before ever raising the default cap.
+- The remaining go/no-go criteria from ADR-030's own phasing text: a real
+  cost/latency comparison (loop enabled vs. disabled) via the new
+  `tool_select_continue` `logLlmCall` audit rows, and confirming no
+  increase in `ai_tool_denied` rows / no `workflow_requests` created
+  without a matching confirmation audit trail.
+- `bka/10-specification/RS-AIG-ai-governance.md`'s RS-AIG-022 entry was
+  reviewed and left unedited — its rule ("a fast model may only ever
+  describe an already-authorized, already-fetched result, never decide
+  whether a tool may run") remains exactly true under the loop, since no
+  continuation call is ever downgraded — but its `Implementation` note
+  could be extended to name the loop explicitly; a documentation nicety,
+  not a correctness gap.
+
+**Full ADR text:** [ADR-030](adr-register.md#adr-030).

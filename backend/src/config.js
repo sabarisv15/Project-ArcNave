@@ -260,4 +260,30 @@ module.exports = {
   // Claude-for-chat + Gemini-for-embeddings college is still exactly
   // as supported as it was before this change).
   embeddingProvider: process.env.EMBEDDING_PROVIDER || 'gemini',
+
+  // ADR-030 P2(c) — bounds TOOL EXECUTIONS per askAgent turn, not LLM
+  // calls (a turn at the cap can cost cap+1 completeWithTools calls: one
+  // decision call plus one continuation per executed tool). `1` is
+  // compatibility mode — the loop's first iteration hits the cap
+  // immediately and falls into the same old-shape synthesis call the
+  // pre-loop code always made, so this is the safe, provably-inert
+  // default. `2`-`5` turn on the real adaptive loop (the model sees each
+  // tool's result and may call another before answering). Hard-ceilinged
+  // at 5 in code (MAX_TOOL_CALLS_PER_TURN_CEILING in aiService.js) —
+  // deliberately not raisable via env var alone, since an unbounded value
+  // here would turn ARCNAVE into an unrestricted autonomous agent rather
+  // than a bounded tool-use turn. Validated with a strict integer-string
+  // pattern, not bare parseInt (parseInt('3abc', 10) and parseInt('2.5',
+  // 10) both silently return a "valid" integer and must not be accepted).
+  maxToolCallsPerTurn: (() => {
+    const DEFAULT_MAX_TOOL_CALLS_PER_TURN = 1;
+    const MAX_TOOL_CALLS_PER_TURN_CEILING = 5;
+    const ERROR = `MAX_TOOL_CALLS_PER_TURN must be an integer between 1 and ${MAX_TOOL_CALLS_PER_TURN_CEILING}`;
+    const raw = process.env.MAX_TOOL_CALLS_PER_TURN;
+    if (raw === undefined || raw === '') return DEFAULT_MAX_TOOL_CALLS_PER_TURN;
+    if (!/^[1-9]\d*$/.test(raw)) throw new Error(ERROR);
+    const value = Number(raw);
+    if (value > MAX_TOOL_CALLS_PER_TURN_CEILING) throw new Error(ERROR);
+    return value;
+  })(),
 };

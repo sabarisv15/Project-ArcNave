@@ -507,3 +507,276 @@ test('every provider adapter sends an explicit output-token bound on the wire (r
   ).catch(() => {}));
   assert.equal(claudeBody.max_tokens, 1024);
 });
+
+// ADR-030 P2(c) — the tool-use loop's adapter contract: completeWithTools
+// gains an optional third `priorTurns` parameter. Two invariants matter:
+// (1) priorTurns=[]/omitted must be byte-identical to today (regression
+// lock — every test above already proves this implicitly, since none of
+// them pass a third argument at all), and (2) each provider's native
+// multi-turn shape is built correctly, with the tool-definition list
+// chain-equal across iterations (never narrowed on a continuation call).
+async function capturedRequestBodyWithResponse(fn, responsePayload) {
+  const originalFetch = global.fetch;
+  let capturedBody;
+  global.fetch = async (url, options) => {
+    capturedBody = JSON.parse(options.body);
+    return { ok: true, json: async () => responsePayload };
+  };
+  try {
+    await fn();
+  } finally {
+    global.fetch = originalFetch;
+  }
+  return capturedBody;
+}
+
+const P2C_TOOLS = [{ name: 'tool_a', description: 'A', params: {} }];
+const P2C_CONTEXT = contextFromFlatPrompts({
+  systemPrompt: 's', userPrompt: 'u', tools: P2C_TOOLS,
+});
+
+test('gemini adapter.completeWithTools: priorTurns appends functionCall/functionResponse turns after the unchanged base turn, no callId needed', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const priorTurns = [{ toolName: 'tool_a', arguments: { x: 1 }, resultText: 'RESULT_TEXT' }];
+  const body = await capturedRequestBody(() => gemini.completeWithTools(
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' }, P2C_CONTEXT, priorTurns,
+  ).catch(() => {}));
+
+  assert.equal(body.contents.length, 3, 'base user turn + one model/user pair');
+  assert.deepEqual(body.contents[0], { role: 'user', parts: [{ text: 'u' }] });
+  assert.deepEqual(body.contents[1], { role: 'model', parts: [{ functionCall: { name: 'tool_a', args: { x: 1 } } }] });
+  assert.deepEqual(body.contents[2], { role: 'user', parts: [{ functionResponse: { name: 'tool_a', response: { content: 'RESULT_TEXT' } } }] });
+});
+
+// Live-caught regression (first real multi-tool-call ADR-030 P2(c) run
+// against Vertex AI): with thinking enabled (GENERATION_CONFIG's
+// thinkingLevel), a real functionCall part carries a sibling
+// `thoughtSignature` field, and Vertex's real API 400s on a continuation
+// request that replays a functionCall part without it — invisible to any
+// hand-built mock response that doesn't happen to include that field.
+// completeWithTools must both (a) capture the ENTIRE part, not just
+// {name, args}, on its own tool_call response, and (b) replay that exact
+// part — never a reconstructed {functionCall:{name,args}} — on the next
+// continuation call.
+test('gemini adapter.completeWithTools: a tool_call response carries rawToolCall (the WHOLE part, e.g. including thoughtSignature); a continuation replays it verbatim, never reconstructed', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const realPart = { functionCall: { name: 'tool_a', args: { x: 2 } }, thoughtSignature: 'opaque-signature-abc' };
+
+  let decision;
+  await capturedRequestBodyWithResponse(async () => {
+    decision = await gemini.completeWithTools(
+      { projectId: 'p', accessToken: 't', model: 'gemini-x' }, P2C_CONTEXT,
+    );
+  }, {
+    candidates: [{ content: { parts: [realPart] } }],
+    usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 },
+  });
+  assert.deepEqual(decision.rawToolCall, realPart, 'the whole part, thoughtSignature included, not just {name, args}');
+
+  const priorTurns = [{
+    toolName: 'tool_a', arguments: { x: 2 }, resultText: 'R', rawToolCall: decision.rawToolCall,
+  }];
+  const body = await capturedRequestBody(() => gemini.completeWithTools(
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' }, P2C_CONTEXT, priorTurns,
+  ).catch(() => {}));
+  assert.deepEqual(body.contents[1], { role: 'model', parts: [realPart] }, 'replays the exact part verbatim, thoughtSignature intact — never reconstructed');
+});
+
+test('gemini adapter.completeWithTools: priorTurns=[]/omitted produces a byte-identical base turn to today (regression lock)', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const withEmpty = await capturedRequestBody(() => gemini.completeWithTools(
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' }, P2C_CONTEXT, [],
+  ).catch(() => {}));
+  const omitted = await capturedRequestBody(() => gemini.completeWithTools(
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' }, P2C_CONTEXT,
+  ).catch(() => {}));
+  assert.deepEqual(withEmpty.contents, [{ role: 'user', parts: [{ text: 'u' }] }]);
+  assert.deepEqual(withEmpty, omitted);
+});
+
+test('gemini adapter.completeWithTools: tool definitions are chain-equal across 3 iterations (0, 1, 2 prior turns) — a continuation never narrows the tool list', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const cfg = { projectId: 'p', accessToken: 't', model: 'gemini-x' };
+  const turn = { toolName: 'tool_a', arguments: {}, resultText: 'R' };
+
+  const body0 = await capturedRequestBody(() => gemini.completeWithTools(cfg, P2C_CONTEXT, []).catch(() => {}));
+  const body1 = await capturedRequestBody(() => gemini.completeWithTools(cfg, P2C_CONTEXT, [turn]).catch(() => {}));
+  const body2 = await capturedRequestBody(() => gemini.completeWithTools(cfg, P2C_CONTEXT, [turn, turn]).catch(() => {}));
+
+  assert.deepEqual(body0.tools, body1.tools);
+  assert.deepEqual(body1.tools, body2.tools);
+  // Also assert the base system+user prefix never changes across iterations
+  // — the actual wire-level invariant P2(c) exists to establish.
+  assert.deepEqual(body0.systemInstruction, body1.systemInstruction);
+  assert.deepEqual(body1.systemInstruction, body2.systemInstruction);
+  assert.deepEqual(body0.contents[0], body1.contents[0]);
+  assert.deepEqual(body1.contents[0], body2.contents[0]);
+});
+
+test('claude adapter.completeWithTools: priorTurns appends tool_use/tool_result messages, and a tool_use response carries callId/rawToolCall', async () => {
+  const claude = aiProviders.getAdapter('claude');
+  const priorTurns = [{
+    toolName: 'tool_a', arguments: { x: 1 }, callId: 'toolu_123', resultText: 'RESULT_TEXT',
+  }];
+  const body = await capturedRequestBody(() => claude.completeWithTools(
+    { apiKey: 'k', model: 'claude-x' }, P2C_CONTEXT, priorTurns,
+  ).catch(() => {}));
+
+  assert.equal(body.messages.length, 3);
+  assert.deepEqual(body.messages[0], { role: 'user', content: 'u' });
+  assert.deepEqual(body.messages[1], {
+    role: 'assistant', content: [{
+      type: 'tool_use', id: 'toolu_123', name: 'tool_a', input: { x: 1 },
+    }],
+  });
+  assert.deepEqual(body.messages[2], { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_123', content: 'RESULT_TEXT' }] });
+
+  const rawToolUse = {
+    type: 'tool_use', id: 'toolu_456', name: 'tool_a', input: { x: 2 },
+  };
+  let decision;
+  await capturedRequestBodyWithResponse(async () => {
+    decision = await claude.completeWithTools({ apiKey: 'k', model: 'claude-x' }, P2C_CONTEXT);
+  }, { content: [rawToolUse] });
+  assert.equal(decision.callId, 'toolu_456');
+  assert.deepEqual(decision.rawToolCall, rawToolUse);
+});
+
+test('claude adapter.completeWithTools: priorTurns=[]/omitted produces a byte-identical base turn to today (regression lock)', async () => {
+  const claude = aiProviders.getAdapter('claude');
+  const withEmpty = await capturedRequestBody(() => claude.completeWithTools(
+    { apiKey: 'k', model: 'claude-x' }, P2C_CONTEXT, [],
+  ).catch(() => {}));
+  const omitted = await capturedRequestBody(() => claude.completeWithTools(
+    { apiKey: 'k', model: 'claude-x' }, P2C_CONTEXT,
+  ).catch(() => {}));
+  assert.deepEqual(withEmpty.messages, [{ role: 'user', content: 'u' }]);
+  assert.deepEqual(withEmpty, omitted);
+});
+
+test('claude adapter.completeWithTools: tool definitions are chain-equal across 3 iterations', async () => {
+  const claude = aiProviders.getAdapter('claude');
+  const cfg = { apiKey: 'k', model: 'claude-x' };
+  const turn = { toolName: 'tool_a', arguments: {}, callId: 'c1', resultText: 'R' };
+
+  const body0 = await capturedRequestBody(() => claude.completeWithTools(cfg, P2C_CONTEXT, []).catch(() => {}));
+  const body1 = await capturedRequestBody(() => claude.completeWithTools(cfg, P2C_CONTEXT, [turn]).catch(() => {}));
+  const body2 = await capturedRequestBody(() => claude.completeWithTools(cfg, P2C_CONTEXT, [turn, turn]).catch(() => {}));
+
+  assert.deepEqual(body0.tools, body1.tools);
+  assert.deepEqual(body1.tools, body2.tools);
+  assert.deepEqual(body0.system, body1.system);
+  assert.deepEqual(body1.system, body2.system);
+  assert.deepEqual(body0.messages[0], body1.messages[0]);
+  assert.deepEqual(body1.messages[0], body2.messages[0]);
+});
+
+test('openai adapter.completeWithTools: priorTurns appends tool_calls/role:tool messages, and a tool-call response carries callId/rawToolCall', async () => {
+  const openai = aiProviders.getAdapter('openai');
+  const priorTurns = [{
+    toolName: 'tool_a', arguments: { x: 1 }, callId: 'call_123', resultText: 'RESULT_TEXT',
+  }];
+  const body = await capturedRequestBody(() => openai.completeWithTools(
+    { apiKey: 'k', model: 'gpt-x' }, P2C_CONTEXT, priorTurns,
+  ).catch(() => {}));
+
+  assert.equal(body.messages.length, 4);
+  assert.deepEqual(body.messages[2], {
+    role: 'assistant',
+    content: null,
+    tool_calls: [{ id: 'call_123', type: 'function', function: { name: 'tool_a', arguments: '{"x":1}' } }],
+  });
+  assert.deepEqual(body.messages[3], { role: 'tool', tool_call_id: 'call_123', content: 'RESULT_TEXT' });
+
+  const rawCall = {
+    id: 'call_456', type: 'function', function: { name: 'tool_a', arguments: '{"x":2}' },
+  };
+  let decision;
+  await capturedRequestBodyWithResponse(async () => {
+    decision = await openai.completeWithTools({ apiKey: 'k', model: 'gpt-x' }, P2C_CONTEXT);
+  }, { choices: [{ message: { tool_calls: [rawCall] } }] });
+  assert.equal(decision.callId, 'call_456');
+  assert.deepEqual(decision.rawToolCall, rawCall);
+});
+
+test('openai adapter.completeWithTools: priorTurns=[]/omitted produces a byte-identical base turn to today (regression lock)', async () => {
+  const openai = aiProviders.getAdapter('openai');
+  const withEmpty = await capturedRequestBody(() => openai.completeWithTools(
+    { apiKey: 'k', model: 'gpt-x' }, P2C_CONTEXT, [],
+  ).catch(() => {}));
+  const omitted = await capturedRequestBody(() => openai.completeWithTools(
+    { apiKey: 'k', model: 'gpt-x' }, P2C_CONTEXT,
+  ).catch(() => {}));
+  assert.deepEqual(withEmpty.messages, [
+    { role: 'system', content: 's' },
+    { role: 'user', content: 'u' },
+  ]);
+  assert.deepEqual(withEmpty, omitted);
+});
+
+test('openai adapter.completeWithTools: tool definitions are chain-equal across 3 iterations', async () => {
+  const openai = aiProviders.getAdapter('openai');
+  const cfg = { apiKey: 'k', model: 'gpt-x' };
+  const turn = { toolName: 'tool_a', arguments: {}, callId: 'c1', resultText: 'R' };
+
+  const body0 = await capturedRequestBody(() => openai.completeWithTools(cfg, P2C_CONTEXT, []).catch(() => {}));
+  const body1 = await capturedRequestBody(() => openai.completeWithTools(cfg, P2C_CONTEXT, [turn]).catch(() => {}));
+  const body2 = await capturedRequestBody(() => openai.completeWithTools(cfg, P2C_CONTEXT, [turn, turn]).catch(() => {}));
+
+  assert.deepEqual(body0.tools, body1.tools);
+  assert.deepEqual(body1.tools, body2.tools);
+  assert.deepEqual(body0.messages[0], body1.messages[0]);
+  assert.deepEqual(body1.messages[0], body2.messages[0]);
+  assert.deepEqual(body0.messages[1], body1.messages[1]);
+  assert.deepEqual(body1.messages[1], body2.messages[1]);
+});
+
+test('selfHosted adapter.completeWithTools: priorTurns appends the same OpenAI-compatible tool_calls/role:tool shape openai.js uses', async () => {
+  const selfHosted = aiProviders.getAdapter('self_hosted');
+  const priorTurns = [{
+    toolName: 'tool_a', arguments: { x: 1 }, callId: 'call_123', resultText: 'RESULT_TEXT',
+  }];
+  const body = await capturedRequestBody(() => selfHosted.completeWithTools(
+    { baseUrl: 'http://localhost:1', model: 'sh-x' }, P2C_CONTEXT, priorTurns,
+  ).catch(() => {}));
+
+  assert.equal(body.messages.length, 4);
+  assert.deepEqual(body.messages[2], {
+    role: 'assistant',
+    content: null,
+    tool_calls: [{ id: 'call_123', type: 'function', function: { name: 'tool_a', arguments: '{"x":1}' } }],
+  });
+  assert.deepEqual(body.messages[3], { role: 'tool', tool_call_id: 'call_123', content: 'RESULT_TEXT' });
+});
+
+test('selfHosted adapter.completeWithTools: priorTurns=[]/omitted produces a byte-identical base turn to today (regression lock)', async () => {
+  const selfHosted = aiProviders.getAdapter('self_hosted');
+  const withEmpty = await capturedRequestBody(() => selfHosted.completeWithTools(
+    { baseUrl: 'http://localhost:1', model: 'sh-x' }, P2C_CONTEXT, [],
+  ).catch(() => {}));
+  const omitted = await capturedRequestBody(() => selfHosted.completeWithTools(
+    { baseUrl: 'http://localhost:1', model: 'sh-x' }, P2C_CONTEXT,
+  ).catch(() => {}));
+  assert.deepEqual(withEmpty.messages, [
+    { role: 'system', content: 's' },
+    { role: 'user', content: 'u' },
+  ]);
+  assert.deepEqual(withEmpty, omitted);
+});
+
+test('selfHosted adapter.completeWithTools: tool definitions are chain-equal across 3 iterations', async () => {
+  const selfHosted = aiProviders.getAdapter('self_hosted');
+  const cfg = { baseUrl: 'http://localhost:1', model: 'sh-x' };
+  const turn = { toolName: 'tool_a', arguments: {}, callId: 'c1', resultText: 'R' };
+
+  const body0 = await capturedRequestBody(() => selfHosted.completeWithTools(cfg, P2C_CONTEXT, []).catch(() => {}));
+  const body1 = await capturedRequestBody(() => selfHosted.completeWithTools(cfg, P2C_CONTEXT, [turn]).catch(() => {}));
+  const body2 = await capturedRequestBody(() => selfHosted.completeWithTools(cfg, P2C_CONTEXT, [turn, turn]).catch(() => {}));
+
+  assert.deepEqual(body0.tools, body1.tools);
+  assert.deepEqual(body1.tools, body2.tools);
+  assert.deepEqual(body0.messages[0], body1.messages[0]);
+  assert.deepEqual(body1.messages[0], body2.messages[0]);
+  assert.deepEqual(body0.messages[1], body1.messages[1]);
+  assert.deepEqual(body1.messages[1], body2.messages[1]);
+});

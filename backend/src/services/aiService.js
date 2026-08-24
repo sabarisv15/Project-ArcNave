@@ -24,6 +24,7 @@ const aiActorContext = require('./aiActorContext');
 const aiPolicyAssembly = require('./aiPolicyAssembly');
 const aiContextAssembly = require('./aiContextAssembly');
 const configurationService = require('./configurationService');
+const config = require('../config');
 const documentService = require('./documentService');
 const auditLogRepository = require('../repositories/auditLogRepository');
 const idempotencyKeyRepository = require('../repositories/idempotencyKeyRepository');
@@ -733,6 +734,22 @@ async function invokeToolIdempotent(client, toolName, params, { identityContext,
 const MAX_PLAN_STEPS = 6;
 const PLAN_TOOL_NAME = 'run_workflow_plan';
 
+// ADR-030 P2(c) — bounds TOOL EXECUTIONS in askAgent's single-tool_call
+// loop (below), not LLM calls: a turn at the cap can cost cap+1
+// completeWithTools calls (one decision call plus one continuation per
+// executed tool). config.maxToolCallsPerTurn defaults to 1 —
+// "compatibility mode," where the loop's first iteration hits the cap
+// immediately and falls back to the same old-shape synthesis call the
+// pre-loop code always made. This is entirely separate from
+// executeWorkflowPlan's own MAX_PLAN_STEPS above — that's a pre-planned,
+// LLM-proposed-once sequence; this loop is adaptive, one tool at a time,
+// re-deciding after each result. Read LIVE from config.maxToolCallsPerTurn
+// at the point of use inside askAgent below, never cached into a
+// module-level const at require-time — same reasoning as every other
+// config.*/config.openai.fastModel read in this file: tests toggle these
+// values at runtime (withOpenAiConfig, fastModel), and a load-time
+// snapshot would silently stop responding to that.
+
 function buildPlanMetaTool() {
   return {
     name: PLAN_TOOL_NAME,
@@ -1362,15 +1379,56 @@ function selectModelForPurpose(aiConfig, riskLevel) {
   return { ...aiConfig, model: aiConfig.fastModel };
 }
 
-async function summarizeToolResult(client, identityContext, sanitizedContext, promptQuestion, tool, adapter, aiConfig, identityBlock, hasHistory, onDelta) {
+// ADR-030 P2(c) — renders one tool invocation's sanitized entries into the
+// boundary-wrapped text a `priorTurns` tool-result message carries, same
+// untrusted-data framing every tool result already gets (mirrors
+// aiPromptSafetyLayer.renderForLlm's own dataBlock/boundary construction,
+// minus the trailing "Question:" — that only applies to the ONE real user
+// question, never to a synthetic continuation turn).
+function renderToolResultText(sanitizedContext) {
+  const dataBlock = sanitizedContext.entries
+    .map((entry) => `[tool: ${entry.toolName}, classification: ${entry.dataClassification}, retrievedAt: ${entry.retrievedAt}]\n${entry.data}`)
+    .join('\n\n');
+  return `${sanitizedContext.boundaryStart}\n${dataBlock}\n${sanitizedContext.boundaryEnd}`;
+}
+
+// ADR-030 P2(c) — sums usage across every completeWithTools/synthesis
+// call made in one askAgent turn, so the response's own `usage` field
+// reflects the true per-turn cost once a turn can span more than one LLM
+// call, not just whichever single call happened to run last.
+function addUsage(total, usage) {
+  if (!usage) return total;
+  if (!total) return { ...usage };
+  return {
+    inputTokens: (total.inputTokens || 0) + (usage.inputTokens || 0),
+    outputTokens: (total.outputTokens || 0) + (usage.outputTokens || 0),
+  };
+}
+
+// ADR-030 P2(c): generalized from a single `tool` to a `tools` array so
+// this can serve as the tool-use loop's fallback synthesis call (cap
+// reached, or a confirmation-gated tool appeared at iteration > 0) as
+// well as the true single-tool compatibility-mode case (MAX_TOOL_CALLS_
+// PER_TURN=1) — for exactly one tool this is INTENDED to collapse back to
+// the original single-tool call shape (see the explicit synthesis-request
+// regression test in ai-service.test.js; not assumed byte-identical from
+// the algorithm's shape alone). `blockedActionNote`, when given, is an
+// extra system segment surfacing a mid-loop tool that needed confirmation
+// and was NOT run — same "say so plainly, never silently omit" idiom
+// executeWorkflowPlan's own failureText already uses for failed steps.
+async function summarizeToolResult(client, identityContext, sanitizedContext, promptQuestion, tools, adapter, aiConfig, identityBlock, hasHistory, onDelta, blockedActionNote) {
   const { systemPrompt, userPrompt } = aiPromptSafetyLayer.renderForLlm(sanitizedContext, promptQuestion);
   // ADR-030 P2(a): builds an ARCNAVE Context instead of flat strings —
   // representation change only, byte-identical output. identityBlock
   // stays last — ADR-030 P0 (see executeWorkflowPlan's own comment).
+  const hasFileTool = tools.some((t) => FILE_TOOL_NAMES.has(t.name));
   const policy = aiPolicyAssembly.buildPolicy({
-    mode: 'curriculum', hasHistory, toolCount: 1, hasFileTool: FILE_TOOL_NAMES.has(tool.name), focusEntityType: null,
+    mode: 'curriculum', hasHistory, toolCount: tools.length, hasFileTool, focusEntityType: null,
   });
-  const arcnaveContext = aiContextAssembly.buildContext([
+  const toolDescriptionNote = tools.length === 1
+    ? `The tool that was called: ${tools[0].name} — ${tools[0].description}`
+    : `The tools that were called, in order:\n${tools.map((t) => `${t.name}: ${t.description}`).join('\n')}`;
+  const segments = [
     aiContextAssembly.segment({
       source: 'safety-preamble', stability: aiContextAssembly.STABILITY.STATIC, target: 'system', content: systemPrompt,
     }),
@@ -1381,8 +1439,15 @@ async function summarizeToolResult(client, identityContext, sanitizedContext, pr
       source: 'policy-modules', stability: aiContextAssembly.STABILITY.CONVERSATION, target: 'system', content: policy,
     }),
     aiContextAssembly.segment({
-      source: 'tool-description-note', stability: aiContextAssembly.STABILITY.TURN, target: 'system', content: `The tool that was called: ${tool.name} — ${tool.description}`,
+      source: 'tool-description-note', stability: aiContextAssembly.STABILITY.TURN, target: 'system', content: toolDescriptionNote,
     }),
+  ];
+  if (blockedActionNote) {
+    segments.push(aiContextAssembly.segment({
+      source: 'blocked-action-note', stability: aiContextAssembly.STABILITY.TURN, target: 'system', content: blockedActionNote,
+    }));
+  }
+  segments.push(
     aiContextAssembly.segment({
       source: 'identity', stability: aiContextAssembly.STABILITY.CONVERSATION, target: 'system', content: identityBlock,
     }),
@@ -1396,8 +1461,13 @@ async function summarizeToolResult(client, identityContext, sanitizedContext, pr
     aiContextAssembly.segment({
       source: 'tool-result-answer-guidance', stability: aiContextAssembly.STABILITY.STATIC, target: 'user', content: TOOL_RESULT_ANSWER_SYSTEM_PROMPT,
     }),
-  ]);
-  const routedConfig = selectModelForPurpose(aiConfig, tool.riskLevel);
+  );
+  const arcnaveContext = aiContextAssembly.buildContext(segments);
+  // Model routing (P1.3), mirroring executeWorkflowPlan's own maxRiskLevel
+  // reduce — routed on the HIGHEST riskLevel across every tool that ran,
+  // never an average or the first tool's alone.
+  const maxRiskLevel = tools.reduce((max, t) => Math.max(max, t.riskLevel), 0);
+  const routedConfig = selectModelForPurpose(aiConfig, maxRiskLevel);
   return completeMaybeStreaming(client, identityContext, adapter, routedConfig, arcnaveContext, 'tool_answer', onDelta);
 }
 
@@ -1635,7 +1705,7 @@ async function askAgent(client, question, {
   // decision left the UI on its initial default status with nothing
   // telling the user ArcNave was actually working on it.
   onStep({ phase: 'deciding' });
-  const decision = await adapter.completeWithTools(aiConfig, decisionContext);
+  let decision = await adapter.completeWithTools(aiConfig, decisionContext);
   // imageCount reflects images actually included in the request sent
   // to the provider — never the raw attachmentIds count — so a
   // rejected/unauthorized/unsupported-mime attachment (already thrown
@@ -1667,34 +1737,53 @@ async function askAgent(client, question, {
   });
   const imageMeta = { imageCount, imageAnalysisUnavailable };
 
-  if (decision.type === 'tool_call' && decision.toolName === PLAN_TOOL_NAME) {
-    const steps = (decision.arguments && decision.arguments.steps) || [];
-    validatePlanSteps(steps, tools);
-    const { resolved, needsConfirmation, confirmationLines } = await resolvePlanSteps(steps, { client, identityContext });
+  // ADR-030 P2(c): bounded tool-use loop. `decisionContext` (built once
+  // above) is reused UNCHANGED on every completeWithTools call below —
+  // never rebuilt, never re-flattened differently — which is what
+  // preserves the ADL-050 guarantee (the governance-bearing system
+  // segments are packaged once, identically, every call) at the
+  // orchestration level, and (since decisionContext already carries
+  // {tools: toolsWithPlan} via buildContext's own second argument) also
+  // guarantees every continuation offers the exact same tool list as
+  // iteration 0 — never narrowed — so the model can still pick a
+  // different tool on a later iteration.
+  const priorTurns = [];
+  const mergedEntries = [];
+  const invokedTools = []; // aiToolRegistry tool objects, in call order
+  let usageTotal = decision.usage ? { ...decision.usage } : undefined;
+  let blockedActionNote;
 
-    if (needsConfirmation) {
-      const confirmationQuestion = `This plan involves:\n${confirmationLines.join('\n')}\n\nShall I go ahead?`;
-      const sanitizedContext = aiPromptSafetyLayer.buildSanitizedContext([]);
-      const presentation = aiExperienceLayer.buildPresentation({
-        sanitizedContext, question, answer: confirmationQuestion, toolUsed: null, tool: null, actorRole: identityContext.role,
-      });
-      return {
-        ...sanitizedContext,
-        ...imageMeta,
-        question,
-        toolUsed: null,
-        answer: confirmationQuestion,
-        presentation,
-        pendingConfirmation: { steps: resolved },
-      };
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    if (decision.type === 'tool_call' && decision.toolName === PLAN_TOOL_NAME) {
+      const steps = (decision.arguments && decision.arguments.steps) || [];
+      validatePlanSteps(steps, tools);
+      const { resolved, needsConfirmation, confirmationLines } = await resolvePlanSteps(steps, { client, identityContext });
+
+      if (needsConfirmation) {
+        const confirmationQuestion = `This plan involves:\n${confirmationLines.join('\n')}\n\nShall I go ahead?`;
+        const sanitizedContext = aiPromptSafetyLayer.buildSanitizedContext([]);
+        const presentation = aiExperienceLayer.buildPresentation({
+          sanitizedContext, question, answer: confirmationQuestion, toolUsed: null, tool: null, actorRole: identityContext.role,
+        });
+        return {
+          ...sanitizedContext,
+          ...imageMeta,
+          question,
+          toolUsed: null,
+          answer: confirmationQuestion,
+          presentation,
+          pendingConfirmation: { steps: resolved },
+        };
+      }
+
+      return executeWorkflowPlan(client, resolved, promptQuestion, {
+        identityContext, identityBlock, adapter, aiConfig, hasHistory: historyHint !== '',
+      }, onDelta, onStep);
     }
 
-    return executeWorkflowPlan(client, resolved, promptQuestion, {
-      identityContext, identityBlock, adapter, aiConfig, hasHistory: historyHint !== '',
-    }, onDelta, onStep);
-  }
+    if (decision.type !== 'tool_call') break;
 
-  if (decision.type === 'tool_call') {
     // RS-AIG-005: before filing any WorkflowService submission, the AI
     // must ask for explicit confirmation and only a clear affirmative
     // reply may trigger it — no request may be created off a single
@@ -1705,6 +1794,8 @@ async function askAgent(client, question, {
     // one. Policy/param validation still runs up front (checkToolPreconditions
     // — the same checks invokeTool itself would do) so a request that would
     // be denied or malformed never even reaches the confirmation question.
+    // Runs on EVERY iteration, not just the first — no loop iteration may
+    // ever bypass this gate.
     const tool = aiToolRegistry.getTool(decision.toolName);
     const isL3 = Boolean(tool && tool.level === 'L3');
     // Second optimization pass, finding #4: a bulk-capable L1/L2 tool
@@ -1723,49 +1814,153 @@ async function askAgent(client, question, {
       const needsConfirmation = isL3
         || estimatedAffectedRows > tool.maxAffectedRows.confirmAt;
       if (needsConfirmation) {
-        const confirmationQuestion = isL3
-          ? `${tool.description} Shall I go ahead and submit this for approval?`
-          : `${tool.description} This will affect approximately ${estimatedAffectedRows} record(s) — shall I go ahead?`;
-        const sanitizedContext = aiPromptSafetyLayer.buildSanitizedContext([]);
-        const presentation = aiExperienceLayer.buildPresentation({
-          sanitizedContext, question, answer: confirmationQuestion, toolUsed: null, tool: null, actorRole: identityContext.role,
-        });
-        return {
-          ...sanitizedContext,
-          ...imageMeta,
-          question,
-          toolUsed: null,
-          answer: confirmationQuestion,
-          presentation,
-          pendingConfirmation: { toolName: decision.toolName, params: safeParams },
-        };
+        if (invokedTools.length === 0) {
+          // Iteration 0: identical to pre-loop behavior — pause and ask,
+          // nothing has run yet.
+          const confirmationQuestion = isL3
+            ? `${tool.description} Shall I go ahead and submit this for approval?`
+            : `${tool.description} This will affect approximately ${estimatedAffectedRows} record(s) — shall I go ahead?`;
+          const sanitizedContext = aiPromptSafetyLayer.buildSanitizedContext([]);
+          const presentation = aiExperienceLayer.buildPresentation({
+            sanitizedContext, question, answer: confirmationQuestion, toolUsed: null, tool: null, actorRole: identityContext.role,
+          });
+          return {
+            ...sanitizedContext,
+            ...imageMeta,
+            question,
+            toolUsed: null,
+            answer: confirmationQuestion,
+            presentation,
+            pendingConfirmation: { toolName: decision.toolName, params: safeParams },
+          };
+        }
+        // Mid-loop (iteration > 0): a tool already ran earlier this turn.
+        // Do NOT run this one and do NOT silently drop it — stop the loop
+        // and let the fallback synthesis below say so plainly, same idiom
+        // executeWorkflowPlan's own failureText already uses for a failed
+        // step.
+        blockedActionNote = `A further action was identified but NOT taken because it needs explicit user confirmation first — say so plainly in the answer, never silently omit it: ${tool.description}`;
+        break;
       }
       // hasBulkGuard but below confirmAt: preconditions (including the
       // rejectAt ceiling) are already checked above — falls through to
       // the normal invoke path below with no pause.
     }
 
-    onStep({ phase: 'running_tool', toolName: decision.toolName, stepIndex: 0, totalSteps: 1 });
+    onStep({
+      // totalSteps is the turn's own ceiling (MAX_TOOL_CALLS_PER_TURN), not
+      // a pre-planned exact count — this loop is adaptive, unlike
+      // executeWorkflowPlan's own pre-planned totalSteps. In compatibility
+      // mode (cap 1) this is always 1, matching pre-loop behavior exactly.
+      phase: 'running_tool', toolName: decision.toolName, stepIndex: invokedTools.length, totalSteps: config.maxToolCallsPerTurn,
+    });
     const sanitizedContext = await invokeTool(client, decision.toolName, decision.arguments || {}, {
       identityContext, provider: adapter.name, model: aiConfig.model,
     });
-    // The tool itself is done — summarizeToolResult below is a SEPARATE
-    // LLM call turning its result into the answer. Without this, the
-    // frontend kept showing "Running <tool>…" for that whole second
-    // call too, which reads as stuck once the tool has actually finished.
-    onStep({ phase: 'synthesizing', toolName: decision.toolName });
-    const { text: answer, usage } = await summarizeToolResult(client, identityContext, sanitizedContext, promptQuestion, tool, adapter, aiConfig, identityBlock, historyHint !== '', onDelta);
-    const presentation = aiExperienceLayer.buildPresentation({
-      sanitizedContext, question, answer, toolUsed: decision.toolName, tool, actorRole: identityContext.role,
+    mergedEntries.push(...sanitizedContext.entries);
+    invokedTools.push(tool);
+    priorTurns.push({
+      toolName: decision.toolName,
+      arguments: decision.arguments || {},
+      callId: decision.callId,
+      rawToolCall: decision.rawToolCall,
+      resultText: renderToolResultText(sanitizedContext),
     });
-    const evidence = buildEvidence(sanitizedContext);
+
+    if (invokedTools.length >= config.maxToolCallsPerTurn) {
+      // Cap reached — fall through to the synthesis fallback below
+      // without another completeWithTools call.
+      break;
+    }
+
+    onStep({ phase: 'deciding' });
+    const continuationStartedAt = Date.now();
+    // No model switching across continuation calls — same raw aiConfig
+    // every time (never selectModelForPurpose'd here). A mid-loop model
+    // swap would ask a DIFFERENT model to continue a conversation
+    // containing a tool-call turn it did not itself generate — a
+    // semantic-compatibility problem, not just a caching inefficiency.
+    // eslint-disable-next-line no-await-in-loop
+    decision = await adapter.completeWithTools(aiConfig, decisionContext, priorTurns);
+    usageTotal = addUsage(usageTotal, decision.usage);
+    // eslint-disable-next-line no-await-in-loop
+    await logLlmCall(client, {
+      identityContext,
+      adapter,
+      aiConfig,
+      purpose: 'tool_select_continue',
+      usage: decision.usage,
+      latencyMs: Date.now() - continuationStartedAt,
+      imageCount,
+      systemPromptChars: aiContextAssembly.flattenToPrompts(decisionContext).systemPrompt.length,
+      toolCount: tools.length,
+    });
+  }
+
+  if (invokedTools.length === 0) {
+    // No tool was ever picked, iteration 0 — falls through to the
+    // plain-answer path below, unchanged.
+  } else if (decision.type === 'answer') {
+    // The model saw the tool result(s) and answered directly, in the
+    // SAME conversation — no separate synthesis call. This is the actual
+    // cost win P2(c) exists to realize.
+    const mergedSanitizedContext = {
+      preamble: aiPromptSafetyLayer.SAFETY_PREAMBLE,
+      boundaryStart: aiPromptSafetyLayer.BOUNDARY_START,
+      boundaryEnd: aiPromptSafetyLayer.BOUNDARY_END,
+      entries: mergedEntries,
+    };
+    const firstToolName = priorTurns[0].toolName;
+    const presentation = aiExperienceLayer.buildPresentation({
+      sanitizedContext: mergedSanitizedContext, question, answer: decision.text, toolUsed: firstToolName, tool: invokedTools[0], actorRole: identityContext.role,
+    });
+    const evidence = buildEvidence(mergedSanitizedContext);
     return {
-      ...sanitizedContext,
+      ...mergedSanitizedContext,
       ...imageMeta,
       question,
-      toolUsed: decision.toolName,
+      toolUsed: firstToolName,
+      toolsUsed: priorTurns.map((t) => t.toolName),
+      answer: decision.text,
+      usage: usageTotal,
+      presentation,
+      evidence,
+      evidenceTrail: buildEvidenceTrail(evidence),
+      verification: verifyNumericClaims(decision.text, evidence),
+    };
+  } else {
+    // Cap reached, or a mid-loop tool needed confirmation and was
+    // intentionally not run — fallback synthesis, generalized from the
+    // original single-tool call.
+    const mergedSanitizedContext = {
+      preamble: aiPromptSafetyLayer.SAFETY_PREAMBLE,
+      boundaryStart: aiPromptSafetyLayer.BOUNDARY_START,
+      boundaryEnd: aiPromptSafetyLayer.BOUNDARY_END,
+      entries: mergedEntries,
+    };
+    const firstToolName = priorTurns[0].toolName;
+    // The tool(s) themselves are done — summarizeToolResult below is a
+    // SEPARATE LLM call turning the result(s) into the answer. Without
+    // this, the frontend kept showing "Running <tool>…" for that whole
+    // second call too, which reads as stuck once the tool has actually
+    // finished.
+    onStep({ phase: 'synthesizing', toolName: priorTurns[priorTurns.length - 1].toolName });
+    const { text: answer, usage: synthUsage } = await summarizeToolResult(
+      client, identityContext, mergedSanitizedContext, promptQuestion, invokedTools, adapter, aiConfig, identityBlock, historyHint !== '', onDelta, blockedActionNote,
+    );
+    usageTotal = addUsage(usageTotal, synthUsage);
+    const presentation = aiExperienceLayer.buildPresentation({
+      sanitizedContext: mergedSanitizedContext, question, answer, toolUsed: firstToolName, tool: invokedTools[0], actorRole: identityContext.role,
+    });
+    const evidence = buildEvidence(mergedSanitizedContext);
+    return {
+      ...mergedSanitizedContext,
+      ...imageMeta,
+      question,
+      toolUsed: firstToolName,
+      toolsUsed: priorTurns.map((t) => t.toolName),
       answer,
-      usage,
+      usage: usageTotal,
       presentation,
       evidence,
       evidenceTrail: buildEvidenceTrail(evidence),

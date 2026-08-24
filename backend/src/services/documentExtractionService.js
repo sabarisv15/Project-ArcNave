@@ -24,6 +24,7 @@ const { withOcrSlot } = require('../ocr/ocrConcurrencyLimit');
 const documentTypeRegistryRepository = require('../repositories/documentTypeRegistryRepository');
 const configurationService = require('./configurationService');
 const { logWarn } = require('../logging/logger');
+const { contextFromFlatPrompts } = require('./aiContextAssembly');
 
 const OCR_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/bmp', 'image/tiff']);
 const PDF_MIME_TYPE = 'application/pdf';
@@ -232,10 +233,10 @@ async function classifyDocument(client, {
   const ocrResult = await runOcr(fileBuffer, mimeType, { lang });
 
   const { adapter, config: aiConfig, provider } = await configurationService.getAiConfig(client, collegeId);
-  const raw = await adapter.complete(aiConfig, {
+  const raw = await adapter.complete(aiConfig, contextFromFlatPrompts({
     systemPrompt: buildClassificationPrompt(candidateKeys),
     userPrompt: ocrResult.text,
-  });
+  }));
   const parsed = safeJsonParse(raw);
   const detectedDocType = parsed ? normalizeDetectedDocType(parsed.detectedDocType, candidateKeys) : null;
 
@@ -354,10 +355,10 @@ async function extractFields(client, { collegeId, docType, text }) {
   }
 
   const { adapter, config: aiConfig, provider } = await configurationService.getAiConfig(client, collegeId);
-  const raw = await adapter.complete(aiConfig, {
+  const raw = await adapter.complete(aiConfig, contextFromFlatPrompts({
     systemPrompt: buildFieldExtractionPrompt(fieldTargets),
     userPrompt: text,
-  });
+  }));
   const parsed = safeJsonParse(raw) || {};
 
   const fields = {};

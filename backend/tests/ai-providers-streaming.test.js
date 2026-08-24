@@ -15,6 +15,7 @@ const claudeAdapter = require('../src/services/aiProviders/claude');
 const geminiAdapter = require('../src/services/aiProviders/gemini');
 const openaiAdapter = require('../src/services/aiProviders/openai');
 const { LlmRequestError, LlmNotConfiguredError } = require('../src/services/aiProviders/errors');
+const { contextFromFlatPrompts } = require('../src/services/aiContextAssembly');
 
 function fakeSseResponse(lines, { ok = true, status } = {}) {
   return {
@@ -74,7 +75,7 @@ for (const [label, adapter, cfg] of [
       'data: [DONE]\n\n',
     ]);
     await withMockFetch(async () => response, async () => {
-      const full = await adapter.completeStream(cfg, { systemPrompt: 's', userPrompt: 'u' }, (d) => deltas.push(d));
+      const full = await adapter.completeStream(cfg, contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }), (d) => deltas.push(d));
       assert.deepEqual(deltas, ['Hello', ' world']);
       assert.equal(full, 'Hello world');
     });
@@ -85,7 +86,7 @@ for (const [label, adapter, cfg] of [
     let deltaCalled = false;
     await withMockFetch(async () => response, async () => {
       await assert.rejects(
-        () => adapter.completeStream(cfg, { systemPrompt: 's', userPrompt: 'u' }, () => { deltaCalled = true; }),
+        () => adapter.completeStream(cfg, contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }), () => { deltaCalled = true; }),
         LlmRequestError,
       );
     });
@@ -104,7 +105,7 @@ test('claude adapter.completeStream: only content_block_delta/text_delta events 
     'event: message_stop\ndata: {"type":"message_stop"}\n\n',
   ]);
   await withMockFetch(async () => response, async () => {
-    const full = await claudeAdapter.completeStream({ apiKey: 'k' }, { systemPrompt: 's', userPrompt: 'u' }, (d) => deltas.push(d));
+    const full = await claudeAdapter.completeStream({ apiKey: 'k' }, contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }), (d) => deltas.push(d));
     assert.deepEqual(deltas, ['Hi', ' there']);
     assert.equal(full, 'Hi there');
   });
@@ -119,7 +120,7 @@ test('gemini adapter.completeStream: streams candidates[0].content.parts[].text 
     'data: {"candidates":[{"content":{"parts":[{"text":" world"}]}}]}\n\n',
   ]);
   await withMockFetch(async () => response, async () => {
-    const full = await geminiAdapter.completeStream({ projectId: 'p', accessToken: 't' }, { systemPrompt: 's', userPrompt: 'u' }, (d) => deltas.push(d));
+    const full = await geminiAdapter.completeStream({ projectId: 'p', accessToken: 't' }, contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }), (d) => deltas.push(d));
     assert.deepEqual(deltas, ['Hello', ' world']);
     assert.equal(full, 'Hello world');
   });
@@ -149,7 +150,7 @@ test('gemini adapter.completeStream: emits each delta inline as its own SSE chun
   await withMockFetch(async () => response, async () => {
     await geminiAdapter.completeStream(
       { projectId: 'p', accessToken: 't' },
-      { systemPrompt: 's', userPrompt: 'u' },
+      contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
       () => firstDeltaSawSecondChunkReleased.push(secondChunkReleased),
     );
   });
@@ -177,7 +178,7 @@ test('gemini adapter.completeStream: a well-formed response with zero visible te
   let deltaCalled = false;
   await withMockFetch(async () => response, async () => {
     await assert.rejects(
-      () => geminiAdapter.completeStream({ projectId: 'p', accessToken: 't' }, { systemPrompt: 's', userPrompt: 'u' }, () => { deltaCalled = true; }),
+      () => geminiAdapter.completeStream({ projectId: 'p', accessToken: 't' }, contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }), () => { deltaCalled = true; }),
       LlmRequestError,
     );
   });
@@ -210,7 +211,7 @@ test('gemini adapter.completeStream: a hanging request is aborted well within th
     await assert.rejects(
       () => geminiAdapter.completeStream(
         { projectId: 'p', accessToken: 't', maxTotalStreamMs: 150 },
-        { systemPrompt: 's', userPrompt: 'u' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
         () => {},
       ),
       LlmRequestError,
@@ -224,7 +225,7 @@ test('gemini adapter.completeStream: unconfigured (no projectId) throws LlmNotCo
   let fetchCalled = false;
   await withMockFetch(async () => { fetchCalled = true; }, async () => {
     await assert.rejects(
-      () => geminiAdapter.completeStream({}, { systemPrompt: 's', userPrompt: 'u' }, () => {}),
+      () => geminiAdapter.completeStream({}, contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }), () => {}),
       LlmNotConfiguredError,
     );
   });

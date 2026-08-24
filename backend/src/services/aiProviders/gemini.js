@@ -17,6 +17,7 @@ const { GoogleAuth } = require('google-auth-library');
 const { LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError } = require('./errors');
 const { withRetry } = require('./retry');
 const { iterateSseLines } = require('./sse');
+const { flattenToPrompts } = require('../aiContextAssembly');
 
 const REQUEST_TIMEOUT_MS = 30000;
 // Overall wall-clock budget for ONE logical postJson-based call
@@ -181,7 +182,8 @@ async function postJson(cfg, url, body) {
 // candidatesTokenCount), a different field name and shape from every
 // other adapter's `usage` — a real vendor difference, not an
 // inconsistency in this codebase.
-async function completeWithMeta(cfg, { systemPrompt, userPrompt, images } = {}) {
+async function completeWithMeta(cfg, arcnaveContext) {
+  const { systemPrompt, userPrompt, images } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
   }
@@ -223,7 +225,8 @@ async function complete(cfg, prompts) {
 // nothing streamed here is ever later discarded/retried out from under
 // the caller; an attempt is only ever retried before its first real
 // chunk, never after.
-async function attemptStream(cfg, { systemPrompt, userPrompt, images } = {}, deadline, onDelta) {
+async function attemptStream(cfg, arcnaveContext, deadline, onDelta) {
+  const { systemPrompt, userPrompt, images } = flattenToPrompts(arcnaveContext);
   const token = await getAccessToken(cfg);
   const response = await withRetry(async () => {
     const remaining = deadline - Date.now();
@@ -366,7 +369,10 @@ function stripAdditionalProperties(schema) {
   return schema;
 }
 
-async function completeWithTools(cfg, { systemPrompt, userPrompt, tools, images } = {}) {
+async function completeWithTools(cfg, arcnaveContext) {
+  const {
+    systemPrompt, userPrompt, tools, images,
+  } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
   }
@@ -392,14 +398,28 @@ async function completeWithTools(cfg, { systemPrompt, userPrompt, tools, images 
 
   const functionCallPart = parts.find((p) => p.functionCall);
   if (functionCallPart) {
-    return { type: 'tool_call', toolName: functionCallPart.functionCall.name, arguments: functionCallPart.functionCall.args || {} };
+    // ADR-030 P0 telemetry: a tool_call response's own usageMetadata is
+    // just as real a request cost as an 'answer' response's — previously
+    // dropped here, which meant every genuine tool-use turn's decision
+    // call was invisible to logLlmCall (see aiService.js's own comment on
+    // decision.usage), the exact turn shape the review found most
+    // expensive.
+    const usage = payload && payload.usageMetadata
+      ? { inputTokens: payload.usageMetadata.promptTokenCount, outputTokens: payload.usageMetadata.candidatesTokenCount }
+      : undefined;
+    return {
+      type: 'tool_call', toolName: functionCallPart.functionCall.name, arguments: functionCallPart.functionCall.args || {}, usage,
+    };
   }
 
   const text = parts.map((p) => p.text).filter(Boolean).join('');
   if (!text) {
     throw new LlmRequestError('Gemini response contained neither a function call nor text');
   }
-  return { type: 'answer', text };
+  const usage = payload && payload.usageMetadata
+    ? { inputTokens: payload.usageMetadata.promptTokenCount, outputTokens: payload.usageMetadata.candidatesTokenCount }
+    : undefined;
+  return { type: 'answer', text, usage };
 }
 
 async function embed(cfg, texts, { inputType } = {}) {

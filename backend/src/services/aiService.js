@@ -17,9 +17,12 @@
 
 const crypto = require('crypto');
 const aiToolRegistry = require('./aiToolRegistry');
+const aiToolRetrievalService = require('./aiToolRetrievalService');
 const aiContextBuilder = require('./aiContextBuilder');
 const aiPromptSafetyLayer = require('./aiPromptSafetyLayer');
 const aiActorContext = require('./aiActorContext');
+const aiPolicyAssembly = require('./aiPolicyAssembly');
+const aiContextAssembly = require('./aiContextAssembly');
 const configurationService = require('./configurationService');
 const documentService = require('./documentService');
 const auditLogRepository = require('../repositories/auditLogRepository');
@@ -57,170 +60,15 @@ class AiIdempotencyKeyReusedError extends Error {}
 // shown). A clean 400, same category as AiServiceValidationError.
 class AiWorkflowPlanValidationError extends Error {}
 
-// The agent's own operating instructions for tool selection — a
-// different concern from aiPromptSafetyLayer's renderForLlm (which
-// frames untrusted TOOL DATA, not the assistant's behavior), so it
-// lives here, not there. Deliberately says "never claim to have taken
-// an action no tool performed" — the one thing worth guarding against
-// even at L1 (Inform-only): a model confabulating that it did
-// something the Policy Gate never actually ran.
-//
-// The explicit "do NOT call a tool" instruction below was added after
-// a real live-verification run against NVIDIA NIM (meta/llama-3.1-8b-
-// instruct): the model called get_college_profile for "what is the
-// capital of France?" under the original, softer "if a tool CAN
-// answer, call it" wording — a small/tool-happy model reads "can" too
-// broadly. Tightened to require the tool's specific purpose to
-// actually match the question, with an explicit unrelated-question
-// example, which fixed it (see .ai/RESULT.md's "live NIM verification"
-// entry for the before/after).
-// Identity masking — a real live-caught gap: asked "whats your name?"
-// the model answered correctly in character, but a follow-up "real
-// name" got "I am Gemini, a large language model built by Google,
-// serving as the AI assistant for ARCNAVE" — CONVERSATIONAL_POLICY's
-// own "I am Gemini..." example only forbids REPEATING a self-
-// introduction, it never actually forbids saying which underlying
-// provider/model is running. That's a "what facts an answer may
-// state" concern (CONVERSATIONAL_POLICY's own boundary line — tone
-// only, never relaxes what's above it), so it belongs here, not there.
-const AGENT_SYSTEM_PROMPT = "You are ARCNAVE's campus assistant. Each tool is for a specific, narrow purpose "
-  + '(e.g. reading THIS college\'s own profile, or drafting/sending a notification) — call a tool ONLY when '
-  + "the user's question specifically asks for what that exact tool does. If the question is general "
-  + "knowledge, small talk, or anything the tools don't specifically cover, answer directly yourself and do "
-  + 'NOT call any tool (example: "what is the capital of France?" has nothing to do with any available tool '
-  + '— answer it directly). Never claim to have taken an action (sending a message, changing a record) that '
-  + 'no tool actually performed. NEVER tell the user you cannot produce a document, PDF, Word file, or '
-  + 'download — you genuinely can, via generate_document (an ordinary chat) or export_artifact (an open '
-  + 'artifact): both save real, drafted content as a real downloadable file (not literally formatted as '
-  + '.pdf/.docx, but a real file the user can open and download all the same). If the user asks for one of '
-  + "these but hasn't given you content to put in it yet, say so and ask what it should contain — never say "
-  + 'you lack the capability itself. If the question is too vague or general to clearly identify which specific '
-  + 'entity, record, or action it is about (e.g. it names no student/staff/class, no clear action, or could '
-  + 'reasonably match several unrelated tools), do NOT guess a tool — answer directly instead, asking the '
-  + 'user a short, specific question about what they need (example: "help me with the thing" has no clear '
-  + 'subject — ask what they need help with, don\'t call a tool at random). A question ASKING what you can '
-  + 'do, or asking for help in general, is never itself a reason to call a data tool — answer that kind of '
-  + 'question directly, in your own words. '
-  + 'NEVER invent a placeholder value for a parameter the question does not actually give you (e.g. a made-up '
-  + 'roll number, a literal placeholder like "student\'s roll number" or "12345", or a guessed assessment/exam '
-  + 'name) just to satisfy a tool\'s required field — if a required identifier (which student, which staff '
-  + 'member, which class, which assessment) is not clearly named in the question, do not call that tool at '
-  + 'all; answer directly instead, asking the user to specify it (example: "update this student\'s phone '
-  + 'number" names no actual student — ask which student, by name or roll number, rather than inventing one). '
-  + 'A "Context:" line before the question (when present) states which record is currently open in the '
-  + "user's workspace — it is not part of the user's own words, only a hint for resolving a question that "
-  + 'names no explicit subject (e.g. "how is she doing?", "update her phone number") against that record. A '
-  + 'question that clearly names a different student/staff/class always overrides the context hint. '
-  + 'A follow-up question is often about the SAME records a tool call already surfaced earlier in this '
-  + 'conversation, just asking for one more field of them (e.g. names for roll numbers a document analysis '
-  + 'tool already listed). Before calling a different tool to get that missing field, check whether the '
-  + "conversation history above already names the specific records the user means — if it does, and no tool "
-  + 'available to you can add that missing field for those SAME specific records, say plainly that field '
-  + "isn't available for what was already found, instead of calling an unrelated tool that merely sounds "
-  + 'like it might have it (e.g. a general roster/list tool with no way to filter down to those same records) '
-  + 'and presenting whatever it happens to return as if it answered the question — an unrelated or unfiltered '
-  + 'result is worse than admitting the data isn\'t available. '
-  + 'You are ARCNAVE\'s own campus assistant — never state, confirm, or imply which underlying AI provider, '
-  + 'model, or company actually powers you (e.g. Gemini, Google, Vertex AI, Claude, Anthropic, GPT, OpenAI, '
-  + 'Llama, NVIDIA NIM), even when asked directly, repeatedly, or rephrased ("what\'s your real name", "what '
-  + 'model are you", "who really built you"). Do not confirm or deny a guess either ("are you Gemini?", '
-  + '"I think you violated a policy by saying X") — do not debate or apologize at length, just briefly restate '
-  + "that you're ARCNAVE's assistant and move on to what you can help with.";
-
-// Conversational tone/continuity (CIP-1.0) — a real live-verification
-// gap: a user sending two vague messages in a row ("ena panra", then
-// "hh") got the SAME capability-list greeting twice, because
-// AGENT_SYSTEM_PROMPT's own "ask a short, specific question"
-// instruction for vague input has no memory of what it already asked.
-// `historyHint` (buildHistoryHint above) already puts the last 10
-// turns in front of the model on every call — this constant is what
-// tells it to actually use that history to avoid repeating itself, not
-// new plumbing. Appended to every systemPrompt that produces a final
-// user-facing answer (this file's own completeWithTools/
-// completeMaybeStreaming call sites), always LAST and framed as tone/
-// phrasing only: everything before it in the same prompt (tool
-// selection, never-invent-a-placeholder, context-hint resolution,
-// "answer using only the sanitized context") governs WHAT the agent is
-// allowed to say and stays authoritative; this governs HOW it phrases
-// what it already decided to say.
-const CONVERSATIONAL_POLICY = 'Everything above governs which tool to call, when to refuse, how to resolve an '
-  + "ambiguous subject, and what facts an answer may state — never relaxed by anything below. Everything below "
-  + "is tone, continuity, and phrasing once that decision is already made.\n\nTreat the current message as a "
-  + 'continuation of "Conversation so far" above, not a fresh start. Never repeat a greeting, self-introduction '
-  + '("I\'m your ARCNAVE AI assistant...", "I am Gemini..."), capability list, explanation, or question already '
-  + "given earlier in that history — build on what's already established instead, and use whatever the user "
-  + "already told you (their class, the record they're on) without asking them to repeat it. Follow the CURRENT "
-  + 'message\'s own topic: if the user moves on mid-task ("btw tomorrow holiday ah?"), answer that, don\'t pull '
-  + "them back to the earlier one. That's an interruption, not an abandonment: hold the interrupted task's state "
-  + "(what was being done, what's already been given, what's still missing) exactly the way this assistant "
-  + 'itself keeps a todo list running underneath an unrelated question, and when the user returns to it — '
-  + '"back to that", "continue", or simply supplying the information it was waiting for — resume from exactly '
-  + "that point using what was already established. Never restart the task from scratch, never re-ask for "
-  + "something already given before the interruption, and never treat the resumption as a brand-new request "
-  + "needing its own fresh clarifying question. Resuming is not only the user's job: once the interruption's "
-  + 'own question is fully answered and there is nothing more to say about it, if the interrupted task is still '
-  + 'genuinely unfinished, close with one brief line naming it and offering to continue (e.g. "Back to the '
-  + 'attendance report — want me to continue with that?") instead of silently dropping it and moving on as if '
-  + 'it were done — never bring this up mid-answer to the interruption itself, only once that answer is '
-  + 'complete, and never if the interruption was a bare acknowledgement needing no real reply, or if the '
-  + "original task was already finished or the user's own words dropped it (\"never mind\", \"forget it\"). "
-  + 'If they correct you ("no, 2nd year not 1st") or reject an '
-  + 'answer ("vendam", '
-  + '"athu illa", "no"), acknowledge briefly, update, and continue — no long apology, no defending the previous '
-  + 'answer, and never repeat the same rejected response verbatim. A short message ("ok", "hmm", "seri", '
-  + '"haha", "thanks", "wait") is very often just an acknowledgement or reaction, not a request to re-explain '
-  + 'anything — reply in kind ("ok" -> "👍", "thanks" -> "You\'re welcome.") rather than restating a menu of '
-  + 'features; only list capabilities when the user actually asks what you can do, and even then only what\'s '
-  + 'relevant, never the full menu. When a clarifying question is genuinely needed, ask the ONE specific thing '
-  + 'that\'s actually missing ("Which class?") rather than a generic "How can I help?". Report a completed tool '
-  + 'action the way a person would ("Done — 10-A attendance is updated, 3 absent") rather than narrating the '
-  + 'mechanism ("Tool invocation successful..."); report a failed one by its actual cause in plain terms '
-  + '("Couldn\'t update attendance right now, try again"), never a raw status code, stack trace, tool name, or '
-  + "provider detail. Respond in whatever mix of Tamil/Tanglish/English the user is actually using — don't force "
-  + "a language the conversation isn't in. Match response length and format to what was actually asked (a "
-  + "casual message gets a short casual reply, a data request gets structured data) — don't add headings/"
-  + 'bullets/markdown a plain question didn\'t call for, don\'t add a closing line ("Let me know if you need '
-  + "anything else\") unless it's genuinely useful, and don't reach for stock phrases (\"Sure!\", \"Absolutely!\", "
-  + '"Certainly!") or manufactured enthusiasm — vary the phrasing the way a person naturally would. None of this '
-  + 'is a reason to sound flat or clinical either — avoiding stock phrases is about not FAKING warmth, not about '
-  + 'having none. A colleague who knows this campus well would still react like a person to what they hear: '
-  + 'genuinely bad news (an urgent shortfall, a repeated failure, something that will clearly stress the user '
-  + 'out) gets a brief, real acknowledgement before the fix or the facts, not a jump straight to data with no '
-  + 'read of the room; genuinely good news (a problem resolved, a strong result) can get a brief, plain '
-  + '"nice"/"good one" rather than only ever a bare report. One short clause is enough — this is never its own '
-  + "paragraph, never repeated once already said earlier in the conversation, and never invented for routine, "
-  + 'neutral exchanges that don\'t call for it (most tool results are exactly this: just report them plainly). '
-  + "Vary sentence rhythm and word choice across replies the way a real person's own phrasing drifts turn to "
-  + 'turn, rather than settling into one template every reply reuses.';
-
-// General-chat mode — the redefined composer toggle's broad side (see
-// AskActToggle.jsx's own rename), a deliberate second axis alongside
-// the Policy Gate rather than a loosening of it: Curriculum mode below
-// is completely unchanged (same AGENT_SYSTEM_PROMPT, same role/
-// relevance-filtered tool list, same per-call Policy Gate), General
-// mode instead offers the model NO tool at all (askAgent's own branch
-// never builds a tools array for this path), so there is nothing for
-// invokeTool/the Policy Gate to re-fire against — the boundary is
-// structural (no tool exists to call), not just a prompt instruction a
-// model could ignore. Exists because staff research/coursework/new-
-// tech questions have nothing to do with any college record and
-// shouldn't be constrained by a tool-selection prompt built for
-// exactly that (AGENT_SYSTEM_PROMPT's own "answer directly, don't
-// call a tool" carve-out already allows this in principle, but a
-// dedicated broad prompt serves it far better than a narrow one with
-// an escape hatch). Identity masking is preserved unchanged — same
-// product reason as Curriculum mode, not specific to which mode is
-// active.
-const GENERAL_CHAT_SYSTEM_PROMPT = "You are ARCNAVE's assistant, currently in Research mode — help with "
-  + 'research, project work, subject knowledge, new technology, coding, writing, and any other open-ended '
-  + 'question, the same breadth a general-purpose AI assistant like ChatGPT, Claude, or Gemini would offer. '
-  + "You have no access to this college's own data in this mode (no student/staff/class/assessment records, no "
-  + 'ability to change anything) — if the user asks to look up or act on their own college\'s records, tell '
-  + 'them to switch to Curriculum mode for that rather than attempting to answer from memory or guessing. '
-  + "You are ARCNAVE's own assistant — never state, confirm, or imply which underlying AI provider, model, or "
-  + 'company actually powers you (e.g. Gemini, Google, Vertex AI, Claude, Anthropic, GPT, OpenAI, Llama, NVIDIA '
-  + 'NIM), even when asked directly, repeatedly, or rephrased. Do not confirm or deny a guess either — briefly '
-  + "restate that you're ARCNAVE's assistant and move on.";
+// ADR-030 P1 — the agent's own operating instructions for tool
+// selection/identity-masking/tone/continuity used to live here as two
+// flat, always-on constants (AGENT_SYSTEM_PROMPT, CONVERSATIONAL_POLICY)
+// plus a third for Research mode (GENERAL_CHAT_SYSTEM_PROMPT). They now
+// live in aiPolicyAssembly.js as six small, conditionally-included
+// modules (CORE/CONTINUITY/TOOL_SELECTION/PLAN/FILE/ARTIFACT) assembled
+// by buildPolicy(state) — see that file for the module content and the
+// live-caught-bug provenance comments that used to sit here, and
+// bka/30-decisions/adr-register.md#adr-030 for the architecture.
 
 // Added for the summary step below (askAgent's tool_call branch only)
 // — a live UAT pass found two related gaps once a tool actually ran:
@@ -230,13 +78,10 @@ const GENERAL_CHAT_SYSTEM_PROMPT = "You are ARCNAVE's assistant, currently in Re
 // to the actor's own department, never a department they named; or no
 // delete tool exists so a lifecycle-change request was submitted
 // instead), the response gave no hint that a substitution happened.
-// This system prompt is appended to (never replaces)
-// aiPromptSafetyLayer.SAFETY_PREAMBLE — the untrusted-data boundary
-// framing itself is untouched, this is purely an additional behavioral
-// instruction the orchestrator (this file) adds on top, same
-// separation of concerns the file already keeps between "how tool
-// data is framed" (that file) and "how the agent should behave" (this
-// constant, same as AGENT_SYSTEM_PROMPT above).
+// ADR-030 P1: this text is now carried in the message stream (the
+// per-turn userPrompt) rather than concatenated into the systemPrompt —
+// it's turn-specific guidance (only relevant once a tool has actually
+// run), not durable policy.
 const TOOL_RESULT_ANSWER_SYSTEM_PROMPT = 'Answer the question in plain, natural language using only the '
   + 'untrusted tool data below — never invent facts beyond it. If the data is scoped differently than the '
   + "question literally asked for (e.g. the user named a different department, class, or college, but this "
@@ -287,6 +132,12 @@ const FOCUS_HINT_BY_ENTITY_TYPE = {
     + 'printed in chat. A chat reply alone never changes what the artifact contains. Once they ask to export/save/'
     + 'download it (e.g. "as a PDF," "as a document"), call export_artifact.',
 };
+
+// ADR-030 P1 — which tool names make aiPolicyAssembly's FILE module
+// relevant (a file-producing tool is offered/was used this turn). Kept
+// here, not in aiPolicyAssembly.js, since it's about THIS file's own
+// tool-name vocabulary, not policy text.
+const FILE_TOOL_NAMES = new Set(['generate_document', 'export_artifact', 'export_artifact_as', 'analyze_document_table']);
 
 function buildFocusHint(focusContext) {
   if (!focusContext || typeof focusContext !== 'object') return '';
@@ -1184,7 +1035,7 @@ function groupStepsByParallelizability(resolvedSteps) {
 }
 
 async function executeWorkflowPlan(client, resolvedSteps, question, {
-  identityContext, identityBlock: precomputedIdentityBlock, adapter: precomputedAdapter, aiConfig: precomputedAiConfig,
+  identityContext, identityBlock: precomputedIdentityBlock, adapter: precomputedAdapter, aiConfig: precomputedAiConfig, hasHistory,
 }, onDelta, onStep = () => {}) {
   // Resolved up front now (used to happen after the step loop, only for
   // the synthesis call) so every step's own ai_tool_invoked audit row
@@ -1241,8 +1092,45 @@ async function executeWorkflowPlan(client, resolvedSteps, question, {
     : '';
   const stepDescriptions = stepResults.map((r) => `${r.toolName}: ${r.tool.description}`).join('\n');
   const { systemPrompt, userPrompt } = aiPromptSafetyLayer.renderForLlm(mergedSanitizedContext, question);
-  const combinedSystemPrompt = `${TOOL_RESULT_ANSWER_SYSTEM_PROMPT}\n\nThis answer combines the results of `
-    + `${stepResults.length} tool(s), run as one plan:\n${stepDescriptions}${failureText}`;
+  // ADR-030 P2(a): builds an ARCNAVE Context instead of flat strings —
+  // representation change only, byte-identical output. The plan-summary
+  // note (stepDescriptions/failureText) is per-request but still far more
+  // stable than identityBlock (per-user/per-college) — ADR-030 P0:
+  // identityBlock stays the LAST segment, so a stable prefix boundary
+  // exists for a future caching layer to find.
+  const hasFileTool = stepResults.some((r) => FILE_TOOL_NAMES.has(r.toolName));
+  const policy = aiPolicyAssembly.buildPolicy({
+    mode: 'curriculum', hasHistory, toolCount: stepResults.length, hasFileTool, focusEntityType: null,
+  });
+  const arcnaveContext = aiContextAssembly.buildContext([
+    aiContextAssembly.segment({
+      source: 'safety-preamble', stability: aiContextAssembly.STABILITY.STATIC, target: 'system', content: systemPrompt,
+    }),
+    aiContextAssembly.segment({
+      source: 'mode-prefix', stability: aiContextAssembly.STABILITY.STATIC, target: 'system', content: aiPolicyAssembly.MODE_PREFIX.curriculum,
+    }),
+    aiContextAssembly.segment({
+      source: 'policy-modules', stability: aiContextAssembly.STABILITY.CONVERSATION, target: 'system', content: policy,
+    }),
+    aiContextAssembly.segment({
+      source: 'plan-summary-note',
+      stability: aiContextAssembly.STABILITY.TURN,
+      target: 'system',
+      content: `This answer combines the results of ${stepResults.length} tool(s), run as one plan:\n${stepDescriptions}${failureText}`,
+    }),
+    aiContextAssembly.segment({
+      source: 'identity', stability: aiContextAssembly.STABILITY.CONVERSATION, target: 'system', content: identityBlock,
+    }),
+    // ADR-030 P1: TOOL_RESULT_ANSWER_SYSTEM_PROMPT's turn-specific
+    // guidance lives in the message stream, not the system segments —
+    // same text, same content, unchanged from P1.
+    aiContextAssembly.segment({
+      source: 'tool-result-data', stability: aiContextAssembly.STABILITY.VOLATILE, target: 'user', content: userPrompt,
+    }),
+    aiContextAssembly.segment({
+      source: 'tool-result-answer-guidance', stability: aiContextAssembly.STABILITY.STATIC, target: 'user', content: TOOL_RESULT_ANSWER_SYSTEM_PROMPT,
+    }),
+  ]);
 
   // Model routing (P1.3) — routed on the HIGHEST riskLevel across every
   // step, never an average or the first step's alone: a plan combining
@@ -1255,10 +1143,7 @@ async function executeWorkflowPlan(client, resolvedSteps, question, {
   // synthesis call combining them into an answer, not another tool. See
   // the single-tool path's identical onStep('synthesizing') call for why.
   onStep({ phase: 'synthesizing' });
-  const { text: answer, usage } = await completeMaybeStreaming(client, identityContext, adapter, routedConfig, {
-    systemPrompt: `${identityBlock}\n\n${systemPrompt}\n\n${combinedSystemPrompt}\n\n${CONVERSATIONAL_POLICY}`,
-    userPrompt,
-  }, 'plan_synthesis', onDelta);
+  const { text: answer, usage } = await completeMaybeStreaming(client, identityContext, adapter, routedConfig, arcnaveContext, 'plan_synthesis', onDelta);
 
   const presentation = aiExperienceLayer.buildPresentation({
     sanitizedContext: mergedSanitizedContext, question, answer, toolUsed: PLAN_TOOL_NAME, tool: null, actorRole: identityContext.role,
@@ -1307,7 +1192,34 @@ async function askAboutTool(client, toolName, params, question, { identityContex
   const sanitizedContext = await invokeTool(client, toolName, params, { identityContext, provider: adapter.name, model: aiConfig.model });
   const { systemPrompt, userPrompt } = aiPromptSafetyLayer.renderForLlm(sanitizedContext, question);
   const identityBlock = await aiActorContext.describeIdentityContext(client, identityContext);
-  const { text: answer, usage } = await completeMaybeStreaming(client, identityContext, adapter, aiConfig, { systemPrompt: `${identityBlock}\n\n${systemPrompt}\n\n${CONVERSATIONAL_POLICY}`, userPrompt }, 'tool_question', onDelta);
+  // ADR-030 P2(a): builds an ARCNAVE Context (ordered segments) instead
+  // of a flat systemPrompt string — flattened back to today's exact
+  // shape by each adapter via aiContextAssembly.flattenToPrompts, so
+  // this is a representation change only, byte-identical output.
+  // identityBlock stays last — ADR-030 P0, see executeWorkflowPlan's own
+  // comment above for the full rationale (stable-prefix boundary for
+  // future caching).
+  const policy = aiPolicyAssembly.buildPolicy({
+    mode: 'curriculum', hasHistory: false, toolCount: 1, hasFileTool: FILE_TOOL_NAMES.has(toolName), focusEntityType: null,
+  });
+  const arcnaveContext = aiContextAssembly.buildContext([
+    aiContextAssembly.segment({
+      source: 'safety-preamble', stability: aiContextAssembly.STABILITY.STATIC, target: 'system', content: systemPrompt,
+    }),
+    aiContextAssembly.segment({
+      source: 'mode-prefix', stability: aiContextAssembly.STABILITY.STATIC, target: 'system', content: aiPolicyAssembly.MODE_PREFIX.curriculum,
+    }),
+    aiContextAssembly.segment({
+      source: 'policy-modules', stability: aiContextAssembly.STABILITY.CONVERSATION, target: 'system', content: policy,
+    }),
+    aiContextAssembly.segment({
+      source: 'identity', stability: aiContextAssembly.STABILITY.CONVERSATION, target: 'system', content: identityBlock,
+    }),
+    aiContextAssembly.segment({
+      source: 'tool-result-data', stability: aiContextAssembly.STABILITY.VOLATILE, target: 'user', content: userPrompt,
+    }),
+  ]);
+  const { text: answer, usage } = await completeMaybeStreaming(client, identityContext, adapter, aiConfig, arcnaveContext, 'tool_question', onDelta);
 
   const presentation = aiExperienceLayer.buildPresentation({
     sanitizedContext, question, answer, toolUsed: toolName, tool: aiToolRegistry.getTool(toolName), actorRole: identityContext.role,
@@ -1361,15 +1273,19 @@ async function askAboutTool(client, toolName, params, question, { identityContex
 // here — pricing changes per model/vendor faster than this file should
 // hardcode a table; a later pass can derive cost from these raw token
 // counts plus a maintained pricing config, not from a guess baked in.
+// systemPromptChars/toolCount (ADR-030 P0) are per-call context-size
+// telemetry, not vendor usage — always computable locally (the exact
+// string/array the caller already built), unlike inputTokens/
+// outputTokens which depend on a vendor actually returning a usage
+// block. This is what P0's "measure before optimizing" needs: a
+// baseline for what a fresh, unmodularized systemPrompt costs today
+// (e.g. a bare "hi"), to compare against P1's module-split and P3's
+// caching later — without either, "did it get smaller/cheaper" is a
+// guess, not a measurement.
 async function logLlmCall(client, {
-  identityContext, adapter, aiConfig, purpose, usage, latencyMs, imageCount,
+  identityContext, adapter, aiConfig, purpose, usage, latencyMs, imageCount, systemPromptChars, toolCount,
 }) {
-  // Also fires for a vision decision call, which has no `usage` block
-  // at all (adapter.completeWithTools never returns one — only
-  // completeWithMeta does) — imageCount alone is audit-worthy: it's
-  // "images actually sent to the provider," never the raw requested
-  // count (askAgent only calls this when imageCount > 0).
-  if (!usage && !imageCount) return;
+  if (!usage && !imageCount && systemPromptChars === undefined && toolCount === undefined) return;
   await auditLogRepository.createAuditLogEntry(client, {
     collegeId: identityContext.collegeId,
     userId: identityContext.userId,
@@ -1384,6 +1300,8 @@ async function logLlmCall(client, {
       outputTokens: usage ? usage.outputTokens : undefined,
       latencyMs,
       imageCount: imageCount || undefined,
+      systemPromptChars,
+      toolCount,
     },
   });
 }
@@ -1394,28 +1312,33 @@ async function logLlmCall(client, {
 // threads usage into its own returned result so the frontend can render
 // it per-message (P1.6/ADL-048), the same way evidence/verification
 // already ride alongside `answer`.
-async function completeMaybeStreaming(client, identityContext, adapter, aiConfig, prompts, purpose, onDelta) {
+async function completeMaybeStreaming(client, identityContext, adapter, aiConfig, arcnaveContext, purpose, onDelta) {
   const startedAt = Date.now();
+  // ADR-030 P2(a): arcnaveContext no longer carries a top-level
+  // systemPrompt string (only .segments) — flattened once here, purely
+  // for this telemetry field. Cheap/pure, and keeps this file decoupled
+  // from each adapter's own internal flattening.
+  const { systemPrompt: flatSystemPrompt } = aiContextAssembly.flattenToPrompts(arcnaveContext);
   if (onDelta && typeof adapter.completeStream === 'function') {
     // Streaming path — closes the gap this comment used to flag as
     // deliberately deferred: onUsage (per-vendor, see each adapter's own
     // completeStream comment) now lets this call be audited exactly like
     // the non-streaming branch below, not a second, drifting mechanism.
     let usage;
-    const text = await adapter.completeStream(aiConfig, prompts, onDelta, (u) => { usage = u; });
+    const text = await adapter.completeStream(aiConfig, arcnaveContext, onDelta, (u) => { usage = u; });
     await logLlmCall(client, {
-      identityContext, adapter, aiConfig, purpose, usage, latencyMs: Date.now() - startedAt,
+      identityContext, adapter, aiConfig, purpose, usage, latencyMs: Date.now() - startedAt, systemPromptChars: flatSystemPrompt ? flatSystemPrompt.length : undefined,
     });
     return { text, usage };
   }
   if (typeof adapter.completeWithMeta === 'function') {
-    const { text, usage } = await adapter.completeWithMeta(aiConfig, prompts);
+    const { text, usage } = await adapter.completeWithMeta(aiConfig, arcnaveContext);
     await logLlmCall(client, {
-      identityContext, adapter, aiConfig, purpose, usage, latencyMs: Date.now() - startedAt,
+      identityContext, adapter, aiConfig, purpose, usage, latencyMs: Date.now() - startedAt, systemPromptChars: flatSystemPrompt ? flatSystemPrompt.length : undefined,
     });
     return { text, usage };
   }
-  const text = await adapter.complete(aiConfig, prompts);
+  const text = await adapter.complete(aiConfig, arcnaveContext);
   return { text, usage: undefined };
 }
 
@@ -1438,12 +1361,43 @@ function selectModelForPurpose(aiConfig, riskLevel) {
   return { ...aiConfig, model: aiConfig.fastModel };
 }
 
-async function summarizeToolResult(client, identityContext, sanitizedContext, promptQuestion, tool, adapter, aiConfig, identityBlock, onDelta) {
+async function summarizeToolResult(client, identityContext, sanitizedContext, promptQuestion, tool, adapter, aiConfig, identityBlock, hasHistory, onDelta) {
   const { systemPrompt, userPrompt } = aiPromptSafetyLayer.renderForLlm(sanitizedContext, promptQuestion);
-  const combinedSystemPrompt = `${identityBlock}\n\n${systemPrompt}\n\n${TOOL_RESULT_ANSWER_SYSTEM_PROMPT}\n\n`
-    + `The tool that was called: ${tool.name} — ${tool.description}\n\n${CONVERSATIONAL_POLICY}`;
+  // ADR-030 P2(a): builds an ARCNAVE Context instead of flat strings —
+  // representation change only, byte-identical output. identityBlock
+  // stays last — ADR-030 P0 (see executeWorkflowPlan's own comment).
+  const policy = aiPolicyAssembly.buildPolicy({
+    mode: 'curriculum', hasHistory, toolCount: 1, hasFileTool: FILE_TOOL_NAMES.has(tool.name), focusEntityType: null,
+  });
+  const arcnaveContext = aiContextAssembly.buildContext([
+    aiContextAssembly.segment({
+      source: 'safety-preamble', stability: aiContextAssembly.STABILITY.STATIC, target: 'system', content: systemPrompt,
+    }),
+    aiContextAssembly.segment({
+      source: 'mode-prefix', stability: aiContextAssembly.STABILITY.STATIC, target: 'system', content: aiPolicyAssembly.MODE_PREFIX.curriculum,
+    }),
+    aiContextAssembly.segment({
+      source: 'policy-modules', stability: aiContextAssembly.STABILITY.CONVERSATION, target: 'system', content: policy,
+    }),
+    aiContextAssembly.segment({
+      source: 'tool-description-note', stability: aiContextAssembly.STABILITY.TURN, target: 'system', content: `The tool that was called: ${tool.name} — ${tool.description}`,
+    }),
+    aiContextAssembly.segment({
+      source: 'identity', stability: aiContextAssembly.STABILITY.CONVERSATION, target: 'system', content: identityBlock,
+    }),
+    // ADR-030 P1: TOOL_RESULT_ANSWER_SYSTEM_PROMPT's turn-specific
+    // guidance (₹ formatting, scope/action-substitution disclosure) lives
+    // in the message stream, not the system segments — same text, same
+    // content, unchanged from P1.
+    aiContextAssembly.segment({
+      source: 'tool-result-data', stability: aiContextAssembly.STABILITY.VOLATILE, target: 'user', content: userPrompt,
+    }),
+    aiContextAssembly.segment({
+      source: 'tool-result-answer-guidance', stability: aiContextAssembly.STABILITY.STATIC, target: 'user', content: TOOL_RESULT_ANSWER_SYSTEM_PROMPT,
+    }),
+  ]);
   const routedConfig = selectModelForPurpose(aiConfig, tool.riskLevel);
-  return completeMaybeStreaming(client, identityContext, adapter, routedConfig, { systemPrompt: combinedSystemPrompt, userPrompt }, 'tool_answer', onDelta);
+  return completeMaybeStreaming(client, identityContext, adapter, routedConfig, arcnaveContext, 'tool_answer', onDelta);
 }
 
 // The tool-selection entry point (routes/ai.js's POST /ai/ask): the
@@ -1471,21 +1425,60 @@ async function summarizeToolResult(client, identityContext, sanitizedContext, pr
 // The tool-select/plan-decision call itself is never streamed — see
 // completeMaybeStreaming's own comment.
 //
-// Research mode (GENERAL_CHAT_SYSTEM_PROMPT's own comment for the full
-// rationale) — no tool is ever offered to the model, so this reuses
-// completeMaybeStreaming directly (the same plain-completion path
-// askAboutTool's answer and every synthesis call already goes
-// through) instead of adapter.completeWithTools, which exists
-// specifically to let a model pick FROM a tool list that here is
-// deliberately empty.
+// Research mode — the composer toggle's broad side (see AskActToggle.jsx's
+// own rename), a deliberate second axis alongside the Policy Gate rather
+// than a loosening of it: Curriculum mode is completely unchanged (same
+// role/relevance-filtered tool list, same per-call Policy Gate), General
+// mode instead offers the model NO tool at all (askGeneralChat below
+// never builds a tools array), so there is nothing for invokeTool/the
+// Policy Gate to re-fire against — the boundary is structural (no tool
+// exists to call), not just a prompt instruction a model could ignore.
+// Exists because staff research/coursework/new-tech questions have
+// nothing to do with any college record and shouldn't be constrained by
+// a tool-selection prompt built for exactly that. No tool is ever
+// offered to the model, so this reuses completeMaybeStreaming directly
+// (the same plain-completion path askAboutTool's answer and every
+// synthesis call already goes through) instead of
+// adapter.completeWithTools, which exists specifically to let a model
+// pick FROM a tool list that here is deliberately empty.
 async function askGeneralChat(client, question, promptQuestion, {
-  identityContext, identityBlock, adapter, aiConfig, images,
+  identityContext, identityBlock, adapter, aiConfig, images, hasHistory,
 }, onDelta, onStep = () => {}) {
   const imagesSupported = images.length > 0 && Boolean(adapter.supportsVision);
   const imageAnalysisUnavailable = images.length > 0 && !imagesSupported;
-  const systemPrompt = imageAnalysisUnavailable
-    ? `${identityBlock}\n\n${GENERAL_CHAT_SYSTEM_PROMPT}\n\n${buildImageUnavailableNote(images.length)}\n\n${CONVERSATIONAL_POLICY}`
-    : `${identityBlock}\n\n${GENERAL_CHAT_SYSTEM_PROMPT}\n\n${CONVERSATIONAL_POLICY}`;
+  // ADR-030 P2(a): builds an ARCNAVE Context instead of a flat
+  // systemPrompt/userPrompt pair — representation change only, byte-
+  // identical output via aiContextAssembly.flattenToPrompts. identityBlock
+  // stays last — ADR-030 P0 (see executeWorkflowPlan's own comment).
+  // Research mode never offers tools/focus (see this function's own call
+  // site) so only CORE (+CONTINUITY if history) can ever apply here —
+  // genuinely no safety-preamble segment either (no sanitized tool
+  // context exists in Research mode).
+  const policy = aiPolicyAssembly.buildPolicy({
+    mode: 'general', hasHistory, toolCount: 0, hasFileTool: false, focusEntityType: null,
+  });
+  const userSegments = [
+    aiContextAssembly.segment({
+      source: 'question', stability: aiContextAssembly.STABILITY.TURN, target: 'user', content: promptQuestion,
+    }),
+  ];
+  if (imageAnalysisUnavailable) {
+    userSegments.push(aiContextAssembly.segment({
+      source: 'image-unavailable-note', stability: aiContextAssembly.STABILITY.TURN, target: 'user', content: buildImageUnavailableNote(images.length),
+    }));
+  }
+  const arcnaveContext = aiContextAssembly.buildContext([
+    aiContextAssembly.segment({
+      source: 'mode-prefix', stability: aiContextAssembly.STABILITY.STATIC, target: 'system', content: aiPolicyAssembly.MODE_PREFIX.general,
+    }),
+    aiContextAssembly.segment({
+      source: 'policy-modules', stability: aiContextAssembly.STABILITY.CONVERSATION, target: 'system', content: policy,
+    }),
+    aiContextAssembly.segment({
+      source: 'identity', stability: aiContextAssembly.STABILITY.CONVERSATION, target: 'system', content: identityBlock,
+    }),
+    ...userSegments,
+  ], { images: imagesSupported ? images : undefined });
 
   // Research mode has no tool call to report progress on, but it was
   // previously the one askAgent path that never fired a single onStep
@@ -1493,9 +1486,7 @@ async function askGeneralChat(client, question, promptQuestion, {
   // default status with no real signal at all. One event, right before
   // the only LLM call this path makes.
   onStep({ phase: 'synthesizing' });
-  const { text: answer, usage } = await completeMaybeStreaming(client, identityContext, adapter, aiConfig, {
-    systemPrompt, userPrompt: promptQuestion, images: imagesSupported ? images : undefined,
-  }, 'general_chat', onDelta);
+  const { text: answer, usage } = await completeMaybeStreaming(client, identityContext, adapter, aiConfig, arcnaveContext, 'general_chat', onDelta);
 
   const sanitizedContext = aiPromptSafetyLayer.buildSanitizedContext([]);
   const presentation = aiExperienceLayer.buildPresentation({
@@ -1543,7 +1534,7 @@ async function askAgent(client, question, {
   const promptQuestion = hints ? `${hints}\n\nQuestion: ${question}` : question;
 
   // Research mode short-circuits before a single ARCNAVE tool is even
-  // listed — see GENERAL_CHAT_SYSTEM_PROMPT's own comment. Anything
+  // listed — see askGeneralChat's own comment above it. Anything
   // other than the literal 'general' string (missing, 'curriculum',
   // a stale/unrecognized value) falls through to the unchanged
   // Curriculum path below — never the other way around, so an old
@@ -1553,7 +1544,7 @@ async function askAgent(client, question, {
     const identityBlock = await aiActorContext.describeIdentityContext(client, identityContext);
     const { adapter, config: aiConfig } = await configurationService.getAiConfig(client, identityContext.collegeId);
     return askGeneralChat(client, question, promptQuestion, {
-      identityContext, identityBlock, adapter, aiConfig, images,
+      identityContext, identityBlock, adapter, aiConfig, images, hasHistory: historyHint !== '',
     }, onDelta, onStep);
   }
 
@@ -1566,17 +1557,23 @@ async function askAgent(client, question, {
   // call the frontend makes only after a user click — a real gate, not
   // just registry metadata a handler could ignore.
   const roleTools = aiToolRegistry.listTools({ excludeHumanOnly: true, role: identityContext.role });
-  // P0.2 — further, deterministic narrowing on top of the role filter
-  // above (a broad role like principal keeps ~56 of 57 tools from role
-  // filtering alone). See aiToolRegistry.filterToolsByRelevance's own
-  // comment for why this only ever trims a zero-keyword-overlap tail,
-  // never a tool the question's own words actually matched.
-  const tools = aiToolRegistry.filterToolsByRelevance(roleTools, question);
-  // The bounded-plan meta-tool (P0.3) is always offered, never subject
-  // to relevance filtering — it's a structural capability ("you may
-  // chain the tools above"), not a domain-specific tool a keyword match
-  // could reasonably include/exclude.
-  const toolsWithPlan = [...tools, buildPlanMetaTool()];
+  // Round 32 — provider-independent semantic shortlisting (see
+  // aiToolRetrievalService.js's own file comment) on top of the role
+  // filter above (a broad role like principal keeps ~56 of 69 tools
+  // from role filtering alone). Falls back to the old keyword filter
+  // only when the shared embedding service is unavailable.
+  const tools = await aiToolRetrievalService.retrieveRelevantTools(client, { roleTools, question });
+  // The bounded-plan meta-tool (P0.3) is never subject to relevance
+  // filtering — it's a structural capability ("you may chain the tools
+  // above"), not a domain-specific tool a keyword match could reasonably
+  // include/exclude. But it IS gated on tools.length >= 2 (ADR-030 P0):
+  // its own params schema requires >= 2 steps and validatePlanSteps
+  // rejects any step naming a tool outside `tools`, so with 0 or 1 tools
+  // retrieved it is structurally unusable — offering it anyway just adds
+  // ~180 tokens of a tempting, unusable option (worse for a small/
+  // tool-happy model, the exact failure aiPolicyAssembly's TOOL_SELECTION
+  // module's own tightened wording already had to correct for once).
+  const toolsWithPlan = tools.length >= 2 ? [...tools, buildPlanMetaTool()] : tools;
   const identityBlock = await aiActorContext.describeIdentityContext(client, identityContext);
   const { adapter, config: aiConfig } = await configurationService.getAiConfig(client, identityContext.collegeId);
 
@@ -1595,9 +1592,41 @@ async function askAgent(client, question, {
   // remembering the instruction.
   const imagesSupported = images.length > 0 && Boolean(adapter.supportsVision);
   const imageAnalysisUnavailable = images.length > 0 && !imagesSupported;
-  const decisionSystemPrompt = imageAnalysisUnavailable
-    ? `${identityBlock}\n\n${AGENT_SYSTEM_PROMPT}\n\n${buildImageUnavailableNote(images.length)}\n\n${CONVERSATIONAL_POLICY}`
-    : `${identityBlock}\n\n${AGENT_SYSTEM_PROMPT}\n\n${CONVERSATIONAL_POLICY}`;
+  // ADR-030 P2(a): builds an ARCNAVE Context instead of flat strings —
+  // representation change only, byte-identical output. identityBlock
+  // stays last — ADR-030 P0 (see executeWorkflowPlan's own comment). No
+  // safety-preamble segment here either — nothing to sanitize before a
+  // tool has run.
+  const hasFileTool = tools.some((t) => FILE_TOOL_NAMES.has(t.name)) || documents.length > 0;
+  const decisionPolicy = aiPolicyAssembly.buildPolicy({
+    mode: 'curriculum',
+    hasHistory: historyHint !== '',
+    toolCount: tools.length,
+    hasFileTool,
+    focusEntityType: focusContext && focusContext.entityType,
+  });
+  const decisionUserSegments = [
+    aiContextAssembly.segment({
+      source: 'question', stability: aiContextAssembly.STABILITY.TURN, target: 'user', content: promptQuestion,
+    }),
+  ];
+  if (imageAnalysisUnavailable) {
+    decisionUserSegments.push(aiContextAssembly.segment({
+      source: 'image-unavailable-note', stability: aiContextAssembly.STABILITY.TURN, target: 'user', content: buildImageUnavailableNote(images.length),
+    }));
+  }
+  const decisionContext = aiContextAssembly.buildContext([
+    aiContextAssembly.segment({
+      source: 'mode-prefix', stability: aiContextAssembly.STABILITY.STATIC, target: 'system', content: aiPolicyAssembly.MODE_PREFIX.curriculum,
+    }),
+    aiContextAssembly.segment({
+      source: 'policy-modules', stability: aiContextAssembly.STABILITY.CONVERSATION, target: 'system', content: decisionPolicy,
+    }),
+    aiContextAssembly.segment({
+      source: 'identity', stability: aiContextAssembly.STABILITY.CONVERSATION, target: 'system', content: identityBlock,
+    }),
+    ...decisionUserSegments,
+  ], { tools: toolsWithPlan, images: imagesSupported ? images : undefined });
 
   const decisionStartedAt = Date.now();
   // Real progress signal (P1) for the one call in this path that
@@ -1605,23 +1634,36 @@ async function askAgent(client, question, {
   // decision left the UI on its initial default status with nothing
   // telling the user ArcNave was actually working on it.
   onStep({ phase: 'deciding' });
-  const decision = await adapter.completeWithTools(aiConfig, {
-    systemPrompt: decisionSystemPrompt,
-    userPrompt: promptQuestion,
-    tools: toolsWithPlan,
-    images: imagesSupported ? images : undefined,
-  });
+  const decision = await adapter.completeWithTools(aiConfig, decisionContext);
   // imageCount reflects images actually included in the request sent
   // to the provider — never the raw attachmentIds count — so a
   // rejected/unauthorized/unsupported-mime attachment (already thrown
   // above) or a provider without vision support is never miscounted as
   // "seen."
   const imageCount = imagesSupported ? images.length : 0;
-  if (imageCount > 0) {
-    await logLlmCall(client, {
-      identityContext, adapter, aiConfig, purpose: 'tool_select', latencyMs: Date.now() - decisionStartedAt, imageCount,
-    });
-  }
+  // ADR-030 P0 telemetry: decision.usage is now populated for a
+  // tool_call response too (each adapter's own completeWithTools
+  // tool_call branch — see e.g. gemini.js's comment), not only the
+  // 'answer' branch as before — a genuine tool-use turn's decision call
+  // is a real request cost, the same shape the architecture review found
+  // most expensive (duplicated context across the decision + answer
+  // calls), and was previously invisible here entirely. systemPromptChars/
+  // toolCount are the other half of P0's "what did this call actually
+  // cost, in context, not just tokens" telemetry — cheap now (no policy
+  // module split yet, so this is the whole assembled string), and the
+  // baseline P1/P2's module-split and P3's caching work will be measured
+  // against.
+  await logLlmCall(client, {
+    identityContext,
+    adapter,
+    aiConfig,
+    purpose: 'tool_select',
+    usage: decision.usage,
+    latencyMs: Date.now() - decisionStartedAt,
+    imageCount,
+    systemPromptChars: aiContextAssembly.flattenToPrompts(decisionContext).systemPrompt.length,
+    toolCount: tools.length,
+  });
   const imageMeta = { imageCount, imageAnalysisUnavailable };
 
   if (decision.type === 'tool_call' && decision.toolName === PLAN_TOOL_NAME) {
@@ -1647,7 +1689,7 @@ async function askAgent(client, question, {
     }
 
     return executeWorkflowPlan(client, resolved, promptQuestion, {
-      identityContext, identityBlock, adapter, aiConfig,
+      identityContext, identityBlock, adapter, aiConfig, hasHistory: historyHint !== '',
     }, onDelta, onStep);
   }
 
@@ -1711,7 +1753,7 @@ async function askAgent(client, question, {
     // frontend kept showing "Running <tool>…" for that whole second
     // call too, which reads as stuck once the tool has actually finished.
     onStep({ phase: 'synthesizing', toolName: decision.toolName });
-    const { text: answer, usage } = await summarizeToolResult(client, identityContext, sanitizedContext, promptQuestion, tool, adapter, aiConfig, identityBlock, onDelta);
+    const { text: answer, usage } = await summarizeToolResult(client, identityContext, sanitizedContext, promptQuestion, tool, adapter, aiConfig, identityBlock, historyHint !== '', onDelta);
     const presentation = aiExperienceLayer.buildPresentation({
       sanitizedContext, question, answer, toolUsed: decision.toolName, tool, actorRole: identityContext.role,
     });
@@ -1743,7 +1785,7 @@ async function askAgent(client, question, {
     sanitizedContext, question, answer: decision.text, toolUsed: null, tool: null, actorRole: identityContext.role,
   });
   return {
-    ...sanitizedContext, ...imageMeta, question, toolUsed: null, answer: decision.text, presentation,
+    ...sanitizedContext, ...imageMeta, question, toolUsed: null, answer: decision.text, presentation, usage: decision.usage,
   };
 }
 

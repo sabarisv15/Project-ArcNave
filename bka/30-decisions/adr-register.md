@@ -64,6 +64,7 @@ were corrected by that review: the LLM provider row
 | [ADR-027](#adr-027) | Audit log as the student timeline read path | Accepted | [RS-DAT-006](../10-specification/RS-DAT-data-integrity.md#rs-dat-006) |
 | [ADR-028](#adr-028) | Production LLM provider | Accepted | [RS-AIG-008](../10-specification/RS-AIG-ai-governance.md#rs-aig-008) |
 | [ADR-029](#adr-029) | Universal Document Intelligence — structural CDR + deterministic analysis, no general execution | Accepted | [RS-AIG-002](../10-specification/RS-AIG-ai-governance.md#rs-aig-002), [RS-AIG-018](../10-specification/RS-AIG-ai-governance.md#rs-aig-018), [RS-AIG-019](../10-specification/RS-AIG-ai-governance.md#rs-aig-019) |
+| [ADR-030](#adr-030) | ARCNAVE Context Architecture — structured, stability-annotated context replaces flat prompt strings | Accepted, phased | [RS-AIG-008](../10-specification/RS-AIG-ai-governance.md#rs-aig-008) |
 
 ---
 
@@ -343,6 +344,122 @@ Revisit only if attachment sizes routinely exceed that budget.
 over the same result-sheet PDF, traced to unverified LLM free-text counting,
 not to extraction quality (the actual production extraction, tested live
 against the running app, was already correct).
+
+### ADR-030
+**ARCNAVE Context Architecture — target architecture, phased.** `aiService.js`
+does not build or pass a flat prompt string to a provider adapter. It builds
+an internal `ARCNAVE Context`: an **ordered list of segments**, each carrying
+a stability annotation (`static` / `conversation-scoped` / `turn-scoped` /
+`volatile`), plus a **fingerprint** (hash) of the `static` +
+`conversation-scoped` segments. Each provider adapter converts that context
+into its own native request via one `buildRequest(arcnaveContext)` — a
+superset abstraction each adapter downgrades from, replacing today's
+lowest-common-denominator `{systemPrompt, userPrompt, tools, images}`
+intersection that every adapter must already fit inside.
+
+**System policy is modular and monotonic, not one growing string.**
+`AGENT_SYSTEM_PROMPT` and `CONVERSATIONAL_POLICY` (two undifferentiated
+blobs, ~9,162 chars combined, sent on every call regardless of relevance) are
+replaced by a small, fixed, enumerated module set — `CORE` (always present,
+identity/provider-masking/action-truthfulness/language-matching/
+response-shape only), `CONTINUITY`, `TOOL_SELECTION`, `PLAN`, `FILE`,
+`ARTIFACT`. Within one conversation, once a module is added it is never
+removed — `CORE` → `+CONTINUITY` once history exists → `+TOOL_SELECTION`
+once tools enter the conversation — so the segment list stays append-only,
+which is what makes a stable-prefix boundary possible at all. Assembly is a
+**pure, synchronous function of already-known structural state**
+(`historyHint !== ''`, `tools.length` `>0`/`>=2`, images/documents present,
+`focusContext`/`projectContext` present, call stage, selected tool's
+L1/L2/L3 level) — never message semantics.
+
+**Turn-specific guidance is not a system-prompt module.** Tool-result
+reporting style, ₹ currency formatting, scope-substitution disclosure, the
+image-unavailable note, and emotional-register guidance describe one turn,
+not the conversation's durable capability set, and move into the message
+stream attached to that turn instead of accreting into the system prompt.
+
+**Provider behavioral differences are a small, bounded, optional per-adapter
+addendum appended after `CORE` — never a branch inside a shared policy
+module.** Provider-independent architecture does not mean
+provider-independent behavior: live-caught fixes already in `aiService.js`
+(tighter tool-call gating for a tool-happy Llama model, Gemini-specific
+identity-masking language, explicit artifact-tool naming to get a model to
+call `update_artifact_content` instead of printing a draft) are real,
+model-specific corrections, and stay attributable to one named adapter
+rather than diffusing into text every provider receives.
+
+**Rejected: an LLM classification step before policy/context assembly.**
+Every predicate policy assembly needs is already known deterministically
+before any model call — introducing a classifier call to re-derive "is this
+a tool request" from message meaning would add latency and cost to answer a
+question the application has already answered.
+
+**Rejected: policy selection via embedding/semantic retrieval**, despite
+tool retrieval ([ADL-041](ledger.md#adl-041) et seq., the semantic tool
+shortlisting already implemented in `aiToolRetrievalService.js`) using
+exactly this mechanism successfully. The two are not analogous: ~69 tools
+vs. ~8 policy modules, and a missed tool produces a visible "I can't do
+that," while a missed policy module produces a silent behavioral
+regression discovered in production, not at request time. Deterministic
+structural-state predicates are used instead wherever the full predicate
+set is already known — which, for policy, it always is.
+
+**Rejected: a universal cross-provider caching abstraction** that forces
+Gemini/Claude/OpenAI to expose one common caching interface. The three
+mechanisms are structurally incompatible (Anthropic `cache_control`
+breakpoints on specific content blocks; Gemini explicit `CachedContent`
+handles with a TTL, alongside implicit prefix matching; OpenAI automatic
+prefix matching with no explicit API). The context model exposes only the
+stability annotation and fingerprint; each adapter decides independently
+whether and how to exploit them. Caching mechanics never enter the shared
+core.
+
+**Consequence — two correctness fixes folded into the first implementation
+phase, not treated as later optimization.** (1) `documentSearchService.js`
+still resolves embeddings via the chat provider's own adapter
+(`configurationService.getAiConfig` → `adapter.embed()`), the exact coupling
+`embeddingService.js` was already built to remove for tool retrieval but
+never migrated for document search — a college on an adapter with no
+`embed()` (Claude) silently loses document search. (2) Neither
+`ai_document_chunks` nor `ai_tool_embeddings` (`vector(1024)`, both
+hard-coded) records which embedding model produced a row, so changing
+`EMBEDDING_PROVIDER`/`NIM_EMBEDDING_MODEL` leaves old rows in a different
+vector space with no detection — `ensureEmbeddings`'s self-healing backfill
+checks tool-name existence only, not model provenance.
+
+**Phasing (deliberately incremental — this ADR fixes the shape, not a
+single big-bang migration).** P0: reorder `identityBlock` after static
+policy (text-only, no behavior change — the current `identityBlock` +
+`AGENT_SYSTEM_PROMPT` ordering in `aiService.js` puts variable per-user
+content first, which breaks prefix-cache eligibility immediately regardless
+of later work); per-call token/context telemetry; gate the plan meta-tool on
+`tools.length >= 2` (currently offered unconditionally, including when
+structurally unusable per its own `validatePlanSteps` check); the two
+correctness fixes above. P0.5: two separate test layers — deterministic
+assembly tests (pure/sync, no model call, run every commit) and a
+provider behavioral suite (~50 scenarios against a real model, seeded from
+already-documented live-caught bugs, run on a policy change or new-provider
+onboarding, not every commit) — required to exist and pass **before** any
+policy text is rewritten, since every clause in the current two prompts is
+a fix for a real production failure. P1: split the two prompts into the
+module set above; rewrite only `CORE`'s wording. P2: introduce the
+`ARCNAVE Context` representation with adapters flattening back to today's
+shape (a); native per-adapter request builders, Gemini first (b); a real
+tool-use loop replacing today's two duplicated one-shot decision/answer
+calls (c). P3: provider-specific caching, only after P0's telemetry shows
+what a clean prefix actually buys — not budgeted as a project until
+measured.
+
+**Origin:** a 2026-08-23 architectural review (three rounds: technical
+analysis of a `"hi"` costing ~2,387 input tokens on a fresh conversation,
+traced past an already-fixed tool-retrieval issue to the always-on system
+prompt; refinement identifying the two-call decision/answer architecture as
+the larger cost driver and the `identityBlock`-before-policy ordering as
+blocking caching outright; a multi-provider feasibility pass given Claude
+and OpenAI adapters already exist in code today and a future rollout is a
+real possibility, not speculative). Full session detail:
+[`70-checkpoint/CURRENT-STATE.md`](../70-checkpoint/CURRENT-STATE.md) history
+as of that date. See [ADL-049](ledger.md#adl-049).
 
 ---
 

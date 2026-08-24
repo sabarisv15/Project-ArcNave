@@ -59,7 +59,16 @@
 
 const documentService = require('./documentService');
 const aiClassificationAccess = require('./aiClassificationAccess');
-const configurationService = require('./configurationService');
+// ADR-030 P0 correctness fix — this file used to resolve embeddings via
+// configurationService.getAiConfig (the ACTING COLLEGE's own chat
+// provider adapter), the exact chat-provider/embedding-provider coupling
+// embeddingService.js was already built to remove for tool retrieval
+// (round 32) but never migrated here. A college whose chat provider has
+// no embed() (Claude — see claude.js's own comment) silently lost
+// document search entirely; embeddingService resolves ONE platform-wide
+// embedding provider (config.embeddingProvider), independent of whatever
+// chat provider/adapter a given college is configured with.
+const embeddingService = require('./embeddingService');
 const tesseractOcr = require('../ocr/tesseractOcr');
 const pdfRasterizer = require('../ocr/pdfRasterizer');
 const { withOcrSlot } = require('../ocr/ocrConcurrencyLimit');
@@ -223,10 +232,15 @@ async function ingestDocument(client, documentId, { actorUserId } = {}) {
 
   const classification = classifyDocType(document.doc_type);
   const chunks = chunkText(text);
-  const { adapter, config: aiConfig } = await configurationService.getAiConfig(client, document.college_id);
+  // ADR-030 P0 embedding provenance — recorded alongside every chunk so
+  // a later EMBEDDING_PROVIDER/embeddingModel change is detectable
+  // instead of silently blending vector spaces (see the model-provenance
+  // migration's own comment; searchDocuments below also filters reads by
+  // this same value).
+  const model = embeddingService.currentModel();
 
   const embeddings = chunks.length > 0
-    ? await adapter.embed(aiConfig, chunks, { inputType: 'passage' })
+    ? await embeddingService.embed(chunks, { inputType: 'passage' })
     : [];
 
   for (let i = 0; i < chunks.length; i += 1) {
@@ -237,6 +251,7 @@ async function ingestDocument(client, documentId, { actorUserId } = {}) {
       chunkText: chunks[i],
       classification,
       embedding: embeddings[i],
+      model,
     });
   }
 
@@ -289,14 +304,20 @@ async function searchDocuments(client, { query, limit } = {}, actor) {
       ? actor
       : { actorUserId: actor.userId, actorRole: actor.role, collegeId: actor.collegeId },
   );
-  const { adapter, config: aiConfig } = await configurationService.getAiConfig(client, collegeId);
-  const [queryEmbedding] = await adapter.embed(aiConfig, [query], { inputType: 'query' });
+  // Same model value ingestDocument recorded on each chunk — passed
+  // through to the repository so a query only ever ranks against chunks
+  // embedded in the SAME vector space (ADR-030 P0), never blending an
+  // old EMBEDDING_PROVIDER/embeddingModel's rows into this college's
+  // current-model cosine-distance ranking.
+  const model = embeddingService.currentModel();
+  const [queryEmbedding] = await embeddingService.embed([query], { inputType: 'query' });
   const rows = await aiDocumentChunkRepository.search(client, {
     collegeId,
     classifications,
     embedding: queryEmbedding,
     limit: limit || DEFAULT_SEARCH_LIMIT,
     classIds,
+    model,
   });
 
   return rows.map((row) => ({

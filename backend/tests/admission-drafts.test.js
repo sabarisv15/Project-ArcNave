@@ -21,6 +21,7 @@ const security = require('../src/security');
 const { seedClassTutorPosition, cleanupPositionRows } = require('./helpers/positionFixtures');
 const nim = require('../src/services/aiProviders/nim');
 const globalConfig = require('../src/config');
+const { flattenToPrompts } = require('../src/services/aiContextAssembly');
 
 const MIGRATION_DATABASE_URL = process.env.MIGRATION_DATABASE_URL;
 const PASSWORD = 'AdmissionDraftTestPass123!';
@@ -142,7 +143,8 @@ test('admission drafts', async (t) => {
   t.after(() => { globalConfig.defaultAiProvider = originalDefaultAiProvider; });
 
   const originalComplete = nim.complete;
-  nim.complete = async (cfg, { systemPrompt }) => {
+  nim.complete = async (cfg, arcnaveContext) => {
+    const { systemPrompt } = flattenToPrompts(arcnaveContext);
     if (systemPrompt.includes('classif')) {
       return JSON.stringify({ detectedDocType: 'marksheet_10th', confidence: 95 });
     }

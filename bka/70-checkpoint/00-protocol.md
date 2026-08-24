@@ -146,6 +146,19 @@ A rewrite is a full replacement of the relevant fields, keeping the
 file small. If nothing has changed since the last rewrite for a given
 field, that field is left as-is rather than re-derived.
 
+**Every rewrite must leave the file able to stand alone as a complete
+handover — the next session must be able to continue from it with zero
+subagent calls, zero "explore the codebase first" passes, and zero
+re-derivation of facts this session already established.** Concretely:
+name exact file paths (not "the adapter files" — list each one), exact
+line numbers or ranges where they still matter, exact commands to run
+next (copy-pasteable, not described), and the exact expected/baseline
+result to compare against. A pointer like "see the provider adapters"
+or "check the tests" fails this bar — the file must already say which
+adapters, which tests, and what in them changed. If writing the
+"Exact next action" section requires the next session to go looking for
+anything, the checkpoint is not done yet.
+
 ## 6. Retrieval hierarchy (reference)
 
 ```

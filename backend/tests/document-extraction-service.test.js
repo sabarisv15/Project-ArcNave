@@ -14,6 +14,7 @@ const pdfRasterizer = require('../src/ocr/pdfRasterizer');
 const documentTypeRegistryRepository = require('../src/repositories/documentTypeRegistryRepository');
 const configurationService = require('../src/services/configurationService');
 const documentExtractionService = require('../src/services/documentExtractionService');
+const { flattenToPrompts } = require('../src/services/aiContextAssembly');
 
 function mockAiConfig(t, completeImpl) {
   const m = t.mock.method(configurationService, 'getAiConfig', async () => ({
@@ -74,8 +75,8 @@ test('documentExtractionService.extractFields', async (t) => {
       key: 'marksheet_10th', ocr_enabled: true, extraction_field_targets: ['mark10th', 'schoolName'],
     }));
     let capturedPrompt;
-    const aiMock = mockAiConfig(t, async (cfg, { systemPrompt }) => {
-      capturedPrompt = systemPrompt;
+    const aiMock = mockAiConfig(t, async (cfg, arcnaveContext) => {
+      capturedPrompt = flattenToPrompts(arcnaveContext).systemPrompt;
       return JSON.stringify({
         mark10th: { value: '450/500', confidence: 90 },
         schoolName: { value: 'ABC School', confidence: 85 },

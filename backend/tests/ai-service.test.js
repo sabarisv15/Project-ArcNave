@@ -37,6 +37,19 @@ const documentTextExtractionService = require('../src/services/documentTextExtra
 const documentAnalysisService = require('../src/services/documentAnalysisService');
 const configurationService = require('../src/services/configurationService');
 const claudeAdapter = require('../src/services/aiProviders/claude');
+const embeddingService = require('../src/services/embeddingService');
+const { contextFromFlatPrompts } = require('../src/services/aiContextAssembly');
+
+// This file's whole premise (see the file-level comment) is a fake
+// dbClient, never a live Postgres — aiToolRetrievalService's semantic
+// path needs a real ai_tool_embeddings table (and, when unavailable,
+// still hits real network for embed()), neither of which this file's
+// fixtures model. Every test here should keep exercising the
+// pre-existing lexical filterToolsByRelevance fallback exactly as
+// before this round — semantic retrieval has its own dedicated
+// coverage in ai-tool-retrieval-service.test.js, against real fixtures
+// built for it, not shoehorned in here.
+embeddingService.isAvailable = () => false;
 
 function fakeClient() {
   const queries = [];
@@ -895,7 +908,7 @@ test('nim adapter.isConfigured/complete: unconfigured (no apiKey) throws LlmNotC
     let fetchCalled = false;
     await withMockFetch(async () => { fetchCalled = true; }, async () => {
       await assert.rejects(
-        () => nimAdapter.complete(config.nim, { systemPrompt: 's', userPrompt: 'u' }),
+        () => nimAdapter.complete(config.nim, contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' })),
         nimAdapter.LlmNotConfiguredError,
       );
     });
@@ -916,7 +929,7 @@ test('nim adapter.complete: when configured, sends the right OpenAI-compatible r
         json: async () => ({ choices: [{ message: { content: 'mocked answer' } }] }),
       };
     }, async () => {
-      const answer = await nimAdapter.complete(config.nim, { systemPrompt: 'system text', userPrompt: 'user text' });
+      const answer = await nimAdapter.complete(config.nim, contextFromFlatPrompts({ systemPrompt: 'system text', userPrompt: 'user text' }));
       assert.equal(answer, 'mocked answer');
     });
 
@@ -938,7 +951,7 @@ test('nim adapter.complete: a non-ok response throws LlmRequestError, not a sile
       text: async () => 'upstream broke',
     }), async () => {
       await assert.rejects(
-        () => nimAdapter.complete(config.nim, { systemPrompt: 's', userPrompt: 'u' }),
+        () => nimAdapter.complete(config.nim, contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' })),
         nimAdapter.LlmRequestError,
       );
     });
@@ -1121,16 +1134,23 @@ test('aiService.askAgent: the LLM picks an unknown/hallucinated tool name -> a c
 
   // No tool ran, so no ai_tool_invoked/ai_tool_denied row either — the
   // hallucinated name never named a real tool for the Policy Gate to
-  // have an opinion about at all. The four queries that did run are
-  // buildMemoryHint's own ai_scoped_memory + ai_general_memory lookups,
-  // the Identity Context block's own college-name lookup (Phase 3 Group
-  // (c)), and getAiConfig's own college_ai_config lookup, all made before
-  // the LLM call (and thus before the hallucinated name is even known).
-  assert.equal(client.queries.length, 4);
+  // have an opinion about at all. Five queries ran: buildMemoryHint's own
+  // ai_scoped_memory + ai_general_memory lookups, the Identity Context
+  // block's own college-name lookup (Phase 3 Group (c)), getAiConfig's
+  // own college_ai_config lookup — all before the LLM call — and one
+  // ai_llm_call row for the tool-select decision call itself (ADR-030 P0
+  // telemetry: written for context-size/toolCount even when the decision
+  // resolved to a name the registry then rejected).
+  assert.equal(client.queries.length, 5);
   assert.match(client.queries[0].text, /FROM ai_scoped_memory/);
   assert.match(client.queries[1].text, /FROM ai_general_memory/);
   assert.match(client.queries[2].text, /FROM colleges/);
   assert.match(client.queries[3].text, /FROM college_ai_config/);
+  const llmCallRow = client.queries.find((q) => q.text.includes('INSERT INTO audit_log') && q.params[2] === 'ai_llm_call');
+  assert.ok(llmCallRow);
+  const metadata = JSON.parse(llmCallRow.params[5]);
+  assert.equal(metadata.purpose, 'tool_select');
+  assert.equal(typeof metadata.systemPromptChars, 'number');
 });
 
 test('aiService.askAgent: the tool-selection call\'s system prompt instructs the model to ask for clarification '
@@ -1171,8 +1191,15 @@ test('aiService.askAgent: a successful tool_call\'s follow-up answer call is ins
   });
 
   assert.equal(capturedBodies.length, 2);
+  // ADR-030 P1: the scope/action-substitution disclosure instruction is
+  // turn-specific guidance, now carried in the user message rather than
+  // the system message (see aiService.js's summarizeToolResult) — same
+  // text, same content, only the destination field changed. The tool's
+  // own description (context, not turn-specific instruction) stays in
+  // the system message.
+  const answerUserMessage = capturedBodies[1].messages.find((m) => m.role === 'user');
   const answerSystemMessage = capturedBodies[1].messages.find((m) => m.role === 'system');
-  assert.match(answerSystemMessage.content, /say so explicitly/);
+  assert.match(answerUserMessage.content, /say so explicitly/);
   assert.match(answerSystemMessage.content, /get_college_profile/);
 });
 
@@ -1191,12 +1218,14 @@ test('aiService.askAgent: the LLM picks no tool -> returns its direct answer, st
     });
   });
 
-  // No tool ran — no Business Service call, no audit row. The four
-  // queries that did run are buildMemoryHint's own ai_scoped_memory +
-  // ai_general_memory lookups, the Identity Context block's own
-  // college-name lookup (Phase 3 Group (c)), and getAiConfig's own
-  // college_ai_config lookup.
-  assert.equal(client.queries.length, 4);
+  // No tool ran — no Business Service call, no ai_tool_invoked row. Five
+  // queries ran: buildMemoryHint's own ai_scoped_memory + ai_general_memory
+  // lookups, the Identity Context block's own college-name lookup (Phase 3
+  // Group (c)), getAiConfig's own college_ai_config lookup, and one
+  // ai_llm_call row for the tool-select decision call (ADR-030 P0
+  // telemetry — written for context-size telemetry even when no usage
+  // block came back and no tool was picked).
+  assert.equal(client.queries.length, 5);
   assert.match(client.queries[0].text, /FROM ai_scoped_memory/);
   assert.match(client.queries[1].text, /FROM ai_general_memory/);
   assert.match(client.queries[2].text, /FROM colleges/);
@@ -1232,7 +1261,7 @@ test('aiService.askAboutTool: when the provider returns a usage block, one ai_ll
   assert.equal(typeof metadata.latencyMs, 'number');
 });
 
-test('aiService.askAboutTool: no usage block in the provider response -> no ai_llm_call row (nothing to report, not a fabricated zero)', async () => {
+test('aiService.askAboutTool: no usage block in the provider response -> ai_llm_call row still written for context-size telemetry (ADR-030 P0), but with no fabricated token counts', async () => {
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
@@ -1243,7 +1272,11 @@ test('aiService.askAboutTool: no usage block in the provider response -> no ai_l
   });
 
   const llmCallRow = client.queries.find((q) => q.text.includes('INSERT INTO audit_log') && q.params[2] === 'ai_llm_call');
-  assert.equal(llmCallRow, undefined);
+  assert.ok(llmCallRow, 'systemPromptChars is always computable locally, regardless of whether the vendor returned a usage block, so a row is still worth writing');
+  const metadata = JSON.parse(llmCallRow.params[5]);
+  assert.equal(metadata.inputTokens, undefined, 'no usage block means no fabricated token count, never a 0');
+  assert.equal(metadata.outputTokens, undefined);
+  assert.equal(typeof metadata.systemPromptChars, 'number');
 });
 
 test('aiService.askAgent: history (short-session conversation memory) is threaded into the prompt as background, not treated as new instructions', async () => {
@@ -1314,10 +1347,17 @@ test('filterToolsByRelevance: a tool whose name/description overlaps the questio
   assert.ok(names.includes('finance_status_summary'), 'a tool whose own name/description matches the question must never be dropped');
 });
 
-test('filterToolsByRelevance: an ambiguous question with no keyword overlap falls back to the full list, never an empty/wrong-narrowed one', () => {
+test('filterToolsByRelevance: an ambiguous question with no keyword overlap is capped at RANK_CAP, never the full unfiltered list', () => {
+  // Round 32: this fallback used to return the full, unfiltered list —
+  // a real, measured ~13K-token cost for a bare "hi" on a 69-tool role
+  // (this function is now only ever reached as the lexical tier when
+  // the shared embedding service is unavailable; see this function's
+  // own updated comment). "Never send all tools just because retrieval
+  // failed" now holds here too, not just on the semantic tier.
   const allTools = aiToolRegistry.listTools({ excludeHumanOnly: true, role: 'principal' });
   const result = aiToolRegistry.filterToolsByRelevance(allTools, 'xyzzy qux wombat');
-  assert.equal(result.length, allTools.length, 'zero keyword overlap must never narrow the list — it is not evidence any specific tool is irrelevant');
+  assert.ok(result.length <= 25, 'zero keyword overlap must still respect RANK_CAP');
+  assert.ok(result.length < allTools.length, 'zero keyword overlap must no longer fail open to the full list');
 });
 
 test('filterToolsByRelevance: result never exceeds the rank cap when the role-filtered list is large and the question has real overlap', () => {
@@ -1347,23 +1387,155 @@ test('aiService.askAgent: filterToolsByRelevance is applied before the tool-sele
 });
 
 // --- Bounded multi-step workflow engine (P0.3) ---
+// --- ADR-030 P0.5(a): deterministic prompt/tool assembly invariants ---
+// These pin exactly what P0 changed, as a state -> assembled-request
+// fact — no live model call, aiToolRegistry.filterToolsByRelevance
+// stubbed for an exact, controlled tools.length rather than relying on
+// real keyword overlap (which is what the ORIGINAL "always offered"
+// version of this test did, coincidentally, until P0's gating made
+// "always" false in general). This is the harness P1's real module-set
+// assertions will extend once buildPolicy(state) exists — until then,
+// it locks the two structural facts P0 actually introduced.
 
-test('aiService.askAgent: the plan meta-tool is always offered to the LLM, in addition to the role/relevance-filtered real tools', async () => {
+test('aiService.askAgent: the plan meta-tool IS offered when 2+ tools are retrieved', async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const relevanceMock = mock.method(aiToolRegistry, 'filterToolsByRelevance', (tools) => tools.slice(0, 2));
+
+  let capturedBody;
+  try {
+    await withNimConfig('test-nim-key', async () => {
+      await withMockFetch(async (url, options) => {
+        capturedBody = JSON.parse(options.body);
+        return mockAnswerResponse('Campus is open 9am-5pm.');
+      }, async () => {
+        await aiService.askAgent(client, 'What are the campus hours?', { identityContext });
+      });
+    });
+  } finally {
+    relevanceMock.mock.restore();
+  }
+
+  assert.ok(capturedBody.tools.some((t) => t.function.name === 'run_workflow_plan'), 'run_workflow_plan must be offered when 2+ real tools are');
+  // Exactly 2 retrieved tools + the plan tool, never the full role-permitted list.
+  assert.equal(capturedBody.tools.length, 3);
+});
+
+test('aiService.askAgent: the plan meta-tool is WITHHELD when fewer than 2 tools are retrieved (structurally unusable — its own params require >= 2 steps)', async () => {
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
+  for (const stubbedCount of [0, 1]) {
+    const relevanceMock = mock.method(aiToolRegistry, 'filterToolsByRelevance', (tools) => tools.slice(0, stubbedCount));
+    let capturedBody;
+    try {
+      await withNimConfig('test-nim-key', async () => {
+        await withMockFetch(async (url, options) => {
+          capturedBody = JSON.parse(options.body);
+          return mockAnswerResponse('Campus is open 9am-5pm.');
+        }, async () => {
+          await aiService.askAgent(client, 'What are the campus hours?', { identityContext });
+        });
+      });
+    } finally {
+      relevanceMock.mock.restore();
+    }
+    assert.equal(
+      capturedBody.tools.some((t) => t.function.name === 'run_workflow_plan'),
+      false,
+      `run_workflow_plan must not be offered when only ${stubbedCount} tool(s) were retrieved`,
+    );
+    assert.equal(capturedBody.tools.length, stubbedCount);
+  }
+});
+
+// The remaining 3 of the 5 identityBlock-reorder sites (askAboutTool's
+// own test above already covers the 4th explicitly; the tool-select
+// decision call's system prompt is exercised structurally by dozens of
+// tests in this file already, though none previously asserted ordering
+// specifically). Each asserts the same invariant: identityBlock
+// ("Identity Context\nRole: ...") never precedes the static/shared
+// policy text in the assembled system message.
+
+test("aiService.askAgent: mode 'general' (askGeneralChat) — identityBlock is appended LAST, after GENERAL_CHAT_SYSTEM_PROMPT/CONVERSATIONAL_POLICY", async () => {
+  const client = fakeClient();
+  const identityContext = {
+    userId: 'u1', role: 'hod', scopeLevel: 'department', collegeId: 'college-a', departmentId: 'dept-1',
+  };
   let capturedBody;
+
   await withNimConfig('test-nim-key', async () => {
     await withMockFetch(async (url, options) => {
       capturedBody = JSON.parse(options.body);
-      return mockAnswerResponse('Campus is open 9am-5pm.');
+      return mockAnswerResponse('React is a JavaScript library for building user interfaces.');
     }, async () => {
-      await aiService.askAgent(client, 'What are the campus hours?', { identityContext });
+      await aiService.askAgent(client, 'explain react hooks for a class project', { identityContext, mode: 'general' });
     });
   });
 
-  const planTool = capturedBody.tools.find((t) => t.function.name === 'run_workflow_plan');
-  assert.ok(planTool, 'run_workflow_plan must always be offered');
+  const systemMessage = capturedBody.messages.find((m) => m.role === 'system').content;
+  assert.match(systemMessage, /^You are ARCNAVE's assistant, currently in Research mode/);
+  assert.ok(
+    systemMessage.indexOf('Identity Context') > systemMessage.indexOf('Research mode'),
+    'identityBlock must come after the static Research-mode policy text, never before it',
+  );
+});
+
+test('aiService.askAgent: a successful single tool_call\'s follow-up answer (summarizeToolResult) — identityBlock is appended LAST, after the safety preamble/TOOL_RESULT_ANSWER_SYSTEM_PROMPT/CONVERSATIONAL_POLICY', async () => {
+  const client = fakeClient();
+  const identityContext = {
+    userId: 'u1', role: 'hod', scopeLevel: 'department', collegeId: 'college-a', departmentId: 'dept-1',
+  };
+  const capturedBodies = [];
+
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async (url, options) => {
+      capturedBodies.push(JSON.parse(options.body));
+      return capturedBodies.length === 1
+        ? mockToolCallResponse('get_college_profile', {})
+        : mockAnswerResponse('This is the college profile.');
+    }, async () => {
+      await aiService.askAgent(client, 'What college is this?', { identityContext });
+    });
+  });
+
+  assert.equal(capturedBodies.length, 2);
+  const answerSystemMessage = capturedBodies[1].messages.find((m) => m.role === 'system').content;
+  assert.match(answerSystemMessage, /^Everything between ===UNTRUSTED_TOOL_DATA_START===/);
+  assert.ok(
+    answerSystemMessage.indexOf('Identity Context') > answerSystemMessage.indexOf('===UNTRUSTED_TOOL_DATA_START==='),
+    'identityBlock must come after the static safety preamble/policy text, never before it',
+  );
+});
+
+test('aiService.askAgent: a 2-step plan\'s combined synthesis (executeWorkflowPlan) — identityBlock is appended LAST, after the safety preamble/combined tool description/CONVERSATIONAL_POLICY', async (t) => {
+  t.mock.method(collegeProfileService, 'getProfile', async () => ({ name: 'Test College' }));
+  t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }, { id: 't2' }]));
+  const client = fakeClient();
+  const identityContext = {
+    userId: 'u1', role: 'hod', scopeLevel: 'department', collegeId: 'college-a', departmentId: 'dept-1',
+  };
+  const plan = { steps: [{ tool: 'get_college_profile' }, { tool: 'academic_class_timetable' }] };
+  const capturedBodies = [];
+
+  await withNimConfig('test-nim-key', async () => {
+    await withMockFetch(async (url, options) => {
+      capturedBodies.push(JSON.parse(options.body));
+      return capturedBodies.length === 1
+        ? mockToolCallResponse('run_workflow_plan', plan)
+        : mockAnswerResponse('Here is your combined report.');
+    }, async () => {
+      await aiService.askAgent(client, 'Give me the college profile and the timetable.', { identityContext });
+    });
+  });
+
+  assert.equal(capturedBodies.length, 2);
+  const synthesisSystemMessage = capturedBodies[1].messages.find((m) => m.role === 'system').content;
+  assert.match(synthesisSystemMessage, /^Everything between ===UNTRUSTED_TOOL_DATA_START===/);
+  assert.ok(
+    synthesisSystemMessage.indexOf('Identity Context') > synthesisSystemMessage.indexOf('===UNTRUSTED_TOOL_DATA_START==='),
+    'identityBlock must come after the static safety preamble/policy text, never before it',
+  );
 });
 
 test('aiService.askAgent: a 2-step plan runs both tools through the real Policy Gate/invokeTool and produces ONE combined synthesis answer', async (t) => {
@@ -2354,7 +2526,7 @@ test('aiActorContext.describeIdentityContext: no scopeLevel resolved fails close
   assert.match(block, /Access: None/);
 });
 
-test('aiService.askAboutTool: the Identity Context block is actually prepended to the system prompt sent to the LLM, and differs correctly by role/scope', async () => {
+test('aiService.askAboutTool: the Identity Context block is actually included in the system prompt sent to the LLM (appended LAST, after static policy — ADR-030 P0 stable-prefix ordering), and differs correctly by role/scope', async () => {
   const client = fakeClient();
   const identityContext = {
     userId: 'u1', role: 'hod', scopeLevel: 'department', collegeId: 'college-a', departmentId: 'dept-1',
@@ -2371,10 +2543,18 @@ test('aiService.askAboutTool: the Identity Context block is actually prepended t
   });
 
   const systemMessage = capturedBody.messages.find((m) => m.role === 'system').content;
-  assert.match(systemMessage, /^Identity Context\nRole: HOD\nScope:/);
-  // The existing untrusted-data safety preamble is still there, appended
-  // after the identity block, not replaced by it.
+  // identityBlock is per-user/per-college (variable) — placed LAST, after
+  // every static/shared policy block, so a stable prefix boundary exists
+  // for a future provider-caching layer to find (ADR-030 P0). The static
+  // safety preamble comes first instead, unchanged in content, just no
+  // longer pushed behind the variable block.
+  assert.match(systemMessage, /^Everything between ===UNTRUSTED_TOOL_DATA_START===/);
   assert.ok(systemMessage.includes(aiPromptSafetyLayer.SAFETY_PREAMBLE));
+  assert.match(systemMessage, /Identity Context\nRole: HOD\nScope:[\s\S]*$/);
+  assert.ok(
+    systemMessage.indexOf('Identity Context') > systemMessage.indexOf(aiPromptSafetyLayer.SAFETY_PREAMBLE),
+    'identityBlock must come after the static policy text, never before it',
+  );
 });
 
 // --- Phase 8 (ROLE-COVERAGE "Intentionally Deferred" remediation) -----
@@ -2914,8 +3094,11 @@ test('aiService.askAgent: provider without vision support (nim) -> imageAnalysis
 
   const userMessage = capturedBody.messages.find((m) => m.role === 'user');
   assert.equal(typeof userMessage.content, 'string', 'no image content block ever reached the provider');
-  const systemMessage = capturedBody.messages.find((m) => m.role === 'system');
-  assert.match(systemMessage.content, /cannot.*view images/);
+  // ADR-030 P1: the image-unavailable note is turn-specific guidance, now
+  // carried in the user message rather than the system message (see
+  // aiService.js's askAgent decision-call assembly) — same text, same
+  // content, only the destination field changed.
+  assert.match(userMessage.content, /cannot.*view images/);
 });
 
 test('aiService.askAgent: vision-capable provider -> the image actually reaches the provider as the real content block, and imageCount reflects what was sent', async (t) => {

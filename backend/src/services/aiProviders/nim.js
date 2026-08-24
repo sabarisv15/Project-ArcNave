@@ -12,6 +12,7 @@
 const { LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError } = require('./errors');
 const { withRetry } = require('./retry');
 const { iterateSseLines } = require('./sse');
+const { flattenToPrompts } = require('../aiContextAssembly');
 
 const REQUEST_TIMEOUT_MS = 30000;
 const EMBEDDING_DIMENSIONS = 1024;
@@ -69,7 +70,8 @@ async function postJson(cfg, path, body) {
 // completeWithMeta is the one place that also reads the raw response's
 // own `usage` block, so aiService's completeMaybeStreaming can log real
 // token counts without any adapter needing a second request shape.
-async function completeWithMeta(cfg, { systemPrompt, userPrompt }) {
+async function completeWithMeta(cfg, arcnaveContext) {
+  const { systemPrompt, userPrompt } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -118,7 +120,8 @@ async function complete(cfg, prompts) {
 // asks the server to emit one extra final chunk carrying a top-level
 // `usage` and an empty `choices` array, just before `[DONE]` — every
 // other chunk's `usage` is absent, so the last one seen wins.
-async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta, onUsage) {
+async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
+  const { systemPrompt, userPrompt } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -183,7 +186,8 @@ async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta, onUsag
   return full;
 }
 
-async function completeWithTools(cfg, { systemPrompt, userPrompt, tools }) {
+async function completeWithTools(cfg, arcnaveContext) {
+  const { systemPrompt, userPrompt, tools } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -222,13 +226,22 @@ async function completeWithTools(cfg, { systemPrompt, userPrompt, tools }) {
     } catch (err) {
       throw new LlmRequestError(`LLM tool call arguments were not valid JSON: ${err.message}`);
     }
-    return { type: 'tool_call', toolName: fn.name, arguments: toolArguments };
+    // ADR-030 P0 telemetry — see gemini.js's own equivalent comment.
+    const usage = payload && payload.usage
+      ? { inputTokens: payload.usage.prompt_tokens, outputTokens: payload.usage.completion_tokens }
+      : undefined;
+    return {
+      type: 'tool_call', toolName: fn.name, arguments: toolArguments, usage,
+    };
   }
 
   if (typeof message.content !== 'string') {
     throw new LlmRequestError('LLM provider response contained neither a tool call nor message content');
   }
-  return { type: 'answer', text: message.content };
+  const usage = payload && payload.usage
+    ? { inputTokens: payload.usage.prompt_tokens, outputTokens: payload.usage.completion_tokens }
+    : undefined;
+  return { type: 'answer', text: message.content, usage };
 }
 
 async function embed(cfg, texts, { inputType } = {}) {

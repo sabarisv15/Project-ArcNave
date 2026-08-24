@@ -18,13 +18,13 @@ function toVectorLiteral(embedding) {
 }
 
 async function create(client, {
-  collegeId, documentId, chunkIndex, chunkText, classification, embedding,
+  collegeId, documentId, chunkIndex, chunkText, classification, embedding, model,
 }) {
   const result = await client.query(
-    `INSERT INTO ai_document_chunks (college_id, document_id, chunk_index, chunk_text, classification, embedding)
-     VALUES ($1, $2, $3, $4, $5, $6::vector)
+    `INSERT INTO ai_document_chunks (college_id, document_id, chunk_index, chunk_text, classification, embedding, model)
+     VALUES ($1, $2, $3, $4, $5, $6::vector, $7)
      RETURNING *`,
-    [collegeId, documentId, chunkIndex, chunkText, classification, toVectorLiteral(embedding)],
+    [collegeId, documentId, chunkIndex, chunkText, classification, toVectorLiteral(embedding), model],
   );
   return result.rows[0];
 }
@@ -55,8 +55,14 @@ async function findByDocumentId(client, documentId) {
 // belongs to a student in one of those classes. An empty array (a hod
 // with no verified department) correctly excludes every student-scoped
 // document while still allowing unscoped ones.
+// model (ADR-030 P0): restricts the ranking to chunks embedded under the
+// SAME model as the query embedding was just produced with — without
+// this, a chunk ingested under a since-changed EMBEDDING_PROVIDER/
+// embeddingModel would still be ranked by cosine distance against a
+// query vector from a different, incompatible vector space, producing a
+// plausible-looking but meaningless distance value with no error at all.
 async function search(client, {
-  collegeId, classifications, embedding, limit, classIds,
+  collegeId, classifications, embedding, limit, classIds, model,
 }) {
   if (!classifications || classifications.length === 0) {
     return [];
@@ -70,10 +76,11 @@ async function search(client, {
      LEFT JOIN students s ON s.id = d.student_id
      WHERE c.college_id = $1
        AND c.classification = ANY($2)
+       AND c.model = $6
        AND ($5::uuid[] IS NULL OR d.student_id IS NULL OR s.class_id = ANY($5))
      ORDER BY c.embedding <=> $3::vector
      LIMIT $4`,
-    [collegeId, classifications, toVectorLiteral(embedding), limit, classIds === null || classIds === undefined ? null : classIds],
+    [collegeId, classifications, toVectorLiteral(embedding), limit, classIds === null || classIds === undefined ? null : classIds, model],
   );
   return result.rows;
 }

@@ -20,6 +20,20 @@ const security = require('../src/security');
 const aiPromptSafetyLayer = require('../src/services/aiPromptSafetyLayer');
 const config = require('../src/config');
 const { seedPrincipalPosition, seedHodPosition, cleanupPositionRows } = require('./helpers/positionFixtures');
+const embeddingService = require('../src/services/embeddingService');
+
+// This file's own explicit design goal (see the header comment above
+// mockToolCallFetch below: "No real network call/API quota spent
+// here") is exactly why aiToolRetrievalService's semantic tier is
+// disabled for the whole file — an embed() call would be a second,
+// real network call outside every test's own carefully sequenced
+// config.nim.apiKey + global.fetch swap, breaking that sequencing the
+// same way it would for ai-service.test.js (see that file's own
+// comment). Tool retrieval itself has its own dedicated coverage in
+// ai-tool-retrieval-service.test.js; this file keeps proving the real-
+// HTTP/real-Postgres tool-call pipeline against the pre-existing
+// lexical fallback, unchanged.
+embeddingService.isAvailable = () => false;
 
 const MIGRATION_DATABASE_URL = process.env.MIGRATION_DATABASE_URL;
 const PASSWORD = 'AiTestPass123!';

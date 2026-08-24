@@ -9,6 +9,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const aiProviders = require('../src/services/aiProviders');
+const { contextFromFlatPrompts } = require('../src/services/aiContextAssembly');
 
 const REQUIRED_METHODS = ['isConfigured', 'complete', 'completeWithTools', 'embed', 'generateImage'];
 
@@ -178,14 +179,14 @@ test('claude adapter.completeWithTools: a cache_control breakpoint is set on the
   try {
     await claude.completeWithTools(
       { apiKey: 'k', model: 'claude-x' },
-      {
+      contextFromFlatPrompts({
         systemPrompt: 's',
         userPrompt: 'u',
         tools: [
           { name: 'tool_a', description: 'A', params: {} },
           { name: 'tool_b', description: 'B', params: {} },
         ],
-      },
+      }),
     );
   } finally {
     global.fetch = originalFetch;
@@ -224,7 +225,7 @@ test('claude adapter (Vertex mode): posts to the real aiplatform.googleapis.com 
   try {
     await claude.completeWithMeta(
       { projectId: 'project-8bcf740a-a7bd-4aea-974', accessToken: 't', model: 'claude-sonnet-5' },
-      { systemPrompt: 's', userPrompt: 'u' },
+      contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
     );
   } finally {
     global.fetch = originalFetch;
@@ -258,7 +259,7 @@ test('claude adapter (Vertex mode): streaming uses :streamRawPredict and never s
   try {
     await claude.completeStream(
       { projectId: 'p', accessToken: 't', model: 'claude-sonnet-5' },
-      { systemPrompt: 's', userPrompt: 'u' },
+      contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
       () => {},
     );
   } finally {
@@ -280,7 +281,7 @@ test('claude adapter: projectId wins over apiKey when both are present (Vertex i
   try {
     await claude.completeWithMeta(
       { projectId: 'p', accessToken: 't', apiKey: 'should-be-ignored', model: 'claude-sonnet-5' },
-      { systemPrompt: 's', userPrompt: 'u' },
+      contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
     );
   } finally {
     global.fetch = originalFetch;
@@ -298,7 +299,7 @@ test('nim/gemini/selfHosted/openai adapters: complete()/embed() throw LlmNotConf
       const adapter = aiProviders.getAdapter(providerName);
       // eslint-disable-next-line no-await-in-loop
       await assert.rejects(
-        () => adapter.complete({}, { systemPrompt: 's', userPrompt: 'u' }),
+        () => adapter.complete({}, contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' })),
         aiProviders.LlmNotConfiguredError,
       );
     }
@@ -331,12 +332,12 @@ test('claude adapter.completeWithTools: images build the real Anthropic multipar
   const claude = aiProviders.getAdapter('claude');
   const body = await capturedRequestBody(() => claude.completeWithTools(
     { apiKey: 'k', model: 'claude-x' },
-    {
+    contextFromFlatPrompts({
       systemPrompt: 's',
       userPrompt: 'what is in this image?',
       tools: [{ name: 'tool_a', description: 'A', params: {} }],
       images: [{ mimeType: 'image/png', base64: ONE_PIXEL_PNG_BASE64 }],
-    },
+    }),
   ).catch(() => {})); // response has no content[] block — the request shape is what's under test
 
   const content = body.messages[0].content;
@@ -349,7 +350,7 @@ test('claude adapter.complete: with no images, content stays a plain string (unc
   const claude = aiProviders.getAdapter('claude');
   const body = await capturedRequestBody(() => claude.completeWithMeta(
     { apiKey: 'k', model: 'claude-x' },
-    { systemPrompt: 's', userPrompt: 'u' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
   ).catch(() => {}));
   assert.equal(body.messages[0].content, 'u');
 });
@@ -358,12 +359,12 @@ test('gemini adapter.completeWithTools: images build the real Gemini inline_data
   const gemini = aiProviders.getAdapter('gemini');
   const body = await capturedRequestBody(() => gemini.completeWithTools(
     { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    {
+    contextFromFlatPrompts({
       systemPrompt: 's',
       userPrompt: 'what is in this image?',
       tools: [{ name: 'tool_a', description: 'A', params: {} }],
       images: [{ mimeType: 'image/png', base64: ONE_PIXEL_PNG_BASE64 }],
-    },
+    }),
   ).catch(() => {}));
 
   const parts = body.contents[0].parts;
@@ -375,7 +376,7 @@ test('gemini adapter.complete: with no images, parts stays text-only (unchanged 
   const gemini = aiProviders.getAdapter('gemini');
   const body = await capturedRequestBody(() => gemini.completeWithMeta(
     { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    { systemPrompt: 's', userPrompt: 'u' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
   ).catch(() => {}));
   assert.deepEqual(body.contents[0].parts, [{ text: 'u' }]);
 });
@@ -409,7 +410,7 @@ test('gemini adapter.completeWithMeta: a hanging request is aborted well within 
     await assert.rejects(
       () => gemini.completeWithMeta(
         { projectId: 'p', accessToken: 't', maxTotalLatencyMs: 150 },
-        { systemPrompt: 's', userPrompt: 'u' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
       ),
       aiProviders.LlmRequestError,
     );
@@ -424,12 +425,12 @@ test('openai adapter.completeWithTools: images build the real OpenAI image_url c
   const openai = aiProviders.getAdapter('openai');
   const body = await capturedRequestBody(() => openai.completeWithTools(
     { apiKey: 'k', model: 'gpt-x' },
-    {
+    contextFromFlatPrompts({
       systemPrompt: 's',
       userPrompt: 'what is in this image?',
       tools: [{ name: 'tool_a', description: 'A', params: {} }],
       images: [{ mimeType: 'image/png', base64: ONE_PIXEL_PNG_BASE64 }],
-    },
+    }),
   ).catch(() => {}));
 
   const content = body.messages[1].content;
@@ -441,7 +442,7 @@ test('gemini adapter.completeWithTools: additionalProperties is stripped (recurs
   const gemini = aiProviders.getAdapter('gemini');
   const body = await capturedRequestBody(() => gemini.completeWithTools(
     { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    {
+    contextFromFlatPrompts({
       systemPrompt: 's',
       userPrompt: 'u',
       tools: [{
@@ -455,7 +456,7 @@ test('gemini adapter.completeWithTools: additionalProperties is stripped (recurs
           additionalProperties: false,
         },
       }],
-    },
+    }),
   ).catch(() => {}));
 
   const parameters = body.tools[0].functionDeclarations[0].parameters;
@@ -470,7 +471,7 @@ test('openai adapter.complete: with no images, content stays a plain string (unc
   const openai = aiProviders.getAdapter('openai');
   const body = await capturedRequestBody(() => openai.completeWithMeta(
     { apiKey: 'k', model: 'gpt-x' },
-    { systemPrompt: 's', userPrompt: 'u' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
   ).catch(() => {}));
   assert.equal(body.messages[1].content, 'u');
 });
@@ -490,31 +491,31 @@ test('openai adapter.complete: with no images, content stays a plain string (unc
 test('every provider adapter sends an explicit output-token bound on the wire (round 8 fix, previously only informally exercised)', async () => {
   const nimBody = await capturedRequestBody(() => aiProviders.getAdapter('nim').completeWithMeta(
     { apiKey: 'k', baseUrl: 'http://localhost:1', model: 'nim-x' },
-    { systemPrompt: 's', userPrompt: 'u' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
   ).catch(() => {}));
   assert.equal(nimBody.max_tokens, 1024);
 
   const geminiBody = await capturedRequestBody(() => aiProviders.getAdapter('gemini').completeWithMeta(
     { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    { systemPrompt: 's', userPrompt: 'u' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
   ).catch(() => {}));
   assert.equal(geminiBody.generationConfig.maxOutputTokens, 65_536);
 
   const selfHostedBody = await capturedRequestBody(() => aiProviders.getAdapter('self_hosted').completeWithMeta(
     { baseUrl: 'http://localhost:1', model: 'sh-x' },
-    { systemPrompt: 's', userPrompt: 'u' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
   ).catch(() => {}));
   assert.equal(selfHostedBody.max_tokens, 1024);
 
   const openaiBody = await capturedRequestBody(() => aiProviders.getAdapter('openai').completeWithMeta(
     { apiKey: 'k', model: 'gpt-x' },
-    { systemPrompt: 's', userPrompt: 'u' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
   ).catch(() => {}));
   assert.equal(openaiBody.max_tokens, 1024);
 
   const claudeBody = await capturedRequestBody(() => aiProviders.getAdapter('claude').completeWithMeta(
     { apiKey: 'k', model: 'claude-x' },
-    { systemPrompt: 's', userPrompt: 'u' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
   ).catch(() => {}));
   assert.equal(claudeBody.max_tokens, 1024);
 });

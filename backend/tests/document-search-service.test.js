@@ -2,41 +2,39 @@
 
 // Unit tests for documentSearchService's business logic — no live
 // Postgres, no live NIM: documentService.downloadDocument,
-// configurationService.getAiConfig (which resolves the adapter whose
-// embed() this service calls), aiDocumentChunkRepository, and
-// auditLogRepository are stubbed via node:test's built-in mock, same
-// technique document-service.test.js/notification-service.test.js
-// already use for their own dependencies. The real cosine-search/RLS/
-// HNSW-index/live-embedding round-trip is a live verification concern
-// (this session's own throwaway script against docker-compose
-// Postgres + a real NIM key), not re-proven here.
+// embeddingService.embed/currentModel (ADR-030 P0 — this file no longer
+// goes through configurationService.getAiConfig/an adapter at all),
+// aiDocumentChunkRepository, and auditLogRepository are stubbed via
+// node:test's built-in mock, same technique document-service.test.js/
+// notification-service.test.js already use for their own dependencies.
+// The real cosine-search/RLS/HNSW-index/live-embedding round-trip is a
+// live verification concern (this session's own throwaway script
+// against docker-compose Postgres + a real NIM key), not re-proven here.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const documentService = require('../src/services/documentService');
-const configurationService = require('../src/services/configurationService');
 const tesseractOcr = require('../src/ocr/tesseractOcr');
 const pdfRasterizer = require('../src/ocr/pdfRasterizer');
 const auditLogRepository = require('../src/repositories/auditLogRepository');
 const aiDocumentChunkRepository = require('../src/repositories/aiDocumentChunkRepository');
 const documentSearchService = require('../src/services/documentSearchService');
+const embeddingService = require('../src/services/embeddingService');
 const visibilityService = require('../src/services/visibilityService');
 const aiActorContext = require('../src/services/aiActorContext');
 const aiClassificationAccess = require('../src/services/aiClassificationAccess');
 
-// documentSearchService resolves { adapter, config } via
-// configurationService.getAiConfig, then calls adapter.embed(config,
-// texts, opts) — mocked here at that boundary rather than at a real
-// provider adapter, same "mock the direct dependency" convention this
-// file already uses for documentService/aiDocumentChunkRepository.
-function mockAiConfig(t, embedImpl) {
-  const adapterStub = { embed: embedImpl };
-  const embedMock = t.mock.method(adapterStub, 'embed');
-  const getAiConfigMock = t.mock.method(configurationService, 'getAiConfig', async () => ({
-    provider: 'nim', config: {}, adapter: adapterStub,
-  }));
+// ADR-030 P0: documentSearchService now calls embeddingService.embed(texts,
+// opts) directly (no adapter/config indirection — see that file's own
+// "why this must be independent of a college's chat provider" comment),
+// so this mocks embeddingService.embed itself, same boundary
+// ai-tool-retrieval-service.test.js already mocks it at.
+function mockEmbedding(t, embedImpl, { model = 'nvidia/nv-embedqa-e5-v5' } = {}) {
+  const embedMock = t.mock.method(embeddingService, 'embed', embedImpl);
+  const currentModelMock = t.mock.method(embeddingService, 'currentModel', () => model);
   t.after(() => {
-    getAiConfigMock.mock.restore();
+    embedMock.mock.restore();
+    currentModelMock.mock.restore();
   });
   return embedMock;
 }
@@ -92,7 +90,7 @@ function mockIngestHappyPath(t, { document, embedResult } = {}) {
     },
     buffer: Buffer.from('hello world, this is a real document body.'),
   }));
-  const embedMock = mockAiConfig(t, async () => embedResult || [[0.1, 0.2, 0.3]]);
+  const embedMock = mockEmbedding(t, async () => embedResult || [[0.1, 0.2, 0.3]]);
   const createMock = t.mock.method(aiDocumentChunkRepository, 'create', async (client, fields) => ({ id: 'chunk-1', ...fields }));
   const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
   t.after(() => {
@@ -158,7 +156,7 @@ test('documentSearchService.ingestDocument', async (t) => {
     assert.equal(pagesArg[2].toString(), 'page-3-png-bytes');
 
     assert.equal(embedMock.mock.callCount(), 1);
-    const [, texts] = embedMock.mock.calls[0].arguments;
+    const [texts] = embedMock.mock.calls[0].arguments;
     assert.deepEqual(texts, ['[text from page-1-png-bytes]\n\n[text from page-2-png-bytes]\n\n[text from page-3-png-bytes]']);
     assert.equal(createMock.mock.callCount(), 1);
     assert.equal(auditMock.mock.calls[0].arguments[1].action, 'ai_document_ingested');
@@ -214,7 +212,7 @@ test('documentSearchService.ingestDocument', async (t) => {
 
     assert.equal(ocrMock.mock.callCount(), 1);
     assert.equal(embedMock.mock.callCount(), 1);
-    const [, texts] = embedMock.mock.calls[0].arguments;
+    const [texts] = embedMock.mock.calls[0].arguments;
     assert.deepEqual(texts, ['text extracted from the image by Tesseract']);
     assert.equal(createMock.mock.callCount(), 1);
     assert.equal(auditMock.mock.calls[0].arguments[1].action, 'ai_document_ingested');
@@ -244,7 +242,7 @@ test('documentSearchService.ingestDocument', async (t) => {
     const result = await documentSearchService.ingestDocument({}, 'doc-1', { actorUserId: 'u1' });
 
     assert.equal(embedMock.mock.callCount(), 1);
-    const [, texts, options] = embedMock.mock.calls[0].arguments;
+    const [texts, options] = embedMock.mock.calls[0].arguments;
     assert.deepEqual(texts, ['hello world, this is a real document body.']);
     assert.equal(options.inputType, 'passage');
 
@@ -254,6 +252,7 @@ test('documentSearchService.ingestDocument', async (t) => {
     assert.equal(fields.documentId, 'doc-1');
     assert.equal(fields.classification, 'Confidential');
     assert.deepEqual(fields.embedding, [0.1, 0.2, 0.3]);
+    assert.equal(fields.model, 'nvidia/nv-embedqa-e5-v5', 'embedding model provenance (ADR-030 P0) is recorded on every chunk');
 
     assert.equal(auditMock.mock.callCount(), 1);
     const [, auditFields] = auditMock.mock.calls[0].arguments;
@@ -266,7 +265,7 @@ test('documentSearchService.ingestDocument', async (t) => {
 
 test('documentSearchService.searchDocuments', async (t) => {
   await t.test('rejects a missing/empty query before any embedding call', async () => {
-    const embedMock = mockAiConfig(t, async () => [[0.1]]);
+    const embedMock = mockEmbedding(t, async () => [[0.1]]);
 
     await assert.rejects(
       () => documentSearchService.searchDocuments({}, { query: '' }, { role: 'principal', collegeId: 'college-a' }),
@@ -276,7 +275,7 @@ test('documentSearchService.searchDocuments', async (t) => {
   });
 
   await t.test('embeds the query as a query (not a passage) and scopes the repository search to the actor tenant/classifications/visible classes', async () => {
-    const embedMock = mockAiConfig(t, async () => [[0.4, 0.5, 0.6]]);
+    const embedMock = mockEmbedding(t, async () => [[0.4, 0.5, 0.6]]);
     const visibleClassIdsMock = t.mock.method(visibilityService, 'getVisibleClassIds', async () => ['class-1']);
     const searchMock = t.mock.method(aiDocumentChunkRepository, 'search', async () => [
       {
@@ -295,7 +294,7 @@ test('documentSearchService.searchDocuments', async (t) => {
     );
 
     assert.equal(embedMock.mock.callCount(), 1);
-    const [, , embedOptions] = embedMock.mock.calls[0].arguments;
+    const [, embedOptions] = embedMock.mock.calls[0].arguments;
     assert.equal(embedOptions.inputType, 'query');
 
     assert.equal(visibleClassIdsMock.mock.callCount(), 1);
@@ -310,13 +309,14 @@ test('documentSearchService.searchDocuments', async (t) => {
     assert.deepEqual(searchArgs.classifications, ['Internal', 'Confidential']);
     assert.deepEqual(searchArgs.embedding, [0.4, 0.5, 0.6]);
     assert.deepEqual(searchArgs.classIds, ['class-1']);
+    assert.equal(searchArgs.model, 'nvidia/nv-embedqa-e5-v5', 'the search is scoped to the current embedding model (ADR-030 P0), never mixed across models');
 
     assert.equal(results.length, 1);
     assert.equal(results[0].chunkText, 'a chunk');
   });
 
   await t.test('a principal (unrestricted) gets null classIds, not a filtered list', async () => {
-    mockAiConfig(t, async () => [[0.1, 0.2]]);
+    mockEmbedding(t, async () => [[0.1, 0.2]]);
     const visibleClassIdsMock = t.mock.method(visibilityService, 'getVisibleClassIds', async () => null);
     const searchMock = t.mock.method(aiDocumentChunkRepository, 'search', async () => []);
     t.after(() => {
@@ -335,7 +335,7 @@ test('documentSearchService.searchDocuments', async (t) => {
   });
 
   await t.test('an unrecognized role gets no permitted classifications, so the repository is called with an empty list', async () => {
-    mockAiConfig(t, async () => [[0.1]]);
+    mockEmbedding(t, async () => [[0.1]]);
     const visibleClassIdsMock = t.mock.method(visibilityService, 'getVisibleClassIds', async () => []);
     const searchMock = t.mock.method(aiDocumentChunkRepository, 'search', async () => []);
     t.after(() => {
@@ -363,7 +363,7 @@ test('documentSearchService.searchDocuments', async (t) => {
   // the ActorContext's own tenantId/role fields, not actor.collegeId/
   // actor.userId (which an ActorContext doesn't have).
   await t.test('an ActorContext-shaped actor (Institutional Class Tutor Position Account) is forwarded unchanged to getVisibleClassIds, scoped to the position\'s own class only', async () => {
-    mockAiConfig(t, async () => [[0.2]]);
+    mockEmbedding(t, async () => [[0.2]]);
     const visibleClassIdsMock = t.mock.method(visibilityService, 'getVisibleClassIds', async () => ['class-1']);
     const searchMock = t.mock.method(aiDocumentChunkRepository, 'search', async () => []);
     t.after(() => {

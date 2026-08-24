@@ -37,6 +37,7 @@ const { GoogleAuth } = require('google-auth-library');
 const { LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError } = require('./errors');
 const { withRetry } = require('./retry');
 const { iterateSseLines } = require('./sse');
+const { flattenToPrompts } = require('../aiContextAssembly');
 
 const REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_BASE_URL = 'https://api.anthropic.com';
@@ -195,7 +196,8 @@ async function postJson(cfg, bodyFields) {
 // Token/cost telemetry (P1.1) — see nim.js's own comment for the shared
 // reasoning. Claude's usage block uses input_tokens/output_tokens, not
 // the OpenAI-compatible prompt_tokens/completion_tokens naming.
-async function completeWithMeta(cfg, { systemPrompt, userPrompt, images } = {}) {
+async function completeWithMeta(cfg, arcnaveContext) {
+  const { systemPrompt, userPrompt, images } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey/projectId)');
   }
@@ -240,7 +242,8 @@ async function complete(cfg, prompts) {
 // proceeds) — the LAST message_delta's value is the final total, so this
 // simply keeps overwriting rather than summing. Never called if neither
 // event carried a usage block, rather than reporting a fabricated zero.
-async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, onDelta, onUsage) {
+async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
+  const { systemPrompt, userPrompt, images } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey/projectId)');
   }
@@ -287,7 +290,10 @@ async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, on
   return full;
 }
 
-async function completeWithTools(cfg, { systemPrompt, userPrompt, tools, images } = {}) {
+async function completeWithTools(cfg, arcnaveContext) {
+  const {
+    systemPrompt, userPrompt, tools, images,
+  } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey/projectId)');
   }
@@ -318,14 +324,23 @@ async function completeWithTools(cfg, { systemPrompt, userPrompt, tools, images 
   const blocks = Array.isArray(payload && payload.content) ? payload.content : [];
   const toolUse = blocks.find((b) => b.type === 'tool_use');
   if (toolUse) {
-    return { type: 'tool_call', toolName: toolUse.name, arguments: toolUse.input || {} };
+    // ADR-030 P0 telemetry — see gemini.js's own equivalent comment.
+    const usage = payload && payload.usage
+      ? { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens }
+      : undefined;
+    return {
+      type: 'tool_call', toolName: toolUse.name, arguments: toolUse.input || {}, usage,
+    };
   }
 
   const textBlock = blocks.find((b) => b.type === 'text');
   if (!textBlock) {
     throw new LlmRequestError('Claude response contained neither a tool_use block nor a text block');
   }
-  return { type: 'answer', text: textBlock.text };
+  const usage = payload && payload.usage
+    ? { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens }
+    : undefined;
+  return { type: 'answer', text: textBlock.text, usage };
 }
 
 async function embed() {

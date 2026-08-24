@@ -22,6 +22,7 @@
 const { LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError } = require('./errors');
 const { withRetry } = require('./retry');
 const { iterateSseLines } = require('./sse');
+const { flattenToPrompts } = require('../aiContextAssembly');
 
 const REQUEST_TIMEOUT_MS = 30000;
 // Matches claude.js's own MAX_TOKENS — this adapter previously sent no
@@ -74,7 +75,8 @@ async function postJson(cfg, path, body) {
 
 // Token/cost telemetry (P1.1) — see nim.js's own comment; same shape,
 // same OpenAI-compatible `usage` block.
-async function completeWithMeta(cfg, { systemPrompt, userPrompt }) {
+async function completeWithMeta(cfg, arcnaveContext) {
+  const { systemPrompt, userPrompt } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no self-hosted LLM provider is configured for this college (missing baseUrl)');
   }
@@ -117,7 +119,8 @@ async function complete(cfg, prompts) {
 // adapter's own header comment already carries) — a deployment that
 // ignores the unrecognized `stream_options` field simply never calls
 // onUsage, degrading to "no usage known" rather than an error.
-async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta, onUsage) {
+async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
+  const { systemPrompt, userPrompt } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no self-hosted LLM provider is configured for this college (missing baseUrl)');
   }
@@ -182,7 +185,8 @@ async function completeStream(cfg, { systemPrompt, userPrompt }, onDelta, onUsag
   return full;
 }
 
-async function completeWithTools(cfg, { systemPrompt, userPrompt, tools }) {
+async function completeWithTools(cfg, arcnaveContext) {
+  const { systemPrompt, userPrompt, tools } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no self-hosted LLM provider is configured for this college (missing baseUrl)');
   }
@@ -217,13 +221,22 @@ async function completeWithTools(cfg, { systemPrompt, userPrompt, tools }) {
     } catch (err) {
       throw new LlmRequestError(`self-hosted LLM tool call arguments were not valid JSON: ${err.message}`);
     }
-    return { type: 'tool_call', toolName: fn.name, arguments: toolArguments };
+    // ADR-030 P0 telemetry — see gemini.js's own equivalent comment.
+    const usage = payload && payload.usage
+      ? { inputTokens: payload.usage.prompt_tokens, outputTokens: payload.usage.completion_tokens }
+      : undefined;
+    return {
+      type: 'tool_call', toolName: fn.name, arguments: toolArguments, usage,
+    };
   }
 
   if (typeof message.content !== 'string') {
     throw new LlmRequestError('self-hosted LLM provider response contained neither a tool call nor message content');
   }
-  return { type: 'answer', text: message.content };
+  const usage = payload && payload.usage
+    ? { inputTokens: payload.usage.prompt_tokens, outputTokens: payload.usage.completion_tokens }
+    : undefined;
+  return { type: 'answer', text: message.content, usage };
 }
 
 async function embed(cfg, texts, { inputType } = {}) {

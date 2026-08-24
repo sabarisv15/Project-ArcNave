@@ -314,13 +314,25 @@ function toolKeywordOverlap(tool, questionWords) {
 }
 
 // Ranks `tools` (already role-filtered) by keyword overlap with
-// `question` and keeps at most RANK_CAP, but only ever truncates the
-// zero-overlap tail — see the file comment above for why a hard
-// exclusion of an overlapping tool is never allowed here.
+// `question` and keeps at most RANK_CAP. Round 32: this is now only
+// ever the LEXICAL FALLBACK tier of aiToolRetrievalService.js, used
+// when embeddingService.isAvailable() is false — the primary path for
+// a capable college is semantic retrieval, which has no zero-keywords
+// blind spot at all ("hi" still embeds to something comparable). Both
+// "nothing to rank on" cases below used to return the full, unfiltered
+// list (a real, measured ~13K-token cost for a bare "hi" on a 69-tool
+// role) — that fail-open behavior is exactly what "never send all
+// tools just because retrieval failed" (this round's own requirement)
+// rules out. RANK_CAP is now a hard ceiling in every branch, not just
+// the ones with something to rank; the tradeoff the original comment
+// flagged (a hard exclusion could in theory drop a tool a vague
+// question actually needed) is accepted here as this tier's known
+// limitation, not this function's problem to solve alone — a capable
+// college never reaches this path at all.
 function filterToolsByRelevance(tools, question) {
   if (tools.length <= RANK_CAP) return tools;
   const questionWords = new Set(significantWords(question));
-  if (questionWords.size === 0) return tools;
+  if (questionWords.size === 0) return tools.slice(0, RANK_CAP);
 
   const ranked = tools
     .map((tool) => ({ tool, overlap: toolKeywordOverlap(tool, questionWords) }))
@@ -329,9 +341,9 @@ function filterToolsByRelevance(tools, question) {
   const overlapping = ranked.filter((r) => r.overlap > 0);
   // No tool's own name/description shares a single word with the
   // question — that's not evidence any tool is irrelevant, it just
-  // means this heuristic found nothing to rank on. Same fallback as
-  // the qWords.size === 0 case above.
-  if (overlapping.length === 0) return tools;
+  // means this heuristic found nothing to rank on. Same capped
+  // fallback as the qWords.size === 0 case above.
+  if (overlapping.length === 0) return tools.slice(0, RANK_CAP);
   if (overlapping.length >= RANK_CAP) return overlapping.slice(0, RANK_CAP).map((r) => r.tool);
 
   const zeroOverlapFill = ranked.filter((r) => r.overlap === 0).slice(0, RANK_CAP - overlapping.length);

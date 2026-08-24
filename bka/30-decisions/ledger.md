@@ -60,6 +60,7 @@ traceability lives here.
 | [ADL-046](#adl-046) | New AI capability: opt-in image generation (L2) | Resolved — pending implementation |
 | [ADL-047](#adl-047) | Conversation history: character budget replaces flat message-count cap | Resolved — implemented |
 | [ADL-048](#adl-048) | Per-message visible token usage, captured on the streaming path | Resolved — implemented |
+| [ADL-049](#adl-049) | ARCNAVE Context Architecture — structured context replaces flat prompt strings | Resolved — pending implementation |
 
 ---
 
@@ -2568,3 +2569,121 @@ the usage-bearing final event arrived, or Gemini's own discarded
 empty-thinking-budget retry attempts (only the attempt that actually
 `sawAnyText` ever reports usage). `UsageLine` (`ChatMessage.jsx`) renders
 nothing in every one of these cases rather than a placeholder.
+
+---
+
+## ADL-049
+
+### ARCNAVE Context Architecture — structured context replaces flat prompt strings
+
+**Decision.** `aiService.js` stops building a flat `{systemPrompt,
+userPrompt, tools, images}` string pair and instead builds an internal
+`ARCNAVE Context`: an ordered list of segments, each tagged `static` /
+`conversation-scoped` / `turn-scoped` / `volatile`, plus a fingerprint (hash)
+of the `static` + `conversation-scoped` segments for cache-identity
+purposes only (never caching logic itself, which stays entirely inside each
+provider adapter). `AGENT_SYSTEM_PROMPT` and `CONVERSATIONAL_POLICY` — two
+undifferentiated ~9,162-char blobs sent on every call regardless of
+relevance — are replaced by a small, fixed, enumerated, **monotonic**
+module set (`CORE`, `CONTINUITY`, `TOOL_SELECTION`, `PLAN`, `FILE`,
+`ARTIFACT`) assembled by a pure, synchronous function of already-known
+structural state, never message semantics and never an LLM classifier call.
+Turn-specific guidance (tool-result reporting style, ₹ formatting, scope-
+substitution disclosure, image-unavailable note, emotional-register
+guidance) moves out of the system prompt entirely, into the message stream
+attached to its own turn. Provider-specific behavioral corrections (already
+real and already in the code — see Rationale) become a small, bounded,
+optional per-adapter addendum, never an `if (provider === 'x')` branch
+inside a shared policy module. Full text: [ADR-030](adr-register.md#adr-030).
+
+**Superseded position.** None directly. `AGENT_SYSTEM_PROMPT` and
+`CONVERSATIONAL_POLICY` (introduced across earlier rounds — see their own
+in-code comments in `aiService.js` at the lines cited below) remain in force
+unchanged until P1 of this ADR's phasing executes; this entry records the
+target architecture and the sequencing to reach it, not an immediate code
+change.
+
+**Rationale.** Triggered by measuring a fresh, history-free `"hi"` at
+~2,387 input tokens after semantic tool retrieval (round 32,
+[ADL-041](#adl-041) et seq.) had already fixed the larger, earlier all-69-
+tools-sent defect. Tracing the remainder found it was almost entirely
+`identityBlock + AGENT_SYSTEM_PROMPT + CONVERSATIONAL_POLICY`
+(`aiService.js` ~9,162 chars ≈ 2,300 tokens), sent unconditionally on every
+call. Further review found two things that outweigh the token count itself:
+(1) `identityBlock` (per-user/per-college, `aiActorContext.js`) is
+concatenated *before* the static policy text at `aiService.js`'s decision-
+call site (~line 1598-1600) and general-chat site (~line 1486-1488) — this
+breaks prefix-cache eligibility for any provider's caching mechanism
+immediately, regardless of prompt size, and is fixed for free by reordering
+text with no behavior change (P0 of the phasing); (2) the tool-selection
+"decision" call and the post-tool "answer" call
+(`aiService.js` ~line 1608 and ~line 1443) are independent one-shot
+requests, each carrying its own full copy of `CONVERSATIONAL_POLICY` and the
+serialized history hint (`buildHistoryHint`, `DEFAULT_HISTORY_CHAR_BUDGET =
+100_000` chars ≈ 23,000 tokens) — a larger, duplicated-context cost on every
+real tool turn than the `"hi"` case that prompted the review, forced by the
+adapter interface only ever accepting one `systemPrompt`/`userPrompt` pair
+rather than a real conversation/tool-loop structure. Modularizing the
+policy (rather than only shortening it) is chosen over prompt compression
+alone because every clause in the current two constants is a fix for a
+real, previously live-caught failure — documented in `aiService.js`'s own
+comments: a tool-happy `meta/llama-3.1-8b-instruct` calling
+`get_college_profile` for "capital of France" (~line 69); Gemini
+self-identifying as "I am Gemini... built by Google" (~line 78); two vague
+messages in a row producing the same capability-list greeting twice
+(~line 131); `update_artifact_content` never getting called without
+explicit naming, chat text alone never actually updating the artifact
+(~line 274). Deleting words risks silently reintroducing any of these;
+gating a rule on the state where it's actually needed does not. An LLM
+classification step ("is this a tool request?") before policy assembly was
+considered and rejected: every predicate policy assembly needs
+(`historyHint !== ''`, `tools.length` `>0`/`>=2`, images/documents present,
+`focusContext`/`projectContext` present, call stage, tool L1/L2/L3 level)
+is already known deterministically before any model call. Policy selection
+via embedding/semantic retrieval — the same mechanism that fixed tool
+selection — was also considered and rejected as a false analogy: ~69 tools
+vs. ~8 policy modules, and a missed tool produces a visible "I can't do
+that" while a missed policy module produces a silent behavioral regression
+found in production, not at request time.
+
+**Affected artefacts.** `aiService.js` (`AGENT_SYSTEM_PROMPT`,
+`CONVERSATIONAL_POLICY`, `GENERAL_CHAT_SYSTEM_PROMPT`,
+`TOOL_RESULT_ANSWER_SYSTEM_PROMPT`, `buildHistoryHint`,
+`buildPlanMetaTool`/`PLAN_TOOL_NAME`, `askGeneralChat`, `askAgent`, and the
+decision/answer call sites — full rewrite across P1/P2 of the phasing, not
+this entry); `aiProviders/{claude,gemini,openai,nim,selfHosted}.js` and
+`aiProviders/index.js` (native per-adapter request builders, P2b — all five
+already implement `completeWithMeta`/`completeStream`/`completeWithTools`
+today, so this is an upgrade to the existing seam, not a new one);
+`aiPromptSafetyLayer.js` (unaffected — already structural, not prompt-only,
+per its own file comment); `documentSearchService.js` (~line 226, ~line
+293 — folded into P0 as a correctness fix, not later optimization: still
+resolves embeddings via the chat provider's own adapter instead of the
+already-built `embeddingService.js`, so a college on an adapter with no
+`embed()` silently loses document search); `ai_document_chunks` and
+`ai_tool_embeddings` migrations (both `vector(1024)` hard-coded, no `model`
+column — also folded into P0, since a provider/model change today would
+silently leave old rows in the wrong vector space with no detection,
+`ensureEmbeddings`'s self-healing backfill in `aiToolRetrievalService.js`
+checking tool-name existence only).
+
+**Migration impact.** None in this entry — P0 is text-reorder plus
+telemetry plus a `model` column addition (additive), P1/P2 are code-only
+restructuring of the same request shape, no schema change beyond the P0
+column. Full schema impact, if any, to be recorded against whichever
+phase's own ledger entry introduces it.
+
+**Implementation notes.** Phasing is deliberately incremental, not a single
+migration: P0 (reorder + telemetry + plan-tool gating + the two
+correctness fixes) → P0.5 (assembly tests + provider behavioral suite,
+required before any policy text is rewritten) → P1 (modularize, rewrite
+only `CORE`) → P2a (introduce the context representation, adapters flatten
+back to today's shape — a pure refactor, existing tests in
+`backend/tests/ai-service.test.js`/`ai.test.js` should pass unchanged) →
+P2b (native builders, Gemini first) → P2c (real tool-use loop, eliminating
+the duplicated decision/answer context) → P3 (provider-specific caching,
+only after P0's telemetry shows what a clean prefix buys — not scoped as a
+project until measured). P0's reorder step alone will show no measured
+token/cost improvement by itself — it is an enabling change for P3, not a
+savings, and should not be judged or reverted on that basis. Session detail
+and exact next action: [`70-checkpoint/CURRENT-STATE.md`](../70-checkpoint/CURRENT-STATE.md).

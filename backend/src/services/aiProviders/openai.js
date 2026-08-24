@@ -20,6 +20,7 @@
 const { LlmNotConfiguredError, LlmRequestError } = require('./errors');
 const { withRetry } = require('./retry');
 const { iterateSseLines } = require('./sse');
+const { flattenToPrompts } = require('../aiContextAssembly');
 
 const REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
@@ -93,7 +94,8 @@ function buildUserContent(userPrompt, images) {
 // shared reasoning. Same OpenAI-compatible `usage` block (prompt_tokens/
 // completion_tokens) nim.js/selfHosted.js already read, since this
 // adapter targets the real vendor those two imitate.
-async function completeWithMeta(cfg, { systemPrompt, userPrompt, images } = {}) {
+async function completeWithMeta(cfg, arcnaveContext) {
+  const { systemPrompt, userPrompt, images } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -132,7 +134,8 @@ async function complete(cfg, prompts) {
 // vendor those two imitate.
 // onUsage (optional, P1.6) — see nim.js's own comment for the shared
 // OpenAI-compatible `stream_options.include_usage` reasoning.
-async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, onDelta, onUsage) {
+async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
+  const { systemPrompt, userPrompt, images } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -197,7 +200,10 @@ async function completeStream(cfg, { systemPrompt, userPrompt, images } = {}, on
   return full;
 }
 
-async function completeWithTools(cfg, { systemPrompt, userPrompt, tools, images } = {}) {
+async function completeWithTools(cfg, arcnaveContext) {
+  const {
+    systemPrompt, userPrompt, tools, images,
+  } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -232,13 +238,22 @@ async function completeWithTools(cfg, { systemPrompt, userPrompt, tools, images 
     } catch (err) {
       throw new LlmRequestError(`OpenAI tool call arguments were not valid JSON: ${err.message}`);
     }
-    return { type: 'tool_call', toolName: fn.name, arguments: toolArguments };
+    // ADR-030 P0 telemetry — see gemini.js's own equivalent comment.
+    const usage = payload && payload.usage
+      ? { inputTokens: payload.usage.prompt_tokens, outputTokens: payload.usage.completion_tokens }
+      : undefined;
+    return {
+      type: 'tool_call', toolName: fn.name, arguments: toolArguments, usage,
+    };
   }
 
   if (typeof message.content !== 'string') {
     throw new LlmRequestError('OpenAI response contained neither a tool call nor message content');
   }
-  return { type: 'answer', text: message.content };
+  const usage = payload && payload.usage
+    ? { inputTokens: payload.usage.prompt_tokens, outputTokens: payload.usage.completion_tokens }
+    : undefined;
+  return { type: 'answer', text: message.content, usage };
 }
 
 // OpenAI's real embeddings endpoint has no input_type/asymmetric

@@ -249,4 +249,18 @@ module.exports = {
   // college with no per-college override use Gemini, with no DB write
   // required.
   defaultAiProvider: process.env.DEFAULT_AI_PROVIDER || 'nim',
+
+  // The embedding provider — deliberately a SEPARATE choice from
+  // defaultAiProvider/a college's own chat provider (embeddingService.js's
+  // own file comment has the full reasoning): tool retrieval and
+  // document search both need embeddings regardless of which provider a
+  // college picked for chat, and Claude has no embed() at all (see
+  // claude.js's own comment) — tying embeddings to the chat provider
+  // would silently break both features for any Claude-configured
+  // college. Defaults to 'nim', which already ships a real embedding
+  // model default (nim.embeddingModel above) even with zero env
+  // configuration beyond NIM_API_KEY. This is a single platform-wide
+  // choice, never a per-college override — embeddings are retrieval
+  // infrastructure, not a tenant-facing customization.
+  embeddingProvider: process.env.EMBEDDING_PROVIDER || 'nim',
 };

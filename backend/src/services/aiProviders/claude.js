@@ -193,9 +193,9 @@ async function postJson(cfg, bodyFields) {
   }
 }
 
-// Token/cost telemetry (P1.1) — see nim.js's own comment for the shared
-// reasoning. Claude's usage block uses input_tokens/output_tokens, not
-// the OpenAI-compatible prompt_tokens/completion_tokens naming.
+// Token/cost telemetry (P1.1) — see openai.js's own comment for the
+// shared reasoning. Claude's usage block uses input_tokens/output_tokens,
+// not the OpenAI-compatible prompt_tokens/completion_tokens naming.
 async function completeWithMeta(cfg, arcnaveContext) {
   const { systemPrompt, userPrompt, images } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
@@ -225,7 +225,7 @@ async function complete(cfg, prompts) {
   return text;
 }
 
-// Streaming variant of complete() (P0.5) — see nim.js's own comment
+// Streaming variant of complete() (P0.5) — see openai.js's own comment
 // for the shared reasoning (only the final answer streams, retries
 // only cover the initial connection). Anthropic's Messages API SSE
 // sends several named event types (message_start, content_block_start/

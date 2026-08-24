@@ -2,7 +2,7 @@
 
 // Shared Server-Sent-Events line reader for the streaming variant of
 // each adapter's complete() (P0.5 of the AI capability roadmap,
-// CHECKPOINT.md). Every vendor here (NIM/self-hosted's OpenAI-
+// CHECKPOINT.md). Every vendor here (OpenAI/self-hosted's OpenAI-
 // compatible SSE, Claude's SSE, Gemini's `alt=sse`) sends the same
 // wire framing — lines starting with `data: `, a blank line between
 // events, a final `data: [DONE]` sentinel for the OpenAI-compatible
@@ -24,7 +24,7 @@
 // silently breaking `iterateSseLines` against any real network response:
 // no `data:` line was ever found (no real newline character exists in a
 // comma-joined digit string), so every real streaming call across every
-// adapter (this file is shared by NIM/self-hosted/Claude/Gemini/OpenAI)
+// adapter (this file is shared by self-hosted/Claude/Gemini/OpenAI)
 // produced zero deltas and an empty final answer. A single TextDecoder
 // reused across the whole iteration (not `new TextDecoder()` per chunk)
 // is also what correctly reassembles a multi-byte UTF-8 character split

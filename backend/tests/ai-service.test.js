@@ -21,7 +21,7 @@ const aiToolRegistry = require('../src/services/aiToolRegistry');
 const aiContextBuilder = require('../src/services/aiContextBuilder');
 const aiPromptSafetyLayer = require('../src/services/aiPromptSafetyLayer');
 const aiService = require('../src/services/aiService');
-const nimAdapter = require('../src/services/aiProviders/nim');
+const openaiAdapter = require('../src/services/aiProviders/openai');
 const config = require('../src/config');
 const notificationRepository = require('../src/repositories/notificationRepository');
 const workflowService = require('../src/services/workflowService');
@@ -37,6 +37,7 @@ const documentTextExtractionService = require('../src/services/documentTextExtra
 const documentAnalysisService = require('../src/services/documentAnalysisService');
 const configurationService = require('../src/services/configurationService');
 const claudeAdapter = require('../src/services/aiProviders/claude');
+const selfHostedAdapter = require('../src/services/aiProviders/selfHosted');
 const embeddingService = require('../src/services/embeddingService');
 const { contextFromFlatPrompts } = require('../src/services/aiContextAssembly');
 
@@ -805,7 +806,7 @@ test('aiService.invokeTool: provider/model, when the caller knows them, are reco
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
   await aiService.invokeTool(client, 'get_college_profile', {}, {
-    identityContext, provider: 'nim', model: 'test-model-x',
+    identityContext, provider: 'openai', model: 'test-model-x',
   });
 
   const invoked = client.queries
@@ -813,7 +814,7 @@ test('aiService.invokeTool: provider/model, when the caller knows them, are reco
     .map((q) => ({ action: q.params[2], metadata: JSON.parse(q.params[5]) }))
     .filter((row) => row.action === 'ai_tool_invoked');
   assert.equal(invoked.length, 1);
-  assert.equal(invoked[0].metadata.provider, 'nim');
+  assert.equal(invoked[0].metadata.provider, 'openai');
   assert.equal(invoked[0].metadata.model, 'test-model-x');
 });
 
@@ -872,26 +873,32 @@ test('aiPromptSafetyLayer.renderForLlm: frames the sanitized context + question 
   assert.ok(userPrompt.indexOf(aiPromptSafetyLayer.BOUNDARY_END) < userPrompt.indexOf('Question:'));
 });
 
-// --- llmProvider (mocked fetch — no real network call, no NIM quota spent) ---
+// --- llmProvider (mocked fetch — no real network call) ---
 
 // Every caller of this helper assumes the global fallback provider (no
 // college_ai_config row, exercised via fakeClient's default {rows:[]})
-// resolves to nim — that's what toggling config.nim.apiKey is FOR.
-// Force config.defaultAiProvider to 'nim' for the callback's duration
-// too, regardless of a real dev environment's own DEFAULT_AI_PROVIDER
-// (e.g. a local .env.local.sh set to 'gemini' to run the dev server
-// against a real key) — a real Gemini call escaping into these tests
-// was caught live in ai.test.js: toggling config.nim.apiKey had no
-// effect once the fallback resolved to gemini instead.
-function withNimConfig(apiKey, fn) {
-  const original = { ...config.nim };
+// resolves to openai — that's what toggling config.openai.apiKey is
+// FOR. Force config.defaultAiProvider to 'openai' for the callback's
+// duration too, regardless of a real dev environment's own
+// DEFAULT_AI_PROVIDER (e.g. a local .env.local.sh set to 'gemini' to
+// run the dev server against a real key) — a real live-provider call
+// escaping into these tests was caught live in ai.test.js once before:
+// toggling only the provider-specific apiKey had no effect once the
+// fallback resolved to a different provider entirely. openai (not
+// gemini/claude) is this file's fixture provider specifically because
+// it shares the same simple, mockable OpenAI-compatible request/
+// response shape nim used to (nim itself is removed — see ADL-051) —
+// gemini/claude's own structurally different wire shapes are exercised
+// directly in ai-providers.test.js/ai-providers-streaming.test.js, not
+// duplicated here.
+function withOpenAiConfig(apiKey, fn) {
+  const original = { ...config.openai };
   const originalDefaultAiProvider = config.defaultAiProvider;
-  config.nim.apiKey = apiKey;
-  config.defaultAiProvider = 'nim';
+  config.openai.apiKey = apiKey;
+  config.defaultAiProvider = 'openai';
   return fn().finally(() => {
-    config.nim.apiKey = original.apiKey;
-    config.nim.baseUrl = original.baseUrl;
-    config.nim.model = original.model;
+    config.openai.apiKey = original.apiKey;
+    config.openai.model = original.model;
     config.defaultAiProvider = originalDefaultAiProvider;
   });
 }
@@ -901,62 +908,6 @@ function withMockFetch(mockFetch, fn) {
   global.fetch = mockFetch;
   return fn().finally(() => { global.fetch = original; });
 }
-
-test('nim adapter.isConfigured/complete: unconfigured (no apiKey) throws LlmNotConfiguredError, no fetch attempted', async () => {
-  await withNimConfig(null, async () => {
-    assert.equal(nimAdapter.isConfigured(config.nim), false);
-    let fetchCalled = false;
-    await withMockFetch(async () => { fetchCalled = true; }, async () => {
-      await assert.rejects(
-        () => nimAdapter.complete(config.nim, contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' })),
-        nimAdapter.LlmNotConfiguredError,
-      );
-    });
-    assert.equal(fetchCalled, false);
-  });
-});
-
-test('nim adapter.complete: when configured, sends the right OpenAI-compatible request shape and parses choices[0].message.content', async () => {
-  await withNimConfig('test-nim-key', async () => {
-    assert.equal(nimAdapter.isConfigured(config.nim), true);
-    let capturedUrl;
-    let capturedOptions;
-    await withMockFetch(async (url, options) => {
-      capturedUrl = url;
-      capturedOptions = options;
-      return {
-        ok: true,
-        json: async () => ({ choices: [{ message: { content: 'mocked answer' } }] }),
-      };
-    }, async () => {
-      const answer = await nimAdapter.complete(config.nim, contextFromFlatPrompts({ systemPrompt: 'system text', userPrompt: 'user text' }));
-      assert.equal(answer, 'mocked answer');
-    });
-
-    assert.match(capturedUrl, /\/chat\/completions$/);
-    assert.equal(capturedOptions.headers.authorization, 'Bearer test-nim-key');
-    const body = JSON.parse(capturedOptions.body);
-    assert.deepEqual(body.messages, [
-      { role: 'system', content: 'system text' },
-      { role: 'user', content: 'user text' },
-    ]);
-  });
-});
-
-test('nim adapter.complete: a non-ok response throws LlmRequestError, not a silent failure', async () => {
-  await withNimConfig('test-nim-key', async () => {
-    await withMockFetch(async () => ({
-      ok: false,
-      status: 500,
-      text: async () => 'upstream broke',
-    }), async () => {
-      await assert.rejects(
-        () => nimAdapter.complete(config.nim, contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' })),
-        nimAdapter.LlmRequestError,
-      );
-    });
-  });
-});
 
 // --- aiService.askAboutTool ---
 
@@ -974,7 +925,7 @@ test('aiService.askAboutTool: runs the full pipeline, calls the (mocked) LLM, an
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async () => ({
       ok: true,
       json: async () => ({ choices: [{ message: { content: 'the mocked LLM answer' } }] }),
@@ -994,10 +945,10 @@ test('aiService.askAboutTool: an unconfigured LLM provider throws LlmNotConfigur
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
-  await withNimConfig(null, async () => {
+  await withOpenAiConfig(null, async () => {
     await assert.rejects(
       () => aiService.askAboutTool(client, 'get_college_profile', {}, 'What college is this?', { identityContext }),
-      nimAdapter.LlmNotConfiguredError,
+      openaiAdapter.LlmNotConfiguredError,
     );
   });
 
@@ -1010,7 +961,7 @@ test('aiService.askAboutTool: an unconfigured LLM provider throws LlmNotConfigur
 
 // --- aiService.askAgent (tool-selection routing) ---
 // All mocked at the fetch layer (OpenAI-compatible response shapes) —
-// no real network call, no NIM quota spent.
+// no real network call, no API quota spent.
 
 function mockToolCallResponse(toolName, args = {}) {
   return {
@@ -1057,10 +1008,10 @@ test('aiService.askAgent: an empty/missing question throws AiServiceValidationEr
 test('aiService.askAgent: unconfigured LLM provider throws LlmNotConfiguredError, no tool ever runs', async () => {
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
-  await withNimConfig(null, async () => {
+  await withOpenAiConfig(null, async () => {
     await assert.rejects(
       () => aiService.askAgent(client, 'What college is this?', { identityContext }),
-      nimAdapter.LlmNotConfiguredError,
+      openaiAdapter.LlmNotConfiguredError,
     );
   });
   // Four queries ran before the LLM call itself failed: buildMemoryHint's
@@ -1081,7 +1032,7 @@ test('aiService.askAgent: the LLM picks the registered tool -> the same Policy G
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(sequentialMockFetch([
       mockToolCallResponse('get_college_profile', {}),
       mockAnswerResponse('This is ARCNAVE Demo College.'),
@@ -1105,7 +1056,7 @@ test('aiService.askAgent: the LLM picks a role it is NOT permitted to invoke -> 
   // 'staff' is not in get_college_profile's allowedRoles.
   const identityContext = { userId: 'u1', role: 'staff', collegeId: 'college-a' };
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async () => mockToolCallResponse('get_college_profile', {}), async () => {
       await assert.rejects(
         () => aiService.askAgent(client, 'What college is this?', { identityContext }),
@@ -1123,7 +1074,7 @@ test('aiService.askAgent: the LLM picks an unknown/hallucinated tool name -> a c
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async () => mockToolCallResponse('delete_all_students', {}), async () => {
       await assert.rejects(
         () => aiService.askAgent(client, 'Delete every student record', { identityContext }),
@@ -1159,7 +1110,7 @@ test('aiService.askAgent: the tool-selection call\'s system prompt instructs the
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
   let capturedBody;
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async (url, options) => {
       capturedBody = JSON.parse(options.body);
       return mockAnswerResponse('Could you clarify what you need help with?');
@@ -1179,7 +1130,7 @@ test('aiService.askAgent: a successful tool_call\'s follow-up answer call is ins
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
   const capturedBodies = [];
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async (url, options) => {
       capturedBodies.push(JSON.parse(options.body));
       return capturedBodies.length === 1
@@ -1207,7 +1158,7 @@ test('aiService.askAgent: the LLM picks no tool -> returns its direct answer, st
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async () => mockAnswerResponse('Campus is open 9am-5pm.'), async () => {
       const result = await aiService.askAgent(client, 'What are the campus hours?', { identityContext });
       assert.equal(result.toolUsed, null);
@@ -1238,7 +1189,7 @@ test('aiService.askAboutTool: when the provider returns a usage block, one ai_ll
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async () => ({
       ok: true,
       json: async () => ({
@@ -1253,8 +1204,8 @@ test('aiService.askAboutTool: when the provider returns a usage block, one ai_ll
   const llmCallRow = client.queries.find((q) => q.text.includes('INSERT INTO audit_log') && q.params[2] === 'ai_llm_call');
   assert.ok(llmCallRow, 'an ai_llm_call audit row must be written');
   const metadata = JSON.parse(llmCallRow.params[5]);
-  assert.equal(metadata.provider, 'nim');
-  assert.equal(metadata.model, config.nim.model);
+  assert.equal(metadata.provider, 'openai');
+  assert.equal(metadata.model, config.openai.model);
   assert.equal(metadata.purpose, 'tool_question');
   assert.equal(metadata.inputTokens, 120);
   assert.equal(metadata.outputTokens, 8);
@@ -1265,7 +1216,7 @@ test('aiService.askAboutTool: no usage block in the provider response -> ai_llm_
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async () => mockAnswerResponse('Campus is open 9am-5pm.'), async () => {
       await aiService.askAboutTool(client, 'get_college_profile', {}, 'What are the hours?', { identityContext });
     });
@@ -1288,7 +1239,7 @@ test('aiService.askAgent: history (short-session conversation memory) is threade
   ];
 
   let capturedBody;
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async (url, options) => {
       capturedBody = JSON.parse(options.body);
       return mockAnswerResponse('She has 92% attendance.');
@@ -1310,7 +1261,7 @@ test('aiService.askAgent: no history param -> prompt is unchanged from before (b
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
   let capturedBody;
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async (url, options) => {
       capturedBody = JSON.parse(options.body);
       return mockAnswerResponse('Campus is open 9am-5pm.');
@@ -1373,7 +1324,7 @@ test('aiService.askAgent: filterToolsByRelevance is applied before the tool-sele
   const fullCount = aiToolRegistry.listTools({ excludeHumanOnly: true, role: 'principal' }).length;
 
   let capturedBody;
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async (url, options) => {
       capturedBody = JSON.parse(options.body);
       return mockAnswerResponse('Fee collection is on track.');
@@ -1404,7 +1355,7 @@ test('aiService.askAgent: the plan meta-tool IS offered when 2+ tools are retrie
 
   let capturedBody;
   try {
-    await withNimConfig('test-nim-key', async () => {
+    await withOpenAiConfig('test-openai-key', async () => {
       await withMockFetch(async (url, options) => {
         capturedBody = JSON.parse(options.body);
         return mockAnswerResponse('Campus is open 9am-5pm.');
@@ -1429,7 +1380,7 @@ test('aiService.askAgent: the plan meta-tool is WITHHELD when fewer than 2 tools
     const relevanceMock = mock.method(aiToolRegistry, 'filterToolsByRelevance', (tools) => tools.slice(0, stubbedCount));
     let capturedBody;
     try {
-      await withNimConfig('test-nim-key', async () => {
+      await withOpenAiConfig('test-openai-key', async () => {
         await withMockFetch(async (url, options) => {
           capturedBody = JSON.parse(options.body);
           return mockAnswerResponse('Campus is open 9am-5pm.');
@@ -1464,7 +1415,7 @@ test("aiService.askAgent: mode 'general' (askGeneralChat) — identityBlock is a
   };
   let capturedBody;
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async (url, options) => {
       capturedBody = JSON.parse(options.body);
       return mockAnswerResponse('React is a JavaScript library for building user interfaces.');
@@ -1488,7 +1439,7 @@ test('aiService.askAgent: a successful single tool_call\'s follow-up answer (sum
   };
   const capturedBodies = [];
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async (url, options) => {
       capturedBodies.push(JSON.parse(options.body));
       return capturedBodies.length === 1
@@ -1518,7 +1469,7 @@ test('aiService.askAgent: a 2-step plan\'s combined synthesis (executeWorkflowPl
   const plan = { steps: [{ tool: 'get_college_profile' }, { tool: 'academic_class_timetable' }] };
   const capturedBodies = [];
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async (url, options) => {
       capturedBodies.push(JSON.parse(options.body));
       return capturedBodies.length === 1
@@ -1546,7 +1497,7 @@ test('aiService.askAgent: a 2-step plan runs both tools through the real Policy 
 
   const plan = { steps: [{ tool: 'get_college_profile' }, { tool: 'academic_class_timetable' }] };
   let synthesisCallCount = 0;
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(sequentialMockFetch([
       mockToolCallResponse('run_workflow_plan', plan),
       { ok: true, json: async () => { synthesisCallCount += 1; return { choices: [{ message: { content: 'Here is your combined report.' } }] }; } },
@@ -1581,7 +1532,7 @@ test('aiService.askAgent: the 5th onStep callback fires once, with the real tool
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
   const steps = [];
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(sequentialMockFetch([
       mockToolCallResponse('get_college_profile', {}),
       mockAnswerResponse('This is ARCNAVE Demo College.'),
@@ -1611,7 +1562,7 @@ test('aiService.askAgent: onStep fires one event per plan step, in order, before
   const plan = { steps: [{ tool: 'get_college_profile' }, { tool: 'academic_class_timetable' }] };
   const steps = [];
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(sequentialMockFetch([
       mockToolCallResponse('run_workflow_plan', plan),
       mockAnswerResponse('Here is your combined report.'),
@@ -1646,7 +1597,7 @@ test('aiService.askAgent: a plan step naming a tool never offered to the LLM (ro
   const identityContext = { userId: 'u1', role: 'staff', collegeId: 'college-a' };
 
   const plan = { steps: [{ tool: 'academic_class_timetable' }, { tool: 'get_college_profile' }] };
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async () => mockToolCallResponse('run_workflow_plan', plan), async () => {
       await assert.rejects(
         () => aiService.askAgent(client, 'What is our timetable and college profile?', { identityContext }),
@@ -1661,7 +1612,7 @@ test('aiService.askAgent: a plan above MAX_PLAN_STEPS is rejected with AiWorkflo
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
   const plan = { steps: Array.from({ length: 7 }, () => ({ tool: 'get_college_profile' })) };
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async () => mockToolCallResponse('run_workflow_plan', plan), async () => {
       await assert.rejects(
         () => aiService.askAgent(client, 'Do 7 things.', { identityContext }),
@@ -1684,7 +1635,7 @@ test('aiService.askAgent: a plan containing an L3 step pauses for ONE plan-level
     ],
   };
   let result;
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async () => mockToolCallResponse('run_workflow_plan', plan), async () => {
       result = await aiService.askAgent(client, 'Draft and submit a fee reminder.', { identityContext });
     });
@@ -1706,7 +1657,7 @@ test('aiService.executeWorkflowPlan: fail-transparent — one step failing does 
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
   let capturedSystemPrompt;
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async (url, options) => {
       const body = JSON.parse(options.body);
       capturedSystemPrompt = body.messages.find((m) => m.role === 'system').content;
@@ -1751,7 +1702,7 @@ test('aiService.executeWorkflowPlan: a generate_document step\'s real downloadab
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async () => mockAnswerResponse('Here is the profile and the document.'), async () => {
       const result = await aiService.executeWorkflowPlan(
         client,
@@ -1782,7 +1733,7 @@ test('aiService.executeWorkflowPlan: two independent read-only (L1) steps run co
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
   const startedAt = Date.now();
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async () => mockAnswerResponse('Combined.'), async () => {
       await aiService.executeWorkflowPlan(
         client,
@@ -1823,7 +1774,7 @@ test('aiService.executeWorkflowPlan: step results/evidence stay in ORIGINAL plan
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
   let result;
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async () => mockAnswerResponse('Combined.'), async () => {
       result = await aiService.executeWorkflowPlan(
         client,
@@ -1845,7 +1796,7 @@ test('aiService.executeWorkflowPlan: a write step (L2) never runs in the same pa
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
   let result;
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async () => mockAnswerResponse('Combined.'), async () => {
       result = await aiService.executeWorkflowPlan(
         client,
@@ -1871,7 +1822,7 @@ test('aiService.askAgent: single-tool path — answer\'s stated count matches th
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(sequentialMockFetch([
       mockToolCallResponse('academic_class_timetable', {}),
       mockAnswerResponse('There are 3 periods scheduled.'),
@@ -1890,7 +1841,7 @@ test('aiService.askAgent: single-tool path — answer states a count that does n
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(sequentialMockFetch([
       mockToolCallResponse('academic_class_timetable', {}),
       mockAnswerResponse('There are 9 periods scheduled.'),
@@ -1913,7 +1864,7 @@ test('aiService.askAgent: single-tool path — a non-array tool result (e.g. get
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(sequentialMockFetch([
       mockToolCallResponse('get_college_profile', {}),
       mockAnswerResponse('The college is Test College.'),
@@ -1929,7 +1880,7 @@ test('aiService.askAgent: a number that is not in count-noun context (a year, a 
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(sequentialMockFetch([
       mockToolCallResponse('academic_class_timetable', {}),
       mockAnswerResponse('Attendance is at 92% for academic year 2026.'),
@@ -1959,7 +1910,7 @@ test('aiService.askAgent: analyze_document_table path — a per-student count th
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(sequentialMockFetch([
       mockToolCallResponse('analyze_document_table', { attachmentId: 'a1', filter: { pattern: 'RA' }, operation: 'count' }),
       mockAnswerResponse('MUHAMMED ASHIK P A (serial 1157) has 13 arrears.'),
@@ -1982,7 +1933,7 @@ test('aiService.askAgent: analyze_document_table path — a per-student count th
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(sequentialMockFetch([
       mockToolCallResponse('analyze_document_table', { attachmentId: 'a1', filter: { pattern: 'RA' }, operation: 'count' }),
       // The real-world bug: the model free-narrates 12 instead of the
@@ -2002,7 +1953,7 @@ test('aiService.executeWorkflowPlan: verification checks the claim against the R
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async () => mockAnswerResponse('There are 2 periods scheduled.'), async () => {
       const result = await aiService.executeWorkflowPlan(
         client,
@@ -2022,7 +1973,7 @@ test('aiService.askAboutTool: response also carries evidence/verification, same 
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async () => mockAnswerResponse('There is 1 period scheduled.'), async () => {
       const result = await aiService.askAboutTool(client, 'academic_class_timetable', {}, 'How many periods?', { identityContext });
       assert.deepEqual(result.verification, { status: 'PASS' });
@@ -2034,13 +1985,13 @@ test('aiService.askAboutTool: response also carries evidence/verification, same 
 // --- Model routing (P1.3) ---
 
 test('aiService.askAgent: a low-risk (L1) tool\'s synthesis call routes to fastModel when configured; the tool-select call never does', async () => {
-  const originalFastModel = config.nim.fastModel;
-  config.nim.fastModel = 'cheap-fast-model';
+  const originalFastModel = config.openai.fastModel;
+  config.openai.fastModel = 'cheap-fast-model';
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
   const capturedModels = [];
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async (url, options) => {
       const body = JSON.parse(options.body);
       capturedModels.push(body.model);
@@ -2049,19 +2000,19 @@ test('aiService.askAgent: a low-risk (L1) tool\'s synthesis call routes to fastM
     }, async () => {
       await aiService.askAgent(client, 'What college is this?', { identityContext });
     });
-  }).finally(() => { config.nim.fastModel = originalFastModel; });
+  }).finally(() => { config.openai.fastModel = originalFastModel; });
 
-  assert.equal(capturedModels[0], config.nim.model, 'tool-select call must never be downgraded');
+  assert.equal(capturedModels[0], config.openai.model, 'tool-select call must never be downgraded');
   assert.equal(capturedModels[1], 'cheap-fast-model', 'the synthesis call for an L1 (R0/R1) tool routes to fastModel');
 });
 
 test('aiService.askAgent: no fastModel configured -> both calls use the same configured model (no routing, backward compatible)', async () => {
-  assert.equal(config.nim.fastModel, null, 'fastModel must be unset by default for this test to be meaningful');
+  assert.equal(config.openai.fastModel, null, 'fastModel must be unset by default for this test to be meaningful');
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
   const capturedModels = [];
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async (url, options) => {
       const body = JSON.parse(options.body);
       capturedModels.push(body.model);
@@ -2077,13 +2028,13 @@ test('aiService.askAgent: no fastModel configured -> both calls use the same con
 
 test('aiService.askAgent: a write tool (L2/L3, riskLevel > 1) never routes to fastModel even when configured', async (t) => {
   t.mock.method(notificationRepository, 'create', async (c, fields) => ({ id: 'n1', ...fields }));
-  const originalFastModel = config.nim.fastModel;
-  config.nim.fastModel = 'cheap-fast-model';
+  const originalFastModel = config.openai.fastModel;
+  config.openai.fastModel = 'cheap-fast-model';
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
   const capturedModels = [];
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async (url, options) => {
       const body = JSON.parse(options.body);
       capturedModels.push(body.model);
@@ -2094,9 +2045,9 @@ test('aiService.askAgent: a write tool (L2/L3, riskLevel > 1) never routes to fa
     }, async () => {
       await aiService.askAgent(client, 'Draft an email', { identityContext });
     });
-  }).finally(() => { config.nim.fastModel = originalFastModel; });
+  }).finally(() => { config.openai.fastModel = originalFastModel; });
 
-  assert.equal(capturedModels[1], config.nim.model, 'an L2 write tool\'s synthesis call must stay on the full model');
+  assert.equal(capturedModels[1], config.openai.model, 'an L2 write tool\'s synthesis call must stay on the full model');
 });
 
 // --- fetch_trusted_web_page (P2.3) ---
@@ -2405,7 +2356,7 @@ test('aiService.askAgent: the LLM picks draft_notification -> a real Draft notif
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(
       sequentialMockFetch([
         mockToolCallResponse('draft_notification', { channel: 'email', toAddress: 'parent@example.com', body: 'Reminder text' }),
@@ -2533,7 +2484,7 @@ test('aiService.askAboutTool: the Identity Context block is actually included in
   };
 
   let capturedBody;
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async (url, options) => {
       capturedBody = JSON.parse(options.body);
       return { ok: true, json: async () => ({ choices: [{ message: { content: 'answer' } }] }) };
@@ -2931,17 +2882,19 @@ test('buildAttachmentHint: Gemini\'s shared 1,000,000-char budget is divided acr
   assert.ok(totalDataChars <= 1_000_000);
 });
 
-// ADR-029's origin bug: NIM (ARCNAVE's zero-configuration default per
-// ADR-028 — a college with no college_ai_config row/DEFAULT_AI_PROVIDER
-// override, the common case) has a 128K-token context, not Gemini's 1M.
-// Caught live against this repo's own seeded 'demo' college: a real
-// request with a ~278K-char PDF attachment 400'd with "maximum context
-// length is 131072 tokens... resulted in 138900 tokens" because the
-// budget was a flat 1,000,000 chars regardless of provider.
-test('buildAttachmentHint: a non-Gemini provider (e.g. nim, the zero-config default) gets the smaller, conservative default budget, not Gemini\'s 1,000,000', () => {
+// ADR-029's origin bug: NIM (ARCNAVE's zero-configuration default at the
+// time, per ADR-028 — since removed, see ADL-051) had a 128K-token
+// context, not Gemini's 1M. Caught live against this repo's own seeded
+// 'demo' college: a real request with a ~278K-char PDF attachment 400'd
+// with "maximum context length is 131072 tokens... resulted in 138900
+// tokens" because the budget was a flat 1,000,000 chars regardless of
+// provider. Any smaller-context provider reproduces the same regression
+// if this budget check ever regresses — openai stands in for that class
+// here now.
+test('buildAttachmentHint: a non-Gemini provider (e.g. openai) gets the smaller, conservative default budget, not Gemini\'s 1,000,000', () => {
   const bigText = 'x'.repeat(500_000);
-  const hintForNim = aiService.buildAttachmentHint([{ fileName: 'a.pdf', mimeType: 'application/pdf', text: bigText }], 'nim');
-  assert.ok(hintForNim.includes('[truncated'), 'a 500K-char attachment must be truncated for a smaller-context provider');
+  const hintForOpenAi = aiService.buildAttachmentHint([{ fileName: 'a.pdf', mimeType: 'application/pdf', text: bigText }], 'openai');
+  assert.ok(hintForOpenAi.includes('[truncated'), 'a 500K-char attachment must be truncated for a smaller-context provider');
 });
 
 test('buildAttachmentHint: no providerName given (unknown/unconfigured) also falls back to the conservative default, never the Gemini-sized one', () => {
@@ -3071,25 +3024,26 @@ test('buildMemoryHint: a remembered general fact appears in the same block, with
   assert.ok(hint.includes('I mostly handle the placement cell'));
 });
 
-test('aiService.askAgent: provider without vision support (nim) -> imageAnalysisUnavailable:true, imageCount:0, and the outbound decision call carries NO image content (never a call pretending to have seen it)', async (t) => {
+test('aiService.askAgent: provider without vision support (self_hosted) -> imageAnalysisUnavailable:true, imageCount:0, and the outbound decision call carries NO image content (never a call pretending to have seen it)', async (t) => {
   t.mock.method(documentService, 'downloadDocument', async () => fakeImageDownload());
+  t.mock.method(configurationService, 'getAiConfig', async () => ({
+    provider: 'self_hosted', adapter: selfHostedAdapter, config: { baseUrl: 'https://self-hosted.example', model: 'sh-x' },
+  }));
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
   let capturedBody;
 
-  await withNimConfig('test-nim-key', async () => {
-    await withMockFetch(async (url, options) => {
-      capturedBody = JSON.parse(options.body);
-      return mockAnswerResponse('I cannot see the attached image.');
-    }, async () => {
-      const result = await aiService.askAgent(
-        client,
-        'What is the total mark shown in this image?',
-        { identityContext, attachmentIds: ['att-1'] },
-      );
-      assert.equal(result.imageAnalysisUnavailable, true);
-      assert.equal(result.imageCount, 0);
-    });
+  await withMockFetch(async (url, options) => {
+    capturedBody = JSON.parse(options.body);
+    return mockAnswerResponse('I cannot see the attached image.');
+  }, async () => {
+    const result = await aiService.askAgent(
+      client,
+      'What is the total mark shown in this image?',
+      { identityContext, attachmentIds: ['att-1'] },
+    );
+    assert.equal(result.imageAnalysisUnavailable, true);
+    assert.equal(result.imageCount, 0);
   });
 
   const userMessage = capturedBody.messages.find((m) => m.role === 'user');
@@ -3147,7 +3101,7 @@ test('askAgent: even if a hostile instruction embedded in an attachment convince
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
   const notificationId = '11111111-1111-4111-8111-111111111111';
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async () => mockToolCallResponse('request_notification_send', { notificationId }), async () => {
       const result = await aiService.askAgent(
         client,
@@ -3179,7 +3133,7 @@ test("aiService.askAgent: mode 'general' never sends a tools/tool_choice field �
   let toolInvoked = false;
   t.mock.method(aiToolRegistry, 'invokeTool', async () => { toolInvoked = true; return {}; });
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(async (url, options) => {
       capturedBody = JSON.parse(options.body);
       return mockAnswerResponse('React is a JavaScript library for building user interfaces.');
@@ -3205,7 +3159,7 @@ test("aiService.askAgent: mode 'curriculum' (and no mode at all) is byte-for-byt
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
 
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(sequentialMockFetch([
       mockToolCallResponse('get_college_profile', {}),
       mockAnswerResponse('This is ARCNAVE Demo College.'),
@@ -3216,7 +3170,7 @@ test("aiService.askAgent: mode 'curriculum' (and no mode at all) is byte-for-byt
   });
 
   const client2 = fakeClient();
-  await withNimConfig('test-nim-key', async () => {
+  await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(sequentialMockFetch([
       mockToolCallResponse('get_college_profile', {}),
       mockAnswerResponse('This is ARCNAVE Demo College.'),

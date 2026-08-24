@@ -3,13 +3,13 @@
 // HTTP-level tests for the Create Student admission-draft routes — real
 // Postgres, real app, same house style background-jobs.test.js/
 // students.test.js already use (plain http.request, no supertest
-// dependency exists in this repo). nim.complete is monkey-patched (the
-// same shared module object every request resolves through
-// configurationService.getAiConfig -> aiProviders.getAdapter('nim')) so
-// no real NIM_API_KEY/network call is needed — same reasoning this
-// file's own multipart-upload test uses a real tiny PNG rather than
-// arbitrary bytes (Tesseract needs a real image to not throw during the
-// synchronous classifyDocument call every upload triggers).
+// dependency exists in this repo). openai.complete is monkey-patched
+// (the same shared module object every request resolves through
+// configurationService.getAiConfig -> aiProviders.getAdapter('openai'))
+// so no real OPENAI_API_KEY/network call is needed — same reasoning
+// this file's own multipart-upload test uses a real tiny PNG rather
+// than arbitrary bytes (Tesseract needs a real image to not throw
+// during the synchronous classifyDocument call every upload triggers).
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -19,7 +19,7 @@ const { Pool } = require('pg');
 const createApp = require('../src/app');
 const security = require('../src/security');
 const { seedClassTutorPosition, cleanupPositionRows } = require('./helpers/positionFixtures');
-const nim = require('../src/services/aiProviders/nim');
+const openai = require('../src/services/aiProviders/openai');
 const globalConfig = require('../src/config');
 const { flattenToPrompts } = require('../src/services/aiContextAssembly');
 
@@ -130,20 +130,20 @@ async function cleanupTenant(adminPool, college) {
 }
 
 test('admission drafts', async (t) => {
-  // This file monkey-patches nim.complete directly, relying on
+  // This file monkey-patches openai.complete directly, relying on
   // configurationService.getAiConfig resolving the adapter for a
-  // no-row college to that exact same shared nim module instance —
+  // no-row college to that exact same shared openai module instance —
   // force the global default regardless of a real dev/deployment
   // environment's own DEFAULT_AI_PROVIDER override (e.g. a local
   // .env.local.sh set to 'gemini' to run the dev server against a real
   // key), or the real gemini adapter escapes into this test and makes
   // real, unmocked network calls instead.
   const originalDefaultAiProvider = globalConfig.defaultAiProvider;
-  globalConfig.defaultAiProvider = 'nim';
+  globalConfig.defaultAiProvider = 'openai';
   t.after(() => { globalConfig.defaultAiProvider = originalDefaultAiProvider; });
 
-  const originalComplete = nim.complete;
-  nim.complete = async (cfg, arcnaveContext) => {
+  const originalComplete = openai.complete;
+  openai.complete = async (cfg, arcnaveContext) => {
     const { systemPrompt } = flattenToPrompts(arcnaveContext);
     if (systemPrompt.includes('classif')) {
       return JSON.stringify({ detectedDocType: 'marksheet_10th', confidence: 95 });
@@ -166,7 +166,7 @@ test('admission drafts', async (t) => {
   const college = await seedTenant(adminPool);
 
   t.after(async () => {
-    nim.complete = originalComplete;
+    openai.complete = originalComplete;
     await stopServer(server);
     await cleanupTenant(adminPool, college);
     await adminPool.end();

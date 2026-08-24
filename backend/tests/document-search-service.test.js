@@ -1,7 +1,7 @@
 'use strict';
 
 // Unit tests for documentSearchService's business logic — no live
-// Postgres, no live NIM: documentService.downloadDocument,
+// Postgres, no live embedding provider: documentService.downloadDocument,
 // embeddingService.embed/currentModel (ADR-030 P0 — this file no longer
 // goes through configurationService.getAiConfig/an adapter at all),
 // aiDocumentChunkRepository, and auditLogRepository are stubbed via

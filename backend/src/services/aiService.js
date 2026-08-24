@@ -2,8 +2,8 @@
 
 // Module 9 (AI) — thin orchestrator gluing the Tool Registry (+ Policy
 // Gate), Context Builder, Prompt Safety Layer, and the LLM provider
-// (services/llmProvider.js, NVIDIA NIM) into the three real entry
-// points routes/ai.js calls. AI-Governance.md §2/§3's full pipeline:
+// (services/aiProviders/*.js, Gemini by default) into the three real
+// entry points routes/ai.js calls. AI-Governance.md §2/§3's full pipeline:
 //   AI Agent -> Tool Registry -> Business Services
 //            -> Context Builder -> Prompt Safety Layer -> LLM
 // invokeTool stops at the sanitized context blob (caller names the
@@ -213,11 +213,12 @@ function buildFocusHint(focusContext) {
 // (askGeneralChat vs. the Curriculum tool-selection path each resolve it
 // independently, later, and test-asserted call order isn't worth
 // disturbing just to learn the provider a few lines earlier). This
-// conservative default is sized to leave real headroom even on NIM's
-// 128K-token default window alongside the system prompt, tool schemas,
-// and DEFAULT_ATTACHMENT_TOTAL_CHAR_BUDGET's own up-to-200,000 chars —
-// a caller that already knows its adapter may still call this with a
-// larger budget explicitly.
+// conservative default is sized to leave real headroom even on a
+// smaller-context provider's ~128K-token window (openai/self_hosted can
+// both be configured this way) alongside the system prompt, tool
+// schemas, and DEFAULT_ATTACHMENT_TOTAL_CHAR_BUDGET's own up-to-200,000
+// chars — a caller that already knows its adapter may still call this
+// with a larger budget explicitly.
 const DEFAULT_HISTORY_CHAR_BUDGET = 100_000;
 
 function buildHistoryHint(history, charBudget = DEFAULT_HISTORY_CHAR_BUDGET) {

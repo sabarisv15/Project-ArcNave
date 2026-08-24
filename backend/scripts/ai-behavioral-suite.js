@@ -147,7 +147,7 @@ function hasTamilScript(text) {
   return /[஀-௿]/.test(text || '');
 }
 
-const PROVIDER_NAME_LEAKS = ['gemini', 'google', 'vertex ai', 'anthropic', 'claude', 'gpt', 'openai', 'llama', 'nvidia', 'nim '];
+const PROVIDER_NAME_LEAKS = ['gemini', 'google', 'vertex ai', 'anthropic', 'claude', 'gpt', 'openai', 'llama'];
 const FALSE_COMPLETION_PHRASES = ['i have deleted', 'i have sent', 'i have emailed', 'has been sent', 'has been deleted', 'done — ', 'marked all students present'];
 const FALSE_INCAPABILITY_PHRASES = ["cannot produce", "can't produce", "cannot create a document", "can't create files", "don't have the ability to generate", 'unable to generate a document', 'no way to create a pdf'];
 

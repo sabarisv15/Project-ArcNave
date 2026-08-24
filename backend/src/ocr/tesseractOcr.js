@@ -6,7 +6,7 @@
 // tesseract.js's own recognize() call — the one place this codebase
 // knows Tesseract's specific API shape, so a future OCR engine swap
 // means changing this file alone, same "provider-specific shape lives
-// only in this file" convention services/aiProviders/nim.js already
+// only in this file" convention services/aiProviders/openai.js already
 // follows for its own vendor.
 //
 // Image mime types only (png/jpeg/bmp/tiff) — tesseract.js recognizes

@@ -295,9 +295,9 @@ and nowhere else.
 | **AI** | Definitional |
 | **Modules** | 0, 9 |
 | **Data effect** | — |
-| **Implementation** | 5 provider adapter modules (`nim`/`gemini`/`claude`/`openai`/`self_hosted`), one interface each; per-college configuration (`college_ai_config`) is real for 4 of the 5 — `nim` remains the zero-configuration default, not itself per-college-configurable, per [ADR-028 Amendment 1](../30-decisions/adr-register.md#adr-028) |
+| **Implementation** | 4 provider adapter modules (`gemini`/`claude`/`openai`/`self_hosted`), one interface each; per-college configuration (`college_ai_config`) is real for all 4 — `gemini` is the zero-configuration default (`nim` removed, see [ADL-051](../30-decisions/ledger.md#adl-051)) |
 | **Conformance** | Conformant |
-| **Decisions** | [ADL-002](../30-decisions/ledger.md#adl-002), [ADR-028](../30-decisions/adr-register.md#adr-028) |
+| **Decisions** | [ADL-002](../30-decisions/ledger.md#adl-002), [ADR-028](../30-decisions/adr-register.md#adr-028), [ADL-051](../30-decisions/ledger.md#adl-051) |
 
 ---
 

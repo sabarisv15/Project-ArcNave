@@ -270,10 +270,10 @@ Not prohibited in principle — withheld pending a stated prerequisite.
 **Resolved since the table above was last current:** *Multi-tool
 orchestration for compound questions* — built as the bounded plan
 mechanism, [RS-AIG-018](../10-specification/RS-AIG-ai-governance.md#rs-aig-018)
-(§4.6). *Per-tenant LLM provider configuration* — real and wired for
-`claude`/`openai`/`self_hosted` (per-college `college_ai_config` row) and
-`gemini` (per-college row, or the global default block); only `nim` has
-no per-college path today, matching its role as the zero-config default.
+(§4.6). *Per-tenant LLM provider configuration* — real and wired for all
+4 providers (`gemini`/`claude`/`openai`/`self_hosted`), each via a
+per-college `college_ai_config` row or the global default block; `gemini`
+is the zero-config default (`nim` removed, [ADL-051](../30-decisions/ledger.md#adl-051)).
 See [RS-AIG-008](../10-specification/RS-AIG-ai-governance.md#rs-aig-008)
 and the Conformance summary below.
 

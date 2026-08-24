@@ -155,7 +155,7 @@ function mapAiToolError(err, res) {
   }
   // 503, not 500: an unconfigured LLM provider isn't a bug in this
   // request, it's a real, expected environment state (see config.js's
-  // own comment on config.nim) — same "no SMTP_HOST means a stub, not
+  // own comment on config.gemini) — same "no SMTP_HOST means a stub, not
   // a crash" reasoning notificationService.js already established,
   // just surfaced here as an honest error instead of a silent stub
   // because an "ask" genuinely has no answer to give without one.

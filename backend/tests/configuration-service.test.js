@@ -13,24 +13,32 @@ const cryptoUtil = require('../src/cryptoUtil');
 const globalConfig = require('../src/config');
 const configurationService = require('../src/services/configurationService');
 
-test('getAiConfig: no per-college row falls back to the global nim default, unchanged from pre-existing behavior', async (t) => {
+test('getAiConfig: no per-college row falls back to the global openai default when DEFAULT_AI_PROVIDER=openai', async (t) => {
   const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async () => null);
   t.after(() => findMock.mock.restore());
-  // This test is specifically about the pre-existing nim default — force
-  // it regardless of a real dev/deployment environment's own
+  // openai's global block was added alongside the NIM removal (ADL-051)
+  // specifically so DEFAULT_AI_PROVIDER=openai is a real, working
+  // choice — this test proves that block resolves correctly, the same
+  // way the dedicated gemini/claude tests below prove theirs. Force it
+  // regardless of a real dev/deployment environment's own
   // DEFAULT_AI_PROVIDER override (e.g. a local .env.local.sh set to
   // 'gemini' to run the dev server against a real key).
   const originalDefaultAiProvider = globalConfig.defaultAiProvider;
-  globalConfig.defaultAiProvider = 'nim';
-  t.after(() => { globalConfig.defaultAiProvider = originalDefaultAiProvider; });
+  const originalOpenaiApiKey = globalConfig.openai.apiKey;
+  globalConfig.defaultAiProvider = 'openai';
+  globalConfig.openai.apiKey = 'openai-real-key';
+  t.after(() => {
+    globalConfig.defaultAiProvider = originalDefaultAiProvider;
+    globalConfig.openai.apiKey = originalOpenaiApiKey;
+  });
 
   const result = await configurationService.getAiConfig({}, 'college-with-no-row');
 
-  assert.equal(result.provider, 'nim');
-  assert.equal(result.adapter.name, 'nim');
-  assert.equal(result.config.apiKey, globalConfig.nim.apiKey);
-  assert.equal(result.config.model, globalConfig.nim.model);
-  assert.equal(result.config.embeddingModel, globalConfig.nim.embeddingModel);
+  assert.equal(result.provider, 'openai');
+  assert.equal(result.adapter.name, 'openai');
+  assert.equal(result.config.apiKey, globalConfig.openai.apiKey);
+  assert.equal(result.config.model, globalConfig.openai.model);
+  assert.equal(result.config.embeddingModel, globalConfig.openai.embeddingModel);
 });
 
 test('getAiConfig: a college with its own row uses its own provider/decrypted key, not the global default', async (t) => {
@@ -55,9 +63,9 @@ test('getAiConfig: switching one college to a different provider never touches a
   const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async (client, collegeId) => rows[collegeId] || null);
   t.after(() => findMock.mock.restore());
   // See the previous test's own comment — this test asserts college-b
-  // falls back to nim specifically.
+  // falls back to the global default (openai, forced below) specifically.
   const originalDefaultAiProvider = globalConfig.defaultAiProvider;
-  globalConfig.defaultAiProvider = 'nim';
+  globalConfig.defaultAiProvider = 'openai';
   t.after(() => { globalConfig.defaultAiProvider = originalDefaultAiProvider; });
 
   const a = await configurationService.getAiConfig({}, 'college-a');
@@ -65,11 +73,11 @@ test('getAiConfig: switching one college to a different provider never touches a
 
   assert.equal(a.provider, 'claude');
   assert.equal(a.config.apiKey, 'a-key');
-  assert.equal(b.provider, 'nim');
-  assert.equal(b.config.apiKey, globalConfig.nim.apiKey);
+  assert.equal(b.provider, 'openai');
+  assert.equal(b.config.apiKey, globalConfig.openai.apiKey);
 });
 
-test('getAiConfig: DEFAULT_AI_PROVIDER=gemini routes a no-row college to the global gemini config instead of nim', async (t) => {
+test('getAiConfig: DEFAULT_AI_PROVIDER=gemini routes a no-row college to the global gemini config', async (t) => {
   const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async () => null);
   t.after(() => findMock.mock.restore());
   const originalDefaultAiProvider = globalConfig.defaultAiProvider;
@@ -92,20 +100,20 @@ test('getAiConfig: DEFAULT_AI_PROVIDER=gemini routes a no-row college to the glo
   assert.equal(result.config.model, 'gemini-3.7-flash');
 });
 
-test('getAiConfig: an unrecognized DEFAULT_AI_PROVIDER (typo, or a provider with no global block) falls back to nim rather than throwing', async (t) => {
+test('getAiConfig: an unrecognized DEFAULT_AI_PROVIDER (typo, or a provider with no global block) falls back to gemini rather than throwing', async (t) => {
   const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async () => null);
   t.after(() => findMock.mock.restore());
   const originalDefaultAiProvider = globalConfig.defaultAiProvider;
   // self_hosted has no global env-backed block (per-college-only by
-  // design — see GLOBAL_CONFIG_BUILDERS's own comment). claude gained one
-  // 2026-08-22 (Vertex AI, same ADC pattern as gemini) so it no longer
-  // fits this test's premise — see the dedicated claude test below.
+  // design — see GLOBAL_CONFIG_BUILDERS's own comment). claude/openai
+  // both gained one (Vertex AI/plain apiKey respectively) so neither
+  // fits this test's premise anymore — see their own dedicated tests.
   globalConfig.defaultAiProvider = 'self_hosted';
   t.after(() => { globalConfig.defaultAiProvider = originalDefaultAiProvider; });
 
   const result = await configurationService.getAiConfig({}, 'college-with-no-row');
 
-  assert.equal(result.provider, 'nim');
+  assert.equal(result.provider, 'gemini');
 });
 
 test('getAiConfig: DEFAULT_AI_PROVIDER=claude resolves via its own global Vertex AI block (projectId, not apiKey)', async (t) => {
@@ -152,7 +160,7 @@ test('setAiConfig: encrypts api_key before it reaches the repository, and never 
   });
 
   const result = await configurationService.setAiConfig({}, 'college-a', {
-    provider: 'nim', apiKey: 'sk-real-secret-value', model: 'meta/llama-3.1-8b-instruct',
+    provider: 'openai', apiKey: 'sk-real-secret-value', model: 'gpt-4o',
   }, { userId: 'u1' });
 
   const [, upsertFields] = upsertMock.mock.calls[0].arguments;

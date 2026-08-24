@@ -1,15 +1,15 @@
 'use strict';
 
 // OpenAI adapter (Chat Completions API). OpenAI's own API IS the
-// OpenAI-compatible convention nim.js/selfHosted.js already speak —
-// this is the closest sibling to copy the request/response shape from,
-// pointed at the real vendor endpoint with a required apiKey (like
-// claude.js/nim.js) instead of a college-supplied baseUrl.
+// OpenAI-compatible convention selfHosted.js also speaks — the two
+// share the same request/response shape, this one pointed at the real
+// vendor endpoint with a required apiKey (like claude.js) instead of a
+// college-supplied baseUrl.
 //
 // NOT live-verified against a real OpenAI API key (none exists in this
 // environment) — the shape is the documented OpenAI Chat Completions/
-// Embeddings convention, not fabricated, but unlike nim.js this hasn't
-// been exercised against a live endpoint.
+// Embeddings convention, not fabricated, but this hasn't been
+// exercised against a live endpoint.
 //
 // Vision (P0-of-this-pass): supportsVision is exported explicitly so
 // aiService checks a capability flag, never a hardcoded provider-name
@@ -90,10 +90,13 @@ function buildUserContent(userPrompt, images) {
   ];
 }
 
-// Token/cost telemetry (P1.1) — see nim.js's own comment for the
-// shared reasoning. Same OpenAI-compatible `usage` block (prompt_tokens/
-// completion_tokens) nim.js/selfHosted.js already read, since this
-// adapter targets the real vendor those two imitate.
+// Token/cost telemetry (P1.1) — complete() itself stays byte-for-byte
+// unchanged (every existing caller/test expects a plain string back);
+// completeWithMeta is the one place that also reads the raw response's
+// own `usage` block, so aiService's completeMaybeStreaming can log real
+// token counts without any adapter needing a second request shape.
+// Same OpenAI-compatible `usage` block (prompt_tokens/completion_tokens)
+// selfHosted.js also reads, since it targets the same vendor convention.
 async function completeWithMeta(cfg, arcnaveContext) {
   const { systemPrompt, userPrompt, images } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
@@ -127,13 +130,25 @@ async function complete(cfg, prompts) {
   return text;
 }
 
-// Streaming variant of complete() (P0.5) — see nim.js's own comment
-// for the shared reasoning (only the final answer streams, retries
-// only cover the initial connection). Same OpenAI-compatible SSE shape
-// nim.js/selfHosted.js speak, since this adapter targets the real
-// vendor those two imitate.
-// onUsage (optional, P1.6) — see nim.js's own comment for the shared
-// OpenAI-compatible `stream_options.include_usage` reasoning.
+// Streaming variant of complete() (P0.5) — only for the final natural-
+// language answer, never the tool-select call (that needs the whole
+// structured decision before anything downstream can run, so there is
+// nothing meaningful to stream). `onDelta` is called once per text
+// chunk as it arrives; the full concatenated text is still returned at
+// the end so a caller that doesn't care about incremental output can
+// treat this exactly like complete(). Retries (withRetry) only ever
+// apply to the initial connection attempt, before any chunk has been
+// read — once streaming starts, a transient failure surfaces as
+// whatever's already been streamed plus a thrown error, never a silent
+// retry after partial output already reached the caller. Same
+// OpenAI-compatible SSE shape selfHosted.js speaks, since it targets
+// the same vendor convention.
+// onUsage (optional, P1.6) — called at most once, after the stream ends,
+// with {inputTokens, outputTokens}, only if the API actually returned a
+// usage block. `stream_options.include_usage: true` asks the server to
+// emit one extra final chunk carrying a top-level `usage` and an empty
+// `choices` array, just before `[DONE]` — every other chunk's `usage`
+// is absent, so the last one seen wins.
 async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
   const { systemPrompt, userPrompt, images } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {

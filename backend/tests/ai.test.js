@@ -27,7 +27,7 @@ const embeddingService = require('../src/services/embeddingService');
 // here") is exactly why aiToolRetrievalService's semantic tier is
 // disabled for the whole file — an embed() call would be a second,
 // real network call outside every test's own carefully sequenced
-// config.nim.apiKey + global.fetch swap, breaking that sequencing the
+// config.openai.apiKey + global.fetch swap, breaking that sequencing the
 // same way it would for ai-service.test.js (see that file's own
 // comment). Tool retrieval itself has its own dedicated coverage in
 // ai-tool-retrieval-service.test.js; this file keeps proving the real-
@@ -187,17 +187,20 @@ test('ai', async (t) => {
   const collegeB = await seedTenant(adminPool, 'b');
 
   // This whole file assumes the global fallback provider (no
-  // college_ai_config row) is nim — every test below toggles
-  // config.nim.apiKey directly to control whether that fallback is
-  // "configured." Force that regardless of a real deployment/dev
-  // environment's own DEFAULT_AI_PROVIDER (e.g. a local .env.local.sh
-  // set to 'gemini' to run the dev server against a real key) — a real
-  // Gemini call escaping into these tests was caught live: toggling
-  // config.nim.apiKey had no effect once the fallback resolved to
-  // gemini instead, and the tests hit the real API with unmocked
-  // responses.
+  // college_ai_config row) is openai — every test below toggles
+  // config.openai.apiKey directly to control whether that fallback is
+  // "configured." openai (not gemini/claude) is used here for the same
+  // reason ai-service.test.js's own withOpenAiConfig comment gives: it
+  // shares nim's old simple, mockable OpenAI-compatible wire shape (nim
+  // itself is removed — see ADL-051). Force this regardless of a real
+  // deployment/dev environment's own DEFAULT_AI_PROVIDER (e.g. a local
+  // .env.local.sh set to 'gemini' to run the dev server against a real
+  // key) — a real Gemini call escaping into these tests was caught live
+  // once before: toggling only the provider-specific apiKey had no
+  // effect once the fallback resolved to a different provider entirely,
+  // and the tests hit the real API with unmocked responses.
   const originalDefaultAiProvider = config.defaultAiProvider;
-  config.defaultAiProvider = 'nim';
+  config.defaultAiProvider = 'openai';
 
   t.after(async () => {
     config.defaultAiProvider = originalDefaultAiProvider;
@@ -394,8 +397,8 @@ test('ai', async (t) => {
     await adminPool.query('UPDATE colleges SET address = $2 WHERE college_id = $1', [collegeA.collegeId, collegeA.address]);
   });
 
-  // --- LLM step (NVIDIA NIM via services/llmProvider.js) ---
-  // No real network call/API quota spent here — config.nim.apiKey and
+  // --- LLM step (OpenAI via services/llmProvider.js) ---
+  // No real network call/API quota spent here — config.openai.apiKey and
   // global.fetch are both temporarily swapped for the duration of
   // each test below, same technique ai-service.test.js's unit-level
   // llmProvider tests use, just proven here through the real route +
@@ -403,11 +406,10 @@ test('ai', async (t) => {
 
   await t.test('question with the LLM provider unconfigured returns 503, and the tool invocation itself still succeeded and is still audit-logged', async () => {
     // Forced null for this test's own scope, not assumed from the
-    // environment — a real NIM_API_KEY may legitimately be configured
-    // now (see docs/modules/Module-09-AI.md's live-verification entry),
-    // so this test must not depend on the ambient environment state.
-    const originalApiKey = config.nim.apiKey;
-    config.nim.apiKey = null;
+    // environment — a real OPENAI_API_KEY may legitimately be configured
+    // now, so this test must not depend on the ambient environment state.
+    const originalApiKey = config.openai.apiKey;
+    config.openai.apiKey = null;
 
     try {
       const token = await login(collegeA, 'principaluser');
@@ -426,7 +428,7 @@ test('ai', async (t) => {
       );
       assert.ok(rows.rows.length >= 1, 'the tool call itself must still be audit-logged even though the LLM step failed');
     } finally {
-      config.nim.apiKey = originalApiKey;
+      config.openai.apiKey = originalApiKey;
     }
   });
 
@@ -442,9 +444,9 @@ test('ai', async (t) => {
   });
 
   await t.test('question with a configured + mocked LLM provider returns the real profile plus the answer, in one response', async () => {
-    const originalApiKey = config.nim.apiKey;
+    const originalApiKey = config.openai.apiKey;
     const originalFetch = global.fetch;
-    config.nim.apiKey = 'test-nim-key';
+    config.openai.apiKey = 'test-openai-key';
     global.fetch = async () => ({
       ok: true,
       json: async () => ({ choices: [{ message: { content: 'This college is ' + collegeA.collegeId } }] }),
@@ -470,13 +472,13 @@ test('ai', async (t) => {
       assert.equal(resp.body.presentation.toolUsed, 'get_college_profile');
       assert.match(resp.body.presentation.markdown, /^## Get college profile/);
     } finally {
-      config.nim.apiKey = originalApiKey;
+      config.openai.apiKey = originalApiKey;
       global.fetch = originalFetch;
     }
   });
 
   // --- POST /ai/ask (tool-selection routing) ---
-  // Same mocked-fetch discipline as above — no real network call/NIM
+  // Same mocked-fetch discipline as above — no real network call/API
   // quota spent.
 
   function mockAnswerFetch(text) {
@@ -489,7 +491,7 @@ test('ai', async (t) => {
   // fetch mock standing in for "the LLM picks toolName" must answer
   // the first call with a tool_call response and every call after
   // that with a plain-text answer response, not the same tool_call
-  // shape twice (nim.js's adapter.complete would reject a response
+  // shape twice (openai.js's adapter.complete would reject a response
   // with no choices[0].message.content).
   function mockToolCallFetch(toolName, args = {}, answerText = 'Mocked summary of the tool result.') {
     let call = 0;
@@ -514,22 +516,22 @@ test('ai', async (t) => {
 
   await t.test('POST /ai/ask with the LLM provider unconfigured returns 503', async () => {
     // Forced null for this test's own scope — see the equivalent fix
-    // above; a real NIM_API_KEY may legitimately be configured now.
-    const originalApiKey = config.nim.apiKey;
-    config.nim.apiKey = null;
+    // above; a real OPENAI_API_KEY may legitimately be configured now.
+    const originalApiKey = config.openai.apiKey;
+    config.openai.apiKey = null;
     try {
       const token = await login(collegeA, 'principaluser');
       const resp = await post(baseUrl, '/api/v1/ai/ask', headersFor(collegeA, token), { question: 'What college is this?' });
       assert.equal(resp.status, 503);
     } finally {
-      config.nim.apiKey = originalApiKey;
+      config.openai.apiKey = originalApiKey;
     }
   });
 
   await t.test('POST /ai/ask: the LLM picks the registered tool -> the Policy Gate re-validates -> the tool actually runs, real data returned', async () => {
-    const originalApiKey = config.nim.apiKey;
+    const originalApiKey = config.openai.apiKey;
     const originalFetch = global.fetch;
-    config.nim.apiKey = 'test-nim-key';
+    config.openai.apiKey = 'test-openai-key';
     global.fetch = mockToolCallFetch('get_college_profile', {});
 
     try {
@@ -540,15 +542,15 @@ test('ai', async (t) => {
       const profile = JSON.parse(resp.body.entries[0].data);
       assert.equal(profile.college_id, collegeA.collegeId);
     } finally {
-      config.nim.apiKey = originalApiKey;
+      config.openai.apiKey = originalApiKey;
       global.fetch = originalFetch;
     }
   });
 
   await t.test('POST /ai/ask/stream (P0.5): streams delta events for the final answer, then one done event with the same shape /ai/ask returns', async () => {
-    const originalApiKey = config.nim.apiKey;
+    const originalApiKey = config.openai.apiKey;
     const originalFetch = global.fetch;
-    config.nim.apiKey = 'test-nim-key';
+    config.openai.apiKey = 'test-openai-key';
     let call = 0;
     global.fetch = async () => {
       call += 1;
@@ -562,7 +564,7 @@ test('ai', async (t) => {
           }),
         };
       }
-      // The final-answer call — a real SSE body, exercising nim.js's
+      // The final-answer call — a real SSE body, exercising openai.js's
       // completeStream end to end through the real route, not mocked
       // at the aiService layer.
       return {
@@ -587,15 +589,15 @@ test('ai', async (t) => {
       assert.equal(doneData.toolUsed, 'get_college_profile');
       assert.equal(doneData.answer, 'Test College');
     } finally {
-      config.nim.apiKey = originalApiKey;
+      config.openai.apiKey = originalApiKey;
       global.fetch = originalFetch;
     }
   });
 
   await t.test('POST /ai/ask: the LLM picks a tool the actor\'s role is not permitted to invoke -> 403, the Policy Gate re-validates rather than trusting the LLM', async () => {
-    const originalApiKey = config.nim.apiKey;
+    const originalApiKey = config.openai.apiKey;
     const originalFetch = global.fetch;
-    config.nim.apiKey = 'test-nim-key';
+    config.openai.apiKey = 'test-openai-key';
     global.fetch = mockToolCallFetch('get_college_profile', {});
 
     try {
@@ -604,15 +606,15 @@ test('ai', async (t) => {
       assert.equal(resp.status, 403);
       assert.match(resp.body.detail, /not permitted to invoke/);
     } finally {
-      config.nim.apiKey = originalApiKey;
+      config.openai.apiKey = originalApiKey;
       global.fetch = originalFetch;
     }
   });
 
   await t.test('POST /ai/ask: the LLM picks an unknown/hallucinated tool name -> a clean 404, not a 500', async () => {
-    const originalApiKey = config.nim.apiKey;
+    const originalApiKey = config.openai.apiKey;
     const originalFetch = global.fetch;
-    config.nim.apiKey = 'test-nim-key';
+    config.openai.apiKey = 'test-openai-key';
     global.fetch = mockToolCallFetch('delete_all_students', {});
 
     try {
@@ -620,15 +622,15 @@ test('ai', async (t) => {
       const resp = await post(baseUrl, '/api/v1/ai/ask', headersFor(collegeA, token), { question: 'Delete every student record' });
       assert.equal(resp.status, 404);
     } finally {
-      config.nim.apiKey = originalApiKey;
+      config.openai.apiKey = originalApiKey;
       global.fetch = originalFetch;
     }
   });
 
   await t.test('POST /ai/ask: the LLM picks no tool -> 200 with a direct answer, still wrapped in the Prompt Safety Layer envelope', async () => {
-    const originalApiKey = config.nim.apiKey;
+    const originalApiKey = config.openai.apiKey;
     const originalFetch = global.fetch;
-    config.nim.apiKey = 'test-nim-key';
+    config.openai.apiKey = 'test-openai-key';
     global.fetch = mockAnswerFetch('Campus is open 9am-5pm.');
 
     try {
@@ -640,7 +642,7 @@ test('ai', async (t) => {
       assert.equal(resp.body.preamble, aiPromptSafetyLayer.SAFETY_PREAMBLE);
       assert.deepEqual(resp.body.entries, []);
     } finally {
-      config.nim.apiKey = originalApiKey;
+      config.openai.apiKey = originalApiKey;
       global.fetch = originalFetch;
     }
   });
@@ -662,9 +664,9 @@ test('ai', async (t) => {
   }
 
   await t.test('askAgent -> draft_notification creates a real Draft row (origin ai, drafted by the actor)', async () => {
-    const originalApiKey = config.nim.apiKey;
+    const originalApiKey = config.openai.apiKey;
     const originalFetch = global.fetch;
-    config.nim.apiKey = 'test-nim-key';
+    config.openai.apiKey = 'test-openai-key';
     global.fetch = mockDraftNotificationFetch({ channel: 'email', toAddress: 'parent@example.com', subject: 'Fee reminder', body: 'Please pay the pending fee.' });
 
     try {
@@ -682,15 +684,15 @@ test('ai', async (t) => {
       assert.equal(row.rows.length, 1);
       assert.equal(row.rows[0].to_address, 'parent@example.com');
     } finally {
-      config.nim.apiKey = originalApiKey;
+      config.openai.apiKey = originalApiKey;
       global.fetch = originalFetch;
     }
   });
 
   await t.test('draft_notification (not in allowedRoles for staff) -> 403; request_notification_send on an unowned id -> 404, not a crash', async () => {
-    const originalApiKey = config.nim.apiKey;
+    const originalApiKey = config.openai.apiKey;
     const originalFetch = global.fetch;
-    config.nim.apiKey = 'test-nim-key';
+    config.openai.apiKey = 'test-openai-key';
 
     try {
       global.fetch = mockDraftNotificationFetch({ channel: 'email', toAddress: 'x@example.com', body: 'y' });
@@ -716,15 +718,15 @@ test('ai', async (t) => {
       );
       assert.equal(confirmResp.status, 404);
     } finally {
-      config.nim.apiKey = originalApiKey;
+      config.openai.apiKey = originalApiKey;
       global.fetch = originalFetch;
     }
   });
 
   await t.test('full flagship lifecycle: askAgent drafts -> askAgent requests send -> a human approves via the workflow route -> dispatch fires -> a real notification_delivery row exists', async () => {
-    const originalApiKey = config.nim.apiKey;
+    const originalApiKey = config.openai.apiKey;
     const originalFetch = global.fetch;
-    config.nim.apiKey = 'test-nim-key';
+    config.openai.apiKey = 'test-openai-key';
     // hoduser drafts/requests, principaluser (the sole resolved
     // Principal) approves — a genuinely different actor from the
     // requester. Using principaluser for BOTH steps would make
@@ -793,15 +795,15 @@ test('ai', async (t) => {
       const notificationRow = await adminPool.query('SELECT status FROM notifications WHERE id = $1', [notificationId]);
       assert.equal(notificationRow.rows[0].status, 'Dispatched');
     } finally {
-      config.nim.apiKey = originalApiKey;
+      config.openai.apiKey = originalApiKey;
       global.fetch = originalFetch;
     }
   });
 
   await t.test('reject path: a rejected notification is never dispatched', async () => {
-    const originalApiKey = config.nim.apiKey;
+    const originalApiKey = config.openai.apiKey;
     const originalFetch = global.fetch;
-    config.nim.apiKey = 'test-nim-key';
+    config.openai.apiKey = 'test-openai-key';
     const hodToken = await login(collegeA, 'hoduser');
     const principalToken = await login(collegeA, 'principaluser');
 
@@ -830,7 +832,7 @@ test('ai', async (t) => {
       const deliveryRows = await adminPool.query('SELECT * FROM notification_delivery WHERE notification_id = $1', [notificationId]);
       assert.equal(deliveryRows.rows.length, 0, 'a rejected notification must never be dispatched');
     } finally {
-      config.nim.apiKey = originalApiKey;
+      config.openai.apiKey = originalApiKey;
       global.fetch = originalFetch;
     }
   });

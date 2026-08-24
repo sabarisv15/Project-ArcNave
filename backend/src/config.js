@@ -173,59 +173,53 @@ module.exports = {
   // per-vendor adapters under services/notificationProviders/ (msg91,
   // meta) and removed, not left as an unused fallback.
 
-  // NVIDIA NIM (OpenAI-compatible /chat/completions) — the GLOBAL
-  // default provider ConfigurationService.getAiConfig falls back to
-  // for a college with no college_ai_config row of its own (see
-  // services/aiProviders/nim.js and services/configurationService.js).
-  // Optional, same reasoning as smtp above: unset apiKey means the LLM
-  // step is simply unavailable (LlmNotConfiguredError, mapped to a
-  // real 503 by routes/ai.js) rather than a startup failure — this
-  // app must keep running (every non-LLM route, including the plain
-  // tool-invoke path with no `question`) whether or not a provider key
-  // exists. Per-tenant override now exists (college_ai_config) — this
-  // remains the fallback every pre-existing college without a row
-  // still gets, unchanged from before that table existed.
-  nim: {
-    apiKey: process.env.NIM_API_KEY || null,
-    baseUrl: process.env.NIM_BASE_URL || 'https://integrate.api.nvidia.com/v1',
-    model: process.env.NIM_MODEL || 'meta/llama-3.1-8b-instruct',
-    // The RAG slice's embedding model — a SEPARATE model from `model`
-    // above (chat completion and embeddings are different model
-    // families even within one provider). nv-embedqa-e5-v5 is
-    // purpose-built for retrieval (asymmetric query/passage embeddings
-    // — see services/aiProviders/nim.js's embed()) and fixes the
-    // embedding dimension the ai_document_chunks migration's
-    // vector(1024) column is sized against; changing this to a model
-    // with a different output dimension needs a new migration, not
-    // just this env var.
-    embeddingModel: process.env.NIM_EMBEDDING_MODEL || 'nvidia/nv-embedqa-e5-v5',
-    // Model routing (P1.3) — an optional smaller/cheaper model for the
-    // low-risk half of an askAgent turn (see aiService.js's own
-    // comment on where this is/isn't used). No default: unset means no
-    // routing happens for the global-default NIM config, same single-
-    // model behavior as before this existed.
-    fastModel: process.env.NIM_FAST_MODEL || null,
-  },
-
-  // Google Gemini — a second, optional global-default provider
-  // (configurationService.js's own comment on GLOBAL_CONFIG_BUILDERS).
-  // Auth is Vertex AI + Application Default Credentials (gemini.js), not
-  // an API key — so "configured" hinges on projectId, not a secret this
-  // block holds. Same "unset means unavailable, never a startup
-  // failure" reasoning as nim above — this app must keep running
-  // whether or not GEMINI_PROJECT_ID is set. embeddingModel is null by
-  // default since Gemini's embed() isn't why a college would set this —
-  // chat/vision is, and Vertex AI has no embedding-model default of its
-  // own to fall back on.
+  // Google Gemini — the GLOBAL default provider (chat AND embeddings —
+  // see defaultAiProvider/embeddingProvider below) ConfigurationService.
+  // getAiConfig falls back to for a college with no college_ai_config
+  // row of its own. Auth is Vertex AI + Application Default Credentials
+  // (gemini.js), not an API key — so "configured" hinges on projectId,
+  // not a secret this block holds. Optional, same reasoning as smtp
+  // above: unset projectId means the LLM step is simply unavailable
+  // (LlmNotConfiguredError, mapped to a real 503 by routes/ai.js)
+  // rather than a startup failure — this app must keep running (every
+  // non-LLM route, including the plain tool-invoke path with no
+  // `question`) whether or not GEMINI_PROJECT_ID is set. Per-tenant
+  // override now exists (college_ai_config) — this remains the
+  // fallback every pre-existing college without a row still gets.
+  // embeddingModel defaults to gemini-embedding-001 (Google's current
+  // unified English/multilingual/code embedding model, a real fit for
+  // ARCNAVE's own English/Tamil/Tanglish/tool-description/document mix)
+  // — services/aiProviders/gemini.js's embed() requests it truncated to
+  // EMBEDDING_DIMENSIONS via Vertex's outputDimensionality parameter,
+  // fixing the embedding dimension the ai_document_chunks/
+  // ai_tool_embeddings migrations' vector(1024) columns are sized
+  // against; changing this to a model/dimension combination gemini.js
+  // doesn't already request needs a new migration, not just this env var.
   gemini: {
     projectId: process.env.GEMINI_PROJECT_ID || null,
     location: process.env.GEMINI_LOCATION || null,
     model: process.env.GEMINI_MODEL || null,
-    embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || null,
+    embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001',
     fastModel: process.env.GEMINI_FAST_MODEL || null,
   },
 
-  // Claude on Vertex AI — a third, optional global-default provider, same
+  // OpenAI — a third, optional global-default provider. Added alongside
+  // the NIM removal specifically so a deployment (or this codebase's own
+  // test suite, which needs a simple, globally-configurable OpenAI-
+  // compatible fixture provider now that nim — which served exactly this
+  // role — is gone) can select it via DEFAULT_AI_PROVIDER the same way
+  // gemini/claude already can; openai.js's per-college path
+  // (college_ai_config) already worked before this and is unaffected
+  // either way. Same "unset apiKey means unavailable, never a startup
+  // failure" reasoning as every other optional global block here.
+  openai: {
+    apiKey: process.env.OPENAI_API_KEY || null,
+    model: process.env.OPENAI_MODEL || null,
+    embeddingModel: process.env.OPENAI_EMBEDDING_MODEL || null,
+    fastModel: process.env.OPENAI_FAST_MODEL || null,
+  },
+
+  // Claude on Vertex AI — a fourth, optional global-default provider, same
   // shape/reasoning as gemini above (ADC/projectId, not a secret this
   // block holds; unset means unavailable, never a startup failure).
   // CLAUDE_PROJECT_ID is deliberately its own var, not a reuse of
@@ -243,12 +237,11 @@ module.exports = {
 
   // Which provider a college with no college_ai_config row of its own
   // falls back to (configurationService.getAiConfig). Defaults to
-  // 'nim' — this app's pre-existing global behavior, unchanged unless
-  // a deployment explicitly opts a different provider in. Setting this
-  // to 'gemini' with the block above populated is enough to make every
-  // college with no per-college override use Gemini, with no DB write
-  // required.
-  defaultAiProvider: process.env.DEFAULT_AI_PROVIDER || 'nim',
+  // 'gemini' — Gemini is this app's global-default chat provider.
+  // Setting this to 'claude'/'openai'/'self_hosted' with that block
+  // populated is enough to make every college with no per-college
+  // override use it instead, with no DB write required.
+  defaultAiProvider: process.env.DEFAULT_AI_PROVIDER || 'gemini',
 
   // The embedding provider — deliberately a SEPARATE choice from
   // defaultAiProvider/a college's own chat provider (embeddingService.js's
@@ -257,10 +250,14 @@ module.exports = {
   // college picked for chat, and Claude has no embed() at all (see
   // claude.js's own comment) — tying embeddings to the chat provider
   // would silently break both features for any Claude-configured
-  // college. Defaults to 'nim', which already ships a real embedding
-  // model default (nim.embeddingModel above) even with zero env
-  // configuration beyond NIM_API_KEY. This is a single platform-wide
-  // choice, never a per-college override — embeddings are retrieval
-  // infrastructure, not a tenant-facing customization.
-  embeddingProvider: process.env.EMBEDDING_PROVIDER || 'nim',
+  // college. Defaults to 'gemini', which ships a real embedding model
+  // default (gemini.embeddingModel above) even with zero env
+  // configuration beyond GEMINI_PROJECT_ID. This is a single
+  // platform-wide choice, never a per-college override — embeddings
+  // are retrieval infrastructure, not a tenant-facing customization —
+  // and stays independently swappable from defaultAiProvider even
+  // though both currently default to the same provider (e.g. a future
+  // Claude-for-chat + Gemini-for-embeddings college is still exactly
+  // as supported as it was before this change).
+  embeddingProvider: process.env.EMBEDDING_PROVIDER || 'gemini',
 };

@@ -6,10 +6,9 @@
 // before it could ever reach an LLM. This file never executes,
 // parses-as-instructions, or acts on tool content — it only ever
 // serializes it as inert, quoted data. renderForLlm below is the last
-// step before services/llmProvider.js's real provider call (NVIDIA
-// NIM) — this file still owns the framing all the way to the two
-// strings a chat-completion request needs; llmProvider.js only ever
-// transports them.
+// step before the real provider call (services/aiProviders/*.js) — this
+// file still owns the framing all the way to the two strings a
+// chat-completion request needs; the adapter only ever transports them.
 
 const BOUNDARY_START = '===UNTRUSTED_TOOL_DATA_START===';
 const BOUNDARY_END = '===UNTRUSTED_TOOL_DATA_END===';

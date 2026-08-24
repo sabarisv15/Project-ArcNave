@@ -14,14 +14,15 @@
 // chat via Claude would silently lose embeddings-backed retrieval
 // entirely if this service just deferred to getAiConfig like
 // documentSearchService used to. config.embeddingProvider is a single
-// platform-wide choice (defaults to 'nim', which already ships a real
-// embedding model with zero extra env config beyond NIM_API_KEY) —
-// swapping a college's chat provider, or adding a brand new one later,
-// never touches this file or anything downstream of it.
+// platform-wide choice (defaults to 'gemini', which already ships a
+// real embedding model with zero extra env config beyond
+// GEMINI_PROJECT_ID) — swapping a college's chat provider, or adding a
+// brand new one later, never touches this file or anything downstream
+// of it.
 //
 // isAvailable() is the capability check every caller should branch on
 // instead of checking a provider name — "can ARCNAVE embed text right
-// now," never "is this specific provider Gemini/OpenAI/NIM."
+// now," never "is this specific provider Gemini/OpenAI/self-hosted."
 
 const config = require('../config');
 const aiProviders = require('./aiProviders');

@@ -3,21 +3,20 @@
 // Self-hosted adapter — for a college running its own inference server
 // (vLLM, text-generation-inference, LM Studio, etc.), all of which
 // commonly expose the same OpenAI-compatible /chat/completions (and
-// often /embeddings) shape nim.js already speaks. Same request/response
-// handling as nim.js; the only real difference is that baseUrl has no
-// built-in default here — a self-hosted deployment's URL is inherently
-// college-specific, unlike a hosted vendor's fixed API endpoint, so
-// isConfigured() requires it explicitly rather than falling back to
-// some guessed address. apiKey is optional (many self-hosted servers
-// run with no auth on a private network) — isConfigured() only
-// requires baseUrl.
+// often /embeddings) shape openai.js already speaks. Same request/
+// response handling as openai.js; the only real difference is that
+// baseUrl has no built-in default here — a self-hosted deployment's URL
+// is inherently college-specific, unlike a hosted vendor's fixed API
+// endpoint, so isConfigured() requires it explicitly rather than
+// falling back to some guessed address. apiKey is optional (many
+// self-hosted servers run with no auth on a private network) —
+// isConfigured() only requires baseUrl.
 //
 // NOT live-verified against a real self-hosted server (no such
 // deployment exists in this environment) — the interface and request
 // shape are real (the documented OpenAI-compatible convention every
 // major self-host server implements), not a fake stub, but this
-// adapter has not been exercised against a live endpoint the way
-// nim.js's request shape was.
+// adapter has not been exercised against a live endpoint.
 
 const { LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError } = require('./errors');
 const { withRetry } = require('./retry');
@@ -33,7 +32,7 @@ const MAX_TOKENS = 1024;
 
 // A self-hosted deployment's model is whatever the college's own
 // operator configured — no vision-capable convention is assumed here,
-// same "dev-only, not part of the production 3" reasoning as nim.js.
+// since there's no fixed vendor to make that guarantee.
 const supportsVision = false;
 
 function isConfigured(cfg) {
@@ -73,8 +72,8 @@ async function postJson(cfg, path, body) {
   }
 }
 
-// Token/cost telemetry (P1.1) — see nim.js's own comment; same shape,
-// same OpenAI-compatible `usage` block.
+// Token/cost telemetry (P1.1) — see openai.js's own comment; same
+// shape, same OpenAI-compatible `usage` block.
 async function completeWithMeta(cfg, arcnaveContext) {
   const { systemPrompt, userPrompt } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
@@ -108,12 +107,12 @@ async function complete(cfg, prompts) {
   return text;
 }
 
-// Streaming variant of complete() (P0.5) — see nim.js's own comment
+// Streaming variant of complete() (P0.5) — see openai.js's own comment
 // for the shared reasoning (only the final answer streams, retries
 // only cover the initial connection). Same OpenAI-compatible SSE shape
-// nim.js speaks, since a self-hosted deployment is defined as
+// openai.js speaks, since a self-hosted deployment is defined as
 // implementing that same convention.
-// onUsage (optional, P1.6) — see nim.js's own comment for the shared
+// onUsage (optional, P1.6) — see openai.js's own comment for the shared
 // OpenAI-compatible `stream_options.include_usage` reasoning. Not
 // exercised against a live self-hosted endpoint (same caveat this
 // adapter's own header comment already carries) — a deployment that

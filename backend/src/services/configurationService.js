@@ -103,20 +103,9 @@ class AiConfigValidationError extends Error {}
 // No per-college row is not an error — it means this college hasn't
 // opted into its own provider yet, and still gets whichever provider
 // config.defaultAiProvider names (env DEFAULT_AI_PROVIDER, defaults to
-// 'nim' — this codebase's own pre-existing global behavior, never
-// silently changed for a deployment that hasn't set that var, so a
-// college with no row sees zero behavior change from before this table
-// existed).
-function globalNimConfig() {
-  return {
-    apiKey: globalConfig.nim.apiKey,
-    baseUrl: globalConfig.nim.baseUrl,
-    model: globalConfig.nim.model,
-    embeddingModel: globalConfig.nim.embeddingModel,
-    fastModel: globalConfig.nim.fastModel,
-  };
-}
-
+// 'gemini' — this codebase's own global default, never silently
+// changed for a deployment that hasn't set that var, so a college with
+// no row sees zero behavior change from before this table existed).
 function globalGeminiConfig() {
   return {
     projectId: globalConfig.gemini.projectId,
@@ -124,6 +113,20 @@ function globalGeminiConfig() {
     model: globalConfig.gemini.model,
     embeddingModel: globalConfig.gemini.embeddingModel,
     fastModel: globalConfig.gemini.fastModel,
+  };
+}
+
+// OpenAI — added alongside the NIM removal so DEFAULT_AI_PROVIDER=openai
+// is a real, working global-default choice (previously it wasn't — no
+// global block existed for it) the same way gemini/claude already are.
+// A college row with provider='openai' still works via the existing
+// per-college apiKey path unchanged either way.
+function globalOpenaiConfig() {
+  return {
+    apiKey: globalConfig.openai.apiKey,
+    model: globalConfig.openai.model,
+    embeddingModel: globalConfig.openai.embeddingModel,
+    fastModel: globalConfig.openai.fastModel,
   };
 }
 
@@ -143,31 +146,30 @@ function globalClaudeConfig() {
 }
 
 // Only providers with a real env-backed global block (config.js) can
-// be a global default — self_hosted/openai are per-college-only by
-// design (no global fallback makes sense for a self-hosted baseUrl or a
-// provider this codebase never shipped a global block for). claude does
-// have one now (Vertex mode), alongside its existing per-college apiKey
-// path further down.
+// be a global default — self_hosted is per-college-only by design (no
+// global fallback makes sense for a self-hosted baseUrl this codebase
+// never shipped a platform-wide default for). gemini/claude/openai all
+// have one.
 const GLOBAL_CONFIG_BUILDERS = {
-  nim: globalNimConfig,
   gemini: globalGeminiConfig,
   claude: globalClaudeConfig,
+  openai: globalOpenaiConfig,
 };
 
 // An unrecognized config.defaultAiProvider (typo, or a provider with
-// no global block) falls back to nim rather than throwing at request
+// no global block) falls back to gemini rather than throwing at request
 // time — same "never a startup failure over an optional value" caution
 // every other optional global config in this codebase already follows.
 function resolveDefaultProvider() {
   const configured = globalConfig.defaultAiProvider;
-  return GLOBAL_CONFIG_BUILDERS[configured] ? configured : 'nim';
+  return GLOBAL_CONFIG_BUILDERS[configured] ? configured : 'gemini';
 }
 
 // Returns { provider, config, adapter } — config is plain, decrypted
 // (apiKey already usable), never a caller's concern to decrypt itself.
-// adapter is the real module from aiProviders/ (nim.js/gemini.js/
-// claude.js/selfHosted.js/openai.js), already resolved so callers
-// never branch on provider name themselves.
+// adapter is the real module from aiProviders/ (gemini.js/claude.js/
+// selfHosted.js/openai.js), already resolved so callers never branch
+// on provider name themselves.
 async function getAiConfig(client, collegeId) {
   const row = await aiConfigRepository.findByCollegeId(client, collegeId);
 

@@ -1,10 +1,11 @@
 'use strict';
 
 // Unit tests for the aiProviders adapter registry — no live network
-// calls to any real vendor (nim.js's own request-shape behavior is
-// already proven against mocked fetch in ai-service.test.js; this file
-// proves the shared interface contract every adapter must satisfy, and
-// getAdapter's own resolution/error behavior).
+// calls to any real vendor (each OpenAI-compatible adapter's own
+// request-shape behavior is already proven against mocked fetch in
+// ai-service.test.js; this file proves the shared interface contract
+// every adapter must satisfy, and getAdapter's own resolution/error
+// behavior).
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -23,7 +24,6 @@ test('aiProviders: every registered adapter implements the full common interface
 });
 
 test('aiProviders.getAdapter: known providers resolve to their own module', () => {
-  assert.equal(aiProviders.getAdapter('nim').name, 'nim');
   assert.equal(aiProviders.getAdapter('gemini').name, 'gemini');
   assert.equal(aiProviders.getAdapter('claude').name, 'claude');
   assert.equal(aiProviders.getAdapter('self_hosted').name, 'self_hosted');
@@ -34,7 +34,6 @@ test('aiProviders: supportsVision is explicit per adapter, never inferred from n
   assert.equal(aiProviders.getAdapter('claude').supportsVision, true);
   assert.equal(aiProviders.getAdapter('gemini').supportsVision, true);
   assert.equal(aiProviders.getAdapter('openai').supportsVision, true);
-  assert.equal(aiProviders.getAdapter('nim').supportsVision, false);
   assert.equal(aiProviders.getAdapter('self_hosted').supportsVision, false);
 });
 
@@ -45,8 +44,7 @@ test('aiProviders.getAdapter: an unknown provider name throws AiProviderUnknownE
   );
 });
 
-test('nim/gemini/selfHosted/openai adapters: isConfigured is false with an empty config', () => {
-  assert.equal(aiProviders.getAdapter('nim').isConfigured({}), false);
+test('gemini/selfHosted/openai adapters: isConfigured is false with an empty config', () => {
   assert.equal(aiProviders.getAdapter('gemini').isConfigured({}), false);
   assert.equal(aiProviders.getAdapter('self_hosted').isConfigured({}), false);
   assert.equal(aiProviders.getAdapter('claude').isConfigured({}), false);
@@ -73,20 +71,16 @@ test('claude adapter: embed() throws AiProviderCapabilityError — a real vendor
   );
 });
 
-// Image generation (RS-AIG-025) — claude/nim/self_hosted have no real
+// Image generation (RS-AIG-025) — claude/self_hosted have no real
 // vendor image API, same honest-limitation shape claude's own embed()
 // already established above; openai/gemini have real ones.
-test('claude/nim/self_hosted adapters: generateImage() throws AiProviderCapabilityError, no fetch attempted', async () => {
+test('claude/self_hosted adapters: generateImage() throws AiProviderCapabilityError, no fetch attempted', async () => {
   const originalFetch = global.fetch;
   let fetchCalled = false;
   global.fetch = async () => { fetchCalled = true; };
   try {
     await assert.rejects(
       () => aiProviders.getAdapter('claude').generateImage({ apiKey: 'k' }, { prompt: 'a red bicycle' }),
-      aiProviders.AiProviderCapabilityError,
-    );
-    await assert.rejects(
-      () => aiProviders.getAdapter('nim').generateImage({ apiKey: 'k', baseUrl: 'https://example.com' }, { prompt: 'a red bicycle' }),
       aiProviders.AiProviderCapabilityError,
     );
     await assert.rejects(
@@ -290,12 +284,12 @@ test('claude adapter: projectId wins over apiKey when both are present (Vertex i
   assert.equal(capturedHeaders['x-api-key'], undefined);
 });
 
-test('nim/gemini/selfHosted/openai adapters: complete()/embed() throw LlmNotConfiguredError when unconfigured, no fetch attempted', async () => {
+test('gemini/selfHosted/openai adapters: complete()/embed() throw LlmNotConfiguredError when unconfigured, no fetch attempted', async () => {
   const originalFetch = global.fetch;
   let fetchCalled = false;
   global.fetch = async () => { fetchCalled = true; return { ok: true, json: async () => ({}) }; };
   try {
-    for (const providerName of ['nim', 'gemini', 'self_hosted', 'openai']) {
+    for (const providerName of ['gemini', 'self_hosted', 'openai']) {
       const adapter = aiProviders.getAdapter(providerName);
       // eslint-disable-next-line no-await-in-loop
       await assert.rejects(
@@ -477,24 +471,18 @@ test('openai adapter.complete: with no images, content stays a plain string (unc
 });
 
 // Round 10 P2/P3 finding: the round-8 output-token-bound fix (each
-// adapter's own MAX_TOKENS/MAX_OUTPUT_TOKENS = 1024, closing what used
-// to be a fully-unbounded response on 3 of 4 adapters) had a real
-// asymmetry in coverage — every adapter's shared request-shape tests
-// above happen to exercise nim/gemini/selfHosted/claude/openai's
-// request bodies for OTHER reasons (images, tool schemas, caching), but
-// none of them actually assert the token-bound field/value survives on
-// the wire, and only through incidental body inspection, not a named
-// assertion — so a regression (e.g. a future refactor accidentally
-// dropping max_tokens from one adapter but not the others) would pass
-// silently. One assertion per adapter, same capturedRequestBody helper
-// every other request-shape test in this file already uses.
+// adapter's own MAX_TOKENS/MAX_OUTPUT_TOKENS, closing what used to be a
+// fully-unbounded response on most adapters) had a real asymmetry in
+// coverage — every adapter's shared request-shape tests above happen to
+// exercise gemini/selfHosted/claude/openai's request bodies for OTHER
+// reasons (images, tool schemas, caching), but none of them actually
+// assert the token-bound field/value survives on the wire, and only
+// through incidental body inspection, not a named assertion — so a
+// regression (e.g. a future refactor accidentally dropping max_tokens
+// from one adapter but not the others) would pass silently. One
+// assertion per adapter, same capturedRequestBody helper every other
+// request-shape test in this file already uses.
 test('every provider adapter sends an explicit output-token bound on the wire (round 8 fix, previously only informally exercised)', async () => {
-  const nimBody = await capturedRequestBody(() => aiProviders.getAdapter('nim').completeWithMeta(
-    { apiKey: 'k', baseUrl: 'http://localhost:1', model: 'nim-x' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
-  ).catch(() => {}));
-  assert.equal(nimBody.max_tokens, 1024);
-
   const geminiBody = await capturedRequestBody(() => aiProviders.getAdapter('gemini').completeWithMeta(
     { projectId: 'p', accessToken: 't', model: 'gemini-x' },
     contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),

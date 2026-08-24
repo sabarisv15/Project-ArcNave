@@ -140,5 +140,5 @@ Governed by [RS-CLS-002](../10-specification/RS-CLS-classroom.md#rs-cls-002).
 | Platform isolation | Separate application, separate auth, separate API | [ADR-010](../30-decisions/adr-register.md#adr-010) |
 | File storage | Local disk under a tenant-prefixed tree; pluggable backend selection per institution | [ADR-017](../30-decisions/adr-register.md#adr-017), [RS-GOV-013](../10-specification/RS-GOV-governance.md#rs-gov-013) |
 | File generation | `exceljs` / `docx` / `pdfkit`; `docxtemplater` + `pizzip` for template merge | [ADR-019](../30-decisions/adr-register.md#adr-019) |
-| LLM provider | NVIDIA NIM (OpenAI-compatible endpoint); provider is a configurable, swappable component | [ADR-028](../30-decisions/adr-register.md#adr-028), [ADL-002](../30-decisions/ledger.md#adl-002) |
+| LLM provider | Google Gemini (Vertex AI); provider is a configurable, swappable component — NIM was the original default (see [ADR-028](../30-decisions/adr-register.md#adr-028)/[ADL-002](../30-decisions/ledger.md#adl-002)), removed and repointed to Gemini | [ADL-051](../30-decisions/ledger.md#adl-051) |
 | Agent pattern | Native function-calling / tool-use. Not LangChain/LangGraph | [ADR-004](../30-decisions/adr-register.md#adr-004) |

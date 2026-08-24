@@ -53,6 +53,15 @@ const DEFAULT_MODEL = 'gemini-3.7-flash';
 // are drawn from this same budget.
 const MAX_OUTPUT_TOKENS = 65_536;
 const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
+// NIM-provider removal: Gemini is now the platform default embedding
+// provider too. gemini-embedding-001 natively outputs up to 3072
+// dimensions but supports Vertex's documented outputDimensionality
+// truncation (Matryoshka representation learning) — requested below to
+// match the ai_document_chunks/ai_tool_embeddings vector(1024) columns'
+// existing fixed size, so no new migration is needed. Changing this
+// value requires either a new migration or re-embedding every row under
+// the new dimension.
+const EMBEDDING_DIMENSIONS = 1024;
 
 // Gemini 3.x's hybrid reasoning defaults to a HIGH thinking level for
 // Flash models — real live cost caught it: a tool-result-summarization
@@ -177,11 +186,11 @@ async function postJson(cfg, url, body) {
   }
 }
 
-// Token/cost telemetry (P1.1) — see nim.js's own comment for the shared
-// reasoning. Gemini's usage block is `usageMetadata` (promptTokenCount/
-// candidatesTokenCount), a different field name and shape from every
-// other adapter's `usage` — a real vendor difference, not an
-// inconsistency in this codebase.
+// Token/cost telemetry (P1.1) — see openai.js's own comment for the
+// shared reasoning. Gemini's usage block is `usageMetadata`
+// (promptTokenCount/candidatesTokenCount), a different field name and
+// shape from every other adapter's `usage` — a real vendor difference,
+// not an inconsistency in this codebase.
 async function completeWithMeta(cfg, arcnaveContext) {
   const { systemPrompt, userPrompt, images } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
@@ -316,7 +325,7 @@ const MAX_EMPTY_RETRIES = 2;
 // safety backstop against the slow/hanging case.
 const MAX_TOTAL_STREAM_MS = 45000;
 
-// Streaming variant of complete() (P0.5) — see nim.js's own comment
+// Streaming variant of complete() (P0.5) — see openai.js's own comment
 // for the shared reasoning (only the final answer streams). Vertex
 // AI's streaming path is the same `:streamGenerateContent?alt=sse`
 // shape the public Gemini API uses — only the host/auth above differ.
@@ -441,6 +450,7 @@ async function embed(cfg, texts, { inputType } = {}) {
   const taskType = inputType === 'query' ? 'RETRIEVAL_QUERY' : 'RETRIEVAL_DOCUMENT';
   const payload = await postJson(cfg, modelUrl(cfg, cfg.embeddingModel, 'predict'), {
     instances: texts.map((content) => ({ content, task_type: taskType })),
+    parameters: { outputDimensionality: EMBEDDING_DIMENSIONS },
   });
 
   const predictions = Array.isArray(payload && payload.predictions) ? payload.predictions : null;
@@ -481,6 +491,7 @@ async function generateImage(cfg, { prompt }) {
 
 module.exports = {
   name: 'gemini',
+  EMBEDDING_DIMENSIONS,
   supportsVision,
   isConfigured,
   complete,

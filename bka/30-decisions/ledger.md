@@ -2768,3 +2768,78 @@ half-applied.
 
 **Full ADR text and the "Rejected" entry this decision adds:**
 [ADR-030](adr-register.md#adr-030).
+
+## ADL-051
+
+### NVIDIA NIM removed; Gemini becomes the default chat AND embedding provider
+
+**Decision.** The `nim` AI provider adapter is removed from the codebase
+entirely (`backend/src/services/aiProviders/nim.js` deleted). Gemini
+becomes the platform's default for both chat (`config.defaultAiProvider`)
+and embeddings (`config.embeddingProvider`) — previously both defaulted
+to `nim`. The two configuration keys remain independent, unchanged
+architecturally (`embeddingService.js`'s own decoupling rationale, ADL-041
+et seq., still holds): a future college could still run Claude for chat
+and Gemini for embeddings, or any other combination. Alongside this, a
+global `openai` config block is added (`config.openai`,
+`GLOBAL_CONFIG_BUILDERS.openai`) — not previously a global-default-capable
+provider — specifically so `DEFAULT_AI_PROVIDER=openai` is a real, working
+choice and so this codebase's own test suite has a simple, globally-
+configurable OpenAI-compatible fixture provider now that `nim` (which
+served exactly that role in ~40 orchestration-level tests) is gone.
+
+**Superseded position.** [ADR-028](adr-register.md#adr-028)/[ADL-002](#adl-002)
+(NIM as the original zero-configuration default) — those decisions
+recorded real rationale for their time and are left unedited as history;
+this entry records the reversal, not a rewrite of them.
+
+**Rationale.** The user will not be using NVIDIA NIM. Gemini was chosen
+as the replacement default because it already had a working global
+config block, live-verified credentials in this development environment
+throughout the ADR-030 P0–P2(a) effort, and is the provider the existing
+live behavioral suite (`scripts/ai-behavioral-suite.js`) already targets
+by default. For embeddings specifically: `gemini-embedding-001` (Google's
+current unified English/multilingual/code embedding model — a better fit
+for ARCNAVE's own English/Tamil/Tanglish/tool-description/document mix
+than NIM's retrieval-specific `nvidia/nv-embedqa-e5-v5`) is requested with
+Vertex's `outputDimensionality: 1024` parameter
+(`services/aiProviders/gemini.js`'s new `EMBEDDING_DIMENSIONS` constant),
+matching the existing `ai_document_chunks`/`ai_tool_embeddings`
+`vector(1024)` column sizing with no new migration needed.
+
+**Migration impact — a real data re-index, not just a config flip.** The
+embedding-provenance `model` column (already landed, round 32,
+`1763500000000_embedding-model-provenance.js`) means old NIM-model rows
+are never silently blended with new Gemini-model rows in a cosine-distance
+ranking — the read paths (`aiDocumentChunkRepository.search`,
+`aiToolRetrievalService.ensureEmbeddings`) already filter on `model`. Two
+different consequences per consumer: tool embeddings self-heal
+automatically (`ensureEmbeddings` re-embeds every "missing under the
+current model" tool on the next real tool-retrieval call, zero manual
+work); document chunks do NOT self-heal (created once at upload time,
+never re-derived on search) — a new one-off, idempotent script,
+`backend/scripts/reembed-document-chunks.js`, re-embeds every existing
+chunk's already-stored `chunk_text` under the new model. Both were run as
+part of this change's rollout, not left as a theoretical future step.
+
+**Test-suite impact.** 11 test files referenced `nim` as either a
+dedicated-adapter-coverage subject (deleted outright — equivalent
+coverage already exists for `openai`/`gemini`/`claude`/`self_hosted` in
+`ai-providers.test.js`/`ai-providers-streaming.test.js`) or a generic
+"some provider" fixture (repointed to `openai`, which shares NIM's exact
+OpenAI-compatible wire shape, so most of this migration was a mechanical
+rename rather than a wire-shape rewrite). Two vision-related tests in
+`ai-service.test.js` needed a real fix, not a rename: `openai.
+supportsVision` is `true` (unlike NIM's `false`), so the "provider without
+vision support" test now uses `self_hosted` (also `false`) via a direct
+`configurationService.getAiConfig` stub, matching the pattern the
+sibling "vision-capable provider" test already used for Claude.
+
+**Documentation impact.** `bka/00-foundation/domain-model.md`'s
+Technology Baseline table, `bka/10-specification/RS-AIG-ai-governance.md`,
+and `bka/20-matrices/ai-capability-matrix.md` — all current-fact
+assertions naming NIM as the live default — updated to name Gemini.
+`bka/30-decisions/adr-register.md`/this ledger's own NIM-era entries
+(ADR-028/ADL-002) are left unedited, per this project's established
+convention of recording a reversal as a new entry rather than rewriting
+history (same convention [ADL-050](#adl-050) followed).

@@ -10,7 +10,6 @@
 // shape lives outside this folder (CLAUDE.md-style single-owner
 // convention, same as fileStorage.js owning file storage).
 
-const nim = require('./nim');
 const gemini = require('./gemini');
 const claude = require('./claude');
 const selfHosted = require('./selfHosted');
@@ -18,7 +17,6 @@ const openai = require('./openai');
 const errors = require('./errors');
 
 const ADAPTERS = {
-  nim,
   gemini,
   claude,
   self_hosted: selfHosted,

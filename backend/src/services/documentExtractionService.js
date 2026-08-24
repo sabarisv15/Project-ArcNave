@@ -200,8 +200,8 @@ function canonicalizeKey(value) {
 // Provider-agnostic by construction — this only post-processes the
 // STRING a provider returned for detectedDocType; it never branches on
 // which provider/model produced it, so the same normalization applies
-// unchanged whether aiConfig came from NIM (Llama/GPT-OSS), Gemini, or
-// Claude. Order: exact match first, then alias-mapped match — both
+// unchanged whether aiConfig came from Gemini, Claude, OpenAI, or a
+// self-hosted model. Order: exact match first, then alias-mapped match — both
 // always re-checked against the live candidateKeys, never trusted on
 // their own.
 function normalizeDetectedDocType(rawValue, candidateKeys) {

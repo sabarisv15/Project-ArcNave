@@ -5,9 +5,10 @@
 // in any response body (raw or otherwise), a college with its own row
 // gets that provider back from getAiConfig (proven at the route level
 // via GET reflecting what PUT set), a college with no row still gets
-// the pre-existing global nim default, and setting one college's
-// config never affects another college's (real Row-Level Security,
-// not just application-layer filtering).
+// the global default (openai, in this file's own forced test scope —
+// see below), and setting one college's config never affects another
+// college's (real Row-Level Security, not just application-layer
+// filtering).
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -116,13 +117,16 @@ test('ai-config API', async (t) => {
   const collegeA = await seedTenant(adminPool, 'a');
   const collegeB = await seedTenant(adminPool, 'b');
 
-  // This file asserts a no-row college's provider reads back as 'nim'
-  // (the pre-existing global default) — force it regardless of a real
-  // dev/deployment environment's own DEFAULT_AI_PROVIDER override (e.g.
-  // a local .env.local.sh set to 'gemini' to run the dev server against
-  // a real key). Same fix as ai.test.js/ai-service.test.js.
+  // This file asserts a no-row college's provider reads back as
+  // 'openai' — forced regardless of a real dev/deployment environment's
+  // own DEFAULT_AI_PROVIDER override (e.g. a local .env.local.sh set to
+  // 'gemini' to run the dev server against a real key). openai (not
+  // gemini/claude) is used here for the same reason ai-service.test.js's
+  // withOpenAiConfig comment gives — it shares NIM's old simple,
+  // globally-configurable shape (NIM itself removed, see ADL-051). Same
+  // fix as ai.test.js/ai-service.test.js.
   const originalDefaultAiProvider = globalConfig.defaultAiProvider;
-  globalConfig.defaultAiProvider = 'nim';
+  globalConfig.defaultAiProvider = 'openai';
 
   t.after(async () => {
     globalConfig.defaultAiProvider = originalDefaultAiProvider;
@@ -149,7 +153,7 @@ test('ai-config API', async (t) => {
   await t.test('unauthenticated GET/PUT are rejected with 401', async () => {
     const getResp = await get(baseUrl, '/api/v1/ai-config', headersFor(collegeA));
     assert.equal(getResp.status, 401);
-    const putResp = await put(baseUrl, '/api/v1/ai-config', headersFor(collegeA), { provider: 'nim' });
+    const putResp = await put(baseUrl, '/api/v1/ai-config', headersFor(collegeA), { provider: 'openai' });
     assert.equal(putResp.status, 401);
   });
 
@@ -159,13 +163,13 @@ test('ai-config API', async (t) => {
     assert.equal(resp.status, 403);
   });
 
-  await t.test('a college with no row yet gets the global nim default', async () => {
+  await t.test('a college with no row yet gets the global openai default', async () => {
     const token = await login(collegeB, 'principaluser');
     const resp = await get(baseUrl, '/api/v1/ai-config', headersFor(collegeB, token));
     assert.equal(resp.status, 200);
-    assert.equal(resp.body.provider, 'nim');
-    assert.equal(resp.body.model, globalConfig.nim.model);
-    assert.equal(resp.body.hasApiKey, Boolean(globalConfig.nim.apiKey));
+    assert.equal(resp.body.provider, 'openai');
+    assert.equal(resp.body.model, globalConfig.openai.model);
+    assert.equal(resp.body.hasApiKey, Boolean(globalConfig.openai.apiKey));
   });
 
   await t.test('PUT sets a college-specific provider; api_key never appears in the response body, raw or otherwise', async () => {
@@ -198,7 +202,7 @@ test('ai-config API', async (t) => {
     const token = await login(collegeB, 'principaluser');
     const resp = await get(baseUrl, '/api/v1/ai-config', headersFor(collegeB, token));
     assert.equal(resp.status, 200);
-    assert.equal(resp.body.provider, 'nim');
+    assert.equal(resp.body.provider, 'openai');
   });
 
   await t.test('PUT with an unknown provider is rejected with 400, not persisted', async () => {

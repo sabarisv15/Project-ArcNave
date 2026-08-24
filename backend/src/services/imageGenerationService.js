@@ -16,7 +16,7 @@ const documentService = require('./documentService');
 // this service calls whatever adapter configurationService.getAiConfig
 // resolves for the college, exactly like every other AI capability in
 // this codebase (RS-AIG-008). An adapter with no real vendor image API
-// (claude/nim/self_hosted at present) throws AiProviderCapabilityError
+// (claude/self_hosted at present) throws AiProviderCapabilityError
 // itself, the same shape claude.js's own missing embed() already uses —
 // no adapter-name branch lives here or anywhere outside aiProviders/.
 

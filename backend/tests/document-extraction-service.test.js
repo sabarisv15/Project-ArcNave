@@ -18,7 +18,7 @@ const { flattenToPrompts } = require('../src/services/aiContextAssembly');
 
 function mockAiConfig(t, completeImpl) {
   const m = t.mock.method(configurationService, 'getAiConfig', async () => ({
-    provider: 'nim',
+    provider: 'gemini',
     config: { model: 'test-model-v1' },
     adapter: { complete: completeImpl },
   }));

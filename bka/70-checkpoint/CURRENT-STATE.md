@@ -1,285 +1,195 @@
 # Current State
 
-_Last updated: 2026-08-24 — P2(a) closed and verified (unchanged from
-earlier this session). **P2(b) (native Gemini request builder) was
-designed, plan-mode-approved, implemented, unit-tested green — then
-EMPIRICALLY REJECTED and reverted** after the live behavioral suite
-caught a real regression a wire-shape unit test cannot see: splitting the
-system instruction into multiple Gemini API parts (vs. P2(a)'s one joined
-string, same text, byte-identical when reconstructed) measurably weakened
-the model's compliance with the `FILE` module's "never claim you can't
-produce a document" rule (75% pass old vs. 29% pass new, across 4/7 valid
-live samples respectively). `gemini.js` is back to its exact P2(a)-
-committed state (round 32, commit `654fa67`) — working tree is clean, no
-outstanding diff. Full evidence: [ADL-050](../30-decisions/ledger.md#adl-050),
-[ADR-030's "Rejected (empirically, 2026-08-24)" entry](../30-decisions/adr-register.md#adr-030)._
+_Last updated: 2026-08-24 — NIM provider removal complete, verified, and
+committed. Gemini is now the platform default for both chat
+(`config.defaultAiProvider`) and embeddings (`config.embeddingProvider`).
+Full rationale and evidence: [ADL-051](../30-decisions/ledger.md#adl-051)._
 
-Governed by [`00-protocol.md`](00-protocol.md), which now also states the
-standing rule this file follows: **every rewrite must be a complete
-handover — exact file paths, exact line numbers, exact commands, exact
-expected results — such that the next session needs zero subagent calls
-and zero exploratory "audit the codebase" passes to continue.** This
-file is written to that bar below.
+Governed by [`00-protocol.md`](00-protocol.md)'s standing rule: every
+rewrite must be a complete handover — exact file paths, exact line
+numbers, exact commands, exact expected results — such that the next
+session needs zero subagent calls and zero exploratory "audit the
+codebase" passes to continue.
 
 ## Active Task
 
-**AI Context Architecture redesign** — P0 done, P0.5 done, P1 done, P2(a)
-fully complete and verified. **P2(b) attempted 2026-08-24 and empirically
-rejected — see ADL-050.** P2(c) (a real tool-use loop) is untouched, not
-designed, not started. Any retry of P2(b)'s native-Gemini-builder idea
-needs a fresh planning pass that explicitly designs around ADL-050's
-finding (never split a segment carrying a hard governance rule away from
-its neighbors) and its own live-suite re-verification — treat it as a
-new attempt, not a continuation of the reverted one.
-
-## Phase / Step
-
-P0 → P0.5 → P1 → **P2(a): CLOSED** → **P2(b): ATTEMPTED, EMPIRICALLY
-REJECTED, REVERTED (ADL-050) — gemini.js back to its P2(a)-committed
-state** → P2(c) not started.
+**None outstanding.** The most recent task (NIM provider removal) is
+closed — see "What actually happened" below and ADL-051 for full detail.
+The prior task (ADR-030 AI Context Architecture: P0/P0.5/P1/P2(a) closed,
+P2(b) attempted and empirically rejected — [ADL-050](../30-decisions/ledger.md#adl-050))
+remains available for its own next step (P2(c), a real tool-use loop, or
+a redesigned P2(b) retry that accounts for ADL-050's finding) whenever
+picked up — either requires its own fresh planning pass first (read
+ADR-030's phasing text directly, `bka/30-decisions/adr-register.md:445-451`,
+before scoping anything).
 
 ## Exact next action
 
-None outstanding. P2(a) is closed; P2(b) is closed-as-rejected (not
-"to do"). Starting P2(c), or a redesigned retry of P2(b), each requires
-its own fresh planning pass first (read ADR-030's phasing text directly,
-`bka/30-decisions/adr-register.md:445-451`, and for a P2(b) retry
-specifically, ADL-050's full finding before designing anything — same
-discipline P1/P2(a) used). Do not begin implementation without that pass.
+None. If starting fresh work, ask the user what's next — this file has
+no queued task.
 
 ## What actually happened this session, in order
 
-1. User said "go ahead p2" (continuing directly from the already-committed-
-   to-checkpoint P1 work). Read ADR-030's phasing text directly
-   (`bka/30-decisions/adr-register.md:445-448`) and scoped this pass to
-   **P2(a) only** — the `ARCNAVE Context` segment representation + a
-   byte-identical flattening shim every adapter accepts — explicitly
-   deferring P2(b) (native Gemini `buildRequest`) and P2(c) (a real
-   tool-use loop). Same literal-scoping discipline P1 used.
-2. Two parallel Explore-agent passes mapped (a) `aiService.js`'s current
-   5 prompt-assembly call sites post-P1, and (b) all 5 provider adapters'
-   exact request shapes — then a Plan agent turned that into a concrete
-   file-by-file plan, approved by the user via plan mode. Plan file:
-   `C:\Users\HAI\.claude\plans\proud-humming-moonbeam.md` (still on disk,
-   full detail — not deleted, not restated in full here).
-3. **New file** `backend/src/services/aiContextAssembly.js` — exports
-   `STABILITY` (`STATIC`/`CONVERSATION`/`TURN`/`VOLATILE`), `segment()`
-   (validates `{source, stability, target, content}`), `buildContext()`
-   (returns `{segments, tools, images, fingerprint}` — fingerprint =
-   sha256 over only `STATIC`+`CONVERSATION` segments' `{source, content}`,
-   in order — nothing consumes it yet, pure plumbing for P2(b)/P3),
-   `flattenToPrompts()` (the shim: `system`-targeted segments joined by
-   `\n\n` → `systemPrompt`; `user`-targeted likewise → `userPrompt`;
-   `tools`/`images` pass through as separate fields, never stringified),
-   and `contextFromFlatPrompts()` (test/back-compat helper wrapping a
-   flat `{systemPrompt, userPrompt, tools, images}` object into a
-   minimal 2-segment context).
-4. **New test** `backend/tests/ai-context-assembly.test.js` — 15 pure/
-   sync tests (segment validation, context/fingerprint determinism,
-   fingerprint excludes TURN/VOLATILE content, the 5 real call-site
-   flattening patterns byte-match today's old flat-string output). Run
-   standalone first, 15/15, before touching any adapter or `aiService.js`.
-5. **All 5 provider adapters migrated** — `claude.js`, `gemini.js`,
-   `nim.js`, `openai.js`, `selfHosted.js`: each of
-   `completeWithMeta`/`completeStream`/`completeWithTools`
-   (`gemini.js`'s is actually inside its internal `attemptStream`, not
-   `completeStream` itself, which just forwards) now takes an
-   `arcnaveContext` param and its very first line is
-   `const {...} = flattenToPrompts(arcnaveContext);` — everything below
-   that line in every function body is byte-for-byte unchanged (same
-   `postJson`, same `buildUserContent`/`buildUserParts`, same SSE
-   parsing, and critically Claude's existing `cache_control`-on-last-tool
-   caching logic, `claude.js:290-338`ish, untouched — it still gets a
-   flat `tools` array from the shim). `complete(cfg, arcnaveContext)` in
-   each file just forwards to `completeWithMeta` unchanged.
-6. **Test files updated to match** (mechanical: wrap every flat
-   `{systemPrompt, userPrompt, ...}` literal passed to a real adapter
-   function in `aiContextAssembly.contextFromFlatPrompts({...same
-   fields...})` — no assertion logic changed, since every existing
-   assertion targets the captured outbound HTTP body or return value,
-   never the input-object shape): `backend/tests/ai-providers.test.js`,
-   `backend/tests/ai-providers-streaming.test.js`. Discovered mid-step:
-   nim/selfHosted/openai share one table-driven loop in the streaming
-   test file (`ai-providers-streaming.test.js:65-95`), so all 3 of those
-   adapters had to be source-migrated together in one bundle rather than
-   strictly one-at-a-time, or the loop would fail for the two not-yet-
-   migrated ones for an unrelated reason. claude.js and gemini.js were
-   migrated individually first since they have their own dedicated test
-   sections.
-7. **All 5 `aiService.js` call sites migrated** to build an
-   `aiContextAssembly.buildContext([...segments], {tools, images})`
-   instead of a flat template-literal string — see "Segment-list assembly
-   reference" below for the exact pattern each one uses. Also fixed a
-   telemetry gotcha found during this step: `completeMaybeStreaming`
-   (`aiService.js` ~line 1280) used to read `prompts.systemPrompt.length`
-   directly for the `systemPromptChars` audit field — now computes it via
-   `aiContextAssembly.flattenToPrompts(arcnaveContext).systemPrompt.length`
-   once per call, same fix applied to `askAgent`'s decision-call telemetry
-   (`aiContextAssembly.flattenToPrompts(decisionContext).systemPrompt.length`).
-   `backend/tests/ai-service.test.js` needed zero assertion-logic changes
-   for the 5 call sites themselves (same wire-body-only-assertion pattern
-   as step 6) — only its own 3 direct `nimAdapter.complete(...)` calls
-   (lines ~910/931/953, testing the adapter directly, not through
-   `aiService.js`) needed the same `contextFromFlatPrompts` wrap.
-8. **Extra call site found, not in either exploration's original map**:
-   `backend/src/services/documentExtractionService.js` has 2 direct
-   `adapter.complete(aiConfig, {systemPrompt, userPrompt})` calls —
-   `classifyDocument` (~line 235) and `extractFields` (~line 358) — both
-   migrated to `contextFromFlatPrompts({...})`. Fixed the one test mock
-   that breaks as a result: `backend/tests/document-extraction-service.test.js:77`
-   (`mockAiConfig`'s fake adapter destructured `{systemPrompt}` directly
-   from its second arg — now calls `flattenToPrompts(arcnaveContext)`
-   itself first).
-9. **Second extra call site found only when running the FULL suite** (not
-   caught by either targeted test file — it's a live-DB integration test
-   that monkey-patches the real `nim` module directly, not via a mocked
-   `configurationService.getAiConfig`): `backend/tests/admission-drafts.test.js:144-146`
-   sets `nim.complete = async (cfg, { systemPrompt }) => {...}` — fixed
-   the same way (flatten first, then read `.systemPrompt`). This is WHY
-   the full-suite run matters as its own gate, not just the two targeted
-   provider/service test files — a full local-suite pass doesn't
-   substitute for it.
-10. **Verification, in order, all green**:
-    - `node --test tests/ai-context-assembly.test.js` → 15/15 (native,
-      no DB needed).
-    - `node --test tests/ai-providers.test.js tests/ai-providers-streaming.test.js`
-      → 42/42 (native, no DB needed), run after every adapter migration.
-    - `node --test tests/ai-service.test.js` (native, needs
-      `source backend/.env.local.sh` first — see Pending's own host-tooling
-      note) → 149/151, same 2 pre-existing unrelated failures every
-      checkpoint since before this session has recorded (`Policy Gate:
-      'class_tutor'...` and `fetch_trusted_web_page:...`, both
-      `fetch_trusted_web_page`-related, both pre-existing, out of scope
-      for ADR-030).
-    - `node --test tests/document-extraction-service.test.js` → 50/50.
-    - `docker compose run --rm app npm test` (full suite; this is what
-      caught step 9's `admission-drafts.test.js` gap — run this before
-      calling any phase done) → first pass 2085/2091 (the new
-      `admission-drafts` failure + the 2 pre-existing), after the fix
-      **2089/2091, same 2 pre-existing failures, zero new regressions**.
-    - `docker compose run --rm app node --test tests/ai.test.js` →
-      **28/28**, live DB, unchanged from P1's own baseline.
-    - `docker compose run --rm app node scripts/ai-behavioral-suite.js`
-      (live Gemini) — **started, ran cleanly through categories A/B/C and
-      partway into D with zero failures and zero rate-limit noise, then
-      the session was interrupted by the user before it finished** (not
-      because anything failed — see "Exact next action" above, this is
-      the one thing left to actually finish and confirm).
+1. User said "remove NIM from entire project as i will not be using
+   that." Explored the full blast radius via a background agent (backend
+   production code) plus direct greps (tests, docs, frontend) before
+   planning — confirmed NIM was not peripheral: `config.js`'s default for
+   **both** chat (`defaultAiProvider`) and embeddings
+   (`embeddingProvider`), touching 5+ production files and 11 test files,
+   zero frontend coupling, no DB-level lock-in (`ai_config.provider` is
+   plain `TEXT`, no CHECK constraint).
+2. Asked the user 2 clarifying questions (AskUserQuestion) since removal
+   requires a real replacement, not just a deletion: **Gemini** chosen as
+   the new default for both chat and embeddings, with embeddings
+   explicitly configured to 1024 dimensions (matching the existing
+   `vector(1024)` schema, no new migration).
+3. Plan mode: designed the full removal (production code, docs, tests,
+   embedding re-index), got 3 rounds of user feedback incorporated
+   directly into the plan before implementation — most substantively:
+   embedding-model change requires a real data re-index (not just a
+   config flip) given the existing embedding-provenance `model` column
+   (round 32) means old NIM-model rows are simply invisible to a
+   Gemini-scoped query, not blended — but document chunks specifically
+   don't self-heal the way tool embeddings do, so a new backfill script
+   was required, not optional.
+4. **Production code**: deleted `backend/src/services/aiProviders/nim.js`;
+   removed it from the adapter registry
+   (`backend/src/services/aiProviders/index.js`); `backend/src/config.js`
+   — deleted the `nim` block, `defaultAiProvider`/`embeddingProvider` now
+   default to `'gemini'`, `gemini.embeddingModel` now defaults to
+   `'gemini-embedding-001'` (was `null`); **added a new global `openai`
+   config block** (`config.openai` + `configurationService.js`'s
+   `globalOpenaiConfig`/`GLOBAL_CONFIG_BUILDERS.openai`) — not strictly
+   required by "remove NIM" alone, but added deliberately so
+   `DEFAULT_AI_PROVIDER=openai` becomes a real working choice (previously
+   it wasn't) and so the test suite has a simple, globally-configurable
+   OpenAI-compatible fixture provider now that NIM (which served exactly
+   that role in ~40 tests) is gone — flagged explicitly to the user as a
+   deliberate scope addition, not silently done.
+   `configurationService.js`'s `resolveDefaultProvider()` fallback
+   literal changed from `'nim'` to `'gemini'`.
+   `backend/src/services/aiProviders/gemini.js`'s `embed()` gained a new
+   `EMBEDDING_DIMENSIONS = 1024` constant and now sends Vertex's
+   `outputDimensionality` parameter — confirmed live (see Verification)
+   this actually produces 1024-length vectors, not assumed from docs.
+   `backend/scripts/ai-behavioral-suite.js`'s `PROVIDER_NAME_LEAKS`
+   dropped the NIM-specific `'nvidia'`/`'nim '` entries.
+5. **New file** `backend/scripts/reembed-document-chunks.js` — idempotent
+   one-off backfill: re-embeds every existing `ai_document_chunks` row's
+   already-stored `chunk_text` under the current embedding model (no
+   OCR/re-parsing needed), skipping any `(document_id, chunk_index)`
+   that already has a row under the current model. Tool embeddings
+   needed no equivalent script — `aiToolRetrievalService.ensureEmbeddings`
+   already self-heals automatically on the next real tool-retrieval call
+   (scoped by the same `model` column).
+6. **Tests**: 11 files referenced `nim`. Dedicated nim-adapter-coverage
+   blocks were deleted outright (equivalent coverage already exists for
+   `openai`/`gemini`/`claude`/`self_hosted` in `ai-providers.test.js`/
+   `ai-providers-streaming.test.js`); ~40 orchestration-level tests in
+   `ai-service.test.js`/`ai.test.js` that used nim only as a generic
+   "some provider" fixture were mechanically repointed to `openai`
+   (shares NIM's exact OpenAI-compatible wire shape, so this was a
+   rename, not a wire-shape rewrite — `withNimConfig` → `withOpenAiConfig`,
+   `config.nim.*` → `config.openai.*`). **One real fix, not a rename**:
+   `openai.supportsVision` is `true` (unlike NIM's `false`), so
+   `ai-service.test.js`'s "provider without vision support" test now
+   uses `self_hosted` (also `false`) via a direct
+   `configurationService.getAiConfig` stub, matching the pattern its own
+   sibling "vision-capable provider" test already used for Claude.
+   Historical/provenance comments (UAT findings, "caught live against
+   NIM" notes) were deliberately left untouched — they're a record of
+   why code is shaped the way it is, not a currently-wrong claim.
+   Comments that were genuinely dangling (several adapters' "see nim.js's
+   own comment" cross-references, now pointing at a deleted file) were
+   fixed by relocating the actual explanatory text into `openai.js`
+   (the natural surviving canonical OpenAI-compatible reference) and
+   repointing `claude.js`/`gemini.js`/`selfHosted.js`'s own pointers at
+   it.
+7. **Documentation**: `bka/00-foundation/domain-model.md`'s Technology
+   Baseline table, `bka/10-specification/RS-AIG-ai-governance.md`, and
+   `bka/20-matrices/ai-capability-matrix.md` — all current-fact
+   assertions naming NIM as the live default — updated to name Gemini.
+   `bka/30-decisions/adr-register.md`/`ledger.md`'s NIM-era entries
+   (ADR-028/ADL-002) left unedited, per this project's established
+   convention (same one ADL-050 followed) of recording a reversal as a
+   new entry (ADL-051) rather than rewriting history.
+8. **Verification, in order, all green**:
+   - `node --test` across `ai-providers.test.js`/`ai-providers-streaming.test.js`/
+     `ai-service.test.js`/`ai-config.test.js`/`configuration-service.test.js`/
+     `ai-policy-assembly.test.js`/`ai-experience-layer.test.js` → 242/244
+     (same 2 pre-existing `fetch_trusted_web_page` failures every prior
+     checkpoint has recorded, zero new regressions).
+   - `node --test tests/document-extraction-service.test.js
+     tests/document-search-service.test.js` → 75/75.
+   - `docker compose run --rm app npm test` (full suite) → 2084/2086
+     (same 2 pre-existing failures; the ~10-test drop from the prior
+     2094/2096 baseline is exactly the nim-specific tests intentionally
+     deleted in step 6, not a regression).
+   - `docker compose run --rm app node --test tests/admission-drafts.test.js
+     tests/ai.test.js tests/ai-config.test.js` (live DB) → 45/45.
+   - **Live embedding-dimension check** (direct `embeddingService.embed()`
+     call, both `inputType: 'passage'` and `'query'`) → confirmed 1024-length
+     vectors both ways, `currentModel()` reports `gemini-embedding-001`.
+   - **Re-index run live**: `reembed-document-chunks.js` → "Nothing to
+     do" (no real document chunks exist in this pre-launch dev DB — the
+     script still ran end-to-end with no errors, proving the mechanism,
+     per the user's own instruction to run it explicitly rather than
+     assume). Tool-embedding self-heal triggered via a real
+     `retrieveRelevantTools` call → all 69 tools now show
+     `model='gemini-embedding-001'` in `ai_tool_embeddings`, semantic
+     retrieval returned sensible results for a real query.
+   - **Live behavioral suite** (`docker compose run --rm app node
+     scripts/ai-behavioral-suite.js`, Gemini, post-switch) → 44/47: one
+     `A`-category miss was a Vertex network timeout (`exceeded its
+     overall time budget`), not a content failure; J's j1/j2 unchanged
+     (known pre-existing, see below); every other category — including
+     E (document-capability), the one most exposed by an
+     embedding/chat-provider swap — matched the established 45/47
+     baseline exactly. Confirms zero behavioral regression.
+9. Committed as a single checkpoint (see git log for the exact commit —
+   this file doesn't restate the hash per protocol §2, check `git log`
+   directly).
 
-## Segment-list assembly reference (exact, so no rediscovery is needed)
+## Pending
 
-Every segment list ends its **system**-targeted segments with an
-`identity` segment (content = `identityBlock` from
-`aiActorContext.describeIdentityContext`) — this is the ADR-030 P0
-invariant, unchanged, present in all 5 sites with zero exceptions.
-
-| Call site (file:~line) | System segments, in order | User segments, in order | `tools`/`images` |
-|---|---|---|---|
-| `askAboutTool` (`aiService.js:1163`) | safety-preamble (STATIC) → mode-prefix (STATIC) → policy-modules (CONVERSATION) → identity | tool-result-data (VOLATILE) — ONE segment, no guidance appended | neither |
-| `askGeneralChat` (`aiService.js:1406`) | mode-prefix (STATIC) → policy-modules (CONVERSATION) → identity — **no safety-preamble** | question (TURN) + optional image-unavailable-note (TURN) | `images` only |
-| `summarizeToolResult` (`aiService.js:1346`) | safety-preamble → mode-prefix → policy-modules → tool-description-note (TURN) → identity | tool-result-data (VOLATILE) → tool-result-answer-guidance (STATIC, = `TOOL_RESULT_ANSWER_SYSTEM_PROMPT`) | neither |
-| `executeWorkflowPlan` (`aiService.js:1036`) | safety-preamble → mode-prefix → policy-modules → plan-summary-note (TURN) → identity | tool-result-data → tool-result-answer-guidance | neither |
-| `askAgent` decision call (`aiService.js:1593`ish, the `adapter.completeWithTools` call) | mode-prefix → policy-modules → identity — **no safety-preamble** | question + optional image-unavailable-note | both `tools` (`toolsWithPlan`) and `images` |
-
-## Verification status
-
-- P1's own gate: unchanged, still green (see prior checkpoint history,
-  not re-stated here per protocol §2).
-- P2(a) unit tests (`ai-context-assembly.test.js`): **15/15**.
-- P2(a) adapter tests (`ai-providers.test.js` + `ai-providers-streaming.test.js`):
-  **42/42**.
-- `ai-service.test.js`: **149/151**, same 2 pre-existing unrelated
-  failures as every prior checkpoint.
-- `document-extraction-service.test.js`: **50/50**.
-- Full suite (`docker compose run --rm app npm test`): **2089/2091**,
-  same 2 pre-existing failures, zero new regressions.
-- `ai.test.js` (live DB, `docker compose run --rm app node --test tests/ai.test.js`):
-  **28/28**.
-- **Live behavioral suite: CONFIRMED COMPLETE and matching baseline**
-  (rerun 2026-08-24): `45/47 passed` — A 12/12, B 8/8, C 6/6, D 4/4,
-  E 3/3, F 2/2, G 6/6, I 3/3, J 1/3 (j1/j2 fail — known pre-existing,
-  non-blocking; j3 passes). Byte-for-byte category match against the P1
-  baseline. Script exits code 1 because of the 2 known J failures — this
-  is expected, not a new problem.
-
-## Decisions made this session
-
-- Scoped strictly to P2(a) only, reading ADR-030's phasing text directly
-  rather than the fuller architecture-section description — same
-  discipline as P1. P2(b)/P2(c) are untouched, not designed, not started.
-- The fingerprint is computed but consumed by nothing in this pass — no
-  caching wired in anywhere, Claude's existing `cache_control` mechanism
-  untouched. This satisfies the ADR's explicit rejection of a universal
-  cross-provider caching abstraction: the context exposes the fingerprint,
-  no adapter decision code exists yet to use it.
-- Migrated nim.js/selfHosted.js/openai.js together (not strictly one-at-
-  a-time) once the shared table-driven test loop in
-  `ai-providers-streaming.test.js` made partial migration produce a
-  spurious failure in the not-yet-migrated two — a pragmatic execution
-  detail, not a scope change; all 5 adapters still ended up migrated
-  exactly per the approved plan's design.
-- `promptQuestion`'s hint bundle (history/project/focus/memory/
-  attachment hints + the question, pre-assembled in `askAgent`) stays
-  ONE opaque `TURN`-tagged segment, not decomposed per-hint — a
-  deliberate, flagged-in-the-plan simplification (decomposing it touches
-  a lot of already-tested hint-assembly code for no benefit until P2(b)/
-  P3 actually reads the fingerprint and needs that precision).
-
-## Files touched this session (none committed yet)
-
-New: `backend/src/services/aiContextAssembly.js`,
-`backend/tests/ai-context-assembly.test.js`.
-
-Modified: `backend/src/services/aiProviders/{claude,gemini,nim,openai,selfHosted}.js`,
-`backend/src/services/aiService.js`,
-`backend/src/services/documentExtractionService.js`,
-`backend/tests/ai-providers.test.js`,
-`backend/tests/ai-providers-streaming.test.js`,
-`backend/tests/ai-service.test.js`,
-`backend/tests/document-extraction-service.test.js`,
-`backend/tests/admission-drafts.test.js`,
-`bka/70-checkpoint/00-protocol.md` (added the standing "checkpoint must
-be a complete, subagent-free handover" rule this file is itself written
-to), `bka/70-checkpoint/CURRENT-STATE.md` (this file).
-
-Everything already modified/untracked before this session (see `git
-status` — `config.js`, `aiToolRegistry.js`, `documentSearchService.js`,
-the embedding-service files, etc.) is untouched by this pass; those are
-pre-existing, separately-tracked work from before P1/P2.
-
-## Pending (unchanged from P1 unless noted)
-
-- P2(a) has no open items — closed. P2(b) is closed too, as an
-  empirically rejected attempt (ADL-050), not an open item. Next
-  possible work is P2(c), or a redesigned P2(b) retry that accounts for
-  ADL-050's finding — either requires its own fresh planning pass before
-  implementation starts.
-- J1/J2 product decision — unchanged, still open, still not scoped to
-  ADR-030 (see prior checkpoint history for the full description; not
-  re-stated here per protocol §2 — if you need it, it is in this file's
-  own git history at the P1-completion commit/version, or ask the user).
+- Nothing from the NIM-removal task — fully closed.
+- ADR-030 P2(c) (a real tool-use loop) — not started, available whenever
+  picked up, needs its own fresh planning pass.
+- A redesigned P2(b) retry (native Gemini request builder) — only if
+  someone wants to revisit ADL-050's finding with a different design;
+  not currently planned.
+- J1/J2 product decision (artifact tool-naming, ADR-030-adjacent) —
+  unchanged, still open, still not scoped to any current ADR (see this
+  file's own git history around the P1-completion commit for the full
+  description, or ask the user).
 - The 2 pre-existing `fetch_trusted_web_page` test failures — unchanged,
-  out of scope for ADR-030.
-- **Host-tooling note, unchanged from P1**: `node --test tests/` (bare
-  directory form) fails natively on this Windows/git-bash host with
-  `MODULE_NOT_FOUND` — use `docker compose run --rm app npm test` for the
-  full suite, or a specific file path (e.g.
-  `node --test tests/ai.test.js` after `source backend/.env.local.sh`)
-  for a targeted native run.
+  out of scope, unrelated to any work in this file's history.
+- **Host-tooling note, unchanged for many checkpoints**: `node --test
+  tests/` (bare directory form) fails natively on this Windows/git-bash
+  host with `MODULE_NOT_FOUND` — use `docker compose run --rm app npm
+  test` for the full suite, or a specific file path (e.g. `node --test
+  tests/ai.test.js` after `source backend/.env.local.sh`) for a targeted
+  native run.
+- **New from this task**: `backend/.env.local.sh` still has a
+  `NIM_API_KEY` line — code no longer reads it, left untouched per the
+  user's own call (not asked to remove it); harmless dead config, not a
+  correctness issue.
 
 ## Authoritative sources already identified (read these directly, never rediscover them)
 
+- [ADL-051](../30-decisions/ledger.md#adl-051) — full NIM-removal
+  rationale, migration impact, test-suite impact.
+- [ADL-050](../30-decisions/ledger.md#adl-050) — the P2(b) rejection
+  finding, required reading before any retry of that idea.
 - [ADR-030](../30-decisions/adr-register.md#adr-030) — phasing paragraph
-  at line ~445-451 specifically, before scoping P2(b)/P2(c).
-- Plan file (full P2(a) design detail, not restated above):
-  `C:\Users\HAI\.claude\plans\proud-humming-moonbeam.md`.
-- `backend/src/services/aiContextAssembly.js` — the segment/context
-  shape, fingerprint, and shim; read this before touching any prompt-
-  assembly code again.
-- `backend/tests/ai-context-assembly.test.js` — extend here for any new
-  segment/fingerprint predicate, not inline elsewhere.
-- `backend/src/services/aiService.js` — the 5 call sites, exact line
-  numbers in the table above.
-- `backend/scripts/ai-behavioral-suite.js` — the live suite; its own
-  `--- Summary ---` output block is what "Exact next action" above tells
-  you to compare.
+  at line ~445-451, before scoping P2(c) or a P2(b) retry.
+- `backend/src/services/aiProviders/openai.js` — now the canonical
+  OpenAI-compatible reference adapter (selfHosted.js/claude.js/gemini.js
+  all point here for their shared P1.1/P0.5/P1.6 telemetry/streaming
+  comments, since nim.js — the original reference — no longer exists).
+- `backend/scripts/reembed-document-chunks.js` — the document-chunk
+  embedding backfill; re-run after any future embedding-provider/model
+  change, not just this one.
+- `backend/src/services/embeddingService.js` — the provider-independent
+  embedding resolution layer; read this before touching any
+  embedding-provider config again.

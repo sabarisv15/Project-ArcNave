@@ -9,7 +9,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { iterateSseLines } = require('../src/services/aiProviders/sse');
-const nimAdapter = require('../src/services/aiProviders/nim');
 const selfHostedAdapter = require('../src/services/aiProviders/selfHosted');
 const claudeAdapter = require('../src/services/aiProviders/claude');
 const geminiAdapter = require('../src/services/aiProviders/gemini');
@@ -60,10 +59,9 @@ test('iterateSseLines: non-data lines (event:, blank lines) are ignored', async 
   assert.deepEqual(payloads, ['{"a":1}']);
 });
 
-// --- nim/selfHosted (OpenAI-compatible SSE shape) ---
+// --- selfHosted/openai (OpenAI-compatible SSE shape) ---
 
 for (const [label, adapter, cfg] of [
-  ['nim', nimAdapter, { apiKey: 'k', baseUrl: 'https://nim.example', model: 'test-model' }],
   ['selfHosted', selfHostedAdapter, { baseUrl: 'https://self-hosted.example', model: 'test-model' }],
   ['openai', openaiAdapter, { apiKey: 'k', model: 'test-model' }],
 ]) {

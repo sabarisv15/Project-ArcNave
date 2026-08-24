@@ -414,6 +414,25 @@ stability annotation and fingerprint; each adapter decides independently
 whether and how to exploit them. Caching mechanics never enter the shared
 core.
 
+**Rejected (empirically, 2026-08-24): P2(b)'s native Gemini request
+builder — mapping each `system`-targeted segment to its own
+`systemInstruction.parts` entry instead of joining them into one string
+first. Implemented, unit-tested (byte-identical reconstruction proven),
+full suite and live-DB green — then the live behavioral suite caught a
+real regression a wire-shape test cannot see: scenario `e1` (the `FILE`
+policy module's "NEVER tell the user you cannot produce a document" rule,
+`aiPolicyAssembly.js:136`) dropped from 3/4 valid live samples passing on
+the old joined-string shape to 2/7 on the native multi-part shape — same
+instruction text, byte-identical when reconstructed, just split across 3
+parts instead of 1. Splitting a system instruction into multiple Gemini
+API parts measurably weakens the model's compliance with a governance
+rule embedded in one of those parts, even though nothing about the
+*text* changed. Full evidence and sample counts: [ADL-050](ledger.md#adl-050).
+Reverted; `gemini.js` stays on the P2(a) flattening shim. Any future
+retry needs either a design that never splits a segment carrying a hard
+governance rule away from its neighbors, or acceptance of this
+compliance cost — not a decision to make casually.
+
 **Consequence — two correctness fixes folded into the first implementation
 phase, not treated as later optimization.** (1) `documentSearchService.js`
 still resolves embeddings via the chat provider's own adapter
@@ -444,10 +463,12 @@ policy text is rewritten, since every clause in the current two prompts is
 a fix for a real production failure. P1: split the two prompts into the
 module set above; rewrite only `CORE`'s wording. P2: introduce the
 `ARCNAVE Context` representation with adapters flattening back to today's
-shape (a); native per-adapter request builders, Gemini first (b); a real
-tool-use loop replacing today's two duplicated one-shot decision/answer
-calls (c). P3: provider-specific caching, only after P0's telemetry shows
-what a clean prefix actually buys — not budgeted as a project until
+shape (a) [done]; native per-adapter request builders, Gemini first (b)
+[attempted 2026-08-24, empirically rejected — see the "Rejected" entry
+above and ADL-050]; a real tool-use loop replacing today's two duplicated
+one-shot decision/answer calls (c) [not started]. P3: provider-specific
+caching, only after P0's telemetry shows what a clean prefix actually buys
+— not budgeted as a project until
 measured.
 
 **Origin:** a 2026-08-23 architectural review (three rounds: technical

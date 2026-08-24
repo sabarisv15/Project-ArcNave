@@ -1,13 +1,18 @@
 # Current State
 
-_Last updated: 2026-08-24 — P2(a) (ARCNAVE Context representation +
-flattening shim) implemented and FULLY verified, including the live
-behavioral suite, per [ADR-030](../30-decisions/adr-register.md#adr-030)/
-[ADL-049](../30-decisions/ledger.md#adl-049). The live behavioral suite
-rerun matched the P1 baseline exactly (45/47, same category breakdown,
-J's j1/j2 failing for the same known pre-existing reason). **P2(a) is
-closed.** P2(b)/P2(c) are separate future passes — do not start either
-without a fresh planning pass (see "Active Task")._
+_Last updated: 2026-08-24 — P2(a) closed and verified (unchanged from
+earlier this session). **P2(b) (native Gemini request builder) was
+designed, plan-mode-approved, implemented, unit-tested green — then
+EMPIRICALLY REJECTED and reverted** after the live behavioral suite
+caught a real regression a wire-shape unit test cannot see: splitting the
+system instruction into multiple Gemini API parts (vs. P2(a)'s one joined
+string, same text, byte-identical when reconstructed) measurably weakened
+the model's compliance with the `FILE` module's "never claim you can't
+produce a document" rule (75% pass old vs. 29% pass new, across 4/7 valid
+live samples respectively). `gemini.js` is back to its exact P2(a)-
+committed state (round 32, commit `654fa67`) — working tree is clean, no
+outstanding diff. Full evidence: [ADL-050](../30-decisions/ledger.md#adl-050),
+[ADR-030's "Rejected (empirically, 2026-08-24)" entry](../30-decisions/adr-register.md#adr-030)._
 
 Governed by [`00-protocol.md`](00-protocol.md), which now also states the
 standing rule this file follows: **every rewrite must be a complete
@@ -18,27 +23,29 @@ file is written to that bar below.
 
 ## Active Task
 
-**AI Context Architecture redesign** — P0 done, P0.5 done, P1 done,
-**P2(a) fully complete and fully verified, including the live behavioral
-suite (rerun 2026-08-24, matched baseline exactly).** P2(b) (native
-per-adapter `buildRequest`, Gemini first) and P2(c) (a real tool-use
-loop) are separate, not-yet-started future passes — do not start either
-without a fresh planning pass, same discipline P1/P2(a) both used (read
-ADR-030's phasing text directly, scope to exactly what it names).
+**AI Context Architecture redesign** — P0 done, P0.5 done, P1 done, P2(a)
+fully complete and verified. **P2(b) attempted 2026-08-24 and empirically
+rejected — see ADL-050.** P2(c) (a real tool-use loop) is untouched, not
+designed, not started. Any retry of P2(b)'s native-Gemini-builder idea
+needs a fresh planning pass that explicitly designs around ADL-050's
+finding (never split a segment carrying a hard governance rule away from
+its neighbors) and its own live-suite re-verification — treat it as a
+new attempt, not a continuation of the reverted one.
 
 ## Phase / Step
 
-P0 → P0.5 → P1 → **P2(a): CLOSED — code complete, unit/integration tests
-green, full suite green, live-DB `ai.test.js` green, live behavioral
-suite green and matching baseline exactly** → P2(b)/P2(c) not started.
+P0 → P0.5 → P1 → **P2(a): CLOSED** → **P2(b): ATTEMPTED, EMPIRICALLY
+REJECTED, REVERTED (ADL-050) — gemini.js back to its P2(a)-committed
+state** → P2(c) not started.
 
 ## Exact next action
 
-None outstanding for P2(a) — it is closed. Starting P2(b) or P2(c)
-requires a fresh planning pass first (read ADR-030's phasing text
-directly, `bka/30-decisions/adr-register.md:445-451`, then scope only to
-what it names for that specific sub-phase — same discipline P1/P2(a)
-used). Do not begin implementation without that pass.
+None outstanding. P2(a) is closed; P2(b) is closed-as-rejected (not
+"to do"). Starting P2(c), or a redesigned retry of P2(b), each requires
+its own fresh planning pass first (read ADR-030's phasing text directly,
+`bka/30-decisions/adr-register.md:445-451`, and for a P2(b) retry
+specifically, ADL-050's full finding before designing anything — same
+discipline P1/P2(a) used). Do not begin implementation without that pass.
 
 ## What actually happened this session, in order
 
@@ -242,8 +249,11 @@ pre-existing, separately-tracked work from before P1/P2.
 
 ## Pending (unchanged from P1 unless noted)
 
-- P2(a) has no open items — closed. Next work is P2(b)/P2(c), each
-  requiring its own fresh planning pass before implementation starts.
+- P2(a) has no open items — closed. P2(b) is closed too, as an
+  empirically rejected attempt (ADL-050), not an open item. Next
+  possible work is P2(c), or a redesigned P2(b) retry that accounts for
+  ADL-050's finding — either requires its own fresh planning pass before
+  implementation starts.
 - J1/J2 product decision — unchanged, still open, still not scoped to
   ADR-030 (see prior checkpoint history for the full description; not
   re-stated here per protocol §2 — if you need it, it is in this file's

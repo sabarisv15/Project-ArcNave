@@ -2687,3 +2687,84 @@ project until measured). P0's reorder step alone will show no measured
 token/cost improvement by itself — it is an enabling change for P3, not a
 savings, and should not be judged or reverted on that basis. Session detail
 and exact next action: [`70-checkpoint/CURRENT-STATE.md`](../70-checkpoint/CURRENT-STATE.md).
+
+## ADL-050
+
+### ADR-030 P2(b) native Gemini request builder — implemented, then empirically rejected
+
+**Decision.** Do not ship a native per-adapter Gemini request builder that
+maps each `system`-targeted `ARCNAVE Context` segment to its own
+`systemInstruction.parts` entry (instead of joining every segment into one
+string first, as the P2(a) flattening shim does). `gemini.js` stays on the
+P2(a) shim. This is not "not started" — it was designed, planned (plan
+mode, user-approved), implemented, and unit-tested, then reverted after
+live evidence.
+
+**Superseded position.** None — the P2(a) flattening shim
+(`aiContextAssembly.flattenToPrompts`, `gemini.js` unchanged from its
+P2(a) form) remains in force. This entry records a completed, rejected
+experiment, not a pending item.
+
+**What was built.** A `buildRequest(context)` function in `gemini.js`
+replacing all 3 of its request-building call sites
+(`completeWithMeta`/`attemptStream`/`completeWithTools`)'s
+`flattenToPrompts` calls: each `system`-targeted segment became its own
+`{ text }` part (with the P2(a) shim's `'\n\n'` join separator baked into
+each non-final segment's own part text, so reconstruction stayed
+byte-identical to `flattenToPrompts`'s joined string — a fix a Plan-agent
+design review required before approving the plan), same treatment for
+`user`-targeted segments after any image parts. 5 new unit tests proved
+wire-shape correctness, including an explicit reconstruction-equality
+assertion. Full backend suite: 2094/2096 (same 2 pre-existing unrelated
+failures, +5 new tests, zero regressions). Live-DB `ai.test.js`: 28/28,
+unchanged.
+
+**Why it was rejected anyway.** The Plan-agent review that approved the
+design flagged one thing unit tests structurally cannot prove: "the model
+may still behave slightly differently because Gemini receives multiple
+parts rather than one text part... only a real model call can settle it."
+That risk materialized. The live behavioral suite's `e1` scenario ("can
+you make me a PDF of the attendance report?" with no attendance data on
+record) tests the `FILE` policy module's rule "NEVER tell the user you
+cannot produce a document" (`aiPolicyAssembly.js:136`). A single live run
+showed `E: document-capability claim` dropping from the P2(a) baseline's
+3/3 to 2/3. Because Gemini's own thinking-budget behavior is documented
+elsewhere in this codebase as genuinely non-deterministic
+(`gemini.js`'s own `MAX_EMPTY_RETRIES` comment), a single scenario flip
+isn't enough signal on its own — so `e1` was isolated and re-run
+repeatedly against both the old (joined-string) and new (native-parts)
+code, via a temporary `SCENARIO_FILTER` env var added to
+`ai-behavioral-suite.js` for this diagnosis only (not shipped — reverted
+along with the rest): **old code: 3/4 valid live samples passed (75%);
+new code: 2/7 valid live samples passed (29%)**, gathered across a mix of
+full-suite runs and isolated single-scenario runs, discounting only
+genuine network-timeout attempts (a separate, unrelated Docker/DNS
+flakiness observed mid-session) as inconclusive. Same instruction text
+both times — `flattenToPrompts(context).systemPrompt` and the
+reconstructed native-parts text are provably byte-identical (that was the
+whole point of the reconstruction test) — the only variable that changed
+is whether Gemini received that text as 1 `systemInstruction` part or 3.
+Splitting a system instruction that carries a hard governance rule
+(action-truthfulness / document-capability truthfulness, RS-AIG) across
+multiple API parts measurably weakened the model's compliance with it,
+even with the text itself unchanged. This project treats action-
+truthfulness as a hard rule, not a best-effort one, so this cost isn't
+acceptable to ship silently.
+
+**Rationale for reverting rather than mitigating in place.** A mitigation
+exists in principle (e.g. never split a segment carrying a hard
+governance rule away from its neighbors — keep the `policy-modules`
+segment's surrounding context joined even in a "native" builder), but
+designing and re-verifying that mitigation is new work requiring its own
+live-suite confirmation, not a same-session fix. Reverting to the known-
+good P2(a) shim now and treating any retry as a fresh, explicitly-scoped
+attempt (not a continuation) keeps the governance-relevant regression
+window at zero.
+
+**Migration impact.** None — `gemini.js`, `ai-providers.test.js`, and
+`ai-behavioral-suite.js` are all reverted to their exact P2(a)-committed
+(round 32, commit `654fa67`) state. No schema, no data, nothing left
+half-applied.
+
+**Full ADR text and the "Rejected" entry this decision adds:**
+[ADR-030](adr-register.md#adr-030).

@@ -1,0 +1,19 @@
+graph TD
+  Start["New message<br/>e.g. 'hi'"]
+  Mode["Composer mode<br/>default: general"]
+  L1["askGeneralChat<br/>no tool ever built"]
+  R1["askAgent tool loop<br/>adaptive, multi-step"]
+  L2["Policy: CORE only<br/>+CONTINUITY if history"]
+  R2["Tool retrieval<br/>role + semantic filter"]
+  L3["0 tools sent<br/>structural, not a prompt rule"]
+  R3["Adds TOOL_SELECTION policy<br/>+PLAN if 2+ tools offered"]
+  L4["1 LLM call<br/>completeMaybeStreaming"]
+  R4["completeWithTools loop<br/>1 to 6 calls, capped"]
+  R5["Policy gate<br/>L3 action always pauses for approval"]
+  Answer["Answer returned<br/>streamed to the user"]
+
+  Start --> Mode
+  Mode -->|General - default| L1
+  Mode -->|Curriculum - user picks| R1
+  L1 --> L2 --> L3 --> L4 --> Answer
+  R1 --> R2 --> R3 --> R4 --> R5 --> Answer

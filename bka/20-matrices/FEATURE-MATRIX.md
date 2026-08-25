@@ -350,3 +350,55 @@ retrieval demoted from deciding what is *possible* to deciding what is
 The `maxToolCallsPerTurn` exemption was not asked: counting a schema fetch
 against a cap of 1 would break the feature outright, so correctness settles
 it (workflow §15 step 3).
+
+## AI Assistant chat — Document extraction trust boundary + csv/tsv/docx coverage
+
+Source: [`ai-chat-document-extraction-trust-and-formats-approved-spec.md`](../60-product-reasoning/ai-chat-document-extraction-trust-and-formats-approved-spec.md),
+analyzed 2026-08-25. Backend-only, no new page/screen. Item 1 of the six
+queued in `CURRENT-STATE.md`, scoped down by the user from "table
+extraction generalisation" to the trust boundary plus the three cheap
+format gaps. [ADR-029](../30-decisions/adr-register.md#adr-029)'s own
+revisit trigger ("≥2-3 concrete formats beyond the first slice") has fired.
+
+Measured coverage — the same 4-row table in every attachable format: xlsx
+and ods yield `delimited`/4 records; **csv, tsv and docx tables all yield
+`strategy: 'none'`/0 records**. `mammoth.extractRawText` flattens each docx
+cell into its own paragraph, destroying the 2D shape *upstream* of any
+detector.
+
+The finding that reordered this item: the real exam-fees PDF does not fail
+— it returns `{ status: "ok", total: 17, scopedCount: 4 }` for a
+**23-student** document, with no failure signal at all.
+`documentAnalysisService.js:116` guards only `strategy === 'none'`, never
+"recognised, but read wrongly". `verifyNumericClaims` reports PASS, because
+it checks narration against tool output, not tool output against the
+document. Marker accounting: the result sheet balances exactly
+(1425×1 + 178×2 = 1781 = its marker count, the 178 being deliberate
+page-break merges); the fees PDF accounts for 17 of 23 and collapses 10
+students into one record.
+
+| Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| AI Assistant chat | Existing chat-attachment roles | — | Extraction trust check on `sequential_id` — refuse when record markers are not accounted for | Attach a PDF whose table layout the detector misreads | none (message on existing chat surface) | `documentAnalysisService.analyzeAttachment`, `documentTableExtractionService` | none | Unchanged | Not built | CORE | ADL-055's "deterministic check, never prompt guidance" rule | Resolved — refuse; distinct status from `unrecognized_layout` |
+| AI Assistant chat | — | — | csv routed through a real parser (`exceljs.csv.read`) into the existing `delimited` path | Attach a .csv and ask a counting question | none | `documentTextExtractionService` | none | Unchanged | Not built | CORE | — | Verified at analysis time: quoted commas survive; **no table-detector change needed** |
+| AI Assistant chat | — | — | docx table row/cell structure preserved through extraction | Attach a .docx containing a table | none | `documentTextExtractionService` | none | Unchanged | Not built | CORE | — | `mammoth.convertToHtml` recommended; direct `w:tbl` via PizZip the alternative — build-time call |
+| AI Assistant chat | — | — | Tab-delimited `text/plain` treated as delimited | Attach a .txt/.tsv table | none | `documentTextExtractionService` / `documentTableExtractionService` | none | Unchanged | Not built | CORE | — | Guard required: majority of lines must share a column count. **No comma heuristic anywhere.** Weakest item; ship the rest and report it unshipped rather than loosen the guard |
+| AI Assistant chat | — | — | PDF geometric reconstruction (`pdfjs-dist` x/y) | — | — | — | — | — | Not built | FUTURE — next slice of item 1 | — | Measured: recovers identity 23/23; **numeric attribution needs x-boundary detection**, not solved by y-bucketing. Queue's own phrasing corrected |
+| AI Assistant chat | — | — | Partial-trust return shape (identity-only records, numeric ops refused) | — | — | — | — | — | Not built | **DECIDED, not built** | needs the geometry slice | Approved by the user; has no producer yet, so building it now would be the scaffolding ADR-029 rejects |
+| AI Assistant chat | — | — | Verifying tool output *against the source document* | — | — | — | — | — | Not built | FUTURE | — | The general form of this slice's finding; larger separate work |
+| AI Assistant chat | — | — | Tables in scanned/OCR PDFs; pptx/odt tables | — | — | — | — | — | Not built | FUTURE | — | No measured sample; OCR output carries no geometry at all |
+| AI Assistant chat | — | — | Semantic column mapping ("Reg No" → field) | — | — | — | — | — | Not built | FUTURE | — | ADR-029 defers deliberately; unchanged by this slice |
+
+One batched Product Refinement question was asked (§15 threshold met on
+two items: how far the slice goes, since ADR-029 forbids doing all four
+layers at once but does not say which increment is first; and what a
+partly-trustworthy extraction should return, which no existing rule
+settles). User chose **trust check + csv/tsv/docx**, and **identity-only
+records with numeric operations refused** for the partial-trust case.
+
+Not asked, because rules settled them (workflow §15 steps 1–3):
+deterministic check over prompt guidance (ADL-055's own rule, proven three
+times); routing csv through a real parser rather than teaching the detector
+to split on commas (correctness — csv quoting, and prose false positives);
+and the trust check guarding `sequential_id` only (the `delimited` strategy
+is exact by construction and has no equivalent signal).

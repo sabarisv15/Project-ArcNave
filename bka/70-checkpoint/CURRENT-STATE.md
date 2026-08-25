@@ -10,9 +10,24 @@ only links to it.
 
 ## Active Task
 
-**None in flight — five slices shipped from the ADL-055 thread.**
+**Item 1's Product Reasoning pass is complete; implementation not started.**
 
-Most recent: the model can no longer be blind to a tool it has
+Approved Spec:
+[`ai-chat-document-extraction-trust-and-formats-approved-spec.md`](../60-product-reasoning/ai-chat-document-extraction-trust-and-formats-approved-spec.md).
+Full measured rationale: the [ADL-055 addendum](../30-decisions/ledger.md#adl-055-addendum--item-1s-product-reasoning-pass-2026-08-25).
+
+The pass reordered the item. It was queued as a coverage gap; the headline
+finding is that the exam-fees PDF **does not fail — it returns
+`{ status: "ok", total: 17, scopedCount: 4 }` for a 23-student document**,
+with no failure signal, on the deterministic path the five shipped slices
+were spent making trustworthy.
+
+Approved scope (user chose it over three alternatives): the trust check,
+plus csv, docx tables and tab-delimited plain text. **PDF geometric
+reconstruction is explicitly the next slice, not this one.**
+
+Five slices already shipped from this thread. Most recent: the model can no
+longer be blind to a tool it has
 ([`ai-tool-catalogue-approved-spec.md`](../60-product-reasoning/ai-tool-catalogue-approved-spec.md),
 queued item 6). Every permitted tool's name is always visible and
 `describe_tools` fetches schemas on demand; retrieval is demoted to a
@@ -62,16 +77,54 @@ it is listed in the Approved Spec's OUT OF SCOPE and needs its own pass.
 
 ## Exact next action
 
-**None queued.** Items 4 and 6 are shipped and live-checked. Four remain,
-each unstarted and each needing its own `/product-reasoning` pass:
-**1** (table extraction generalisation), **2** (operation vocabulary —
-`join`, comparison, `validate`, column `groupBy`), **3**
-(`maxToolCallsPerTurn` above 1), **5** (tool granularity audit).
+**Run `/build-slice` against item 1's Approved Spec** (linked above). No
+code has been written for it. The spec's CORE list, in the order its own
+risk argues for:
 
-Recommended next if the user has no preference: **1**, then **2**. Together
-they are what would let a real cross-document question actually be answered
-rather than honestly refused — item 4 made the refusal correct, item 2 would
-make the refusal unnecessary in that case.
+1. **Extraction trust check** on the `sequential_id` strategy only.
+   `documentAnalysisService.js:116` currently guards `strategy === 'none'`
+   and nothing else. The check: every record marker
+   (`STUDENT_ROW_SIGNAL_PATTERN`, `documentTableExtractionService.js:57`)
+   must be accounted for as either its own record or a page-break merge the
+   detector itself performed. Refuse with a status **distinct from**
+   `unrecognized_layout`. Self-calibrating — do not introduce a tuned
+   constant.
+2. **csv** — route `text/csv` through `exceljs`'s `workbook.csv.read()` in
+   `documentTextExtractionService` instead of `extractPlainTextDirect`.
+   Verified during the pass: it handles quoted commas and emits the exact
+   `' | '` shape `extractDelimitedRows` already consumes, so
+   **`documentTableExtractionService` needs no change for csv.**
+3. **docx tables** — preserve row/cell structure through extraction as
+   `' | '` rows. `mammoth.convertToHtml` recommended; direct `w:tbl` via
+   PizZip (the idiom `extractPptxText`/`extractOdtText`/`extractOdsText`
+   already use in that file) is the alternative. Prose-only docx output
+   must stay byte-identical.
+4. **tab-delimited `text/plain`** — weakest item, only genuine
+   false-positive risk in the slice. Guard: a majority of non-empty lines
+   must share a column count. **No comma heuristic anywhere.** If the guard
+   cannot be made to hold against a prose control at build time, ship 1–3
+   and report this one unshipped rather than loosening it.
+
+Two regression gates the spec makes mandatory: the consolidated result
+sheet must still yield **1603 records / 10 distinct sections /
+`status: 'ok'`**, and the reference arrears question must still return **77
+arrears / 21 students**. Live check before it is called done: the exam-fees
+PDF must refuse instead of reporting `total: 17`.
+
+The three read-only measurement probes from the pass are kept and rerunnable:
+
+```
+cd backend && set -a && . ./.env.local.sh && set +a && node scripts/extraction-coverage-probe.js
+```
+
+(also `extraction-detail-probe.js` and `pdf-geometry-probe.js`; none call an
+LLM or touch the database.)
+
+After item 1: **2** (operation vocabulary), then **3**
+(`maxToolCallsPerTurn` above 1), **5** (tool granularity audit) — each still
+unstarted and each needing its own pass. Item 1's own **next slice** is PDF
+geometric reconstruction, which is OUT OF SCOPE in the current spec and
+needs a fresh pass of its own.
 
 One note for item 3: the catalogue's `describe_tools` is exempt from the cap
 and works at the default of 1, but a fetched tool still cannot be called if
@@ -222,24 +275,35 @@ first.
   NIM's removal — provider adapters). Closed, verified. Full detail:
   earlier entries in this same ledger (ADL-041 et seq., ADL-049).
 
-## Queued for Product Reasoning — six items from the 2026-08-25 document sessions (2 shipped, 4 unstarted; each unstarted one needs its own pass)
+## Queued for Product Reasoning — six items from the 2026-08-25 document sessions (2 shipped, 1 spec-approved and awaiting implementation, 3 unstarted; each unstarted one needs its own pass)
 
-Raised by the user after the three shipped ADL-055 slices, from live
+Raised by the user after the ADL-055 slices, from live
 evidence in that entry. All six sit under an **ADR-029 revisit** — that ADR
 named its own revisit trigger ("once ≥2-3 concrete formats beyond the first
 slice exist"), and a second and third real document family (a Tally-style
 day book, an exam-fees list) have now been tested against it. None of the
 six requires code execution.
 
-1. **Table extraction generalisation.** `documentTableExtractionService.js:22`
-   sets `DELIMITER = ' | '`, so the "delimited" strategy only recognises
-   ARCNAVE's **own** xlsx/ods extractor output. Measured: csv, docx tables,
-   and PDF text-layer tables all fall through to `strategy: 'none'` — of
-   the formats users actually attach, only xlsx works generically. Proven
-   alternative, run against the real exam-fees PDF this session: `pdfjs-dist`
-   text items carry x/y transforms, and bucketing by y (rows) then x
-   (columns) reconstructs a merged-cell table that flat text extraction
-   scrambles beyond use. Pure deterministic library work, no LLM.
+1. **Table extraction generalisation.** ✅ **PASS RUN 2026-08-25** —
+   [`ai-chat-document-extraction-trust-and-formats-approved-spec.md`](../60-product-reasoning/ai-chat-document-extraction-trust-and-formats-approved-spec.md),
+   scoped by the user to the trust check + csv/tsv/docx. Implementation not
+   started — see "Exact next action" above. Two things this item was
+   recorded as saying need correcting, both measured during the pass:
+   - It framed the problem as coverage only. The larger problem is that the
+     exam-fees PDF **does not fall through to `strategy: 'none'`** — it
+     returns `sequential_id` with 4 records for 23 students and reports
+     `status: 'ok'`. A silent false positive, not an honest failure.
+   - "Bucketing by y (rows) then x (columns) reconstructs a merged-cell
+     table" was **optimistic**. Measured: y-bucketing recovers identity
+     23/23, but numeric columns are misattributed (per-semester figures
+     print above their student inside a merged cell). Correct attribution
+     needs x-column-boundary detection, done by hand that session, not
+     automatically. This is the FUTURE slice, not the current one.
+
+   Still true: `documentTableExtractionService.js:22` sets
+   `DELIMITER = ' | '`, so `delimited` only recognises ARCNAVE's own
+   xlsx/ods output; and all of this is pure deterministic library work, no
+   LLM, nowhere near RS-AIG-018.
 2. **Operation vocabulary.** Missing: `join` (cross-document — the gap that
    produced a fabricated reconciliation, see ADL-055), numeric comparison
    (`<` / `>` / between — "entries below ₹5000" is inexpressible today),

@@ -3644,3 +3644,94 @@ which inverts that check's failure mode from false CONFLICT to false PASS
 at scale. Tool-set pinning remains closed. Cache-threshold bisection and
 the `retrievedAt` ordering invariant remain deliberately unranked
 follow-ups, not queued work.
+
+### ADL-055 addendum — item 1's Product Reasoning pass (2026-08-25)
+
+Queued item 1 was recorded as *"table extraction generalisation"* — a
+coverage gap. Measurement before designing (this thread's own discipline)
+found a **second, worse problem that is not a coverage gap at all**, and it
+reordered the item.
+
+**Coverage, first (`backend/scripts/extraction-coverage-probe.js`, the same
+4-row table in every attachable format):** xlsx and ods produce
+`delimited`/4 records; **csv, tab-delimited plain text, and docx tables all
+produce `strategy: 'none'`/0 records.** The docx case is not a missing
+delimiter — `mammoth.extractRawText` flattens every table cell into its own
+paragraph, so the 2D structure is destroyed in
+`documentTextExtractionService`, *upstream* of any detector. No
+table-detector change could have recovered it.
+
+**Then the real finding.** The exam-fees PDF does not fail. Run end to end,
+`analyze_document_table` returns
+`{ status: "ok", strategy: "sequential_id", total: 17, scopedCount: 4 }` —
+for a **23-student** document, with no failure signal of any kind.
+`documentAnalysisService.js:116` guards only `strategy === 'none'`; there is
+no check that a *recognised* layout was recognised **correctly**. Worse,
+this defeats `verifyNumericClaims` by construction: that mechanism checks
+the narration against the tool output, never the tool output against the
+document, so a wrong tool result verifies **PASS**. The day book's honest
+`strategy: 'none'` is a strictly better outcome than this. The whole
+five-slice thread above was spent making this exact path trustworthy.
+
+**A first candidate signal was measured and rejected.** "More pattern
+matches than records" does not work: counting 77 arrears across 21 student
+records is the primary *working* use case. The signal that holds is the
+detector's own contract — `sequential_id` already requires
+`STUDENT_ROW_SIGNAL_PATTERN` to accept any record, so every document
+reaching it carries one marker per genuine row by construction, and every
+marker must be accounted for either as its own record or as a page-break
+continuation the detector itself merged.
+
+| | result sheet | exam fees |
+|---|---|---|
+| markers in text | 1781 | 23 |
+| records produced | 1603 | 4 |
+| accounting | 1425×1 + 178×2 = **1781, exact** | **17 of 23**, one record holding 10 |
+
+The result sheet balances perfectly, and its 178 two-marker records are
+precisely the deliberate page-break merges. The check is self-calibrating —
+no per-document constant — and demonstrably does not fire on the working
+reference document.
+
+**The proposed alternative was measured too, and the queue's own phrasing
+of it was optimistic.** `pdfjs-dist` y-bucketing on the exam-fees PDF
+recovers identity **23/23** (serial, regNo, name, in order) where flat text
+yields 4. But the numeric columns are **misattributed**: per-semester
+figures print *above* their student inside a merged cell, so ASHWIN JOHN
+EDISON S's `1,1,65,625,690` lands on the previous record. Correct
+attribution needs x-column-boundary detection — which was done by hand
+earlier in this session, not automatically. "Bucket by y then x
+reconstructs the table" is therefore corrected in the Approved Spec.
+
+**Two §15-threshold questions were asked, batched once.** ADR-029 forbids
+building the whole multi-format layer at once but does not say which
+increment is first; and no rule settles what a partly-trustworthy
+extraction should return. User chose **trust check + csv/tsv/docx** (PDF
+geometry gets its own slice), and **identity-only records with numeric
+operations refused** for the partial-trust case.
+
+That second answer is a rule going forward, so it is recorded here rather
+than only in the spec: *when extraction recovers record identity but cannot
+attribute numeric columns, the deterministic path returns the records and
+answers count/list questions, and refuses sum/total questions with an
+explicit reason — it never emits an unverifiable number.* It has **no
+producer until geometric reconstruction exists**, so it is deliberately not
+built now; ADR-029's stated purpose for fixing shapes ahead of slices is
+exactly this.
+
+Not asked, because rules settled them (workflow §15 steps 1–3): a
+deterministic check rather than prompt guidance (this entry's own rule,
+proven three times); routing csv through a real parser rather than teaching
+the detector to split on commas (csv quoting, plus prose false positives —
+`exceljs.csv.read` was verified at analysis time to handle quoted commas
+and to emit the exact `' | '` shape the existing `delimited` strategy
+already consumes, so **no table-detector change is needed for csv at
+all**); and guarding `sequential_id` only, since `delimited` is exact by
+construction.
+
+**Status:** Resolved — pending implementation.
+[`ai-chat-document-extraction-trust-and-formats-approved-spec.md`](../60-product-reasoning/ai-chat-document-extraction-trust-and-formats-approved-spec.md).
+ADR-029's revisit trigger ("≥2-3 concrete formats beyond the first slice")
+is now formally fired: result sheet, exam-fees list, Tally day book.
+Nothing here approaches RS-AIG-018 — every piece is developer-shipped
+deterministic library work.

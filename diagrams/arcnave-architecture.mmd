@@ -1,0 +1,34 @@
+graph TD
+  Client["React frontend (Vite)<br/>REST calls to /api/v1 + AI composer"]
+  Tenant["Multi-tenant middleware<br/>resolves college_id, opens tx, sets RLS tenant"]
+  Routes["Domain routes (Express)<br/>students / staff / academic / attendance / finance / documents / reports / workflowRequests / auth"]
+  AIRoute["AI route<br/>/ai/ask, /ai/ask/stream"]
+  Services["Business Services layer<br/>studentService, staffService, academicService, attendanceService, financeService, reportService, notificationService, workflowChainService"]
+  ToolRegistry["aiToolRegistry<br/>75 tools tagged L1/L2/L3 + deterministic Policy Gate"]
+  Workflow["WorkflowService<br/>sole approval gate — human AND AI L3 actions"]
+  Artifact["ArtifactService<br/>structured AI drafts"]
+  Document["DocumentService<br/>sole owner of binary file storage"]
+  ToolRetrieval["aiToolRetrievalService<br/>semantic embedding + lexical fallback shortlist"]
+  Repos["Repositories layer<br/>one per domain, never call each other"]
+  Providers["Provider adapters<br/>gemini / claude / openai / self-hosted"]
+  LLM["External LLM APIs<br/>Vertex Gemini / Anthropic / OpenAI"]
+  DB[("PostgreSQL + pgvector<br/>row-level security + audit_log")]
+
+  Client --> Tenant
+  Tenant --> Routes
+  Tenant --> AIRoute
+  Routes --> Services
+  AIRoute --> ToolRegistry
+  Services --> Workflow
+  Services --> Artifact
+  Artifact -->|publish| Document
+  Services --> Document
+  ToolRegistry -->|calls services, never repos| Services
+  ToolRegistry -.->|L3 action always pauses here| Workflow
+  ToolRegistry --> ToolRetrieval
+  AIRoute --> Providers
+  Providers --> LLM
+  Workflow --> Repos
+  Document --> Repos
+  Services --> Repos
+  Repos --> DB

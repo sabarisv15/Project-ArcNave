@@ -32,7 +32,11 @@ import { ME } from '../lib/substituteData';
 
 export const EMPTY_COMPOSER = Object.freeze({
   text: '',
-  mode: 'curriculum',
+  // Defaults to 'general' (no tools, no Policy Gate prompt): a brand-new
+  // composer has no signal yet that the user needs a campus-data tool, so
+  // it starts on the cheaper, tool-free path. Switching to Curriculum is
+  // one ScopeToggle click away the moment a college-data question needs it.
+  mode: 'general',
   attachments: [],
   contextChips: [],
   mention: null,

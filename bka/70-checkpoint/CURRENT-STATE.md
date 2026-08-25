@@ -10,6 +10,27 @@ only links to it.
 
 ## Active Task
 
+**ADL-056's slice is implemented and verified (2026-08-25).** An
+uncompilable LLM-supplied pattern now returns
+`{ status: 'invalid_pattern', parameter, reason }` instead of throwing out
+of the whole `/ai/ask` turn as an HTTP 500. Both regex params are validated
+once, up front, after the ownership check; `filterBySection` now takes an
+already-compiled RegExp so it cannot throw at all. Full suite **2178/2176**
+(the same 2 pre-existing failures, zero regressions, 14 net new tests).
+Live-checked against the real result sheet via the new read-only
+`backend/scripts/invalid-pattern-probe.js`: the exact failing live pattern
+returns `invalid_pattern`, and the reference regression is unchanged at
+**77 arrears / 21 students**. A third premise correction was measured —
+`\A`/`\Z` are **identity escapes** in JS, so they compile silently as
+literals rather than being rejected; pinned by its own test, tool
+description corrected. Full detail:
+[ADL-056 addendum](../30-decisions/ledger.md#adl-056-addendum--implemented-2026-08-25).
+
+**Still open on that slice:** the full `/ai/ask` turn through Gemini,
+confirming the model *narrates* the new status acceptably. The mechanism
+behind the 500 is verified gone against real document bytes; the narration
+is not yet verified and is not claimed.
+
 **Item 2's Product Reasoning pass is complete (2026-08-25, no code written)
 — [ADL-057](../30-decisions/ledger.md#adl-057),
 [`ai-chat-document-numeric-comparison-approved-spec.md`](../60-product-reasoning/ai-chat-document-numeric-comparison-approved-spec.md).**
@@ -129,8 +150,11 @@ under Standing notes. Anything else is a real regression.
 
 ## Exact next action
 
-**Run `/build-slice` against [`ai-chat-invalid-tool-pattern-approved-spec.md`](../60-product-reasoning/ai-chat-invalid-tool-pattern-approved-spec.md)**
-(pass complete 2026-08-25, no code written). Rationale and the two premise
+**~~Run `/build-slice` against [`ai-chat-invalid-tool-pattern-approved-spec.md`](../60-product-reasoning/ai-chat-invalid-tool-pattern-approved-spec.md)~~
+— DONE 2026-08-25**, see Active Task above. The only remaining piece is the
+full-turn narration check through Gemini.
+
+Historical context for that slice (pass complete 2026-08-25, no code written). Rationale and the two premise
 corrections it carries: [ADL-056](../30-decisions/ledger.md#adl-056).
 
 Scope, approved narrow: `documentAnalysisService.filterBySection` (`:82`)

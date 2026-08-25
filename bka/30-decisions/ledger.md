@@ -3893,8 +3893,80 @@ Also FUTURE: mapping these two error classes in `mapAiToolError` (a
 different caller — the direct `POST /ai/tools/:name/invoke` route), and
 ReDoS protection on model-supplied patterns (no measured case).
 
-**Status:** Resolved — pending implementation.
+**Status:** Resolved — implemented and verified 2026-08-25. See the
+addendum below.
 [`ai-chat-invalid-tool-pattern-approved-spec.md`](../60-product-reasoning/ai-chat-invalid-tool-pattern-approved-spec.md).
+
+#### ADL-056 addendum — implemented (2026-08-25)
+
+**Shape: the compile check became a precondition rather than a rescue.**
+Both LLM-supplied regexes are now validated once, up front, in
+`documentAnalysisService.analyzeAttachment`, which returns
+`{ status: 'invalid_pattern', parameter, reason }` — a fifth member of the
+established failure-status set, deliberately distinct from
+`no_matching_records`. `documentAggregateService` exports
+`validateFilterPattern`; `documentAnalysisService` has its own
+`compileSectionPattern`. `filterBySection` now takes an **already-compiled
+RegExp** rather than the raw string, which is what makes it structurally
+incapable of throwing rather than merely unlikely to.
+
+`validateFilterPattern` is implemented by calling `compilePattern` inside a
+try/catch rather than re-deriving its word-boundary-wrapped template: two copies
+could drift, and a pattern that validated in one and threw in the other
+would reintroduce the exact 500 this removes. `compilePattern` keeps its
+throw, now reachable only by a direct caller of `aggregate()` that skipped
+the precondition — a programming error, not model input. A test pins that.
+
+**Validation runs after the ownership check, never before it**, so an
+unowned attachment still fails on authorization rather than revealing that
+its arguments were well-formed. `filter.pattern` is checked before
+`sectionPattern` and only the first failure is reported — a fixed,
+documented order so the same bad call always produces the same message.
+
+**The two messages are deliberately duplicated, not shared.** Each site
+carries its own `INLINE_FLAG_PATTERN` and its own remedy sentence, because
+the remedies are opposite: `sectionPattern`'s says the flag was unnecessary
+(it is already matched case-insensitively), `filter.pattern`'s says the
+parameter is case-**sensitive by design** and offers `"RA|ra"` instead. A
+helper shared between them is precisely the defect this ADL identified, so
+the duplication is load-bearing and commented as such at both sites.
+
+**A third premise correction, measured during implementation.** This ADL
+and its spec both stated that stripping `(?i)` "accepts one Python-ism
+while still rejecting `(?P<name>...)`, `\A`, `\Z` and the rest." Two of
+those four are wrong: **`\A` and `\Z` are identity escapes in
+JavaScript**, so `"\ARA\Z"` compiles silently as the literal `ARAZ` and
+matches the wrong thing. Verified directly. That is a *semantic*
+divergence, not a compile failure, so it is outside this slice (which
+addresses compile failure only) — but it is now pinned by its own test so
+the limitation is explicit rather than assumed covered, and the tool
+description tells the model to use `^`/`$` instead rather than falsely
+claiming `\A`/`\Z` are rejected. The decision itself is unaffected, and
+the argument for rejecting uniformly is if anything stronger: normalisation
+could never have caught this case at all.
+
+**Verified.** Full suite **2178 tests, 2176 pass** — the same 2
+pre-existing `fetch_trusted_web_page` failures, zero regressions, **14 net
+new tests** (baseline 2164/2162). One earlier run of the same suite
+reported a third failure that produced no `not ok` line and did not
+reproduce across two further runs; it coincided with an unrelated logged
+`position_department_assignments` FK error, and is recorded here as
+observed flakiness rather than silently dropped.
+
+**Live-checked against the real document**, via the new read-only
+`backend/scripts/invalid-pattern-probe.js` (stubs only the ownership-checked
+byte download; extraction, detection and aggregation are genuine; no LLM,
+no database). The exact `sectionPattern` from the failing live run now
+returns `invalid_pattern` naming `sectionPattern`; an uncompilable
+`filter.pattern` returns `invalid_pattern` naming `filter.pattern` with the
+case-sensitivity remedy; and the reference regression is unchanged —
+**77 arrears across 21 students**.
+
+**Not yet done, and not claimed:** the full `/ai/ask` turn through Gemini,
+confirming the model *narrates* the new status acceptably. The mechanism
+that produced the HTTP 500 is verified gone against real document bytes;
+what remains unverified is the narration, which needs the running app and
+billable Vertex calls.
 
 ### ADL-057
 **Per-question row identity is caller-supplied data, like every other

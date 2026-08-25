@@ -75,14 +75,38 @@ function filterBySerialRange(records, serialRange) {
 // is already sorted by startLine, so the loop below just needs the last
 // one at or before the record's own startLine. Never evaluated as code,
 // same discipline as documentAggregateService's filter.pattern.
-function filterBySection(records, sections, sectionPattern) {
-  if (!sectionPattern) return records;
-  let re;
+// See documentAggregateService's INLINE_FLAG_PATTERN comment for why this
+// is duplicated rather than shared: sectionPattern and filter.pattern need
+// OPPOSITE remedies (the flag is redundant here, and would invert meaning
+// there), so a helper common to both is the defect ADL-056 identified, not
+// a tidy-up. Detection only — the pattern is rejected, never rewritten.
+const INLINE_FLAG_PATTERN = /\(\?[a-zA-Z]+\)/;
+
+// The sectionPattern counterpart of documentAggregateService.
+// validateFilterPattern — the precondition that turns an uncompilable
+// LLM-supplied pattern into a tool-level failure instead of a thrown
+// DocumentAnalysisValidationError that ends the whole /ai/ask turn as an
+// HTTP 500 (ADL-056). Returns { regex } or { reason }, never throws.
+function compileSectionPattern(sectionPattern) {
+  if (!sectionPattern) return { regex: null };
   try {
-    re = new RegExp(sectionPattern, 'i');
+    return { regex: new RegExp(sectionPattern, 'i') };
   } catch {
-    throw new DocumentAnalysisValidationError(`sectionPattern is not a valid pattern: ${JSON.stringify(sectionPattern)}`);
+    const shown = JSON.stringify(sectionPattern);
+    const flagNote = INLINE_FLAG_PATTERN.test(sectionPattern)
+      ? ' JavaScript does not support inline flags such as (?i), and sectionPattern is already matched'
+        + ' case-insensitively, so that flag is not needed here.'
+      : '';
+    return { reason: `sectionPattern is not valid JavaScript regular expression syntax: ${shown}.${flagNote}` };
   }
+}
+
+// Takes an ALREADY-COMPILED regex (or null), not the raw pattern string —
+// which is what makes this function structurally incapable of throwing.
+// Compilation is compileSectionPattern's job, performed once as a
+// precondition in analyzeAttachment.
+function filterBySection(records, sections, re) {
+  if (!re) return records;
   const matchingStartLines = new Set(sections.filter((s) => re.test(s.courseName)).map((s) => s.startLine));
   if (matchingStartLines.size === 0) return [];
   return records.filter((record) => {
@@ -106,6 +130,29 @@ async function analyzeAttachment(client, {
 } = {}, identityContext) {
   const downloaded = await loadOwnedAttachment(client, attachmentId, identityContext);
   const { document, buffer } = downloaded;
+
+  // Both LLM-supplied regexes are validated here, once, before any
+  // extraction work — after the ownership check above, never before it, so
+  // an unowned attachment still fails on authorization rather than leaking
+  // that its parameters were well-formed.
+  //
+  // 'invalid_pattern' is deliberately its own status and NOT folded into
+  // no_matching_records: "your pattern was fine, the document has nothing"
+  // and "your pattern was not a pattern" are different facts that need
+  // different sentences to the user, and collapsing them would tell the
+  // model to go looking for data when the real fix is its own argument.
+  //
+  // filter.pattern is checked first and only the first failure is
+  // reported — a fixed, documented order rather than an arbitrary one, so
+  // the same bad call always produces the same message.
+  const filterPatternReason = documentAggregateService.validateFilterPattern(filter);
+  if (filterPatternReason) {
+    return { status: 'invalid_pattern', parameter: 'filter.pattern', reason: filterPatternReason };
+  }
+  const compiledSection = compileSectionPattern(sectionPattern);
+  if (compiledSection.reason) {
+    return { status: 'invalid_pattern', parameter: 'sectionPattern', reason: compiledSection.reason };
+  }
 
   const extraction = await documentTextExtractionService.extractPlainText(buffer, document.mime_type);
   if (extraction.text === null) {
@@ -137,7 +184,7 @@ async function analyzeAttachment(client, {
   }
 
   const bySerial = filterBySerialRange(records, serialRange);
-  const scoped = filterBySection(bySerial, sections, sectionPattern);
+  const scoped = filterBySection(bySerial, sections, compiledSection.regex);
   if (scoped.length === 0) {
     return { status: 'no_matching_records' };
   }

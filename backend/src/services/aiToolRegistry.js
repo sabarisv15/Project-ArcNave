@@ -1134,7 +1134,13 @@ registerTool({
     + '(rowsExpected vs rowsAccountedFor show the shortfall). Say so plainly, and make clear the limitation '
     + 'is this system\'s, not a problem with their file — do NOT tell the user the document is unclear or '
     + 'ask them to re-upload a clearer copy, and do not substitute your own reading of the attached '
-    + 'document for the analysis.',
+    + 'document for the analysis. Both filter.pattern and sectionPattern must be JAVASCRIPT regular '
+    + 'expression syntax — Python/PCRE constructs such as inline flags (?i) and named groups (?P<x>...) are '
+    + 'rejected, and Python anchors \\A and \\Z are worse than rejected: JavaScript reads them as the plain '
+    + 'letters A and Z, so they match the wrong thing silently. Use ^ and $ instead. If the tool returns '
+    + 'status "invalid_pattern", the "parameter" and "reason" '
+    + 'fields say exactly which argument was rejected and why; that is a fault in the pattern supplied, not '
+    + 'in the document, so never tell the user their file is the problem.',
   allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
   params: {
     type: 'object',

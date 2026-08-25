@@ -157,6 +157,80 @@ test('analyzeAttachment: a sectionPattern matching no real section degrades to n
   assert.deepEqual(result, { status: 'no_matching_records' });
 });
 
+// --- ADL-056: an uncompilable LLM-supplied pattern fails the TOOL, not the
+// TURN. Measured live: the model supplied a Python inline flag,
+// filterBySection threw, and mapAiToolError does not know
+// DocumentAnalysisValidationError — so the user's whole /ai/ask turn ended
+// as an HTTP 500. These assert the throw is gone and that the replacement
+// says which of the two regex parameters was rejected.
+test('analyzeAttachment: an uncompilable sectionPattern returns invalid_pattern instead of throwing out of the turn', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: TWO_SECTION_DOC, method: 'text_layer' }));
+  const result = await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count', sectionPattern: '(?i)SANDWICH',
+  }, IDENTITY);
+  assert.equal(result.status, 'invalid_pattern');
+  assert.equal(result.parameter, 'sectionPattern');
+});
+
+// The exact pattern from the live run recorded in ADL-056.
+test('analyzeAttachment: the measured live (?i) sectionPattern is explained as a JS-syntax fault, and the redundant flag is called out', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: TWO_SECTION_DOC, method: 'text_layer' }));
+  const result = await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID,
+    filter: { pattern: 'RA' },
+    operation: 'count',
+    sectionPattern: '(?i)ELECTRONICS AND COMMUNICATION ENGINEERING \\(SANDWICH\\)|2040',
+  }, IDENTITY);
+  assert.equal(result.status, 'invalid_pattern');
+  assert.match(result.reason, /JavaScript/);
+  assert.match(result.reason, /already matched\s+case-insensitively/);
+});
+
+test('analyzeAttachment: an uncompilable filter.pattern returns invalid_pattern naming filter.pattern, a DIFFERENT parameter from sectionPattern', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: TWO_SECTION_DOC, method: 'text_layer' }));
+  const result = await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID, filter: { pattern: '(?i)RA' }, operation: 'count',
+  }, IDENTITY);
+  assert.equal(result.status, 'invalid_pattern');
+  assert.equal(result.parameter, 'filter.pattern');
+  // filter.pattern's remedy is the OPPOSITE of sectionPattern's — it is
+  // deliberately case-sensitive, so the message must never suggest the flag
+  // was merely redundant. Pins ADL-056's central correction.
+  assert.match(result.reason, /case-sensitively by design/);
+});
+
+// "Your pattern was not a pattern" and "your pattern was fine, the document
+// has nothing" are different facts. Collapsing them would send the model
+// looking for data when the real fix is its own argument.
+test('analyzeAttachment: invalid_pattern is distinct from no_matching_records', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: TWO_SECTION_DOC, method: 'text_layer' }));
+  const invalid = await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count', sectionPattern: '(?i)SANDWICH',
+  }, IDENTITY);
+  const empty = await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count', sectionPattern: 'no such cohort',
+  }, IDENTITY);
+  assert.equal(invalid.status, 'invalid_pattern');
+  assert.equal(empty.status, 'no_matching_records');
+  assert.notEqual(invalid.status, empty.status);
+});
+
+// The pattern check must not run before the ownership check — an unowned
+// attachment fails on authorization, never on the shape of its arguments.
+test('analyzeAttachment: an unowned attachment with a bad pattern still fails on ownership, not invalid_pattern', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment({ uploaded_by_user_id: 'someone-else' }));
+  await assert.rejects(
+    () => analyzeAttachment({}, {
+      attachmentId: ATTACHMENT_ID, filter: { pattern: '(?i)RA' }, operation: 'count',
+    }, IDENTITY),
+    DocumentAnalysisValidationError,
+  );
+});
+
 test('analyzeAttachment: sectionPattern combines with serialRange as an AND, not an OR', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
   mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: TWO_SECTION_DOC, method: 'text_layer' }));

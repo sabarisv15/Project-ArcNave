@@ -32,6 +32,46 @@ function compilePattern(filter) {
   }
 }
 
+// A Python-style inline flag is the one uncompilable pattern actually
+// measured in production (ADL-056: the model supplied "(?i)ELECTRONICS...",
+// which JS RegExp rejects), so it earns a specific sentence rather than a
+// generic "invalid pattern". Detection only — the pattern is still
+// REJECTED, never rewritten. Stripping the flag here would be a silent
+// correctness bug: filter.pattern is deliberately case-SENSITIVE (see
+// matchCount's comment), so removing "(?i)" would hand the model the exact
+// opposite of what it asked for, with no error. That is also why this hint
+// is duplicated in documentAnalysisService rather than shared with
+// sectionPattern's: the two parameters need opposite remedies, and a
+// helper shared between them is precisely the defect ADL-056 identified.
+const INLINE_FLAG_PATTERN = /\(\?[a-zA-Z]+\)/;
+
+// The precondition that keeps an LLM-supplied pattern from ending a whole
+// /ai/ask turn as an HTTP 500 (ADL-056). Returns null when the pattern is
+// absent or compiles, or a human-readable reason when it does not — never
+// throws.
+//
+// Deliberately implemented by calling compilePattern rather than by
+// re-deriving the same `\b(?:...)\b` construction: two copies of that
+// template could drift, and a pattern that validated here but threw there
+// would reintroduce the exact 500 this exists to remove. compilePattern
+// itself keeps its throw, which is now reachable only by a direct caller
+// of aggregate() that skipped this check — a programming error, not model
+// input.
+function validateFilterPattern(filter) {
+  if (!filter || !filter.pattern) return null;
+  try {
+    compilePattern(filter);
+    return null;
+  } catch {
+    const shown = JSON.stringify(filter.pattern);
+    const flagNote = INLINE_FLAG_PATTERN.test(filter.pattern)
+      ? ' JavaScript does not support inline flags such as (?i). Note that filter.pattern is matched'
+        + ' case-sensitively by design — supply the exact casing you need, or an alternation like "RA|ra".'
+      : '';
+    return `filter.pattern is not valid JavaScript regular expression syntax: ${shown}.${flagNote}`;
+  }
+}
+
 // filter: { pattern } — a plain substring/regex the caller supplies to
 // select which occurrences within a record count toward its result (e.g.
 // "RA|Absent RA" for an arrear count). Matched case-sensitively against
@@ -240,5 +280,5 @@ function summarize(rows, { sampleSize = DEFAULT_SAMPLE_SIZE } = {}) {
 }
 
 module.exports = {
-  aggregate, summarize, DEFAULT_SAMPLE_SIZE, DocumentAggregateValidationError,
+  aggregate, summarize, validateFilterPattern, DEFAULT_SAMPLE_SIZE, DocumentAggregateValidationError,
 };

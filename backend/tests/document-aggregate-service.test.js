@@ -2,7 +2,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { aggregate, summarize, DocumentAggregateValidationError } = require('../src/services/documentAggregateService');
+const {
+  aggregate, summarize, validateFilterPattern, DocumentAggregateValidationError,
+} = require('../src/services/documentAggregateService');
 
 const RECORDS = [
   { key: '819:25400122', serialNo: '819', regNo: '25400122', block: '2 R2023 Absent\nRA RA\n3 R2023 RA\n4 R2023 RA B A+ A+ A O O' },
@@ -144,4 +146,78 @@ test('summarize: bySemester rolls up across records for breakdown, and is absent
 
 test('summarize: rejects a non-array, same fail-loudly posture as aggregate', () => {
   assert.throws(() => summarize('not an array'), DocumentAggregateValidationError);
+});
+
+// --- ADL-056: validateFilterPattern, the precondition that stops an
+// uncompilable LLM-supplied pattern ending the whole /ai/ask turn as an
+// HTTP 500 ---
+
+test('validateFilterPattern: a valid pattern returns null (nothing to report)', () => {
+  assert.equal(validateFilterPattern({ pattern: 'RA|Absent RA' }), null);
+});
+
+test('validateFilterPattern: an absent filter or pattern is not an error — both call sites already treat it as "no filter"', () => {
+  assert.equal(validateFilterPattern(undefined), null);
+  assert.equal(validateFilterPattern({}), null);
+  assert.equal(validateFilterPattern({ pattern: '' }), null);
+});
+
+test('validateFilterPattern: an uncompilable pattern returns a reason naming filter.pattern, and does NOT throw', () => {
+  const reason = validateFilterPattern({ pattern: '(?i)RA' });
+  assert.match(reason, /^filter\.pattern is not valid JavaScript/);
+});
+
+// The central ADL-056 correction: stripping "(?i)" is safe for
+// sectionPattern and a silent correctness bug here, because filter.pattern
+// is deliberately case-sensitive. The message must point at casing, never
+// imply the flag was merely redundant.
+test('validateFilterPattern: the (?i) message tells the model filter.pattern is case-SENSITIVE, the opposite of the sectionPattern remedy', () => {
+  const reason = validateFilterPattern({ pattern: '(?i)RA' });
+  assert.match(reason, /case-sensitively by design/);
+  assert.doesNotMatch(reason, /not needed/);
+});
+
+test('validateFilterPattern: an unbalanced group is rejected too — this is not a (?i)-specific check', () => {
+  assert.match(validateFilterPattern({ pattern: 'RA(' }), /not valid JavaScript/);
+});
+
+// Guards the whole no-normalisation decision. If anyone ever adds a
+// "normalisePattern" helper that strips inline flags before compiling,
+// this test fails — which is exactly the point: ADL-056 rejected
+// normalisation outright rather than deferring it.
+test('validateFilterPattern: patterns are REJECTED, never rewritten — no normalisation is performed anywhere', () => {
+  assert.notEqual(validateFilterPattern({ pattern: '(?i)RA' }), null);
+  assert.notEqual(validateFilterPattern({ pattern: '(?P<code>RA)' }), null);
+  assert.notEqual(validateFilterPattern({ pattern: '(?#comment)RA' }), null);
+});
+
+// A measured correction to this slice's own Approved Spec, which listed
+// "\A, \Z and the rest" alongside (?i) and (?P<name>...) as syntax JS
+// rejects. It does not: \A and \Z are IDENTITY ESCAPES in JavaScript, so
+// "\ARA\Z" compiles silently as the literal "ARAZ" and matches the wrong
+// thing entirely. That is a semantic divergence, not a compile failure,
+// and this slice addresses compile failure only. Pinned here so the
+// limitation is explicit rather than assumed covered by the check above.
+test('validateFilterPattern: a Python anchor (\\A/\\Z) is NOT caught — it compiles as a literal, a known and deliberate gap', () => {
+  assert.equal(validateFilterPattern({ pattern: '\\ARA\\Z' }), null);
+  assert.equal(/\ARA\Z/.test('ARAZ'), true);
+});
+
+// The behavioural half of the same guard: if a future normalisation ever
+// made filter.pattern case-insensitive, this fails.
+test('aggregate: filter.pattern stays case-SENSITIVE — a pattern differing only in case does not match', () => {
+  const records = [{ key: '1', block: '1 R2023 RA' }];
+  assert.equal(aggregate(records, { filter: { pattern: 'RA' }, operation: 'count' })[0].count, 1);
+  assert.equal(aggregate(records, { filter: { pattern: 'ra' }, operation: 'count' })[0].count, 0);
+});
+
+// validateFilterPattern is a PRECONDITION, not a replacement for the
+// throw: a direct caller of aggregate() that skips it still fails loudly,
+// because reaching compilePattern with an unvalidated pattern is a
+// programming error rather than model input.
+test('aggregate: called directly with an uncompilable pattern still throws — running the precondition is the caller responsibility', () => {
+  assert.throws(
+    () => aggregate(RECORDS, { filter: { pattern: '(?i)RA' }, operation: 'count' }),
+    DocumentAggregateValidationError,
+  );
 });

@@ -191,6 +191,26 @@ async function postJson(cfg, url, body) {
 // (promptTokenCount/candidatesTokenCount), a different field name and
 // shape from every other adapter's `usage` — a real vendor difference,
 // not an inconsistency in this codebase.
+//
+// ADR-030 P3 (ADL-053-adjacent) — `cachedContentTokenCount` is the only
+// signal that Vertex AI's implicit context caching (automatic, enabled
+// by default, zero request-shape change on our side — see
+// cloud.google.com/vertex-ai/generative-ai/docs/context-cache) actually
+// landed a hit on a given call. Read here, once, so every one of this
+// adapter's 4 usage-construction call sites reports it the same way
+// instead of 4 independent copies of the same ternary. `undefined` when
+// genuinely absent (below the model's cache-eligibility minimum, or no
+// hit) — never coerced to 0, matching this file's existing "undefined
+// when unknown" convention for inputTokens/outputTokens.
+function extractUsage(usageMetadata) {
+  if (!usageMetadata) return undefined;
+  const usage = { inputTokens: usageMetadata.promptTokenCount, outputTokens: usageMetadata.candidatesTokenCount };
+  if (typeof usageMetadata.cachedContentTokenCount === 'number') {
+    usage.cachedTokens = usageMetadata.cachedContentTokenCount;
+  }
+  return usage;
+}
+
 async function completeWithMeta(cfg, arcnaveContext) {
   const { systemPrompt, userPrompt, images } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
@@ -210,9 +230,7 @@ async function completeWithMeta(cfg, arcnaveContext) {
     throw new LlmRequestError('Gemini response did not contain candidates[0].content.parts[].text');
   }
 
-  const usage = payload && payload.usageMetadata
-    ? { inputTokens: payload.usageMetadata.promptTokenCount, outputTokens: payload.usageMetadata.candidatesTokenCount }
-    : undefined;
+  const usage = extractUsage(payload && payload.usageMetadata);
   return { text, usage };
 }
 
@@ -289,7 +307,7 @@ async function attemptStream(cfg, arcnaveContext, deadline, onDelta) {
     // seen (the final chunk before the stream ends) is the real total,
     // same as completeWithMeta's own non-streaming usage read.
     if (event && event.usageMetadata) {
-      usage = { inputTokens: event.usageMetadata.promptTokenCount, outputTokens: event.usageMetadata.candidatesTokenCount };
+      usage = extractUsage(event.usageMetadata);
     }
   }
   return { full, sawAnyText, usage };
@@ -438,9 +456,7 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
     // call was invisible to logLlmCall (see aiService.js's own comment on
     // decision.usage), the exact turn shape the review found most
     // expensive.
-    const usage = payload && payload.usageMetadata
-      ? { inputTokens: payload.usageMetadata.promptTokenCount, outputTokens: payload.usageMetadata.candidatesTokenCount }
-      : undefined;
+    const usage = extractUsage(payload && payload.usageMetadata);
     // rawToolCall carries the ENTIRE part as Gemini returned it — not
     // just {name, args} — because with thinking enabled (GENERATION_
     // CONFIG's thinkingLevel above) Vertex's real API attaches a sibling
@@ -463,9 +479,7 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   if (!text) {
     throw new LlmRequestError('Gemini response contained neither a function call nor text');
   }
-  const usage = payload && payload.usageMetadata
-    ? { inputTokens: payload.usageMetadata.promptTokenCount, outputTokens: payload.usageMetadata.candidatesTokenCount }
-    : undefined;
+  const usage = extractUsage(payload && payload.usageMetadata);
   return { type: 'answer', text, usage };
 }
 

@@ -65,6 +65,7 @@ traceability lives here.
 | [ADL-051](#adl-051) | NVIDIA NIM removed; Gemini becomes the default chat AND embedding provider | Resolved — implemented |
 | [ADL-052](#adl-052) | ADR-030 P2(c) real tool-use loop — shipped behind a compatibility-mode-default flag | Resolved — implemented |
 | [ADL-053](#adl-053) | J1/J2 artifact tool-naming behavioral-suite failures — no-fabrication test fix + focus-hint content inlining | Resolved — partially implemented |
+| [ADL-054](#adl-054) | ADR-030 P3 — Gemini `cachedContentTokenCount` telemetry captured; explicit caching deliberately not pursued | Resolved — implemented |
 
 ---
 
@@ -3087,3 +3088,100 @@ before adding the `require`.
 context-inlining half is implemented and verified working; the
 tool-call-vs-chat-reply half remains open, tracked here rather than
 silently left unscoped again.
+
+---
+
+## ADL-054
+
+### ADR-030 P3 — Gemini `cachedContentTokenCount` telemetry captured; explicit caching design deferred, real risk identified
+
+**Decision.** User directed P3 to proceed, scoped to the `tool_select`
+call (ADR-030's own gate: "only after P0's telemetry shows what a clean
+prefix actually buys — not budgeted as a project until measured"). Before
+writing any caching code, checked what P0's existing telemetry
+(`audit_log`, `action='ai_llm_call'`) actually showed: `tool_select`'s
+`systemPromptChars` is highly stable (2 distinct values across 39 calls,
+5,740–6,246 chars) and it's the most frequent call type — a real
+candidate. Researched Vertex AI's actual caching mechanics before
+designing anything (web search, since this postdates training knowledge):
+**implicit context caching is automatic, enabled by default on every
+Google Cloud project, requires zero request-shape change, and already
+applies to every eligible Gemini call this codebase makes today** —
+minimum 2,048 tokens, 90% discount on cache hits, visible only via
+`usageMetadata.cachedContentTokenCount` in the response. This codebase
+never read that field for any provider (confirmed the same gap exists for
+Claude's own `cache_control` prompt-caching, P1.2 — unrelated, out of
+scope, not fixed here).
+
+**What was actually built — telemetry, not caching.** `gemini.js` gains
+`extractUsage(usageMetadata)`, a single shared read of
+`cachedContentTokenCount` reused across all 4 of that adapter's
+usage-construction call sites (`completeWithMeta`, `attemptStream`,
+`completeWithTools`'s tool_call and answer branches) — `undefined` when
+genuinely absent, never coerced to 0. `aiService.js`'s `logLlmCall` now
+persists `cachedTokens` into `audit_log.metadata` alongside the existing
+`inputTokens`/`outputTokens`. No request sent to Gemini changed shape at
+all — this only reads a field the API was already returning.
+
+**Real measurement, not a guess.** A temporary diagnostic query (added to
+`ai-behavioral-suite.js`'s cleanup path for one run, then reverted — never
+committed) against a live category-A run: of 10 successful `tool_select`
+calls (avg 5,697 input tokens, comfortably above the 2,048 minimum), only
+**1 got an implicit cache hit** (3,393 cached tokens). Implicit caching
+demonstrably works on this exact prompt shape, but the hit rate under this
+codebase's natural call pattern (sequential, 3s-paced, spread across a
+live behavioral-suite run) is low — consistent with Vertex's own
+documented guidance that implicit hits need "a similar prefix in a short
+amount of time," which this call pattern doesn't reliably provide.
+
+**Why explicit caching (the natural next step for a guaranteed, high hit
+rate) was NOT designed or built this round.** Explicit caching
+(`cachedContents` API) requires the system instruction + tool definitions
+to be created as a separate, server-side cached resource, then referenced
+by id in later calls instead of resent inline — a real, structural change
+to how the governance-bearing system instruction reaches the model on
+every `tool_select` call. This is the same category of change ADR-030
+P2(b) already attempted and empirically rejected: [ADL-050](#adl-050)
+found that splitting that exact system instruction (byte-identical text,
+delivered as multiple `systemInstruction.parts` instead of one) measurably
+weakened the model's compliance with a hard governance rule embedded in
+it (`E: document-capability claim` dropped from 3/3 to 2/7 live samples) —
+proof that HOW the governance-bearing instruction is packaged and
+delivered to Gemini, not just its text content, is a live, measurable
+compliance variable for this specific model/provider. Explicit caching is
+a different delivery mechanism (a cache reference vs. inline parts), not
+proven safe or unsafe by ADL-050's own result, but it is untested, and
+ADL-050's own "Rationale for reverting rather than mitigating in place"
+section already states the applicable principle: a new packaging change to
+this same governance-bearing content is "new work requiring its own
+live-suite confirmation, not a same-session fix" — a "fresh, explicitly-
+scoped attempt," never a casual extension of this session's telemetry work.
+Not designed or attempted this round; flagged for the user rather than
+built or silently skipped.
+
+**Affected artefacts.** `backend/src/services/aiProviders/gemini.js`
+(`extractUsage`, all 4 usage call sites). `backend/src/services/
+aiService.js` (`logLlmCall`'s `cachedTokens` field).
+
+**Verification.** Full suite via `docker compose run --rm app npm test`:
+2111/2114, same 2 pre-existing unrelated failures as every prior round in
+this ledger, zero regressions (confirmed across 2 runs; a 3rd failure in
+one run didn't reproduce on immediate re-run — flaky, not a regression).
+`ai-providers.test.js` (40/40) unaffected — no wire-shape assertion
+needed updating since request shape is unchanged.
+
+**Migration impact.** None — telemetry-only, no schema change (`audit_log.
+metadata` is already JSONB), no request-shape change.
+
+**Follow-up decision (same session, after a pause).** Presented the
+explicit-caching risk above to the user as a genuine 3-way choice (design
+it with a live-suite verification gate / stop here / a narrower
+tools-only-cache design). **User decided: stop here — implicit caching
+plus this round's telemetry is enough for now.** Explicit caching is not
+rejected outright, just not undertaken this round; revisit only if
+cost/latency becomes a real, demonstrated problem (not preemptively). No
+code exists for it, nothing left half-built.
+
+**Status:** Resolved — implemented (telemetry only; explicit caching
+deliberately not pursued, per the user's own decision above, not left
+silently unscoped).

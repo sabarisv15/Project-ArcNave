@@ -1371,6 +1371,12 @@ async function logLlmCall(client, {
       purpose,
       inputTokens: usage ? usage.inputTokens : undefined,
       outputTokens: usage ? usage.outputTokens : undefined,
+      // ADR-030 P3 — only ever populated by gemini.js today (Vertex AI's
+      // automatic implicit context caching, see that adapter's own
+      // extractUsage comment); undefined for every other provider/purpose,
+      // never coerced to 0, so a `NULL`/absent value in a query genuinely
+      // means "no signal," not "confirmed zero cache hit."
+      cachedTokens: usage ? usage.cachedTokens : undefined,
       latencyMs,
       imageCount: imageCount || undefined,
       systemPromptChars,

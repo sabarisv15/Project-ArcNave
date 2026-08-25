@@ -10,23 +10,34 @@ only links to it.
 
 ## Active Task
 
-**None — this session's category-by-category live behavioral suite run
-is complete.** All categories A through K have now been run live this
-session (Vertex quota recovered from the prior session's exhaustion; no
-quota error occurred in any run this session — see results below). J
+**None — ADR-030 P3 is closed for now.** Real P0 telemetry checked
+before building anything (per the ADR's own gate). `cachedContentTokenCount`
+visibility implemented and verified. A concrete, live-measured risk was
+found for the natural next step (explicit caching); presented to the
+user as a 3-way choice; **user decided: stop here, implicit caching plus
+this round's telemetry is enough for now** — not rejected outright, just
+not undertaken this round. Full detail: [ADL-054](../30-decisions/ledger.md#adl-054).
+The earlier category-by-category live behavioral suite run (A-K) is
+complete and unrelated to this — see its own results section below. J
 surfaced a real, previously-unscoped product decision — resolved and
 partially implemented as [ADL-053](../30-decisions/ledger.md#adl-053);
-one sub-issue from that work is still open. If a new session starts and
-the user hasn't named a task, ask what's next rather than assuming
-ADL-053's open sub-issue is it.
+one sub-issue from that work is still open too.
 
 ## Exact next action
 
-None queued. If the user wants to keep chasing ADL-053's open sub-issue
-(j2: model composes a correct revision but replies with it in chat
-instead of calling `update_artifact_content`, reproduced 3/3 live
-attempts) — read that ledger entry's "Open sub-issue" paragraph first,
-do not re-diagnose from scratch.
+None queued. **Explicit Gemini caching for `tool_select` — do not start
+designing this speculatively.** Per ADL-054's own closing note, revisit
+only if cost/latency becomes a real, demonstrated problem, not
+preemptively; if that happens, read ADL-054 in full first (it already
+lays out the real, on-point risk — [ADL-050](../30-decisions/ledger.md#adl-050)
+found that changing how this SAME governance-bearing system instruction
+is packaged/delivered to Gemini measurably weakened a hard governance
+rule's compliance, `E` category 3/3 → 2/7 live — and the 3 options
+already offered). If the user instead wants to keep chasing ADL-053's
+open sub-issue (j2: model composes a correct revision but replies with
+it in chat instead of calling `update_artifact_content`, reproduced 3/3
+live attempts) — read that ledger entry's "Open sub-issue" paragraph
+first.
 
 ## This session's live run results (category, CATEGORY_FILTER=<letter>, all via real Gemini/Vertex)
 

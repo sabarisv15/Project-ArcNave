@@ -1,6 +1,6 @@
 # Current State
 
-_Last updated: 2026-08-24._
+_Last updated: 2026-08-25._
 
 Governed by [`00-protocol.md`](00-protocol.md). Per that protocol's own
 §2 (never duplicate content that has a canonical home elsewhere), this
@@ -10,7 +10,92 @@ only links to it.
 
 ## Active Task
 
-**None — ADR-030 P3 is closed for now.** Real P0 telemetry checked
+**None — the document-analysis payload work is complete.**
+[`ai-chat-document-analysis-payload-bounds-approved-spec.md`](../60-product-reasoning/ai-chat-document-analysis-payload-bounds-approved-spec.md)
+is implemented and verified: full suite **2120/2122** (the same 2
+pre-existing failures listed under Standing notes below, zero regressions),
+and the tool-result payload measured against the original document itself —
+**62,029 → 3,872 tokens** (`count`) and **88,849 → 6,214** (`breakdown`),
+via Vertex `countTokens`. Full detail:
+[ADL-055](../30-decisions/ledger.md#adl-055).
+
+Background, only if needed: this began as a Curriculum persistent-workspace
+design conversation (ARC.md/STATE.md/INDEX.md, skills, agents), which was
+gated on measuring the Gemini caching question first. The measurement
+disproved the session's own hypothesis and surfaced this unrelated,
+much larger cost centre. Workspace design is **paused, not cancelled** —
+it is listed in the Approved Spec's OUT OF SCOPE and needs its own pass.
+
+## Exact next action
+
+**Run `/product-reasoning` for document-question tool routing.** User-set
+scope, deliberately narrow — do not widen it:
+
+> A document/table counting question must select the deterministic analysis
+> tool before the model is allowed to answer from raw attachment contents.
+
+Nothing above that line. No agent-architecture change, no retrieval
+redesign, no `RANK_CAP` change.
+
+**Why this is P0 and outranks the larger cost problem.** The live run
+proved the shipped payload fix does not guarantee production behaviour:
+asked naturally ("How many arrears are there in the ECE Sandwich
+section?"), the model **never called `analyze_document_table` at all** —
+one `tool_select` call, 124,548 tokens, `toolsUsed: null`,
+`verification: undefined`, counts narrated straight from the attachment
+text. That is the exact failure ADR-029 exists to prevent, reproduced live.
+The tool ran only when the question named it explicitly. A deterministic
+total nothing selects is not a guarantee. Full detail:
+[ADL-055](../30-decisions/ledger.md#adl-055).
+
+After the routing fix lands, **re-measure the natural-phrasing question**
+before touching anything else — the expected shape is: natural question →
+deterministic tool → bounded result (~few k) → answer.
+
+**Then, and only then, P1:** `buildAttachmentHint` is 211,604 chars
+(~124.5k tokens) for this document and rides in **both** the `tool_select`
+and `tool_answer` requests — the same document sent twice per turn (251,005
+tokens total). The shipped change removed a third copy; these two are
+untouched. The question to investigate is narrow: *does the full attachment
+hint genuinely need to be in both calls?* Minimal removal/replacement, then
+re-measure. Different path, different budget
+(`DEFAULT_ATTACHMENT_TOTAL_CHAR_BUDGET`, `aiService.js:521`).
+
+**Do not revert the shipped P0.** It is objectively correct and measured:
+tool result 62,029 → 3,872 tokens (`count`), 88,849 → 6,214 (`breakdown`).
+The newly discovered issue is a different layer — the model can still take
+the raw-text branch instead of the tool branch.
+
+Note also: the original attachment's stored file is missing from local
+storage (`documents` row `20154058-c490-480d-8a4c-9f7b2a5a31a2` survives,
+its file does not). The measurements were taken from a re-supplied copy of
+the same PDF, confirmed identical by its 278,403-char extraction.
+
+**Do not start any of these without their own pass** — all are OUT OF SCOPE
+in the Approved Spec: a generic `summarizeToolResult` cap for all tools,
+cross-turn extraction reuse, any Gemini prompt-cache work, a per-attachment
+retrieval index, and the Curriculum persistent-workspace design (ARC.md /
+STATE.md / INDEX.md, skills, agents) this whole thread began as.
+
+Do **not** touch `aiToolRetrievalService.js` or `aiToolRegistry.js`'s
+`RANK_CAP` — ADL-055 Finding 1 closed that permanently.
+
+Diagnostics from the investigation, if they are ever wanted again
+(both read-only; the second makes real, billable Vertex calls):
+
+```
+docker compose up -d db
+cd backend && set -a && . ./.env.local.sh && set +a && node scripts/cache-hit-analysis.js
+cd backend && set -a && . ./.env.local.sh && set +a && node scripts/cache-experiment.js
+```
+
+Baseline: `cache-hit-analysis.js` showed 45 rows, 0 hits, 45 no-signal,
+`tool_answer` avg 84,010 input tokens (peak 125,927).
+`cache-experiment.js` showed 0/10 hits at ~4.1k tokens.
+
+## Previously active (closed)
+
+**ADR-030 P3 is closed for now.** Real P0 telemetry checked
 before building anything (per the ADR's own gate). `cachedContentTokenCount`
 visibility implemented and verified. A concrete, live-measured risk was
 found for the natural next step (explicit caching); presented to the
@@ -23,9 +108,9 @@ surfaced a real, previously-unscoped product decision — resolved and
 partially implemented as [ADL-053](../30-decisions/ledger.md#adl-053);
 one sub-issue from that work is still open too.
 
-## Exact next action
+### Parked threads from that task (not the active next action above)
 
-None queued. **Explicit Gemini caching for `tool_select` — do not start
+**Explicit Gemini caching for `tool_select` — do not start
 designing this speculatively.** Per ADL-054's own closing note, revisit
 only if cost/latency becomes a real, demonstrated problem, not
 preemptively; if that happens, read ADL-054 in full first (it already
@@ -39,7 +124,7 @@ it in chat instead of calling `update_artifact_content`, reproduced 3/3
 live attempts) — read that ledger entry's "Open sub-issue" paragraph
 first.
 
-## This session's live run results (category, CATEGORY_FILTER=<letter>, all via real Gemini/Vertex)
+## Live behavioural-suite run results from the ADR-030 P3 session (2026-08-24; category, CATEGORY_FILTER=<letter>, all via real Gemini/Vertex)
 
 - A 12/12, B 8/8, C 6/6, D 4/4, F 2/2, G 6/6 — clean on first attempt.
 - E 2/3 first attempt (`e3` — Vertex timeout, not quota, not a content

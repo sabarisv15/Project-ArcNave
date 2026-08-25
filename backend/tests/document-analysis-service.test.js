@@ -82,9 +82,15 @@ test('analyzeAttachment: happy path — real result-sheet-shaped text is structu
   const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
   assert.equal(result.status, 'ok');
   assert.equal(result.strategy, 'sequential_id');
-  assert.deepEqual(result.results, [{
+  // The deterministic cross-record answer, computed here and not left for
+  // the LLM to obtain by adding up rows it was handed.
+  assert.equal(result.total, 4);
+  assert.equal(result.matchedCount, 1);
+  assert.deepEqual(result.sample, [{
     key: '819:25400122', serialNo: '819', regNo: '25400122', count: 4,
   }]);
+  assert.equal(result.sampleShown, 1);
+  assert.equal(result.sampleOmitted, 0);
 });
 
 test('analyzeAttachment: serialRange narrows results to the requested range, matching a real "consolidate serial X to Y" question', async () => {
@@ -97,8 +103,13 @@ test('analyzeAttachment: serialRange narrows results to the requested range, mat
     attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count', serialRange: { from: 819, to: 819 },
   }, IDENTITY);
   assert.equal(result.status, 'ok');
-  assert.equal(result.results.length, 1);
-  assert.equal(result.results[0].serialNo, '819');
+  assert.equal(result.sample.length, 1);
+  assert.equal(result.sample[0].serialNo, '819');
+  // 818 is inside the scoped set but matches nothing, so it counts toward
+  // scopedCount and not matchedCount — the distinction the answer needs to
+  // say "1 of 2 students", not "1 of 1".
+  assert.equal(result.matchedCount, 1);
+  assert.equal(result.total, 1);
 });
 
 test('analyzeAttachment: a serialRange matching nothing degrades to no_matching_records, never a hallucinated table', async () => {
@@ -134,7 +145,7 @@ test('analyzeAttachment: sectionPattern scopes to a named cohort without the cal
     attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count', sectionPattern: 'sandwich',
   }, IDENTITY);
   assert.equal(result.status, 'ok');
-  assert.deepEqual(result.results.map((r) => r.serialNo), ['1133']);
+  assert.deepEqual(result.sample.map((r) => r.serialNo), ['1133']);
 });
 
 test('analyzeAttachment: a sectionPattern matching no real section degrades to no_matching_records, never a hallucinated cohort', async () => {
@@ -167,11 +178,17 @@ test('analyzeAttachment: operation "breakdown" returns per-semester counts, not 
   }));
   const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'breakdown' }, IDENTITY);
   assert.equal(result.status, 'ok');
-  assert.deepEqual(result.results, [{
+  assert.deepEqual(result.sample, [{
     key: '819:25400122',
     serialNo: '819',
     regNo: '25400122',
     breakdown: [{ semester: 2, count: 2 }, { semester: 3, count: 1 }, { semester: 4, count: 1 }],
     total: 4,
   }]);
+  // The cross-record per-semester rollup — present only for 'breakdown',
+  // never an empty array for count/sum (see rollupBySemester's comment).
+  assert.deepEqual(result.bySemester, [
+    { semester: 2, count: 2 }, { semester: 3, count: 1 }, { semester: 4, count: 1 },
+  ]);
+  assert.equal(result.total, 4);
 });

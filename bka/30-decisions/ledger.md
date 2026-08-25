@@ -3185,3 +3185,262 @@ code exists for it, nothing left half-built.
 **Status:** Resolved — implemented (telemetry only; explicit caching
 deliberately not pursued, per the user's own decision above, not left
 silently unscoped).
+
+---
+
+## ADL-055
+
+### Implicit-cache investigation reopened — tool-declaration variance exonerated, and the real cost centre found to be `analyze_document_table`'s unbounded tool result
+
+**Context.** A design conversation about giving Curriculum a persistent,
+Claude-Code-style workspace (ARC.md / STATE.md / INDEX.md, skills, agents)
+raised a prerequisite question: which parts of such a workspace are worth
+placing in a stable, cacheable prompt prefix. Rather than design the
+context tiers speculatively, the user directed that the caching question
+be **measured first** — explicitly rejecting an early recommendation
+(pin the tool set so the prefix stops changing) on the grounds that it
+would be engineering against an unproven cause.
+
+**Superseded position.** This entry does not supersede [ADL-054](#adl-054),
+which remains correct: implicit caching works, is automatic, and was
+already observed live (1 hit of 3,393 cached tokens across 10
+`tool_select` calls averaging 5,697 input tokens). It supersedes a
+hypothesis raised *in this session only* — that round-32's per-turn
+semantic tool retrieval (`aiToolRetrievalService.js`) was destroying the
+cacheable prefix by varying the `tools` block on every call. That
+hypothesis is disproved below and must not be revived without new
+evidence.
+
+**Finding 1 — tool declarations are not the cause (controlled experiment).**
+`backend/scripts/cache-experiment.js` (added this round) runs three arms
+against real Vertex, changing exactly one variable at a time: A =
+identical ~22k-char system instruction with **no tools**; B = identical
+plus a **fixed** tool block; C = identical with a **rotating** tool set
+(A A B A). Result: **0 cache hits across all 10 calls, including arm A.**
+Arm A carries no tool declarations at all, so tool-set variance cannot
+explain its misses. Tool retrieval is exonerated; `aiToolRetrievalService.js`
+and `aiToolRegistry.js`'s `RANK_CAP` shortlisting must not be changed for
+caching reasons.
+
+**Finding 2 — hit rate is size-and-timing sensitive, not a hard threshold.**
+Arm A/B/C ran at ~4,092–4,179 input tokens, 20s apart: no hits in 10
+attempts. A separate raw-`fetch` probe at **18,793** input tokens, same
+project/region/model (`gemini-3.7-flash`, `global`, the app's own `/v1/`
+request shape), 25s apart: call 1 miss, call 2 miss, **call 3 hit with
+`cachedContentTokenCount: 16350`** (87% of the prompt). Read together
+with ADL-054's own live hit at 5,697 tokens, the honest conclusion is
+that eligibility is **probabilistic and improves with prompt size**, not
+a clean cutoff — an intermediate reading in this session that ~5k
+requests are "below the threshold and therefore permanently uncacheable"
+was stated too strongly and is corrected here. The exact minimum was
+deliberately not bisected: it is tuning data, ranked below the findings
+that follow.
+
+**Finding 3 — every recorded `ai_llm_call` row shows no cache signal.**
+`backend/scripts/cache-hit-analysis.js` (added this round, read-only)
+aggregates the `audit_log` rows `logLlmCall` already writes. Across all
+45 rows: 0 hits, 0 confirmed zeros, **45 no-signal** (`cachedTokens`
+absent — never coerced, per `gemini.js`'s own rule that absent ≠ zero).
+Also surfaced two telemetry gaps: `metadata.model` is `null` on every row
+(`aiConfig.model` is not populated at the `logLlmCall` call site), and
+`toolCount`/`systemPromptChars` are absent for the `tool_answer` and
+`general_chat` purposes. Note also that **zero `tool_select_continue`
+rows exist** — ADR-030 P2(c)'s bounded tool-use loop has never taken a
+continuation in recorded traffic, so its intra-turn growing-prefix
+behaviour remains unmeasured, not measured-and-failed.
+
+**Finding 4 — the real cost centre, and it is not `tool_select`.**
+Per-call average input tokens by purpose: `general_chat` 1,367;
+`tool_select` 5,320; **`tool_answer` 84,010, peak 125,927**. The two
+largest calls were traced through `audit_log` to a single tool —
+`analyze_document_table` — invoked twice on the **same `documentId`**
+39 seconds apart (`111_cons_result_apr2026.txt`, 278,403 extracted
+chars), each time re-downloading, re-extracting and re-injecting.
+
+**Finding 5 — why that path cannot cache, and why the first hypothesis
+about it was also wrong.** The initial suspicion was that
+`aiPromptSafetyLayer.renderForLlm` (`aiPromptSafetyLayer.js:72`) places a
+per-invocation `retrievedAt` timestamp at the head of each data block,
+invalidating an otherwise byte-identical 125k prefix. The user required
+this be tested rather than assumed, and it does not hold:
+`documentAnalysisService.analyzeAttachment` returns
+`documentAggregateService.aggregate(scoped, {groupBy, filter, operation})`,
+whose parameters are **supplied per-question by the LLM**. Two different
+questions produce entirely different payload bytes, so there is no stable
+prefix for the timestamp to spoil. The `retrievedAt` ordering remains a
+latent issue for tools whose output *is* deterministic, and the invariant
+worth adopting is *stable evidence bytes before volatile metadata* — but
+it is not the cause here and fixing it would change nothing measurable.
+
+**Finding 6 — the tool result is unbounded, and no cap exists on that
+path.** `documentAggregateService.aggregate` returns `records.map(...)` —
+one object per row, in both `annotate` (default) and `include` modes, with
+**no scalar total and no size cap** (`documentAggregateService.js:148-155`).
+`MAX_RAW_EXTRACTED_CHARS` (1,000,000, `documentTextExtractionService.js:42`)
+bounds *extraction*, and `DEFAULT_ATTACHMENT_TOTAL_CHAR_BUDGET` (200,000,
+`aiService.js:521`) bounds the *attachment text-hint* path — but a **tool
+result** reaches the prompt through `summarizeToolResult` and is subject
+to neither. That is how 278,403 chars of derived rows became a single
+125,927-token request: an O(document) payload for what is often an O(1)
+answer.
+
+**Decision.** No code change is made this round beyond the two read-only
+diagnostic scripts. Specifically: (a) tool retrieval / tool-set pinning is
+**closed, not deferred** — disproved by Finding 1; (b) workspace context-tier
+design (ARC.md / STATE.md / INDEX.md stability annotations) is **not**
+to be optimised around implicit caching, since a well-shaped agent request
+is small enough that caching is a marginal concern at best; (c) the
+`analyze_document_table` result size is **blocked pending a new Product
+Reasoning pass**, per the reason below.
+
+**Why (c) is blocked rather than fixed.** The behaviour matches its own
+Approved Spec: `bka/60-product-reasoning/ai-chat-result-sheet-evidence.md`
+specifies per-student facts as the tool's Output (its "API contracts"
+section), so returning rows is not a defect. But two of that spec's stated
+premises are now empirically false: its **Edge cases** entry ("Very large
+result sheet → already bounded by the existing `MAX_RAW_EXTRACTED_CHARS` /
+`ATTACHMENT_TOTAL_CHAR_BUDGET` ceilings") assumes an input bound implies an
+output bound, which Finding 6 disproves; and its **OUT OF SCOPE** rationale
+for a per-attachment retrieval index ("solves a context-window scale
+problem this use case doesn't have — one attachment fits within
+`ATTACHMENT_TOTAL_CHAR_BUDGET`") is contradicted by a 278,403-char
+attachment producing a 125,927-token request. Since OUT OF SCOPE is a hard
+boundary under CLAUDE.md, and since bounding the payload changes what a
+user actually receives (a full 3,000-row list is a legitimate answer to
+some questions), this requires a new pass rather than an in-place edit.
+One narrowing worth carrying into that pass: the spec's own design intent
+routes computed facts to `buildEvidence`/`verifyNumericClaims`, and it
+never specifies that the full facts array must be placed in the prompt —
+so bounding the *prompt* payload while keeping the *return value* and
+*verification* intact may be within the existing spec.
+
+**Affected artefacts.** Added: `backend/scripts/cache-hit-analysis.js`,
+`backend/scripts/cache-experiment.js` (both read-only diagnostics; the
+latter makes real, billable Vertex calls and is manually triggered, never
+CI). No production code changed. Implicated but unchanged:
+`documentAggregateService.js:148-155`, `documentAnalysisService.js:126`,
+`aiPromptSafetyLayer.js:72`, `aiService.js:521`, `aiService.js:1358-1386`.
+
+**Migration impact.** None.
+
+**Implementation notes / hazards.** `cache-experiment.js` first run at
+~17k tokens x 12 rapid calls returned `429 RESOURCE_EXHAUSTED` while a
+single small call immediately afterwards succeeded — a per-project
+tokens-per-minute quota, not a hard block. The committed script is tuned
+to ~5.5k tokens with 20s spacing for that reason; raising either requires
+re-checking quota, and a 429 mid-arm would otherwise be misread as a cache
+result.
+
+**Implementation (same session).** Shipped exactly the Approved Spec's
+CORE + two REQUIRED SUPPORT items, nothing else.
+`documentAggregateService.summarize()` added alongside an **unchanged**
+`aggregate()` (so all 13 of that service's existing tests stayed green):
+computes `total`, `matchedCount`, `scopedCount`, a `bySemester` cross-record
+rollup for `breakdown` only, and a sample capped at
+`DEFAULT_SAMPLE_SIZE = 100` with a truthful `sampleShown`/`sampleOmitted`
+split. 100, not a smaller round number, because the prior slice's own
+verified ground-truth ranges are 55 and 41 records — the documented
+"consolidate serial X to Y" question still returns every matching row, so
+the cap only engages beyond any scale that spec contemplated. The sample is
+drawn from **matched** rows, not all scoped rows: in the default `annotate`
+mode most rows are zeros, and a sample of zeros would spend the budget
+saying nothing. `documentAnalysisService.analyzeAttachment` now returns
+`{status, strategy, ...summary}` instead of `{status, strategy, results}`.
+`aiService.extractDeterministicSummary` routes evidence for any result
+carrying that shape (keyed on shape, never on a tool name) to the
+deterministic figures **plus the sample's own row values** — deliberately
+not the deterministic figures alone, because `collectFieldValues` exists to
+catch "right number of rows, wrong count on ONE of them" (ADR-029's
+original Muhammad-Ashik miscount) and dropping row values entirely would
+have silently removed that check. Bounding the sample already fixes the
+dilution: ~100 values instead of ~6,000. No change was needed in
+`summarizeToolResult` — bounding at the tool means the prompt is bounded by
+construction.
+
+**Verification.** Full suite via `docker compose run --rm app npm test`:
+**2120/2122**, the same 2 pre-existing unrelated failures
+(`Policy Gate: 'class_tutor'...`, `fetch_trusted_web_page: registered as
+L1...`) recorded against every prior round in this ledger — zero
+regressions, 8 net new tests.
+
+Payload measured against **the original document itself** — the user
+re-supplied `111_cons_result_apr2026.pdf` after the stored copy was found
+missing from local storage (the `documents` row
+`20154058-c490-480d-8a4c-9f7b2a5a31a2` survives; its file does not). Same
+document confirmed: extraction produces **278,403 chars**, byte-identical to
+the figure the `ai_attachment_analyzed` audit row recorded on 2026-08-22.
+1,603 records across 20 sections; 652 matched; deterministic total 2,189.
+Tool-result payload, boundary-wrapped exactly as `renderForLlm` delivers it
+and counted with Vertex's own `countTokens` on `gemini-3.7-flash`:
+
+| operation | before | after | |
+|---|---|---|---|
+| `count` | 62,029 tok | 3,872 tok | 16x |
+| `breakdown` | 88,849 tok | 6,214 tok | 14x |
+
+**Live end-to-end run (throwaway seeded tenant, real upload through
+`documentService.uploadChatAttachment`, real `askAgent`, real Vertex).**
+Two runs against the same re-supplied PDF. This is where the earlier
+"unexplained remainder" hypothesis got tested, and it holds — with two
+further findings that matter more than the payload size this spec fixes.
+
+*Run 1, natural phrasing* ("How many arrears are there in the ECE Sandwich
+section?"): one `tool_select` call, **124,548 input tokens**,
+`toolsUsed: null`, `verification: undefined`. **The deterministic tool was
+never invoked.** The model answered by narrating counts straight out of the
+attachment text — a live reproduction of precisely the failure ADR-029 and
+[`ai-chat-result-sheet-evidence.md`](../60-product-reasoning/ai-chat-result-sheet-evidence.md)
+exist to prevent. The tool only ran once the question named it explicitly.
+This is a real, reproduced defect in the deterministic path's reachability;
+it is **not** addressed by this spec and needs its own pass.
+
+*Run 2, tool explicitly named* (consolidate serial 818-872):
+
+| purpose | input tokens |
+|---|---|
+| `tool_select` | 125,493 |
+| `tool_answer` | 125,512 |
+| **turn total** | **251,005** |
+
+The bounded payload works as designed — `toolsUsed:
+["analyze_document_table"]`, evidence in the new shape (`recordCount` 34,
+`fieldValues` `[100, 55, …]` = total 100 arrears, scopedCount 55, then the
+sample's own per-row counts). Serial 818-872 resolves to exactly 55
+records, the prior spec's own documented range, and all 34 matching rows
+were still listed — the 100-row cap never engaged, as intended.
+
+**But the dominant cost is `buildAttachmentHint`, not the tool result.**
+That hint is **211,604 chars (~124.5k tokens)** for this document and rides
+in **both** the `tool_select` and `tool_answer` requests — the document is
+sent twice per turn, and was sent a third time as the tool result before
+this change. This spec removed the third copy (measured 62,029 → 3,872
+tokens for `count`); the two hint copies are untouched and account for
+roughly 80% of the turn. Out of scope here, deliberately: it is a different
+path, a different budget (`DEFAULT_ATTACHMENT_TOTAL_CHAR_BUDGET`,
+`aiService.js:521`), and it needs its own Product Reasoning pass rather
+than an opportunistic edit alongside this one.
+
+**One non-regression worth recording.** Run 2 returned
+`verification: CONFLICT, claimedNumbers: [21]` — the model wrote "the
+remaining 21 students have no arrears", a correct derivation (55 scoped − 34
+matched) that is not itself a known count. This is the pre-existing
+false-CONFLICT risk `COUNT_CLAIM_PATTERN`'s own comment already describes,
+**not** introduced by narrowing `knownCounts`: `serialNo`/`regNo` are
+strings and were never collected, so 21 would have been absent from the old
+knownSet too.
+
+**Status:** Resolved — implemented and verified. The Product Reasoning pass
+this entry required was run the same day and produced
+[`ai-chat-document-analysis-payload-bounds-approved-spec.md`](../60-product-reasoning/ai-chat-document-analysis-payload-bounds-approved-spec.md)
+(user chose: deterministic total + capped row sample; explicit "showing N
+of M", never silent truncation; cap scoped to `analyze_document_table`
+only). That pass also found two further defects sharing the same root
+cause, both now in the Approved Spec as `REQUIRED SUPPORT`: no cross-row
+aggregate exists anywhere (`operation: 'sum'` only sums within one record,
+so the LLM still totals thousands of rows itself), and `collectFieldValues`
+(`aiService.js:950-955`) puts every numeric field of every row into
+`verifyNumericClaims`'s `knownSet` — roughly 6,000 values at 3,000 rows —
+which inverts that check's failure mode from false CONFLICT to false PASS
+at scale. Tool-set pinning remains closed. Cache-threshold bisection and
+the `retrievedAt` ordering invariant remain deliberately unranked
+follow-ups, not queued work.

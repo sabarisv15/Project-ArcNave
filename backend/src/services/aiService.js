@@ -954,14 +954,49 @@ function collectFieldValues(array) {
   return values.length > 0 ? values : undefined;
 }
 
+// A tool result that already carries its own DETERMINISTIC cross-record
+// answer (documentAggregateService.summarize's shape) is verified against
+// that answer, never against its rows. Collecting every numeric field of
+// every row (collectFieldValues, below) is right for a small result and
+// actively harmful for a large one: at 3,000 rows the knownSet reaches
+// roughly 6,000 values, so almost any number the model states is present by
+// coincidence and verifyNumericClaims degrades to a false PASS — the exact
+// inverse of the false-CONFLICT risk COUNT_CLAIM_PATTERN's own comment
+// guards against. Keyed on the shape, not on a tool name, so any future
+// tool returning a deterministic summary gets the same treatment.
+// See ai-chat-document-analysis-payload-bounds-approved-spec.md.
+function extractDeterministicSummary(parsed) {
+  if (!parsed || typeof parsed !== 'object') return undefined;
+  if (typeof parsed.total !== 'number' || typeof parsed.matchedCount !== 'number') return undefined;
+  const values = [parsed.total];
+  if (typeof parsed.scopedCount === 'number') values.push(parsed.scopedCount);
+  if (Array.isArray(parsed.bySemester)) {
+    values.push(...parsed.bySemester.map((e) => e.count).filter((n) => typeof n === 'number'));
+  }
+  // The sample's own per-row values are still collected — bounded by the
+  // sample cap, so ~100 values rather than ~6,000. This preserves exactly
+  // what collectFieldValues was added for (ADR-029: catching "right number
+  // of rows, wrong count on ONE of them" — the original Muhammad-Ashik
+  // miscount) for every row the model was actually shown, while dropping
+  // the thousands of values it never saw and could only have matched by
+  // coincidence.
+  if (Array.isArray(parsed.sample)) {
+    values.push(...(collectFieldValues(parsed.sample) || []));
+  }
+  return { recordCount: parsed.matchedCount, fieldValues: values };
+}
+
 function buildEvidence(sanitizedContext) {
   return sanitizedContext.entries.map((entry) => {
     let recordCount;
     let fieldValues;
     try {
       const parsed = JSON.parse(entry.data);
-      const array = extractResultArray(parsed);
-      if (array) {
+      const summary = extractDeterministicSummary(parsed);
+      const array = summary ? undefined : extractResultArray(parsed);
+      if (summary) {
+        ({ recordCount, fieldValues } = summary);
+      } else if (array) {
         recordCount = array.length;
         fieldValues = collectFieldValues(array);
       }

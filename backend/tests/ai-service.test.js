@@ -1903,10 +1903,19 @@ test('aiService.askAgent: analyze_document_table path — a per-student count th
   t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
     status: 'ok',
     strategy: 'sequential_id',
-    results: [
+    // documentAggregateService.summarize's shape: the deterministic answer
+    // plus a bounded sample. The per-student check below still works
+    // because the sample's own values are collected — see
+    // extractDeterministicSummary in aiService.js.
+    total: 20,
+    matchedCount: 2,
+    scopedCount: 2,
+    sample: [
       { key: '1156:25700148', serialNo: '1156', regNo: '25700148', count: 7 },
       { key: '1157:25700154', serialNo: '1157', regNo: '25700154', count: 13 },
     ],
+    sampleShown: 2,
+    sampleOmitted: 0,
   }));
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
@@ -1926,10 +1935,19 @@ test('aiService.askAgent: analyze_document_table path — a per-student count th
   t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
     status: 'ok',
     strategy: 'sequential_id',
-    results: [
+    // documentAggregateService.summarize's shape: the deterministic answer
+    // plus a bounded sample. The per-student check below still works
+    // because the sample's own values are collected — see
+    // extractDeterministicSummary in aiService.js.
+    total: 20,
+    matchedCount: 2,
+    scopedCount: 2,
+    sample: [
       { key: '1156:25700148', serialNo: '1156', regNo: '25700148', count: 7 },
       { key: '1157:25700154', serialNo: '1157', regNo: '25700154', count: 13 },
     ],
+    sampleShown: 2,
+    sampleOmitted: 0,
   }));
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
@@ -1944,6 +1962,68 @@ test('aiService.askAgent: analyze_document_table path — a per-student count th
       const result = await aiService.askAgent(client, 'How many arrears does serial 1157 have?', { identityContext });
       assert.equal(result.verification.status, 'CONFLICT');
       assert.deepEqual(result.verification.claimedNumbers, [12]);
+    });
+  });
+});
+
+// ADL-055 / ai-chat-document-analysis-payload-bounds-approved-spec.md.
+// Before the bounded-payload change this same scenario produced a false
+// PASS: collectFieldValues put every numeric field of all 3,000 rows into
+// knownCounts (~6,000 values), so a wrong total was overwhelmingly likely
+// to collide with SOME row's serial number or count and verify as correct.
+// Verification now checks against the deterministic figures plus only the
+// rows the model was actually shown.
+test('aiService.askAgent: analyze_document_table path — a wrong CROSS-RECORD total is a CONFLICT, not a coincidental match against thousands of row values', async (t) => {
+  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
+    status: 'ok',
+    strategy: 'sequential_id',
+    total: 1842,
+    matchedCount: 1842,
+    scopedCount: 3000,
+    sample: Array.from({ length: 100 }, (_, i) => ({
+      key: `${i + 1}`, serialNo: `${i + 1}`, regNo: `${i + 1}`, count: 1,
+    })),
+    sampleShown: 100,
+    sampleOmitted: 1742,
+  }));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponse('analyze_document_table', { attachmentId: 'a1', filter: { pattern: 'RA' }, operation: 'count' }),
+      mockAnswerResponse('1500 students have arrears.'),
+    ]), async () => {
+      const result = await aiService.askAgent(client, 'How many students have arrears?', { identityContext });
+      assert.equal(result.verification.status, 'CONFLICT');
+      assert.deepEqual(result.verification.claimedNumbers, [1500]);
+    });
+  });
+});
+
+test('aiService.askAgent: analyze_document_table path — the correct deterministic total verifies PASS', async (t) => {
+  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
+    status: 'ok',
+    strategy: 'sequential_id',
+    total: 1842,
+    matchedCount: 1842,
+    scopedCount: 3000,
+    sample: Array.from({ length: 100 }, (_, i) => ({
+      key: `${i + 1}`, serialNo: `${i + 1}`, regNo: `${i + 1}`, count: 1,
+    })),
+    sampleShown: 100,
+    sampleOmitted: 1742,
+  }));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponse('analyze_document_table', { attachmentId: 'a1', filter: { pattern: 'RA' }, operation: 'count' }),
+      mockAnswerResponse('1842 students have arrears. Showing 100 matching records; 1742 omitted.'),
+    ]), async () => {
+      const result = await aiService.askAgent(client, 'How many students have arrears?', { identityContext });
+      assert.deepEqual(result.verification, { status: 'PASS' });
     });
   });
 });

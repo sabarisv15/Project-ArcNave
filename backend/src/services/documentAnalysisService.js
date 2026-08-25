@@ -123,8 +123,14 @@ async function analyzeAttachment(client, {
     return { status: 'no_matching_records' };
   }
 
-  const results = documentAggregateService.aggregate(scoped, { groupBy, filter, operation });
-  return { status: 'ok', strategy, results };
+  const rows = documentAggregateService.aggregate(scoped, { groupBy, filter, operation });
+  // Returns the deterministic cross-record answer plus a bounded sample of
+  // the rows behind it — never the whole row set. Handing back every row
+  // made one real 278,403-char attachment produce a 125,927-input-token
+  // request (ADL-055) and, worse, left the LLM to do the very arithmetic
+  // this service exists to perform. See
+  // ai-chat-document-analysis-payload-bounds-approved-spec.md.
+  return { status: 'ok', strategy, ...documentAggregateService.summarize(rows) };
 }
 
 module.exports = { analyzeAttachment, DocumentAnalysisValidationError };

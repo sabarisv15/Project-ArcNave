@@ -155,4 +155,90 @@ function aggregate(records, { groupBy = 'key', filter, operation = 'count' } = {
   return mode === 'include' ? annotated.filter((row) => row[valueKey] > 0) : annotated;
 }
 
-module.exports = { aggregate, DocumentAggregateValidationError };
+// ---------------------------------------------------------------------------
+// summarize — the deterministic CROSS-RECORD reduction, per
+// ai-chat-document-analysis-payload-bounds-approved-spec.md.
+//
+// aggregate() above computes a value PER RECORD and stops there. Nothing in
+// this service ever reduced across records, so the actual answer to "how
+// many arrears altogether" was left for the LLM to obtain by adding up
+// thousands of rows it had been handed — the exact arithmetic ADR-029 and
+// this service exist to take away from the model. summarize() closes that:
+// the total is computed here, deterministically, and the rows themselves
+// stop being the answer.
+//
+// This is a reduction over the values aggregate() already produced, not a
+// new operation: ADR-029's enumerated vocabulary (filter/group/count/sum)
+// is unchanged, and RS-AIG-018/ADL-036 ("never a general-purpose execution
+// capability") are untouched.
+//
+// Default sample size is 100 rather than a smaller round number for a
+// specific reason: the prior slice's own verified ground-truth ranges are
+// 55 records (serial 818-872) and 41 (serial 1133-1173), so a caller asking
+// the documented "consolidate serial X to Y" question still receives every
+// matching row, exactly as before this change. The cap only ever engages on
+// result sets larger than any range that spec contemplated.
+const DEFAULT_SAMPLE_SIZE = 100;
+
+// A row's value is whichever key aggregate() produced for the operation
+// that ran: `total` for breakdown (already the per-record rollup), `sum`
+// for sum, `count` for count. Read positionally rather than by re-deriving
+// the operation, so summarize() can never disagree with what aggregate()
+// actually returned.
+function rowValue(row) {
+  if (!row || typeof row !== 'object') return 0;
+  if (typeof row.total === 'number') return row.total;
+  if (typeof row.sum === 'number') return row.sum;
+  if (typeof row.count === 'number') return row.count;
+  return 0;
+}
+
+// Per-semester rollup across records, for operation 'breakdown' only —
+// the cross-record counterpart of each row's own `breakdown` array. Absent
+// for count/sum, never an empty array, so a caller can't mistake "this
+// operation has no semester dimension" for "every semester was zero".
+function rollupBySemester(rows) {
+  const totals = new Map();
+  for (const row of rows) {
+    if (!row || !Array.isArray(row.breakdown)) continue;
+    for (const entry of row.breakdown) {
+      totals.set(entry.semester, (totals.get(entry.semester) || 0) + entry.count);
+    }
+  }
+  if (totals.size === 0) return undefined;
+  return [...totals.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([semester, count]) => ({ semester, count }));
+}
+
+// Returns the shape the AI tool actually hands to the model: the
+// deterministic answer first, a bounded sample of the underlying rows
+// second. `sampleOmitted` is always present and always truthful — an
+// unlabelled partial list is a wrong answer, not a shorter one, so the
+// caller can state "showing N of M" rather than silently truncating.
+function summarize(rows, { sampleSize = DEFAULT_SAMPLE_SIZE } = {}) {
+  if (!Array.isArray(rows)) {
+    throw new DocumentAggregateValidationError('rows must be an array');
+  }
+  const scopedCount = rows.length;
+  const matched = rows.filter((row) => rowValue(row) > 0);
+  const total = rows.reduce((sum, row) => sum + rowValue(row), 0);
+  // Sampled from the MATCHED rows, not from every scoped row: in the
+  // default 'annotate' mode most rows are zeros, and a sample of zeros
+  // would spend the whole budget saying nothing. 'include' mode has
+  // already filtered to the same set, so both modes sample identically.
+  const sample = matched.slice(0, sampleSize);
+  return {
+    total,
+    matchedCount: matched.length,
+    scopedCount,
+    bySemester: rollupBySemester(rows),
+    sample,
+    sampleShown: sample.length,
+    sampleOmitted: matched.length - sample.length,
+  };
+}
+
+module.exports = {
+  aggregate, summarize, DEFAULT_SAMPLE_SIZE, DocumentAggregateValidationError,
+};

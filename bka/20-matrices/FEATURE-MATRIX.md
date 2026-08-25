@@ -213,3 +213,27 @@ design; ADL-032 shapes any future cross-turn persistence). See the Approved
 Spec's own "Origin finding" section for the investigation this came from,
 and ADR-029 for the full target architecture this slice implements piece
 one of.
+
+## AI Assistant chat — Document analysis payload bounds and deterministic totals
+
+Source: [`ai-chat-document-analysis-payload-bounds-approved-spec.md`](../60-product-reasoning/ai-chat-document-analysis-payload-bounds-approved-spec.md),
+analyzed 2026-08-25. Backend-only, no new page/screen. Scoped extension of
+the slice-1 row above, triggered by [ADL-055](../30-decisions/ledger.md#adl-055),
+which falsified two premises of that slice's own spec (its Edge-cases
+extraction-ceiling assumption, and its OUT OF SCOPE rationale for a
+retrieval index).
+
+| Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| AI Assistant chat | Existing chat-attachment roles | — | Bounded prompt payload for `analyze_document_table` (capped row sample, explicit "showing N of M") | Ask a counting/consolidation question over a large attached sheet | Existing composer/attachment UI (unchanged) | `summarizeToolResult` prompt assembly; `documentAggregateService.aggregate` | none | Unchanged (`resolveChatAttachments` chain), L1 | Not built | CORE | slice-1 row above | Resolved — cap scoped to this tool only |
+| AI Assistant chat | Existing chat-attachment roles | — | Deterministic cross-row aggregate (total / per-semester totals) returned by the tool | Same | none | `documentAggregateService.aggregate` (`:148-155`) | none | Unchanged, L1 | Not built | REQUIRED SUPPORT | ADR-029's existing `filter/group/count/sum` vocabulary | — |
+| AI Assistant chat | — | — | `buildEvidence` `knownCounts` narrowed to the aggregate + record count (currently every numeric field of every row → false PASS at scale) | Passive (verification only) | none | `aiService.js:950-975` | none | — | Not built | REQUIRED SUPPORT | RS-AIG-019/ADL-037 (advisory-only, unchanged) | — |
+| AI Assistant chat | — | — | Generic tool-result size cap in `summarizeToolResult`, all AI tools | — | — | — | — | — | Not built | RELATED / FUTURE | ADL-055 Finding 6 | Own pass — only this tool has measured evidence |
+| AI Assistant chat | — | — | Cross-turn reuse of extraction / structured facts (same document re-extracted twice in 39s) | — | — | — | — | — | Not built | FUTURE | ADL-032 (Artifact-shaped, own migration) | — |
+| AI Assistant chat | — | — | Gemini prompt-cache optimisation of the document path | — | — | — | — | — | Not built | FUTURE | ADL-055 Decision (b) | Explicitly not a motivation for this spec |
+
+One batched Product Refinement question was asked (workflow §15 threshold
+met on three items: payload shape, over-limit behaviour, cap scope — each
+had multiple valid product behaviours that no existing rule settled). User
+chose: total + bounded sample; explicit "showing N of M" disclosure, never
+silent truncation; cap scoped to `analyze_document_table` only.

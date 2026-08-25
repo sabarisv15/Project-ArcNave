@@ -81,8 +81,31 @@ it is listed in the Approved Spec's OUT OF SCOPE and needs its own pass.
 
 ## Exact next action
 
-**None queued.** Item 1 slice 1 is shipped and live-checked. What remains,
-each unstarted and each needing its own `/product-reasoning` pass:
+**Run `/build-slice` against [`ai-chat-invalid-tool-pattern-approved-spec.md`](../60-product-reasoning/ai-chat-invalid-tool-pattern-approved-spec.md)**
+(pass complete 2026-08-25, no code written). Rationale and the two premise
+corrections it carries: [ADL-056](../30-decisions/ledger.md#adl-056).
+
+Scope, approved narrow: `documentAnalysisService.filterBySection` (`:82`)
+and `documentAggregateService.compilePattern` (`:29`) return a clean
+tool-level failure status instead of throwing, naming which parameter was
+rejected and distinct from `no_matching_records`. **No normalisation of any
+regex dialect, anywhere** — and note that a shared `normalisePattern`
+helper would be a real defect: `sectionPattern` already applies `i`, but
+`filter.pattern` is deliberately case-**sensitive**, so stripping `(?i)`
+there would silently invert its meaning. A regression test must pin that.
+
+Do **not** widen this into catching handler throws generally in the
+tool-use loop. That is the real structural gap (**75 tools, 70
+validation-error classes, none caught** — `aiService.js:2215` is a bare
+`await`), it is FUTURE in the spec, and it needs its own pass because it
+touches ADL-050-sensitive machinery.
+
+Live check before it is called done: invoke the analysis path with
+`sectionPattern: "(?i)..."` and confirm the turn completes with an
+explanatory answer and no 500. Regression: the reference question must
+still return **77 arrears / 21 students**.
+
+After that, each unstarted and each needing its own pass:
 
 - **Item 1 slice 2 — PDF geometric reconstruction** (`pdfjs-dist` x/y).
   Explicitly OUT OF SCOPE in the shipped spec. Measured: y-bucketing
@@ -98,7 +121,8 @@ each unstarted and each needing its own `/product-reasoning` pass:
 - **Item 3 — `maxToolCallsPerTurn` above 1.**
 - **Item 5 — tool granularity audit.**
 
-Recommended next if the user has no preference: **2**, then item 1 slice 2.
+Recommended next after the ADL-056 slice above: **item 2**, then item 1
+slice 2.
 
 **A finding item 2 must not rediscover:** the Tally day book now extracts as
 839 `delimited` records (its PDF text layer is tab-separated), but its

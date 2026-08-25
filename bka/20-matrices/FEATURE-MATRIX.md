@@ -425,3 +425,57 @@ the [ADL-055 addendum](../30-decisions/ledger.md#adl-055-addendum--item-1-slice-
   cases forbid and which is false — the document is fine, ARCNAVE cannot
   read merged-cell PDF layouts yet. Fixed in the tool description and
   re-checked live.
+
+## AI Assistant chat — An invalid LLM-supplied pattern fails the tool, not the turn
+
+Source: [`ai-chat-invalid-tool-pattern-approved-spec.md`](../60-product-reasoning/ai-chat-invalid-tool-pattern-approved-spec.md),
+analyzed 2026-08-25. Backend-only, no new page/screen. Raised from a live
+run during item 1 slice 1's verification: the model supplied
+`sectionPattern: "(?i)ELECTRONICS..."` — a Python inline flag JS `RegExp`
+rejects — and `filterBySection` threw out of the whole `/ai/ask` turn.
+Nondeterministic (a retry with the identical question succeeded), not a
+hard break.
+
+Measured scope: `invokeTool` is not wrapped in try/catch in the tool-use
+loop (`aiService.js:2215`), and neither `DocumentAnalysisValidationError`
+nor `DocumentAggregateValidationError` is referenced in `src/routes/`,
+`aiToolRegistry.js` or `aiService.js` — so the turn ends as an **HTTP 500**.
+This is not specific to the parameter: **75 registered tools** wrap Business
+Services carrying **70 validation-error classes**, none caught in the loop.
+
+| Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| AI Assistant chat | Existing chat-attachment roles | — | Uncompilable `sectionPattern` / `filter.pattern` returns a tool-level failure status instead of throwing | Ask a scoped question the model answers with a bad pattern | none (message on existing chat surface) | `documentAnalysisService.filterBySection`, `documentAggregateService.compilePattern` | none | Unchanged | Not built | CORE | joins the 4 existing failure statuses in the same file | Resolved — clean status, distinct from `no_matching_records` |
+| AI Assistant chat | — | — | Failure message names the parameter and the reason | Same | none | same | none | Unchanged | Not built | REQUIRED SUPPORT | — | Resolved — **reject uniformly, no normalisation anywhere** |
+| AI Assistant chat | — | — | Catching handler throws generally in the tool-use loop | — | — | — | — | — | Not built | FUTURE | ADL-050-sensitive turn machinery | The real structural gap (75 tools / 70 error classes). Trade-off: would turn genuine bugs into soft failures the model narrates |
+| AI Assistant chat | — | — | Raising `maxToolCallsPerTurn` above 1 | — | — | — | — | — | Not built | FUTURE | queued item 3 | This spec is a **precondition** for retry-after-failure, not a delivery of it |
+| AI Assistant chat | — | — | Normalising `(?i)` or any regex-dialect difference | — | — | — | — | — | Not built | **REJECTED, not deferred** | — | Reopening requires a new pass carrying the `filter.pattern` case-sensitivity constraint |
+| AI Assistant chat | — | — | Mapping these errors in `mapAiToolError` (500 → 400) | — | — | — | — | — | Not built | FUTURE | — | Different caller (direct `POST /ai/tools/:name/invoke`), different fix |
+| AI Assistant chat | — | — | ReDoS protection on model-supplied patterns | — | — | — | — | — | Not built | FUTURE | — | No measured case; not a silent rider here |
+
+One batched Product Refinement question was asked (§15 threshold met on
+two items: how wide the fix should be, since the measured symptom is one
+instance of a 75-tool structural gap and no rule settles narrow-vs-general
+here; and whether to normalise the Python-style flag, where the correct
+answer differs between the two call sites). User chose **narrow — the two
+regex params**, and **reject uniformly with an explanatory message, no
+normalisation**.
+
+Not asked, because rules settled it (workflow §15 step 2): *whether* to
+stop throwing at all. `documentAnalysisService` already returns four clean
+failure statuses, and [ADL-055](../30-decisions/ledger.md#adl-055)'s own
+rule prefers deterministic structure over a guess.
+
+**Two premise corrections this pass measured**, both recorded so
+implementation does not inherit them unexamined:
+
+- **"The model could then correct itself" is not true at today's settings.**
+  `config.maxToolCallsPerTurn` defaults to 1 and the loop breaks once
+  `invokedTools.length >= cap`, so a clean failure still consumes the
+  turn's only tool call. The delivered benefit is **an honest answer
+  instead of a 500** — real, but narrower than retry.
+- **Stripping `(?i)` is exactly equivalent for `sectionPattern` and a
+  silent correctness bug for `filter.pattern`.** The former already applies
+  `i`; the latter is deliberately case-sensitive. A shared
+  "normalisePattern" helper applied to both would give the model the
+  opposite of what it asked for, with no error.

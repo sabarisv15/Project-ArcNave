@@ -3824,3 +3824,74 @@ here rather than fixed in place, per the OUT OF SCOPE boundary.
 
 **Status:** Resolved — implemented and verified. Item 1's remaining slice
 (PDF geometric reconstruction) is unstarted and needs its own pass.
+
+### ADL-056
+**An invalid LLM-supplied pattern must fail the tool call, not the turn.**
+
+Raised from a live run during [ADL-055](#adl-055)'s item 1 slice 1
+verification, where it was recorded as "Found, not fixed, out of scope".
+The model supplied
+`sectionPattern: "(?i)ELECTRONICS AND COMMUNICATION ENGINEERING \(SANDWICH\)|2040"`
+— a Python inline flag JS `RegExp` rejects — and
+`documentAnalysisService.filterBySection` threw out of the whole `/ai/ask`
+turn. Nondeterministic: a retry with the identical question succeeded.
+
+**The measured scope is larger than the symptom.** `invokeTool` is not
+wrapped in try/catch inside the tool-use loop (`aiService.js:2215`), and
+neither `DocumentAnalysisValidationError` nor
+`DocumentAggregateValidationError` appears anywhere in `src/routes/`,
+`aiToolRegistry.js` or `aiService.js` — so `mapAiToolError` does not match
+and the turn ends as an **HTTP 500**. That is not specific to this
+parameter: **75 registered tools** wrap Business Services carrying **70
+validation-error classes**, and none of those throws is caught in the loop.
+Any of them can end a user's turn with a server error.
+
+**Two premises this was raised with are wrong, and both were measured.**
+
+*"The model could then correct itself."* Not at today's settings.
+`config.maxToolCallsPerTurn` defaults to 1, and the loop does
+`invokedTools.push(tool)` then `if (invokedTools.length >= cap) break`, so
+a clean failure status still consumes the turn's only tool call. Genuine
+read-check-retry needs queued item 3. What this change actually buys is
+narrower and should be described as such: **an honest answer instead of a
+500**. It is a precondition for retry being useful, not a delivery of it.
+
+*"Strip the redundant `(?i)`."* Correct for one call site and a silent
+correctness bug for the other. `sectionPattern` compiles as
+`new RegExp(sectionPattern, 'i')`, so `i` is already applied and stripping
+a leading `(?i)` changes nothing. But `filter.pattern` compiles as
+`` new RegExp(`\b(?:${filter.pattern})\b`, 'g') `` and its own comment
+records that case-sensitive matching there is deliberate — stripping the
+flag would give the model the opposite of what it asked for, with no error.
+A shared `normalisePattern` helper applied to both would be a real defect.
+
+**Decision.** Both call sites return a clean tool-level failure status
+instead of throwing, naming which parameter was rejected and distinct from
+`no_matching_records` (a valid pattern that matched nothing is a different
+fact). **No normalisation is performed anywhere** — rejecting uniformly and
+explaining why keeps one rule ("JavaScript regex syntax") and gives the
+model what it needs to comply, whereas stripping only `(?i)` would accept
+one Python-ism while still rejecting `(?P<name>...)`, `\A` and `\Z`, for a
+case a clear message already handles.
+
+Two §15-threshold questions were asked, batched once: how wide the fix
+should be, and whether to normalise. User chose **narrow — the two regex
+params** and **reject uniformly**. Not asked, because rules settled it
+(§15 step 2): *whether* to stop throwing at all — `documentAnalysisService`
+already returns four clean failure statuses (`extraction_failed`,
+`unrecognized_layout`, `no_matching_records`, `unreliable_extraction`), so
+this adds a member to an established set, and ADL-055's own rule prefers
+deterministic structure over a guess.
+
+**Explicitly left open, as FUTURE:** catching handler throws generally in
+the tool-use loop. That is the real structural gap, and it is deliberately
+not fixed here — it touches the [ADL-050](#adl-050)-sensitive turn
+machinery, and it would convert genuine bugs (nulls, DB errors) into soft
+failures the model narrates rather than errors anyone notices. That
+trade-off is the central question of its own pass, not a rider on this one.
+Also FUTURE: mapping these two error classes in `mapAiToolError` (a
+different caller — the direct `POST /ai/tools/:name/invoke` route), and
+ReDoS protection on model-supplied patterns (no measured case).
+
+**Status:** Resolved — pending implementation.
+[`ai-chat-invalid-tool-pattern-approved-spec.md`](../60-product-reasoning/ai-chat-invalid-tool-pattern-approved-spec.md).

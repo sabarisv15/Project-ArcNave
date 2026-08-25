@@ -237,3 +237,32 @@ met on three items: payload shape, over-limit behaviour, cap scope — each
 had multiple valid product behaviours that no existing rule settled). User
 chose: total + bounded sample; explicit "showing N of M" disclosure, never
 silent truncation; cap scoped to `analyze_document_table` only.
+
+## AI Assistant chat — Deterministic tool availability for attached-document questions
+
+Source: [`ai-chat-document-tool-routing-approved-spec.md`](../60-product-reasoning/ai-chat-document-tool-routing-approved-spec.md),
+analyzed 2026-08-25. Backend-only, no new page/screen. Triggered by the
+live runs in [ADL-055](../30-decisions/ledger.md#adl-055): asked naturally,
+the model never reached `analyze_document_table` and narrated counts from
+raw attachment text — measured cause is that
+`aiToolRetrievalService.retrieveRelevantTools` receives only the question,
+never the turn's attachment state, so the tool was never offered. The prior
+slice's own canonical example question ("consolidate arrears for serial 818
+to 872") also fails to retrieve it.
+
+| Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| AI Assistant chat | Existing chat-attachment roles | — | `analyze_document_table` offered whenever a document (not image) is attached to the turn, regardless of semantic retrieval ranking | Ask a counting question in natural language, without naming the tool or saying "attached" | Existing composer/attachment UI (unchanged) | `aiService.js:1732` tool assembly; `resolveChatAttachments`'s existing `{images, documents}` split | none | Unchanged — tool's own `allowedRoles` and Policy Gate govern invocation exactly as today | Not built | CORE | payload-bounds slice above (shipped) | — |
+| AI Assistant chat | — | — | `buildAttachmentHint` sending the same document in both the `tool_select` and `tool_answer` requests (~251k tokens/turn) | — | — | `aiService.js:521` (`DEFAULT_ATTACHMENT_TOTAL_CHAR_BUDGET`) | — | — | Not built | RELATED / FUTURE — **P1, next after routing re-measurement** | routing fix must land and be re-measured first | Fixing before re-measurement would confound attribution |
+| AI Assistant chat | — | — | Mandatory-tool mechanism (forcing the model to call the tool) | — | — | — | — | — | Not built | FUTURE | — | Not needed — selection-given-availability tested live and works |
+| AI Assistant chat | — | — | Policy-module line preferring the tool for attached-document counting questions | — | — | — | — | — | Not built | RELATED / FUTURE | — | Would confound the re-measurement |
+| AI Assistant chat | — | — | Retrieval tuning (`TOP_K`, `SIMILARITY_DISTANCE_THRESHOLD`, embedding query, `RANK_CAP`) | — | — | — | — | — | Not built | FUTURE | — | This spec exempts alongside retrieval; it does not tune it |
+
+No Product Refinement question was needed — workflow §15's threshold was
+met by nothing. The pin-vs-tune-retrieval choice is settled by an
+established pattern in the same file (the bounded-plan meta-tool at
+`aiService.js:1733-1740` is already exempt from relevance filtering as a
+"structural capability", §15 step 4); documents-vs-images is settled by
+`resolveChatAttachments`'s existing return shape; and classifying question
+intent to decide whether to pin is ruled out by correctness, since
+unreliable intent matching is the defect being fixed.

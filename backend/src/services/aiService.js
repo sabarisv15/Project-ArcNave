@@ -194,6 +194,43 @@ async function buildArtifactFocusHint(client, id, identityContext) {
 // tool-name vocabulary, not policy text.
 const FILE_TOOL_NAMES = new Set(['generate_document', 'export_artifact', 'export_artifact_as', 'analyze_document_table']);
 
+// Whether a document is attached to THIS TURN is structural turn state, not
+// a semantic property of the question's wording — which makes it a poor fit
+// for the semantic shortlist and an exact fit for the same exemption the
+// bounded-plan meta-tool already gets (see its own comment in askAgent).
+//
+// Measured cause, not a guess (ADL-055): retrieval excluded
+// analyze_document_table for "How many arrears are there in the ECE
+// Sandwich section?" AND for "consolidate arrears for serial 818 to 872" —
+// the latter being ai-chat-result-sheet-evidence.md's OWN canonical
+// user-flow example. "Arrears" embeds closer to this domain's finance
+// vocabulary (finance_submit_fee_correction et al. were offered instead)
+// than to a tool whose description never uses the word. So the model never
+// declined the tool; it was never offered one, and answered by narrating
+// counts out of the raw attachment text with no evidence and no
+// verification — the exact failure ADR-029 exists to prevent.
+//
+// This pins AVAILABILITY and nothing else. Asked a phrasing that did
+// retrieve the tool, the model selected it immediately (verified live), so
+// no forced-call mechanism and no policy-module nudge are warranted — both
+// are explicitly OUT OF SCOPE in
+// ai-chat-document-tool-routing-approved-spec.md.
+const DOCUMENT_ANALYSIS_TOOL_NAME = 'analyze_document_table';
+
+function pinDocumentAnalysisTool(tools, roleTools, documents) {
+  // documents, never attachments generally: resolveChatAttachments already
+  // splits images out, and this tool cannot operate on an image.
+  if (documents.length === 0) return tools;
+  if (tools.some((tool) => tool.name === DOCUMENT_ANALYSIS_TOOL_NAME)) return tools;
+  // Sourced from roleTools, never the registry directly — a role not
+  // permitted this tool must still never be offered it, and the Policy Gate
+  // re-checks on invocation regardless (CLAUDE.md rule 1).
+  const pinned = roleTools.find((tool) => tool.name === DOCUMENT_ANALYSIS_TOOL_NAME);
+  // Appended alongside the retrieved set rather than displacing a member of
+  // it, so pinning can never remove a tool the question actually needed.
+  return pinned ? [...tools, pinned] : tools;
+}
+
 async function buildFocusHint(focusContext, client, identityContext) {
   if (!focusContext || typeof focusContext !== 'object') return '';
   const { entityType, id } = focusContext;
@@ -1729,7 +1766,8 @@ async function askAgent(client, question, {
   // filter above (a broad role like principal keeps ~56 of 69 tools
   // from role filtering alone). Falls back to the old keyword filter
   // only when the shared embedding service is unavailable.
-  const tools = await aiToolRetrievalService.retrieveRelevantTools(client, { roleTools, question });
+  const retrievedTools = await aiToolRetrievalService.retrieveRelevantTools(client, { roleTools, question });
+  const tools = pinDocumentAnalysisTool(retrievedTools, roleTools, documents);
   // The bounded-plan meta-tool (P0.3) is never subject to relevance
   // filtering — it's a structural capability ("you may chain the tools
   // above"), not a domain-specific tool a keyword match could reasonably

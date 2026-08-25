@@ -10,7 +10,16 @@ only links to it.
 
 ## Active Task
 
-**None — the document-analysis payload work is complete.**
+**None in flight — two shipped, the next one is queued below.**
+Document-question tool routing
+([`ai-chat-document-tool-routing-approved-spec.md`](../60-product-reasoning/ai-chat-document-tool-routing-approved-spec.md))
+is implemented and live-re-measured: the original failing question now
+returns `toolsUsed: ["analyze_document_table"]` and `verification: PASS`,
+and the pre-fix free-text answer was found to have been **wrong** (claimed
+14 students; the deterministic tool computes 77 arrears across 21). Full
+suite 2126/2128, zero regressions.
+
+Before that, in the same session:
 [`ai-chat-document-analysis-payload-bounds-approved-spec.md`](../60-product-reasoning/ai-chat-document-analysis-payload-bounds-approved-spec.md)
 is implemented and verified: full suite **2120/2122** (the same 2
 pre-existing failures listed under Standing notes below, zero regressions),
@@ -28,29 +37,36 @@ it is listed in the Approved Spec's OUT OF SCOPE and needs its own pass.
 
 ## Exact next action
 
-**Run `/product-reasoning` for document-question tool routing.** User-set
-scope, deliberately narrow — do not widen it:
+**Run `/product-reasoning` for the duplicated attachment hint.** This is the
+P1 the user sequenced explicitly after routing, and routing is now done and
+re-measured, so the confound that blocked it is gone.
 
-> A document/table counting question must select the deterministic analysis
-> tool before the model is allowed to answer from raw attachment contents.
+The single question to answer, and nothing wider:
 
-Nothing above that line. No agent-architecture change, no retrieval
-redesign, no `RANK_CAP` change.
+> Does the full attachment hint genuinely need to be present in **both** the
+> `tool_select` and the `tool_answer` request?
 
-**Why this is P0 and outranks the larger cost problem.** The live run
-proved the shipped payload fix does not guarantee production behaviour:
-asked naturally ("How many arrears are there in the ECE Sandwich
-section?"), the model **never called `analyze_document_table` at all** —
-one `tool_select` call, 124,548 tokens, `toolsUsed: null`,
-`verification: undefined`, counts narrated straight from the attachment
-text. That is the exact failure ADR-029 exists to prevent, reproduced live.
-The tool ran only when the question named it explicitly. A deterministic
-total nothing selects is not a guarantee. Full detail:
-[ADL-055](../30-decisions/ledger.md#adl-055).
+Measured facts to start from — **do not re-derive them**, they are in
+[ADL-055](../30-decisions/ledger.md#adl-055):
 
-After the routing fix lands, **re-measure the natural-phrasing question**
-before touching anything else — the expected shape is: natural question →
-deterministic tool → bounded result (~few k) → answer.
+- `buildAttachmentHint` produces **211,604 chars (~124.5k tokens)** for the
+  real result sheet (278,403 extracted chars).
+- It rides in both calls: the re-measured turn was `tool_select` 125,168 +
+  `tool_answer` 125,048 = **250,216 input tokens**, of which roughly 249k is
+  the same document twice.
+- The turn total rose from 124,548 (one call, wrong answer, no tool) to
+  250,216 (two calls, correct verified answer). That is the cost of
+  correctness, not a regression — the duplication is the thing to attack.
+- Relevant budget: `DEFAULT_ATTACHMENT_TOTAL_CHAR_BUDGET` = 200,000 chars,
+  `aiService.js:521`.
+
+Minimal removal/replacement, then re-measure the same question again.
+
+**Still out of scope, unchanged:** Gemini prompt-cache work, per-attachment
+retrieval index, generic tool-result cap, retrieval tuning (`TOP_K`,
+`SIMILARITY_DISTANCE_THRESHOLD`, `RANK_CAP`), a mandatory-tool mechanism, a
+policy-module nudge, and the Curriculum persistent-workspace design
+(ARC.md / STATE.md / INDEX.md, skills, agents) this whole thread began as.
 
 **Then, and only then, P1:** `buildAttachmentHint` is 211,604 chars
 (~124.5k tokens) for this document and rides in **both** the `tool_select`

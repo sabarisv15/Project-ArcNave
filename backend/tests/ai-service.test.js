@@ -3517,3 +3517,108 @@ test("aiService.askAgent: mode 'curriculum' (and no mode at all) is byte-for-byt
     });
   });
 });
+
+// --- Deterministic document-analysis tool availability -------------------
+// ai-chat-document-tool-routing-approved-spec.md / ADL-055. Whether a
+// document is attached is structural turn state, so it is exempted from
+// semantic shortlisting the same way the bounded-plan meta-tool already is.
+// Each test forces retrieval to return a set that EXCLUDES
+// analyze_document_table, which is exactly what happened live for "How many
+// arrears are there in the ECE Sandwich section?".
+
+function toolNamesFrom(body) {
+  return body.tools.map((t) => t.function.name);
+}
+
+async function captureOfferedTools(t, { askOptions, download }) {
+  if (download) t.mock.method(documentService, 'downloadDocument', async () => download());
+  t.mock.method(aiToolRegistry, 'filterToolsByRelevance', (tools) => tools
+    .filter((tool) => tool.name !== 'analyze_document_table').slice(0, 2));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  let capturedBody;
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(async (url, options) => {
+      capturedBody = JSON.parse(options.body);
+      return mockAnswerResponse('Answered.');
+    }, async () => {
+      await aiService.askAgent(client, 'How many arrears are in the ECE Sandwich section?', {
+        identityContext, ...askOptions,
+      });
+    });
+  });
+  return toolNamesFrom(capturedBody);
+}
+
+test('askAgent: a document attached to the turn puts analyze_document_table in the offered set even when retrieval excluded it', async (t) => {
+  const names = await captureOfferedTools(t, {
+    askOptions: { attachmentIds: ['att-1'] },
+    download: fakeDocumentDownload,
+  });
+  assert.ok(names.includes('analyze_document_table'), `expected the tool to be pinned, got: ${names.join(', ')}`);
+});
+
+test('askAgent: pinning APPENDS — it never displaces a tool retrieval actually returned', async (t) => {
+  const names = await captureOfferedTools(t, {
+    askOptions: { attachmentIds: ['att-1'] },
+    download: fakeDocumentDownload,
+  });
+  // 2 retrieved + the plan meta-tool (>=2 real tools) + the pinned tool.
+  assert.equal(names.filter((n) => n !== 'analyze_document_table' && n !== 'run_workflow_plan').length, 2);
+});
+
+test('askAgent: an IMAGE-only attachment does not pin the tool — it cannot operate on an image', async (t) => {
+  const names = await captureOfferedTools(t, {
+    askOptions: { attachmentIds: ['att-1'] },
+    download: fakeImageDownload,
+  });
+  assert.ok(!names.includes('analyze_document_table'), `expected no pin for an image, got: ${names.join(', ')}`);
+});
+
+test('askAgent: no attachment at all leaves the offered set exactly as retrieval returned it', async (t) => {
+  const names = await captureOfferedTools(t, { askOptions: {} });
+  assert.ok(!names.includes('analyze_document_table'), `expected no pin without an attachment, got: ${names.join(', ')}`);
+});
+
+test('askAgent: a role not permitted analyze_document_table is never offered it, attachment or not', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async () => fakeDocumentDownload());
+  t.mock.method(aiToolRegistry, 'filterToolsByRelevance', (tools) => tools
+    .filter((tool) => tool.name !== 'analyze_document_table').slice(0, 2));
+  const client = fakeClient();
+  // 'student' is outside the tool's own allowedRoles (principal/hod/staff/
+  // class_tutor), so it never reaches roleTools and cannot be pinned from it.
+  const identityContext = { userId: 'u1', role: 'student', collegeId: 'college-a' };
+  let capturedBody;
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(async (url, options) => {
+      capturedBody = JSON.parse(options.body);
+      return mockAnswerResponse('Answered.');
+    }, async () => {
+      await aiService.askAgent(client, 'How many arrears are in the ECE Sandwich section?', {
+        identityContext, attachmentIds: ['att-1'],
+      });
+    });
+  });
+  assert.ok(!toolNamesFrom(capturedBody).includes('analyze_document_table'));
+});
+
+test('askAgent: the tool is offered exactly once when retrieval already returned it', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async () => fakeDocumentDownload());
+  t.mock.method(aiToolRegistry, 'filterToolsByRelevance', (tools) => [
+    tools.find((tool) => tool.name === 'analyze_document_table'),
+    tools.find((tool) => tool.name !== 'analyze_document_table'),
+  ].filter(Boolean));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  let capturedBody;
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(async (url, options) => {
+      capturedBody = JSON.parse(options.body);
+      return mockAnswerResponse('Answered.');
+    }, async () => {
+      await aiService.askAgent(client, 'How many arrears?', { identityContext, attachmentIds: ['att-1'] });
+    });
+  });
+  const names = toolNamesFrom(capturedBody);
+  assert.equal(names.filter((n) => n === 'analyze_document_table').length, 1);
+});

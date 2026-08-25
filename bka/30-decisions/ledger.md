@@ -3420,6 +3420,66 @@ path, a different budget (`DEFAULT_ATTACHMENT_TOTAL_CHAR_BUDGET`,
 `aiService.js:521`), and it needs its own Product Reasoning pass rather
 than an opportunistic edit alongside this one.
 
+**Root cause of the run-1 failure, measured (not inferred).** A direct call
+to `aiToolRetrievalService.retrieveRelevantTools` against the same role's
+73 permitted tools shows `analyze_document_table` is **not retrieved** for
+"How many arrears are there in the ECE Sandwich section?" — nor for
+**"consolidate arrears for serial 818 to 872"**, which is the prior spec's
+own canonical user-flow example. It is retrieved only once the question
+contains "attached result sheet" or names the tool. The eight tools offered
+instead were `finance_submit_fee_correction`, `mark_attendance_nl`,
+`academic_generate_timetable` and similar: "arrears" embeds closer to this
+domain's finance vocabulary than to a document tool whose description never
+uses the word. So the model did not decline the tool — it was never offered
+one. `aiService.js:1732` passes only `{ roleTools, question }`; the turn's
+own attachment state, already resolved by `resolveChatAttachments`, never
+reaches retrieval.
+
+The complementary case was then tested live rather than assumed: asked
+"how many students failed in the attached result sheet?" (a phrasing that
+does retrieve the tool), the model selected it immediately —
+`toolsUsed: ["analyze_document_table"]`, `verification: PASS`, a
+deterministic 748. **Selection-given-availability already works; only
+availability is broken.** That single result is what keeps the fix narrow:
+no mandatory-tool mechanism, no policy-module nudge, no retrieval tuning.
+Resolved into
+[`ai-chat-document-tool-routing-approved-spec.md`](../60-product-reasoning/ai-chat-document-tool-routing-approved-spec.md)
+(Product Reasoning, same day, zero questions needed).
+
+**Routing fix implemented and re-measured (same session).** Shipped exactly
+the routing spec's single CORE item: `aiService.pinDocumentAnalysisTool`
+appends `analyze_document_table` to the retrieved set when
+`resolveChatAttachments` returned one or more **documents**, sourced from
+`roleTools` (so an unpermitted role still never sees it) and appended
+rather than substituted (so pinning can never drop a tool the question
+needed). No forced-call mechanism, no policy-module nudge — both were left
+out precisely because the availability-vs-selection split above showed they
+weren't the broken part. Live re-measurement of the original failing
+question, *"How many arrears are there in the ECE Sandwich section?"*:
+
+| | before | after |
+|---|---|---|
+| `toolsUsed` | `null` | `["analyze_document_table"]` |
+| `verification` | `undefined` | `PASS` |
+| tools offered | 8 | 9 |
+| answer | "14 students with Arrears" | "77 arrears across 21 students (out of 41 evaluated)" |
+
+**The pre-fix answer was not merely unverified — it was wrong.** The
+deterministic tool computes 77 arrears across 21 students; the free-text
+narration claimed 14. That is the concrete harm ADR-029 exists to prevent,
+now measured rather than argued.
+
+**An honest cost trade, recorded so it isn't mistaken for a regression.**
+The turn went from 124,548 to 250,216 input tokens, because a correct
+answer now requires a second (`tool_answer`) call where the wrong answer
+needed only one. The per-call cost is unchanged; the duplication is
+`buildAttachmentHint` riding in both calls, which is the already-identified
+P1 and is what the user sequenced next. Correctness first, then the
+duplicate hint.
+
+Full suite after this change: **2126/2128**, same 2 pre-existing unrelated
+failures, zero regressions (6 net new tests).
+
 **One non-regression worth recording.** Run 2 returned
 `verification: CONFLICT, claimedNumbers: [21]` — the model wrote "the
 remaining 21 students have no arrears", a correct derivation (55 scoped − 34

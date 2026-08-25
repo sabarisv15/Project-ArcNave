@@ -192,3 +192,81 @@ test('analyzeAttachment: operation "breakdown" returns per-semester counts, not 
   ]);
   assert.equal(result.total, 4);
 });
+
+// --- Item 1: the extraction trust boundary -----------------------------
+// (ai-chat-document-extraction-trust-and-formats-approved-spec.md)
+//
+// Before this, analyzeAttachment guarded strategy 'none' and nothing else,
+// so a layout that WAS recognized but read wrongly came back as
+// status 'ok' with a confident total. Measured against a real exam-fees
+// PDF: 4 records for a 23-student document, reported ok. That also slips
+// past verifyNumericClaims, which compares the narration to the tool
+// output and never the tool output to the document.
+
+test('analyzeAttachment: a recognized-but-misread layout refuses instead of returning a confident total', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  // The shape a merged-cell PDF extraction actually produces: only the
+  // first row starts with the serial+regNo pair, so the rest are swallowed
+  // into its block and two students are never reached at all.
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: [
+      '818 24700301 ANBARASAN V DoB: 23.12.2006 RA',
+      'BHARATH K DoB: 19.06.2006 24700302 RA',
+      'CHANDRU M DoB: 25.06.2002 24700303 RA',
+    ].join('\n'),
+    method: 'text_layer',
+  }));
+  const result = await analyzeAttachment(
+    {}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY,
+  );
+  assert.equal(result.status, 'unreliable_extraction');
+  // The shortfall is reported, not just the refusal — a caller (and the
+  // user) should be able to see how far off the reading was.
+  assert.equal(result.rowsExpected, 3);
+  assert.equal(result.recordsDetected, 1);
+  assert.ok(result.total === undefined, 'must not return a total it cannot stand behind');
+});
+
+test('analyzeAttachment: unreliable_extraction is distinct from unrecognized_layout', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: 'An ordinary letter.', method: 'text_layer' }));
+  const result = await analyzeAttachment(
+    {}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY,
+  );
+  assert.equal(result.status, 'unrecognized_layout');
+});
+
+// The reference document must be unaffected. A roster the detector reads
+// correctly still answers, including one carrying the deliberate
+// page-break merge that produces a second marker in the same record.
+test('analyzeAttachment: a correctly-read roster still returns ok, page-break merge included', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: [
+      '818 24700301 ANBARASAN V DoB: 23.12.2006 RA',
+      '818 24700301 ANBARASAN V DoB: 23.12.2006 RA',
+      '819 24700302 BHARATH K DoB: 19.06.2006',
+    ].join('\n'),
+    method: 'text_layer',
+  }));
+  const result = await analyzeAttachment(
+    {}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY,
+  );
+  assert.equal(result.status, 'ok');
+  assert.equal(result.scopedCount, 2);
+  assert.equal(result.total, 2);
+});
+
+// A document whose rows carry no identity marker gives no signal either
+// way, and no signal must mean no judgement — never a refusal.
+test('analyzeAttachment: a roster with no identity marker is not refused', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: '818 24700301 ANBARASAN V 1 R2023 RA\n819 24700302 BHARATH K 1 R2023 A',
+    method: 'text_layer',
+  }));
+  const result = await analyzeAttachment(
+    {}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY,
+  );
+  assert.equal(result.status, 'ok');
+});

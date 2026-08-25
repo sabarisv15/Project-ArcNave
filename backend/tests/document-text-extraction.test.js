@@ -15,6 +15,7 @@ const { Document, Packer, Paragraph } = require('docx');
 const ExcelJS = require('exceljs');
 const PizZip = require('pizzip');
 const documentTextExtractionService = require('../src/services/documentTextExtractionService');
+const { extractRecords } = require('../src/services/documentTableExtractionService');
 const documentExtractionService = require('../src/services/documentExtractionService');
 
 function buildPdfBuffer(text) {
@@ -173,8 +174,13 @@ test('extractPlainText: a corrupt/non-ODS buffer degrades to corrupt_or_unreadab
   assert.equal(result.failureReason, 'corrupt_or_unreadable');
 });
 
-test('extractPlainText: markdown/plain/csv all pass through as direct UTF-8 text, no library involved', async () => {
-  for (const mimeType of documentTextExtractionService.PLAIN_TEXT_MIME_TYPES) {
+// csv is deliberately no longer in this set's behaviour — it is still a
+// PLAIN_TEXT_MIME_TYPES member (callers' "can I attach this?" checks are
+// unchanged) but extractPlainText now routes it to a real CSV parser, so
+// that a CSV attachment reaches documentTableExtractionService as a table
+// instead of as undelimited prose. See the csv test below.
+test('extractPlainText: markdown/plain pass through as direct UTF-8 text, no library involved', async () => {
+  for (const mimeType of ['text/markdown', 'text/plain']) {
     // eslint-disable-next-line no-await-in-loop
     const result = await documentTextExtractionService.extractPlainText(Buffer.from('raw content here', 'utf8'), mimeType);
     assert.equal(result.method, 'direct_text');
@@ -191,4 +197,90 @@ test('extractPlainText: an unsupported mime type throws DocumentTextExtractionUn
 
 test.after(() => {
   mock.restoreAll();
+});
+
+// --- Item 1: csv/docx table coverage -----------------------------------
+// (ai-chat-document-extraction-trust-and-formats-approved-spec.md)
+
+test('extractPlainText: csv is parsed as a table, not raw text, and reaches the delimited strategy', async () => {
+  const csv = 'Serial,RegNo,Name,Arrears\n818,24700301,ANBARASAN V,2\n819,24700302,BHARATH K,0\n';
+  const result = await documentTextExtractionService.extractPlainText(
+    Buffer.from(csv, 'utf8'), documentTextExtractionService.CSV_MIME_TYPE,
+  );
+  assert.equal(result.method, 'exceljs_csv');
+  assert.equal(result.text.split('\n')[0], 'Serial | RegNo | Name | Arrears');
+  // The whole point: it now detects as a table rather than as prose.
+  const detected = extractRecords(result.text);
+  assert.equal(detected.strategy, 'delimited');
+  assert.equal(detected.records.length, 3);
+});
+
+test('extractPlainText: a comma inside a quoted csv cell is not a cell boundary', async () => {
+  const csv = 'RegNo,Name,Fee\n24700301,"ANBARASAN V, Jr.",625\n';
+  const result = await documentTextExtractionService.extractPlainText(
+    Buffer.from(csv, 'utf8'), documentTextExtractionService.CSV_MIME_TYPE,
+  );
+  const cells = extractRecords(result.text).records[1].cells;
+  assert.deepEqual(cells, ['24700301', 'ANBARASAN V, Jr.', '625']);
+});
+
+// mammoth.extractRawText flattens every table cell into its own paragraph,
+// so before this change a docx table reached extractRecords as undelimited
+// prose and produced strategy 'none'. Structure has to survive extraction;
+// it cannot be recovered downstream.
+function docxWithTable(rows, trailingProse) {
+  const cell = (t) => `<w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>${t}</w:t></w:r></w:p></w:tc>`;
+  const table = `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>${
+    rows.map((r) => `<w:tr>${r.map(cell).join('')}</w:tr>`).join('')}</w:tbl>`;
+  const prose = trailingProse ? `<w:p><w:r><w:t>${trailingProse}</w:t></w:r></w:p>` : '';
+  return docxBuffer(`${table}${prose}`);
+}
+
+function docxProseOnly(paragraphs) {
+  return docxBuffer(paragraphs.map((p) => `<w:p><w:r><w:t>${p}</w:t></w:r></w:p>`).join(''));
+}
+
+function docxBuffer(bodyXml) {
+  const zip = new PizZip();
+  zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+    + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+    + '<Default Extension="xml" ContentType="application/xml"/>'
+    + '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+    + '</Types>');
+  zip.folder('_rels').file('.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+    + '</Relationships>');
+  zip.folder('word').file('document.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+    + `<w:body>${bodyXml}</w:body></w:document>`);
+  return zip.generate({ type: 'nodebuffer' });
+}
+
+test('extractPlainText: a docx table keeps its row/cell structure', async () => {
+  const buffer = docxWithTable([
+    ['Serial', 'RegNo', 'Name', 'Arrears'],
+    ['818', '24700301', 'ANBARASAN V', '2'],
+    ['819', '24700302', 'BHARATH K', '0'],
+  ], 'End of table');
+  const result = await documentTextExtractionService.extractPlainText(
+    buffer, documentTextExtractionService.DOCX_MIME_TYPE,
+  );
+  assert.equal(result.method, 'mammoth_tables');
+  const detected = extractRecords(result.text);
+  assert.equal(detected.strategy, 'delimited');
+  assert.equal(detected.records.length, 3);
+  assert.deepEqual(detected.records[1].cells, ['818', '24700301', 'ANBARASAN V', '2']);
+});
+
+// The table work must be unable to affect ordinary prose documents at all
+// — a docx with no w:tbl takes the original extractRawText path untouched.
+test('extractPlainText: a prose-only docx is unchanged by the table handling', async () => {
+  const buffer = docxProseOnly(['First paragraph.', 'Second paragraph.']);
+  const result = await documentTextExtractionService.extractPlainText(
+    buffer, documentTextExtractionService.DOCX_MIME_TYPE,
+  );
+  assert.equal(result.method, 'mammoth');
+  assert.equal(result.text, 'First paragraph.\n\nSecond paragraph.');
 });

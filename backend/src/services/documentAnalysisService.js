@@ -112,9 +112,28 @@ async function analyzeAttachment(client, {
     return { status: 'extraction_failed', reason: extraction.failureReason };
   }
 
-  const { strategy, records, sections } = documentTableExtractionService.extractRecords(extraction.text);
+  const {
+    strategy, records, sections, coverage,
+  } = documentTableExtractionService.extractRecords(extraction.text);
   if (strategy === 'none') {
     return { status: 'unrecognized_layout' };
+  }
+  // Recognizing a layout is not the same as reading it correctly, and until
+  // this check existed nothing told the two apart: a real exam-fees PDF
+  // returned status 'ok' with a confident total computed over 4 of its 23
+  // students. Kept as its own status rather than folded into
+  // 'unrecognized_layout' because they are different facts and warrant
+  // different sentences to the user — "I don't recognize this document's
+  // layout" versus "I recognized it but couldn't read it reliably enough to
+  // stand behind a number".
+  if (coverage && coverage.applicable && !coverage.reliable) {
+    return {
+      status: 'unreliable_extraction',
+      strategy,
+      recordsDetected: records.length,
+      rowsExpected: coverage.markerCount,
+      rowsAccountedFor: coverage.accountedCount,
+    };
   }
 
   const bySerial = filterBySerialRange(records, serialRange);

@@ -1129,7 +1129,12 @@ registerTool({
     + 'attached document. Set filter.mode to "include" to get back only the rows matching filter.pattern (e.g. only '
     + 'ABSENT/RA rows) instead of every row annotated with a mostly-zero column. If you don\'t know the exact serial '
     + 'range for a named cohort (e.g. "the Sandwich section"), use sectionPattern instead of guessing a range. The '
-    + 'model never computes the count/sum/breakdown/filter itself — this tool does.',
+    + 'model never computes the count/sum/breakdown/filter itself — this tool does. If it returns status '
+    + '"unreliable_extraction", this system could not read that document\'s table layout dependably '
+    + '(rowsExpected vs rowsAccountedFor show the shortfall). Say so plainly, and make clear the limitation '
+    + 'is this system\'s, not a problem with their file — do NOT tell the user the document is unclear or '
+    + 'ask them to re-upload a clearer copy, and do not substitute your own reading of the attached '
+    + 'document for the analysis.',
   allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
   params: {
     type: 'object',

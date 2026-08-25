@@ -20,6 +20,7 @@ const mammoth = require('mammoth');
 const { PDFParse, PasswordException } = require('pdf-parse');
 const ExcelJS = require('exceljs');
 const PizZip = require('pizzip');
+const { Readable } = require('stream');
 const documentExtractionService = require('./documentExtractionService');
 
 const PDF_MIME_TYPE = 'application/pdf';
@@ -28,7 +29,12 @@ const XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadshee
 const PPTX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 const ODT_MIME_TYPE = 'application/vnd.oasis.opendocument.text';
 const ODS_MIME_TYPE = 'application/vnd.oasis.opendocument.spreadsheet';
-const PLAIN_TEXT_MIME_TYPES = new Set(['text/markdown', 'text/plain', 'text/csv']);
+const CSV_MIME_TYPE = 'text/csv';
+// Kept listing text/csv so callers' existing "is this a plain-text type I
+// can attach?" checks are unchanged — extractPlainText below now routes it
+// to a real CSV parser rather than to extractPlainTextDirect, but it is
+// still a plain-text upload as far as every caller is concerned.
+const PLAIN_TEXT_MIME_TYPES = new Set(['text/markdown', 'text/plain', CSV_MIME_TYPE]);
 
 class DocumentTextExtractionUnsupportedTypeError extends Error {}
 
@@ -114,10 +120,74 @@ async function extractPdfText(buffer, { lang } = {}) {
   }
 }
 
+// mammoth.extractRawText flattens a table cell into its own paragraph, so a
+// six-column row arrives as six separate lines and the 2D structure is gone
+// before any table detector can see it — measured, and the reason a DOCX
+// containing a real table yielded strategy 'none'. It cannot be recovered
+// downstream; it has to not be lost here.
+//
+// convertToHtml keeps <table>/<tr>/<td>, so table rows are emitted joined
+// with ' | ' (the same shape extractXlsxText produces) and consumed by the
+// existing "delimited" strategy unchanged. The HTML is converted to text
+// here rather than handed on — this pipeline's contract is plain text, and
+// the CDR stays structural-only either way (ADR-029): a cell boundary is
+// structure, not a semantic field label.
+const DOCX_TABLE_MARKER = /<w:tbl[\s>]/;
+
+function docxHasTable(buffer) {
+  const zip = openZip(buffer);
+  if (!zip) return false;
+  const entry = zip.file('word/document.xml');
+  if (!entry) return false;
+  try {
+    return DOCX_TABLE_MARKER.test(entry.asText());
+  } catch {
+    return false;
+  }
+}
+
+function htmlToLines(html) {
+  const lines = [];
+  // Tables first, then the prose between/around them, each in document
+  // order — a single pass over the top-level blocks mammoth emits.
+  const blocks = html.split(/(<table[\s\S]*?<\/table>)/);
+  blocks.forEach((block) => {
+    if (!block) return;
+    if (block.startsWith('<table')) {
+      const rows = block.match(/<tr[\s\S]*?<\/tr>/g) || [];
+      rows.forEach((rowHtml) => {
+        const cells = (rowHtml.match(/<t[dh][\s\S]*?<\/t[dh]>/g) || [])
+          .map((cellHtml) => stripXmlTags(cellHtml).replace(/\s+/g, ' ').trim());
+        if (cells.some((c) => c !== '')) lines.push(cells.join(' | '));
+      });
+      return;
+    }
+    const paragraphs = block.match(/<p[\s\S]*?<\/p>/g) || [];
+    paragraphs.forEach((paragraphHtml) => {
+      const text = stripXmlTags(paragraphHtml).replace(/[ \t]+/g, ' ').trim();
+      if (text) lines.push(text);
+    });
+  });
+  return lines;
+}
+
 async function extractDocxText(buffer) {
   try {
-    const result = await mammoth.extractRawText({ buffer });
-    return { text: truncateToMax((result.value || '').trim()), method: 'mammoth' };
+    // A DOCX with no table at all takes the original path untouched, so
+    // ordinary prose documents produce byte-identical output to before
+    // this change — the table work can only ever affect documents that
+    // actually have a table.
+    if (!docxHasTable(buffer)) {
+      const raw = await mammoth.extractRawText({ buffer });
+      return { text: truncateToMax((raw.value || '').trim()), method: 'mammoth' };
+    }
+    const result = await mammoth.convertToHtml({ buffer });
+    const lines = htmlToLines(result.value || '');
+    if (lines.length === 0) {
+      const raw = await mammoth.extractRawText({ buffer });
+      return { text: truncateToMax((raw.value || '').trim()), method: 'mammoth' };
+    }
+    return { text: truncateToMax(lines.join('\n')), method: 'mammoth_tables' };
   } catch (err) {
     const message = (err && err.message) || '';
     if (/password|encrypt/i.test(message)) {
@@ -157,6 +227,46 @@ async function extractXlsxText(buffer) {
 
 function extractPlainTextDirect(buffer) {
   return { text: truncateToMax(buffer.toString('utf8')), method: 'direct_text' };
+}
+
+// CSV goes through a real CSV parser, not a line/comma split, and comes out
+// in exactly the same ' | '-joined row shape extractXlsxText produces — so
+// documentTableExtractionService's existing "delimited" strategy consumes
+// it with no change at all. Before this, text/csv fell through to
+// extractPlainTextDirect and every CSV attachment reached that detector as
+// undelimited prose, yielding strategy 'none' and no deterministic
+// analysis whatsoever.
+//
+// Parsed rather than split because a comma inside a quoted cell
+// ("ANBARASAN V, Jr.") is a real, ordinary case that a split silently gets
+// wrong, and getting a cell boundary wrong here means getting a count
+// wrong later. ExcelJS is already this file's XLSX dependency, so this
+// adds no new package and reuses a parser already trusted for the same job.
+async function extractCsvText(buffer) {
+  let worksheet;
+  try {
+    const workbook = new ExcelJS.Workbook();
+    worksheet = await workbook.csv.read(Readable.from([buffer.toString('utf8')]));
+  } catch {
+    // Never worse than the previous behaviour: an unparseable CSV still
+    // reaches the caller as its own raw text rather than as a failure.
+    return extractPlainTextDirect(buffer);
+  }
+  if (!worksheet) return extractPlainTextDirect(buffer);
+
+  const lines = [];
+  let rowsWalked = 0;
+  worksheet.eachRow((row) => {
+    if (rowsWalked >= XLSX_MAX_ROWS) return;
+    const cells = [];
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      if (cell.value !== null && cell.value !== undefined) cells.push(String(cell.value));
+    });
+    if (cells.length > 0) lines.push(cells.join(' | '));
+    rowsWalked += 1;
+  });
+  if (lines.length === 0) return extractPlainTextDirect(buffer);
+  return { text: truncateToMax(lines.join('\n')), method: 'exceljs_csv' };
 }
 
 // Minimal XML entity decoding — the only entities PPTX/ODT/ODS's own
@@ -288,6 +398,7 @@ async function extractPlainText(buffer, mimeType, { lang } = {}) {
   if (mimeType === PPTX_MIME_TYPE) return extractPptxText(buffer);
   if (mimeType === ODT_MIME_TYPE) return extractOdtText(buffer);
   if (mimeType === ODS_MIME_TYPE) return extractOdsText(buffer);
+  if (mimeType === CSV_MIME_TYPE) return extractCsvText(buffer);
   if (PLAIN_TEXT_MIME_TYPES.has(mimeType)) return extractPlainTextDirect(buffer);
   throw new DocumentTextExtractionUnsupportedTypeError(`mimeType ${JSON.stringify(mimeType)} is not supported for text extraction`);
 }
@@ -301,5 +412,6 @@ module.exports = {
   PPTX_MIME_TYPE,
   ODT_MIME_TYPE,
   ODS_MIME_TYPE,
+  CSV_MIME_TYPE,
   PLAIN_TEXT_MIME_TYPES,
 };

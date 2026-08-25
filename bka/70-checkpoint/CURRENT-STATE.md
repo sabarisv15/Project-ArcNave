@@ -10,23 +10,27 @@ only links to it.
 
 ## Active Task
 
-**Item 1's Product Reasoning pass is complete; implementation not started.**
+**Item 1 slice 1 is shipped — six slices now shipped from the ADL-055 thread.**
 
 Approved Spec:
 [`ai-chat-document-extraction-trust-and-formats-approved-spec.md`](../60-product-reasoning/ai-chat-document-extraction-trust-and-formats-approved-spec.md).
-Full measured rationale: the [ADL-055 addendum](../30-decisions/ledger.md#adl-055-addendum--item-1s-product-reasoning-pass-2026-08-25).
+Implementation detail: the
+[ADL-055 addendum](../30-decisions/ledger.md#adl-055-addendum--item-1-slice-1-implemented-2026-08-25).
 
-The pass reordered the item. It was queued as a coverage gap; the headline
-finding is that the exam-fees PDF **does not fail — it returns
+The pass reordered the item. It was queued as a coverage gap; the real
+finding was that the exam-fees PDF **did not fail — it returned
 `{ status: "ok", total: 17, scopedCount: 4 }` for a 23-student document**,
-with no failure signal, on the deterministic path the five shipped slices
-were spent making trustworthy.
+on the deterministic path the previous five slices were spent making
+trustworthy. It now refuses with `unreliable_extraction` and states the
+shortfall. csv, docx tables and tab-delimited plain text all reach
+deterministic analysis for the first time. Full suite 2164/2162, zero
+regressions, 18 net new tests.
 
-Approved scope (user chose it over three alternatives): the trust check,
-plus csv, docx tables and tab-delimited plain text. **PDF geometric
-reconstruction is explicitly the next slice, not this one.**
+Live-checked both required cases: the exam-fees PDF refuses; the reference
+result-sheet question still returns **77 arrears / 21 students,
+`verification: PASS`**, unchanged.
 
-Five slices already shipped from this thread. Most recent: the model can no
+Before that: the model can no
 longer be blind to a tool it has
 ([`ai-tool-catalogue-approved-spec.md`](../60-product-reasoning/ai-tool-catalogue-approved-spec.md),
 queued item 6). Every permitted tool's name is always visible and
@@ -77,41 +81,40 @@ it is listed in the Approved Spec's OUT OF SCOPE and needs its own pass.
 
 ## Exact next action
 
-**Run `/build-slice` against item 1's Approved Spec** (linked above). No
-code has been written for it. The spec's CORE list, in the order its own
-risk argues for:
+**None queued.** Item 1 slice 1 is shipped and live-checked. What remains,
+each unstarted and each needing its own `/product-reasoning` pass:
 
-1. **Extraction trust check** on the `sequential_id` strategy only.
-   `documentAnalysisService.js:116` currently guards `strategy === 'none'`
-   and nothing else. The check: every record marker
-   (`STUDENT_ROW_SIGNAL_PATTERN`, `documentTableExtractionService.js:57`)
-   must be accounted for as either its own record or a page-break merge the
-   detector itself performed. Refuse with a status **distinct from**
-   `unrecognized_layout`. Self-calibrating — do not introduce a tuned
-   constant.
-2. **csv** — route `text/csv` through `exceljs`'s `workbook.csv.read()` in
-   `documentTextExtractionService` instead of `extractPlainTextDirect`.
-   Verified during the pass: it handles quoted commas and emits the exact
-   `' | '` shape `extractDelimitedRows` already consumes, so
-   **`documentTableExtractionService` needs no change for csv.**
-3. **docx tables** — preserve row/cell structure through extraction as
-   `' | '` rows. `mammoth.convertToHtml` recommended; direct `w:tbl` via
-   PizZip (the idiom `extractPptxText`/`extractOdtText`/`extractOdsText`
-   already use in that file) is the alternative. Prose-only docx output
-   must stay byte-identical.
-4. **tab-delimited `text/plain`** — weakest item, only genuine
-   false-positive risk in the slice. Guard: a majority of non-empty lines
-   must share a column count. **No comma heuristic anywhere.** If the guard
-   cannot be made to hold against a prose control at build time, ship 1–3
-   and report this one unshipped rather than loosening it.
+- **Item 1 slice 2 — PDF geometric reconstruction** (`pdfjs-dist` x/y).
+  Explicitly OUT OF SCOPE in the shipped spec. Measured: y-bucketing
+  recovers the exam-fees PDF's identity columns 23/23 where flat text gives
+  4, but numeric columns are **misattributed** — per-semester figures print
+  above their student inside a merged cell — so correct attribution needs
+  x-column-boundary detection, which was done by hand, not automatically.
+  Its partial-trust behaviour is **already decided** (identity-only records,
+  numeric operations refused) and recorded in the ADL-055 addendum; that
+  slice builds against it rather than re-deciding it.
+- **Item 2 — operation vocabulary** (`join`, numeric comparison, `validate`,
+  column-indexed `groupBy`). Read the day-book note below before starting.
+- **Item 3 — `maxToolCallsPerTurn` above 1.**
+- **Item 5 — tool granularity audit.**
 
-Two regression gates the spec makes mandatory: the consolidated result
-sheet must still yield **1603 records / 10 distinct sections /
-`status: 'ok'`**, and the reference arrears question must still return **77
-arrears / 21 students**. Live check before it is called done: the exam-fees
-PDF must refuse instead of reporting `total: 17`.
+Recommended next if the user has no preference: **2**, then item 1 slice 2.
 
-The three read-only measurement probes from the pass are kept and rerunnable:
+**A finding item 2 must not rediscover:** the Tally day book now extracts as
+839 `delimited` records (its PDF text layer is tab-separated), but its
+columns are **not reliably aligned** — the source omits empty cells instead
+of emitting consecutive tabs, so a row with no debit amount arrives with 5
+cells against a 6-column header. Row-text pattern matching is unaffected;
+column-indexed `groupBy` is not. More generally, `delimited` is exact for
+row *identification* but not for column *alignment* when a source omits
+empty cells.
+
+One note for item 3: the catalogue's `describe_tools` is exempt from the cap
+and works at the default of 1, but a fetched tool still cannot be called if
+the cap was already spent. That interaction is recorded in the catalogue
+spec's Edge cases.
+
+The three read-only measurement probes are kept and rerunnable:
 
 ```
 cd backend && set -a && . ./.env.local.sh && set +a && node scripts/extraction-coverage-probe.js
@@ -120,20 +123,9 @@ cd backend && set -a && . ./.env.local.sh && set +a && node scripts/extraction-c
 (also `extraction-detail-probe.js` and `pdf-geometry-probe.js`; none call an
 LLM or touch the database.)
 
-After item 1: **2** (operation vocabulary), then **3**
-(`maxToolCallsPerTurn` above 1), **5** (tool granularity audit) — each still
-unstarted and each needing its own pass. Item 1's own **next slice** is PDF
-geometric reconstruction, which is OUT OF SCOPE in the current spec and
-needs a fresh pass of its own.
-
-One note for item 3: the catalogue's `describe_tools` is exempt from the cap
-and works at the default of 1, but a fetched tool still cannot be called if
-the cap was already spent. That interaction is recorded in the catalogue
-spec's Edge cases.
-
 ## Previously completed this session
 
-**Five slices shipped from the ADL-055 thread**, each with its own Approved
+**Six slices shipped from the ADL-055 thread**, each with its own Approved
 Spec, its own commit, and its own live check. Full rationale and measured
 numbers for every one of them: [ADL-055](../30-decisions/ledger.md#adl-055).
 
@@ -166,7 +158,7 @@ retrieval index, generic tool-result cap, retrieval tuning (`TOP_K`,
 `SIMILARITY_DISTANCE_THRESHOLD`, `RANK_CAP`), a mandatory-tool mechanism,
 and a policy-module nudge.
 
-**Do not revert any of the three shipped slices.** Each is measured:
+**Do not revert any of the shipped slices.** Each is measured:
 tool result 62,029 → 3,872 tokens (`count`) and 88,849 → 6,214
 (`breakdown`); the routing fix turned a wrong free-text answer into a
 verified deterministic one; the answer call fell 125,048 → 2,771. The
@@ -275,7 +267,7 @@ first.
   NIM's removal — provider adapters). Closed, verified. Full detail:
   earlier entries in this same ledger (ADL-041 et seq., ADL-049).
 
-## Queued for Product Reasoning — six items from the 2026-08-25 document sessions (2 shipped, 1 spec-approved and awaiting implementation, 3 unstarted; each unstarted one needs its own pass)
+## Queued for Product Reasoning — six items from the 2026-08-25 document sessions (3 shipped, 3 unstarted; each unstarted one needs its own pass)
 
 Raised by the user after the ADL-055 slices, from live
 evidence in that entry. All six sit under an **ADR-029 revisit** — that ADR
@@ -284,11 +276,11 @@ slice exist"), and a second and third real document family (a Tally-style
 day book, an exam-fees list) have now been tested against it. None of the
 six requires code execution.
 
-1. **Table extraction generalisation.** ✅ **PASS RUN 2026-08-25** —
+1. **Table extraction generalisation.** ✅ **SLICE 1 SHIPPED 2026-08-25** —
    [`ai-chat-document-extraction-trust-and-formats-approved-spec.md`](../60-product-reasoning/ai-chat-document-extraction-trust-and-formats-approved-spec.md),
-   scoped by the user to the trust check + csv/tsv/docx. Implementation not
-   started — see "Exact next action" above. Two things this item was
-   recorded as saying need correcting, both measured during the pass:
+   scoped by the user to the trust check + csv/tsv/docx, and implemented.
+   Slice 2 (PDF geometric reconstruction) is unstarted. Two things this
+   item was recorded as saying needed correcting, both measured:
    - It framed the problem as coverage only. The larger problem is that the
      exam-fees PDF **does not fall through to `strategy: 'none'`** — it
      returns `sequential_id` with 4 records for 23 students and reports

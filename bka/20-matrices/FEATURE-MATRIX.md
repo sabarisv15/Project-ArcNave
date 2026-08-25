@@ -379,10 +379,10 @@ students into one record.
 
 | Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| AI Assistant chat | Existing chat-attachment roles | — | Extraction trust check on `sequential_id` — refuse when record markers are not accounted for | Attach a PDF whose table layout the detector misreads | none (message on existing chat surface) | `documentAnalysisService.analyzeAttachment`, `documentTableExtractionService` | none | Unchanged | Not built | CORE | ADL-055's "deterministic check, never prompt guidance" rule | Resolved — refuse; distinct status from `unrecognized_layout` |
-| AI Assistant chat | — | — | csv routed through a real parser (`exceljs.csv.read`) into the existing `delimited` path | Attach a .csv and ask a counting question | none | `documentTextExtractionService` | none | Unchanged | Not built | CORE | — | Verified at analysis time: quoted commas survive; **no table-detector change needed** |
-| AI Assistant chat | — | — | docx table row/cell structure preserved through extraction | Attach a .docx containing a table | none | `documentTextExtractionService` | none | Unchanged | Not built | CORE | — | `mammoth.convertToHtml` recommended; direct `w:tbl` via PizZip the alternative — build-time call |
-| AI Assistant chat | — | — | Tab-delimited `text/plain` treated as delimited | Attach a .txt/.tsv table | none | `documentTextExtractionService` / `documentTableExtractionService` | none | Unchanged | Not built | CORE | — | Guard required: majority of lines must share a column count. **No comma heuristic anywhere.** Weakest item; ship the rest and report it unshipped rather than loosen the guard |
+| AI Assistant chat | Existing chat-attachment roles | — | Extraction trust check on `sequential_id` — refuse when record markers are not accounted for | Attach a PDF whose table layout the detector misreads | none (message on existing chat surface) | `documentAnalysisService.analyzeAttachment`, `documentTableExtractionService` | none | Unchanged | **Built** — `unreliable_extraction`; live-checked | CORE | ADL-055's "deterministic check, never prompt guidance" rule | Resolved — refuse; distinct status from `unrecognized_layout` |
+| AI Assistant chat | — | — | csv routed through a real parser (`exceljs.csv.read`) into the existing `delimited` path | Attach a .csv and ask a counting question | none | `documentTextExtractionService` | none | Unchanged | **Built** — method `exceljs_csv` | CORE | — | Verified at analysis time: quoted commas survive; **no table-detector change needed** |
+| AI Assistant chat | — | — | docx table row/cell structure preserved through extraction | Attach a .docx containing a table | none | `documentTextExtractionService` | none | Unchanged | **Built** — method `mammoth_tables`; a table-free docx keeps the original path | CORE | — | `mammoth.convertToHtml` recommended; direct `w:tbl` via PizZip the alternative — build-time call |
+| AI Assistant chat | — | — | Tab-delimited `text/plain` treated as delimited | Attach a .txt/.tsv table | none | `documentTextExtractionService` / `documentTableExtractionService` | none | Unchanged | **Built** — guard tightened during the slice | CORE | — | Guard required: majority of lines must share a column count. **No comma heuristic anywhere.** Weakest item; ship the rest and report it unshipped rather than loosen the guard |
 | AI Assistant chat | — | — | PDF geometric reconstruction (`pdfjs-dist` x/y) | — | — | — | — | — | Not built | FUTURE — next slice of item 1 | — | Measured: recovers identity 23/23; **numeric attribution needs x-boundary detection**, not solved by y-bucketing. Queue's own phrasing corrected |
 | AI Assistant chat | — | — | Partial-trust return shape (identity-only records, numeric ops refused) | — | — | — | — | — | Not built | **DECIDED, not built** | needs the geometry slice | Approved by the user; has no producer yet, so building it now would be the scaffolding ADR-029 rejects |
 | AI Assistant chat | — | — | Verifying tool output *against the source document* | — | — | — | — | — | Not built | FUTURE | — | The general form of this slice's finding; larger separate work |
@@ -402,3 +402,26 @@ times); routing csv through a real parser rather than teaching the detector
 to split on commas (correctness — csv quoting, and prose false positives);
 and the trust check guarding `sequential_id` only (the `delimited` strategy
 is exact by construction and has no equivalent signal).
+
+**Implemented 2026-08-25**, full suite 2164/2162 (same 2 pre-existing
+unrelated failures), 18 net new tests. Live-checked both required cases:
+the exam-fees PDF now refuses and states the shortfall (17 of 23 rows)
+where it previously returned `status: 'ok'` with `total: 17`; the reference
+result-sheet question still returns **77 arrears / 21 students,
+`verification: PASS`**, unchanged.
+
+Two things the implementation added to what the pass knew, both recorded in
+the [ADL-055 addendum](../30-decisions/ledger.md#adl-055-addendum--item-1-slice-1-implemented-2026-08-25):
+
+- **The Tally day book now works.** Previously `strategy: 'none'` and one of
+  the three documents that motivated this item, it has a tab-separated PDF
+  text layer and yields **839 delimited records**. Its columns are not
+  reliably aligned — the source omits empty cells rather than emitting
+  consecutive tabs — which does not affect the row-text pattern matching
+  that ships here but **will** affect queued item 2's column-indexed
+  `groupBy`.
+- **The first refusal wording was a defect**, caught by the live check: it
+  told the user to re-upload a clearer copy, which this spec's own Edge
+  cases forbid and which is false — the document is fine, ARCNAVE cannot
+  read merged-cell PDF layouts yet. Fixed in the tool description and
+  re-checked live.

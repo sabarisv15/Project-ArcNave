@@ -96,8 +96,12 @@ test('extractRecords: prose text with no recognizable tabular structure returns 
 });
 
 test('extractRecords: empty/non-string input degrades to strategy "none" rather than throwing', () => {
-  assert.deepEqual(extractRecords(''), { strategy: 'none', records: [], sections: [] });
-  assert.deepEqual(extractRecords(null), { strategy: 'none', records: [], sections: [] });
+  assert.deepEqual(extractRecords(''), {
+    strategy: 'none', records: [], sections: [], coverage: null,
+  });
+  assert.deepEqual(extractRecords(null), {
+    strategy: 'none', records: [], sections: [], coverage: null,
+  });
 });
 
 // A section header's own percentage-summary table shares RECORD_START_
@@ -164,4 +168,131 @@ test('extractRecords: a record\'s startLine lands after its own section\'s start
   const sandwichRecord = records.find((r) => r.key === '1133:24700311');
   const sandwichSection = sections.find((s) => /SANDWICH/.test(s.courseName));
   assert.ok(sandwichRecord.startLine > sandwichSection.startLine);
+});
+
+// --- Item 1: trust check + tab-delimited coverage ----------------------
+// (ai-chat-document-extraction-trust-and-formats-approved-spec.md)
+//
+// Recognizing a layout is not the same as recognizing it correctly. A real
+// exam-fees PDF whose printed table uses merged cells extracted to text
+// with its columns out of reading order, and this detector produced 4
+// records for a 23-student document while documentAnalysisService reported
+// status 'ok' over them. These tests pin the check that tells the two
+// apart, using the same accounting shape measured against both real
+// documents (result sheet: 1781/1781 markers, 0 orphans, 0 collapsed;
+// exam fees: 17/23, 6 orphans, 3 collapsed).
+
+function studentRow(serial, regNo, name, dob) {
+  return `${serial} ${regNo} ${name} DoB: ${dob}`;
+}
+
+test('extractRecords: a clean sequential_id roster reports reliable coverage', () => {
+  const text = [
+    studentRow(818, 24700301, 'ANBARASAN V', '23.12.2006'),
+    studentRow(819, 24700302, 'BHARATH K', '19.06.2006'),
+    studentRow(820, 24700303, 'CHANDRU M', '25.06.2002'),
+  ].join('\n');
+  const result = extractRecords(text);
+  assert.equal(result.strategy, 'sequential_id');
+  assert.equal(result.records.length, 3);
+  assert.deepEqual(result.coverage, {
+    applicable: true, reliable: true, markerCount: 3, accountedCount: 3, orphanCount: 0, collapsedRecords: 0,
+  });
+});
+
+test('extractRecords: a record that swallowed other rows is reported unreliable (collapsed)', () => {
+  // Three students' text, but only the first line starts with the
+  // serial+regNo shape the detector keys on — the shape a merged-cell PDF
+  // extraction actually produces.
+  const text = [
+    studentRow(818, 24700301, 'ANBARASAN V', '23.12.2006'),
+    'BHARATH K DoB: 19.06.2006 24700302',
+    'CHANDRU M DoB: 25.06.2002 24700303',
+  ].join('\n');
+  const result = extractRecords(text);
+  assert.equal(result.strategy, 'sequential_id');
+  assert.equal(result.records.length, 1);
+  assert.equal(result.coverage.reliable, false);
+  assert.equal(result.coverage.markerCount, 3);
+  assert.equal(result.coverage.collapsedRecords, 1);
+});
+
+test('extractRecords: rows the detector never reached are reported unreliable (orphans)', () => {
+  const text = [
+    'BHARATH K DoB: 19.06.2006',
+    'CHANDRU M DoB: 25.06.2002',
+    '',
+    studentRow(818, 24700301, 'ANBARASAN V', '23.12.2006'),
+  ].join('\n');
+  const result = extractRecords(text);
+  assert.equal(result.coverage.reliable, false);
+  assert.equal(result.coverage.orphanCount, 2);
+  assert.equal(result.coverage.collapsedRecords, 0);
+});
+
+// A page-break continuation is a merge this file performs deliberately, so
+// the second copy of the row's marker is accounted for, not a collapse.
+// This is what keeps the real 300+ page result sheet's 178 merged records
+// from tripping the check.
+test('extractRecords: a deliberate page-break merge does not count as a collapse', () => {
+  const row = studentRow(818, 24700301, 'ANBARASAN V', '23.12.2006');
+  const result = extractRecords([row, row, studentRow(819, 24700302, 'BHARATH K', '19.06.2006')].join('\n'));
+  assert.equal(result.records.length, 2);
+  assert.equal(result.coverage.markerCount, 3);
+  assert.deepEqual(
+    [result.coverage.reliable, result.coverage.orphanCount, result.coverage.collapsedRecords],
+    [true, 0, 0],
+  );
+});
+
+// No signal must mean no judgement — never a refusal. A roster whose rows
+// carry a semester/regulation marker but no DoB gives nothing to count.
+test('extractRecords: a roster with no identity marker reports coverage as not applicable', () => {
+  const text = ['818 24700301 ANBARASAN V 1 R2023 RA', '819 24700302 BHARATH K 1 R2023 A'].join('\n');
+  const result = extractRecords(text);
+  assert.equal(result.strategy, 'sequential_id');
+  assert.equal(result.coverage.applicable, false);
+  assert.equal(result.coverage.reliable, true);
+});
+
+// The delimited strategy is exact by construction — one input line, one
+// row, nothing inferred — so there is nothing for a coverage check to be
+// uncertain about, and running one would invent a failure mode it doesn't
+// have.
+test('extractRecords: the delimited strategy carries no coverage assessment', () => {
+  const result = extractRecords('a | b | c\nd | e | f');
+  assert.equal(result.strategy, 'delimited');
+  assert.equal(result.coverage, null);
+});
+
+test('extractRecords: tab-separated text is detected as delimited', () => {
+  const text = 'Serial\tRegNo\tName\n818\t24700301\tANBARASAN V\n819\t24700302\tBHARATH K';
+  const result = extractRecords(text);
+  assert.equal(result.strategy, 'delimited');
+  assert.equal(result.records.length, 3);
+  assert.deepEqual(result.records[1].cells, ['818', '24700301', 'ANBARASAN V']);
+});
+
+// Commas are ordinary punctuation, so they are deliberately never admitted
+// as a delimiter — real CSV is parsed properly upstream instead.
+test('extractRecords: comma-separated text is NOT treated as delimited', () => {
+  assert.equal(extractRecords('Serial,RegNo,Name\n818,24700301,ANBARASAN V').strategy, 'none');
+});
+
+// The guard that stops the tab rule misreading prose: tab-carrying lines
+// must be a majority AND agree on a column count.
+test('extractRecords: prose containing a few stray tabs is NOT treated as delimited', () => {
+  const text = [
+    'This is an ordinary paragraph of prose about the examination process.',
+    'It continues for several lines without any tabular structure at all.',
+    'Occasionally\tan indented note appears.',
+    'But the document is prose, not a table, and must not be read as one.',
+    'Another ordinary sentence closes the passage.',
+  ].join('\n');
+  assert.equal(extractRecords(text).strategy, 'none');
+});
+
+test('extractRecords: tabs used for ragged indentation are NOT treated as delimited', () => {
+  const text = ['\tone', 'two\tthree\tfour', '\tfive', 'six\tseven\teight\tnine', '\tten'].join('\n');
+  assert.equal(extractRecords(text).strategy, 'none');
 });

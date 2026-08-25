@@ -3735,3 +3735,92 @@ ADR-029's revisit trigger ("≥2-3 concrete formats beyond the first slice")
 is now formally fired: result sheet, exam-fees list, Tally day book.
 Nothing here approaches RS-AIG-018 — every piece is developer-shipped
 deterministic library work.
+
+### ADL-055 addendum — item 1 slice 1 implemented (2026-08-25)
+
+[`ai-chat-document-extraction-trust-and-formats-approved-spec.md`](../60-product-reasoning/ai-chat-document-extraction-trust-and-formats-approved-spec.md)
+implemented in full. Full suite **2164/2162**, the same 2 pre-existing
+unrelated failures, zero regressions, 18 net new tests.
+
+**The trust check.** `documentTableExtractionService.extractRecords` now
+returns a `coverage` assessment alongside `sequential_id` records, and
+`documentAnalysisService` refuses with a new `unreliable_extraction` status
+when it fails. The check counts `RECORD_IDENTITY_MARKER` (`DoB:` — the
+one-per-person half of `STUDENT_ROW_SIGNAL_PATTERN`; the semester/regulation
+half repeats per subject and is unusable for counting) and requires every
+marker to be accounted for, as either its own record or one of the
+page-break merges this detector performs itself. Two failure modes are
+reported separately — `orphanCount` (rows never reached) and
+`collapsedRecords` (several rows swallowed into one). `applicable: false`
+when a document carries no marker at all: no signal must mean no judgement,
+never a refusal. `coverage` is `null` for `delimited`, which is exact by
+construction.
+
+Measured after implementation, unchanged from the pass:
+
+| | strategy | records | coverage |
+|---|---|---|---|
+| result sheet | `sequential_id` | 1603 | reliable, 1781/1781, 0 orphans, 0 collapsed |
+| exam fees | `sequential_id` | 4 | **unreliable**, 17/23, 6 orphans, 3 collapsed |
+| day book | `delimited` | 839 | n/a |
+
+**Formats.** `text/csv` now routes to `exceljs`'s `csv.read` (method
+`exceljs_csv`) rather than `extractPlainTextDirect`, emitting the same
+`' | '` rows the `delimited` strategy already consumes — so no table-detector
+change was needed for csv, and quoted commas are handled by a real parser
+rather than a split. A docx containing a `w:tbl` goes through
+`mammoth.convertToHtml` (method `mammoth_tables`) so row/cell structure
+survives; a docx **without** a table takes the original `extractRawText`
+path untouched, which makes prose output byte-identical by construction
+rather than by assertion. Tab-delimited plain text is admitted; commas are
+deliberately never admitted as a delimiter anywhere.
+
+**The tab guard was tightened during the slice, by measurement.** The first
+version required only that tab-carrying lines be a majority and agree on a
+column count — and a test written to fail it did not fail: a ragged
+indented list genuinely satisfies both, because `"<tab>one"` and
+`"<tab>five"` really do agree on a column count of 2. The guard now also
+requires every cell on a line to have content, on the principle that a
+delimiter separates content from content while an indent separates nothing
+from content. The trade-off is recorded and deliberate: a genuine TSV whose
+rows mostly contain a blank cell will not be detected, and under-detecting
+leaves today's honest `strategy: 'none'` while over-detecting would misread
+prose as a table — the exact failure this slice exists to remove.
+
+**An unplanned result.** The Tally day book — previously `strategy: 'none'`,
+one of the three documents that motivated this item — turns out to have a
+tab-separated PDF text layer and now yields **839 delimited records**. Its
+columns are *not* reliably aligned, because the source omits empty cells
+rather than emitting consecutive tabs (a row with no debit amount arrives
+with 5 cells against a 6-column header). That does not affect what ships
+here, which matches patterns against row text, but it **will** affect
+queued item 2's column-indexed `groupBy` and is recorded now so that pass
+does not rediscover it. Note also that `delimited` is exact for row
+identification but not for column alignment when a source omits empty
+cells; "exact by construction" in the spec should be read with that scope.
+
+**Live-checked, both required cases.** Exam-fees PDF:
+`toolsUsed: ["analyze_document_table"]`, `verification: INSUFFICIENT_EVIDENCE`,
+and an answer that refuses and states the shortfall — where before the same
+document produced `status: 'ok'` with `total: 17`. Reference regression on
+the result sheet: **77 arrears across 21 students, `verification: PASS`**,
+identical to the pre-slice figure.
+
+**One defect the live check caught, and fixed.** The first refusal ended
+"Please re-upload a clearer copy of the document" — which the spec's own
+Edge cases forbid ("never imply the document is invalid or that the user
+did something wrong"), and which is also simply false: the document is
+fine, ARCNAVE cannot read merged-cell PDF layouts yet. The tool description
+now states the limitation is this system's and explicitly forbids asking
+for a re-upload. Re-checked live; the answer now says so correctly.
+
+**Found, not fixed, out of scope.** On one live run the model supplied
+`sectionPattern: "(?i)ELECTRONICS..."` — a Python-style inline flag that
+JS `RegExp` rejects — and `filterBySection` threw
+`DocumentAnalysisValidationError` out of the turn rather than degrading.
+Pre-existing (that throw predates this slice), nondeterministic, and
+unrelated to extraction; a retry with the same question succeeded. Recorded
+here rather than fixed in place, per the OUT OF SCOPE boundary.
+
+**Status:** Resolved — implemented and verified. Item 1's remaining slice
+(PDF geometric reconstruction) is unstarted and needs its own pass.

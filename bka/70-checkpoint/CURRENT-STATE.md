@@ -10,9 +10,18 @@ only links to it.
 
 ## Active Task
 
-**None in flight — four slices shipped from the ADL-055 thread.**
+**None in flight — five slices shipped from the ADL-055 thread.**
 
-Most recent: a turn that could not cover every attached document now
+Most recent: the model can no longer be blind to a tool it has
+([`ai-tool-catalogue-approved-spec.md`](../60-product-reasoning/ai-tool-catalogue-approved-spec.md),
+queued item 6). Every permitted tool's name is always visible and
+`describe_tools` fetches schemas on demand; retrieval is demoted to a
+pre-fetch. Live-checked on a measured miss — `user_preferences_list` for
+"en settings-a kaatunga" — which now resolves correctly in one turn at the
+default cap of 1. Costs ~+2,176 tok/turn; it is a correctness change, not a
+saving. Full suite 2144/2146, zero regressions.
+
+Before that: a turn that could not cover every attached document now
 **refuses deterministically instead of answering**
 ([`ai-chat-document-coverage-refusal-approved-spec.md`](../60-product-reasoning/ai-chat-document-coverage-refusal-approved-spec.md),
 item 4 of the six queued below). The exact scenario that produced a
@@ -53,21 +62,27 @@ it is listed in the Approved Spec's OUT OF SCOPE and needs its own pass.
 
 ## Exact next action
 
-**None queued.** Item 4 (refusal path) is shipped and live-re-run; the other
-five queued items below are each unstarted and each need their own pass.
-Pick one and run `/product-reasoning` for it.
+**None queued.** Items 4 and 6 are shipped and live-checked. Four remain,
+each unstarted and each needing its own `/product-reasoning` pass:
+**1** (table extraction generalisation), **2** (operation vocabulary —
+`join`, comparison, `validate`, column `groupBy`), **3**
+(`maxToolCallsPerTurn` above 1), **5** (tool granularity audit).
 
-Recommended order if the user has no preference — correctness before
-capability, which is the ordering they applied throughout this session:
-**6** (tool exposure — stops the retrieval guess that caused round 39),
-then **1** (extraction generalisation — unlocks csv/docx/pdf tables),
-then **2** (operation vocabulary — `join` would remove the need for item 4's
-refusal in the two-document case), then **3** and **5**.
+Recommended next if the user has no preference: **1**, then **2**. Together
+they are what would let a real cross-document question actually be answered
+rather than honestly refused — item 4 made the refusal correct, item 2 would
+make the refusal unnecessary in that case.
+
+One note for item 3: the catalogue's `describe_tools` is exempt from the cap
+and works at the default of 1, but a fetched tool still cannot be called if
+the cap was already spent. That interaction is recorded in the catalogue
+spec's Edge cases.
 
 ## Previously completed this session
 
-**The three-slice ADL-055 thread is complete.** Each shipped with its own
-Approved Spec, its own commit, and its own live re-measurement.
+**Five slices shipped from the ADL-055 thread**, each with its own Approved
+Spec, its own commit, and its own live check. Full rationale and measured
+numbers for every one of them: [ADL-055](../30-decisions/ledger.md#adl-055).
 
 Final measured position for the reference question (*"How many arrears are
 there in the ECE Sandwich section?"*, the real 278,403-char result sheet):
@@ -115,8 +130,12 @@ cross-turn extraction reuse, any Gemini prompt-cache work, a per-attachment
 retrieval index, and the Curriculum persistent-workspace design (ARC.md /
 STATE.md / INDEX.md, skills, agents) this whole thread began as.
 
-Do **not** touch `aiToolRetrievalService.js` or `aiToolRegistry.js`'s
-`RANK_CAP` — ADL-055 Finding 1 closed that permanently.
+Do **not** change `aiToolRetrievalService.js`'s ranking, `TOP_K`,
+`SIMILARITY_DISTANCE_THRESHOLD`, or `aiToolRegistry.js`'s `RANK_CAP` —
+ADL-055 Finding 1 closed that permanently, and the tool-catalogue spec
+(item 6, the current next action) explicitly leaves retrieval's *behaviour*
+alone: it adds a catalogue alongside so a miss stops being fatal. Building
+that catalogue is not a licence to tune the retriever.
 
 Diagnostics from the investigation, if they are ever wanted again
 (both read-only; the second makes real, billable Vertex calls):
@@ -203,7 +222,7 @@ first.
   NIM's removal — provider adapters). Closed, verified. Full detail:
   earlier entries in this same ledger (ADL-041 et seq., ADL-049).
 
-## Queued for Product Reasoning — six items from the 2026-08-25 document sessions (none started; each needs its own pass)
+## Queued for Product Reasoning — six items from the 2026-08-25 document sessions (2 shipped, 4 unstarted; each unstarted one needs its own pass)
 
 Raised by the user after the three shipped ADL-055 slices, from live
 evidence in that entry. All six sit under an **ADR-029 revisit** — that ADR
@@ -248,7 +267,7 @@ six requires code execution.
    Service could be one tool with a parameter; different roles must stay
    separate. ADL-053's artifact tool-naming confusion is a symptom of
    granularity that is too fine.
-6. **Tool exposure: names always visible, schemas lazy.** ARCNAVE currently
+6. **Tool exposure: names always visible, schemas lazy.** ✅ **SHIPPED 2026-08-25** — [`ai-tool-catalogue-approved-spec.md`](../60-product-reasoning/ai-tool-catalogue-approved-spec.md). Retrieval kept as a pre-fetch; a miss now costs one round-trip instead of a wrong answer. Originally: ARCNAVE
    *guesses* which tools are relevant via embedding similarity, and that
    guess measurably failed (ADL-055 Finding: `analyze_document_table` was
    not retrieved for the natural question **or** for the prior spec's own

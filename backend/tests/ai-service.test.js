@@ -1369,8 +1369,12 @@ test('aiService.askAgent: the plan meta-tool IS offered when 2+ tools are retrie
   }
 
   assert.ok(capturedBody.tools.some((t) => t.function.name === 'run_workflow_plan'), 'run_workflow_plan must be offered when 2+ real tools are');
-  // Exactly 2 retrieved tools + the plan tool, never the full role-permitted list.
-  assert.equal(capturedBody.tools.length, 3);
+  // Exactly 2 retrieved tools + the plan tool + the schema-fetch meta-tool,
+  // never the full role-permitted list. describe_tools is always offered
+  // (ai-tool-catalogue-approved-spec.md) — it is what makes a retrieval miss
+  // recoverable rather than fatal.
+  assert.equal(capturedBody.tools.length, 4);
+  assert.ok(capturedBody.tools.some((t) => t.function.name === 'describe_tools'));
 });
 
 test('aiService.askAgent: the plan meta-tool is WITHHELD when fewer than 2 tools are retrieved (structurally unusable — its own params require >= 2 steps)', async () => {
@@ -1397,7 +1401,11 @@ test('aiService.askAgent: the plan meta-tool is WITHHELD when fewer than 2 tools
       false,
       `run_workflow_plan must not be offered when only ${stubbedCount} tool(s) were retrieved`,
     );
-    assert.equal(capturedBody.tools.length, stubbedCount);
+    // + describe_tools, which is offered regardless of how many tools
+    // retrieval returned — a role with a bad retrieval result is exactly
+    // the case it exists for.
+    assert.equal(capturedBody.tools.length, stubbedCount + 1);
+    assert.ok(capturedBody.tools.some((t) => t.function.name === 'describe_tools'));
   }
 });
 
@@ -3563,8 +3571,8 @@ test('askAgent: pinning APPENDS — it never displaces a tool retrieval actually
     askOptions: { attachmentIds: ['att-1'] },
     download: fakeDocumentDownload,
   });
-  // 2 retrieved + the plan meta-tool (>=2 real tools) + the pinned tool.
-  assert.equal(names.filter((n) => n !== 'analyze_document_table' && n !== 'run_workflow_plan').length, 2);
+  // 2 retrieved + the plan meta-tool + describe_tools + the pinned tool.
+  assert.equal(names.filter((n) => !['analyze_document_table', 'run_workflow_plan', 'describe_tools'].includes(n)).length, 2);
 });
 
 test('askAgent: an IMAGE-only attachment does not pin the tool — it cannot operate on an image', async (t) => {
@@ -3857,4 +3865,131 @@ test('askAgent: images do not count toward the document total', async (t) => {
     });
   });
   assert.equal(result.documentCoverageIncomplete, undefined, 'one document + one image is not an under-covered turn');
+});
+
+// --- Tool catalogue -----------------------------------------------------
+// ai-tool-catalogue-approved-spec.md / ADL-055. Retrieval shortlists 8 of a
+// role's ~69 tools and measurably excludes ones the question needs. The
+// catalogue makes that miss recoverable: every permitted tool's NAME is
+// always visible, and describe_tools fetches a schema on demand.
+
+function systemTextOf(body) {
+  return (body.messages.find((m) => m.role === 'system') || {}).content || '';
+}
+const toolNames = (body) => body.tools.map((t) => t.function.name);
+
+async function captureCatalogueTurn(t, { retrieval, responses, role = 'principal' }) {
+  t.mock.method(aiToolRegistry, 'filterToolsByRelevance', retrieval);
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role, collegeId: 'college-a' };
+  const bodies = [];
+  const queue = [...responses];
+  let result;
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(async (url, options) => {
+      bodies.push(JSON.parse(options.body));
+      return queue.shift()();
+    }, async () => {
+      result = await aiService.askAgent(client, 'How many periods are scheduled?', { identityContext });
+    });
+  });
+  return { bodies, result };
+}
+
+test('askAgent: the catalogue lists every role-permitted tool by name, including ones retrieval excluded', async (t) => {
+  const { bodies } = await captureCatalogueTurn(t, {
+    retrieval: (tools) => tools.filter((x) => x.name !== 'academic_class_timetable').slice(0, 2),
+    responses: [() => mockAnswerResponse('Campus is open 9am-5pm.')],
+  });
+  const system = systemTextOf(bodies[0]);
+  assert.ok(system.includes('academic_class_timetable'), 'a tool retrieval excluded must still be named in the catalogue');
+  assert.ok(!toolNames(bodies[0]).includes('academic_class_timetable'), 'but its schema is NOT pre-loaded');
+  // Names only — never parameter schemas, which is what costs 11.5K tokens.
+  assert.ok(!system.includes('"properties"'), 'the catalogue must not carry parameter schemas');
+});
+
+test('askAgent: the catalogue never names a tool the actor\'s role cannot use', async (t) => {
+  const { bodies } = await captureCatalogueTurn(t, {
+    retrieval: (tools) => tools.slice(0, 2),
+    responses: [() => mockAnswerResponse('ok')],
+    role: 'staff',
+  });
+  const system = systemTextOf(bodies[0]);
+  const staffTools = new Set(aiToolRegistry.listTools({ excludeHumanOnly: true, role: 'staff' }).map((x) => x.name));
+  const principalOnly = aiToolRegistry.listTools({ excludeHumanOnly: true, role: 'principal' })
+    .filter((x) => !staffTools.has(x.name));
+  assert.ok(principalOnly.length > 0, 'fixture sanity: principal must have tools staff does not');
+  for (const t2 of principalOnly) {
+    assert.ok(!system.includes(`\n${t2.name} — `), `catalogue must not name ${t2.name} for staff`);
+  }
+});
+
+test('askAgent: describe_tools makes an excluded tool callable in the SAME turn, and does not consume maxToolCallsPerTurn', async (t) => {
+  t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }, { id: 't2' }]));
+  const { bodies, result } = await captureCatalogueTurn(t, {
+    retrieval: (tools) => tools.filter((x) => x.name !== 'academic_class_timetable').slice(0, 2),
+    responses: [
+      () => mockToolCallResponse('describe_tools', { names: ['academic_class_timetable'] }),
+      () => mockToolCallResponse('academic_class_timetable', {}),
+      () => mockAnswerResponse('There are 2 periods scheduled.'),
+    ],
+  });
+  // The fetch did not count as the turn's one tool call — the real tool
+  // still ran at the default cap of 1.
+  assert.deepEqual(result.toolsUsed, ['academic_class_timetable']);
+  assert.match(result.answer, /2 periods/);
+  // Offered only after the fetch, never before.
+  assert.ok(!toolNames(bodies[0]).includes('academic_class_timetable'));
+  assert.ok(toolNames(bodies[1]).includes('academic_class_timetable'));
+});
+
+test('askAgent: ADL-050 — the system prompt is byte-identical across every iteration of a turn that fetched a schema', async (t) => {
+  t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }]));
+  const { bodies } = await captureCatalogueTurn(t, {
+    retrieval: (tools) => tools.filter((x) => x.name !== 'academic_class_timetable').slice(0, 2),
+    responses: [
+      () => mockToolCallResponse('describe_tools', { names: ['academic_class_timetable'] }),
+      () => mockToolCallResponse('academic_class_timetable', {}),
+      () => mockAnswerResponse('One period.'),
+    ],
+  });
+  const systems = bodies.slice(0, 2).map(systemTextOf);
+  assert.equal(systems[0], systems[1], 'only the tools array may grow — never the system segments');
+});
+
+test('askAgent: an unpermitted or nonexistent tool name returns the same plain refusal, leaking nothing', async (t) => {
+  const { bodies, result } = await captureCatalogueTurn(t, {
+    retrieval: (tools) => tools.slice(0, 2),
+    responses: [
+      () => mockToolCallResponse('describe_tools', { names: ['no_such_tool_at_all'] }),
+      () => mockAnswerResponse('I do not have a tool for that.'),
+    ],
+    role: 'staff',
+  });
+  const followUp = JSON.stringify(bodies[1].messages);
+  assert.match(followUp, /No such tool available to you/);
+  assert.ok(!toolNames(bodies[1]).includes('no_such_tool_at_all'));
+  assert.match(result.answer, /do not have a tool/);
+});
+
+test('askAgent: schema fetches are capped, and exceeding the cap is a plain refusal rather than a throw', async (t) => {
+  const fetchCall = () => mockToolCallResponse('describe_tools', { names: ['academic_class_timetable'] });
+  const { bodies, result } = await captureCatalogueTurn(t, {
+    retrieval: (tools) => tools.filter((x) => x.name !== 'academic_class_timetable').slice(0, 2),
+    responses: [fetchCall, fetchCall, fetchCall, fetchCall, () => mockAnswerResponse('Answered without it.')],
+  });
+  assert.match(JSON.stringify(bodies[bodies.length - 1].messages), /No more tool lookups are available/);
+  assert.match(result.answer, /Answered without it/);
+});
+
+test('askAgent: a turn where retrieval pre-loaded the right tool makes the same number of LLM calls as before', async (t) => {
+  t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }]));
+  const { bodies } = await captureCatalogueTurn(t, {
+    retrieval: (tools) => [tools.find((x) => x.name === 'academic_class_timetable'), tools[0]].filter(Boolean),
+    responses: [
+      () => mockToolCallResponse('academic_class_timetable', {}),
+      () => mockAnswerResponse('One period.'),
+    ],
+  });
+  assert.equal(bodies.length, 2, 'no extra round-trip when retrieval guessed well');
 });

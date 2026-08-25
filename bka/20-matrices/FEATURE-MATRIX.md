@@ -317,3 +317,36 @@ two items: what happens on detected insufficiency, and whether CONFLICT
 should become blocking). User chose: replace the answer with a specific,
 actionable message; leave verification advisory (RS-AIG-019 / ADL-037
 unchanged, so no new ledger entry is required for that answer).
+
+## AI Assistant chat — Tool catalogue (the model always knows what exists)
+
+Source: [`ai-tool-catalogue-approved-spec.md`](../60-product-reasoning/ai-tool-catalogue-approved-spec.md),
+analyzed 2026-08-25. Backend-only, no new page/screen. Item 6 of the six
+queued in `CURRENT-STATE.md`. Semantic retrieval (`TOP_K = 8`) silently
+excludes needed tools — measured, including for the prior slice's own
+canonical example question — leaving the model unable to call them and
+unaware they exist. Round 39 fixed one tool by pinning; nothing protects
+the other 68.
+
+Measured with Vertex `countTokens`: all 69 schemas 11,514 tok; today's 8
+retrieved 1,423; names + one-line descriptions 2,176; bare names 424.
+**This is a correctness change, not a cost saving** — it costs roughly
++2,176 tok/turn.
+
+| Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| AI Assistant chat | All AI-permitted roles | — | Role-scoped catalogue (name + one-line description) of every permitted tool, in the decision call | Passive — any question | none | `aiToolRegistry.listTools` (already called, `aiService.js:1854`) | none | Built from `roleTools`; never widens access, Policy Gate unchanged | Not built | CORE | — | Resolved — catalogue **plus** retrieval pre-fetch, not a replacement |
+| AI Assistant chat | — | — | Schema-fetch meta-tool; fetched tools become callable in the same turn | Model-initiated when retrieval missed | none | `askAgent` tool assembly + bounded loop | none | Only catalogue entries resolve | Not built | REQUIRED SUPPORT | ADR-030 P2(c) loop; [ADL-050](../30-decisions/ledger.md#adl-050) constraint: system segments byte-identical, only `tools` may grow | Exempt from `maxToolCallsPerTurn`, own small cap |
+| AI Assistant chat | — | — | Removing or replacing semantic retrieval | — | — | — | — | — | Not built | FUTURE | — | Measured: dropping it adds a round-trip to *every* tool-using turn |
+| AI Assistant chat | — | — | Tuning `TOP_K` / `SIMILARITY_DISTANCE_THRESHOLD` / `RANK_CAP` | — | — | — | — | — | Not built | FUTURE | — | This spec makes a miss non-fatal; it does not make retrieval better |
+| AI Assistant chat | — | — | Raising `maxToolCallsPerTurn` above 1 | — | — | — | — | — | Not built | FUTURE | queued item 3 | Related: at cap 1, a fetched tool can be looked up but not then called |
+| AI Assistant chat | — | — | Tool granularity audit / consolidating the 69 | — | — | — | — | — | Not built | FUTURE | queued item 5 | Fewer tools would make the catalogue cheaper |
+
+One Product Refinement question was asked (§15 threshold met: three valid
+exposure models with materially different cost/latency, and no existing
+rule settling the choice). User chose **catalogue + retrieval pre-fetch** —
+retrieval demoted from deciding what is *possible* to deciding what is
+*pre-loaded*, so a miss costs one round-trip instead of a wrong answer.
+The `maxToolCallsPerTurn` exemption was not asked: counting a schema fetch
+against a cap of 1 would break the feature outright, so correctness settles
+it (workflow §15 step 3).

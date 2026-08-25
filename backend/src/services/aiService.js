@@ -895,6 +895,70 @@ const PLAN_TOOL_NAME = 'run_workflow_plan';
 // values at runtime (withOpenAiConfig, fastModel), and a load-time
 // snapshot would silently stop responding to that.
 
+// ai-tool-catalogue-approved-spec.md / ADL-055.
+//
+// Semantic retrieval shortlists TOP_K=8 of a role's ~69 tools, and measurably
+// excludes ones the question genuinely needs — including for
+// ai-chat-result-sheet-evidence.md's OWN canonical example, "consolidate
+// arrears for serial 818 to 872". A model that was never offered a tool does
+// not say "I have no tool for this"; it answers anyway. Round 39 fixed that
+// for ONE tool by pinning; nothing protected the other 68.
+//
+// The catalogue makes a retrieval miss non-fatal rather than making retrieval
+// better: every permitted tool's NAME is always visible, so the model can
+// recognise a capability and fetch its schema. Retrieval is demoted from
+// deciding what is possible to deciding what is pre-loaded.
+//
+// Measured with Vertex countTokens on gemini-3.7-flash, 69 principal tools:
+// all full schemas 11,514 tok; today's 8 retrieved 1,423; this catalogue
+// 2,176; bare names 424. So this COSTS roughly +2,176 tok/turn — it is a
+// correctness change, never a cost saving, and must not be re-justified as
+// one.
+const SCHEMA_TOOL_NAME = 'describe_tools';
+// Loop backstop, not a functional limit: a turn genuinely needing more than
+// this many separate lookups is a plan, not a lookup.
+const MAX_SCHEMA_FETCHES = 3;
+
+function firstSentence(text) {
+  return String(text || '').split(/(?<=\.)\s/)[0].slice(0, 140).trim();
+}
+
+// Names + one sentence each. Never parameter schemas — those are what cost
+// 11.5K, and fetching them on demand is the entire point.
+function buildToolCatalogue(roleTools, offeredNames) {
+  const lines = roleTools
+    .map((t) => `${t.name} — ${firstSentence(t.description)}`)
+    .join('\n');
+  return 'EVERY tool available to you, by name. The ones already described in full above are ready to call '
+    + `directly. For any OTHER name in this list, call ${SCHEMA_TOOL_NAME} with that name first to get its `
+    + 'parameters — you cannot call it before doing so. If nothing here fits the question, say so plainly '
+    + 'rather than answering as if you had checked.\n\n'
+    + `${lines}\n\nAlready described in full above: ${offeredNames.join(', ')}.`;
+}
+
+function buildSchemaMetaTool() {
+  return {
+    name: SCHEMA_TOOL_NAME,
+    level: 'L1',
+    dataClassification: 'Internal',
+    description: 'Get the full parameters of one or more tools listed in the catalogue but not yet described '
+      + 'above. Use this when the catalogue names a capability that fits the question better than anything '
+      + 'already described. After this returns, those tools become callable in this same turn.',
+    params: {
+      type: 'object',
+      required: ['names'],
+      properties: {
+        names: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 5,
+          items: { type: 'string', description: 'an exact tool name from the catalogue' },
+        },
+      },
+    },
+  };
+}
+
 function buildPlanMetaTool() {
   return {
     name: PLAN_TOOL_NAME,
@@ -1896,18 +1960,40 @@ async function askAgent(client, question, {
       source: 'image-unavailable-note', stability: aiContextAssembly.STABILITY.TURN, target: 'user', content: buildImageUnavailableNote(images.length),
     }));
   }
-  const decisionContext = aiContextAssembly.buildContext([
+  // Held in a const and REUSED by identity on every rebuild below. ADL-050
+  // measured that re-packaging this governance-bearing system content
+  // weakened a hard rule's live compliance 3/3 -> 2/7, so the constraint is
+  // absolute: across every iteration of a turn the system segments stay
+  // byte-identical, and only the `tools` array may grow. Reusing the same
+  // segment objects (not equivalent copies) is what makes that guarantee
+  // structural rather than a promise.
+  const decisionSegments = [
     aiContextAssembly.segment({
       source: 'mode-prefix', stability: aiContextAssembly.STABILITY.STATIC, target: 'system', content: aiPolicyAssembly.MODE_PREFIX.curriculum,
     }),
     aiContextAssembly.segment({
       source: 'policy-modules', stability: aiContextAssembly.STABILITY.CONVERSATION, target: 'system', content: decisionPolicy,
     }),
+    // Role-scoped, so it can never name a tool this actor may not use; the
+    // Policy Gate re-checks on invocation regardless (CLAUDE.md rule 1).
+    // CONVERSATION, not STATIC: stable for a role, not across roles.
+    aiContextAssembly.segment({
+      source: 'tool-catalogue',
+      stability: aiContextAssembly.STABILITY.CONVERSATION,
+      target: 'system',
+      content: buildToolCatalogue(roleTools, toolsWithPlan.map((t) => t.name)),
+    }),
     aiContextAssembly.segment({
       source: 'identity', stability: aiContextAssembly.STABILITY.CONVERSATION, target: 'system', content: identityBlock,
     }),
     ...decisionUserSegments,
-  ], { tools: toolsWithPlan, images: imagesSupported ? images : undefined });
+  ];
+  const decisionImages = imagesSupported ? images : undefined;
+  // The offered set grows when the model fetches a schema; the segments
+  // above never change. Both the initial call and every continuation read
+  // whatever this currently points at.
+  let offeredTools = [...toolsWithPlan, buildSchemaMetaTool()];
+  let decisionContext = aiContextAssembly.buildContext(decisionSegments, { tools: offeredTools, images: decisionImages });
 
   const decisionStartedAt = Date.now();
   // Real progress signal (P1) for the one call in this path that
@@ -1963,8 +2049,66 @@ async function askAgent(client, question, {
   let usageTotal = decision.usage ? { ...decision.usage } : undefined;
   let blockedActionNote;
 
+  let schemaFetches = 0;
+
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    // Schema lookup, not a business action: it runs no handler, touches no
+    // Business Service and changes nothing. It therefore does NOT push to
+    // invokedTools and does NOT consume config.maxToolCallsPerTurn — at the
+    // default of 1, a fetch that ate the turn's only tool call would leave
+    // the model unable to call the very tool it just looked up, and the
+    // feature would be worse than useless. Same exemption, same reasoning,
+    // as the bounded-plan meta-tool. See ai-tool-catalogue-approved-spec.md.
+    if (decision.type === 'tool_call' && decision.toolName === SCHEMA_TOOL_NAME) {
+      schemaFetches += 1;
+      const requested = ((decision.arguments && decision.arguments.names) || [])
+        .filter((n) => typeof n === 'string');
+      let resultText;
+      if (schemaFetches > MAX_SCHEMA_FETCHES) {
+        // A plain refusal, never a throw — a loop backstop must not end the
+        // user's turn in an error.
+        resultText = `No more tool lookups are available this turn (limit ${MAX_SCHEMA_FETCHES}). `
+          + 'Answer with the tools you already have, or say plainly what you would need.';
+      } else {
+        // Resolved against roleTools only. An unpermitted name and a
+        // nonexistent one return the SAME message — never a response that
+        // reveals a tool exists but is out of reach for this actor.
+        const resolvedTools = requested
+          .map((n) => roleTools.find((t) => t.name === n))
+          .filter(Boolean);
+        const added = resolvedTools.filter((t) => !offeredTools.some((o) => o.name === t.name));
+        if (added.length > 0) {
+          offeredTools = [...offeredTools, ...added];
+          // Same segment objects, larger tools array — the ADL-050
+          // constraint holds by construction, not by convention.
+          decisionContext = aiContextAssembly.buildContext(decisionSegments, { tools: offeredTools, images: decisionImages });
+        }
+        const unknown = requested.filter((n) => !resolvedTools.some((t) => t.name === n));
+        resultText = [
+          resolvedTools.length > 0
+            ? `These tools are now callable: ${resolvedTools.map((t) => t.name).join(', ')}.`
+            : null,
+          unknown.length > 0
+            ? `No such tool available to you: ${unknown.join(', ')}.`
+            : null,
+        ].filter(Boolean).join(' ');
+      }
+      priorTurns.push({
+        toolName: SCHEMA_TOOL_NAME,
+        arguments: decision.arguments || {},
+        callId: decision.callId,
+        rawToolCall: decision.rawToolCall,
+        resultText,
+      });
+      onStep({ phase: 'deciding' });
+      // eslint-disable-next-line no-await-in-loop
+      decision = await adapter.completeWithTools(aiConfig, decisionContext, priorTurns);
+      usageTotal = addUsage(usageTotal, decision.usage);
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+
     if (decision.type === 'tool_call' && decision.toolName === PLAN_TOOL_NAME) {
       const steps = (decision.arguments && decision.arguments.steps) || [];
       validatePlanSteps(steps, tools);
@@ -2138,8 +2282,11 @@ async function askAgent(client, question, {
       ...mergedSanitizedContext,
       ...imageMeta,
       question,
-      toolUsed: priorTurns[0].toolName,
-      toolsUsed: priorTurns.map((t) => t.toolName),
+      // From invokedTools, never priorTurns: priorTurns also carries
+      // describe_tools schema lookups, which run no handler and are not a
+      // tool USE (ai-tool-catalogue-approved-spec.md).
+      toolUsed: invokedTools[0].name,
+      toolsUsed: invokedTools.map((t) => t.name),
       answer: buildCoverageRefusal(coverageGap),
       documentCoverageIncomplete: true,
       usage: usageTotal,
@@ -2165,7 +2312,7 @@ async function askAgent(client, question, {
       boundaryEnd: aiPromptSafetyLayer.BOUNDARY_END,
       entries: mergedEntries,
     };
-    const firstToolName = priorTurns[0].toolName;
+    const firstToolName = invokedTools[0].name;
     const presentation = aiExperienceLayer.buildPresentation({
       sanitizedContext: mergedSanitizedContext, question, answer: decision.text, toolUsed: firstToolName, tool: invokedTools[0], actorRole: identityContext.role,
     });
@@ -2175,7 +2322,7 @@ async function askAgent(client, question, {
       ...imageMeta,
       question,
       toolUsed: firstToolName,
-      toolsUsed: priorTurns.map((t) => t.toolName),
+      toolsUsed: invokedTools.map((t) => t.name),
       answer: decision.text,
       usage: usageTotal,
       presentation,
@@ -2193,7 +2340,7 @@ async function askAgent(client, question, {
       boundaryEnd: aiPromptSafetyLayer.BOUNDARY_END,
       entries: mergedEntries,
     };
-    const firstToolName = priorTurns[0].toolName;
+    const firstToolName = invokedTools[0].name;
     // The tool(s) themselves are done — summarizeToolResult below is a
     // SEPARATE LLM call turning the result(s) into the answer. Without
     // this, the frontend kept showing "Running <tool>…" for that whole
@@ -2213,7 +2360,7 @@ async function askAgent(client, question, {
       ...imageMeta,
       question,
       toolUsed: firstToolName,
-      toolsUsed: priorTurns.map((t) => t.toolName),
+      toolsUsed: invokedTools.map((t) => t.name),
       answer,
       usage: usageTotal,
       presentation,

@@ -3565,6 +3565,61 @@ arrears" is a correct derivation (55 scoped − 34 matched) flagged only
 because it is not itself a known count. Blocking on CONFLICT would suppress
 correct answers; the coverage check works independently of it.
 
+**Follow-up slice — the tool catalogue (queued item 6).** Product Reasoning →
+[`ai-tool-catalogue-approved-spec.md`](../60-product-reasoning/ai-tool-catalogue-approved-spec.md),
+implemented and live-checked the same day. Round 39 fixed the retrieval-miss
+problem for ONE tool by pinning it; nothing protected the other 68, and a
+model that was never offered a tool does not say "I have no tool for this" —
+it answers anyway.
+
+Every role-permitted tool's **name** plus one sentence is now a
+`tool-catalogue` system segment on the decision call, and a `describe_tools`
+meta-tool fetches full schemas on demand, after which those tools become
+callable in the same turn. Retrieval is **not removed** — it is demoted from
+deciding what is *possible* to deciding what is *pre-loaded*, so a good
+guess still costs no extra round-trip.
+
+**Costs measured before designing, and this is not a saving** (Vertex
+`countTokens`, `gemini-3.7-flash`, 69 principal tools): all full schemas
+11,514 tok; the 8 retrieval pre-loads today 1,423; the catalogue 2,176; bare
+names 424. The change costs roughly **+2,176 tokens per turn** and buys the
+guarantee that the model is never blind to a capability it has. An earlier
+framing of this idea as "lazy loading, therefore cheaper" was wrong and is
+corrected here — it must not be re-justified as a cost win.
+
+Three constraints, each load-bearing. `describe_tools` does **not** push to
+`invokedTools` and does **not** consume `config.maxToolCallsPerTurn`: at the
+default of 1, a fetch that ate the turn's only tool call would leave the
+model unable to call what it just looked up. It has its own separate cap
+(`MAX_SCHEMA_FETCHES = 3`) whose overflow is a plain refusal, never a throw.
+And an unpermitted name and a nonexistent one return the *same* message, so
+nothing leaks about tools this actor cannot use.
+
+**The ADL-050 constraint is honoured structurally, not by convention.** The
+decision call's segments are held in one `decisionSegments` const and reused
+**by identity** on every rebuild; only the `tools` array grows. [ADL-050](#adl-050)
+measured that re-packaging that governance-bearing system instruction
+weakened a hard rule's live compliance 3/3 → 2/7, so a regression test
+asserts the outbound system prompt is byte-identical across every iteration
+of a turn in which a fetch occurred.
+
+**One real defect this surfaced:** `toolsUsed`/`toolUsed` were derived from
+`priorTurns`, which now also carries schema lookups. They are derived from
+`invokedTools` instead — a lookup runs no handler and is not a tool *use*.
+
+**Live check.** `user_preferences_list` was confirmed a genuine retrieval
+miss for "en settings-a kaatunga" (a direct `retrieveRelevantTools` run
+excludes it). With the catalogue: `toolsUsed: ["user_preferences_list"]`,
+correct answer, one turn, at the default cap of 1 — the model found the name
+in the catalogue, fetched the schema, and called it. A second live run
+("consolidate arrears for serial 818 to 872", no attachment, so round 39's
+pin cannot fire) showed the softer half of the same benefit: rather than the
+eight unrelated finance tools retrieval offers for that phrasing, the model
+correctly asked for the document it needs to run the analysis it now knows
+exists. Full suite **2144/2146**, same 2 pre-existing unrelated failures,
+zero regressions (7 net new tests; 3 existing tool-count assertions updated
+for the always-offered meta-tool).
+
 **One non-regression worth recording.** Run 2 returned
 `verification: CONFLICT, claimedNumbers: [21]` — the model wrote "the
 remaining 21 students have no arrears", a correct derivation (55 scoped − 34

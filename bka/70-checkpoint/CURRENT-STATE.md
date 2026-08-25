@@ -10,8 +10,18 @@ only links to it.
 
 ## Active Task
 
-**None in flight — all three slices of the ADL-055 thread are shipped.**
-The raw attachment text no longer rides in the answer call
+**None in flight — four slices shipped from the ADL-055 thread.**
+
+Most recent: a turn that could not cover every attached document now
+**refuses deterministically instead of answering**
+([`ai-chat-document-coverage-refusal-approved-spec.md`](../60-product-reasoning/ai-chat-document-coverage-refusal-approved-spec.md),
+item 4 of the six queued below). The exact scenario that produced a
+fabricated reconciliation now names both files, states the missing
+capability, and skips the answer call entirely — 2 LLM calls → 1, and the
+computed figures survive in `evidence`. Full suite 2137/2139, zero
+regressions.
+
+Before that, the raw attachment text no longer rides in the answer call
 ([`ai-chat-attachment-hint-answer-call-approved-spec.md`](../60-product-reasoning/ai-chat-attachment-hint-answer-call-approved-spec.md)):
 `tool_answer` fell 125,048 → **2,771** tokens and the turn halved to
 127,937, with the deterministic figures and evidence byte-identical. Full
@@ -43,9 +53,21 @@ it is listed in the Approved Spec's OUT OF SCOPE and needs its own pass.
 
 ## Exact next action
 
-**None queued — the ADL-055 thread is complete.** All three slices are
-shipped, each with its own Approved Spec, its own commit, and its own live
-re-measurement. Nothing is half-built.
+**None queued.** Item 4 (refusal path) is shipped and live-re-run; the other
+five queued items below are each unstarted and each need their own pass.
+Pick one and run `/product-reasoning` for it.
+
+Recommended order if the user has no preference — correctness before
+capability, which is the ordering they applied throughout this session:
+**6** (tool exposure — stops the retrieval guess that caused round 39),
+then **1** (extraction generalisation — unlocks csv/docx/pdf tables),
+then **2** (operation vocabulary — `join` would remove the need for item 4's
+refusal in the two-document case), then **3** and **5**.
+
+## Previously completed this session
+
+**The three-slice ADL-055 thread is complete.** Each shipped with its own
+Approved Spec, its own commit, and its own live re-measurement.
 
 Final measured position for the reference question (*"How many arrears are
 there in the ECE Sandwich section?"*, the real 278,403-char result sheet):
@@ -76,19 +98,11 @@ retrieval index, generic tool-result cap, retrieval tuning (`TOP_K`,
 `SIMILARITY_DISTANCE_THRESHOLD`, `RANK_CAP`), a mandatory-tool mechanism,
 and a policy-module nudge.
 
-**Then, and only then, P1:** `buildAttachmentHint` is 211,604 chars
-(~124.5k tokens) for this document and rides in **both** the `tool_select`
-and `tool_answer` requests — the same document sent twice per turn (251,005
-tokens total). The shipped change removed a third copy; these two are
-untouched. The question to investigate is narrow: *does the full attachment
-hint genuinely need to be in both calls?* Minimal removal/replacement, then
-re-measure. Different path, different budget
-(`DEFAULT_ATTACHMENT_TOTAL_CHAR_BUDGET`, `aiService.js:521`).
-
-**Do not revert the shipped P0.** It is objectively correct and measured:
-tool result 62,029 → 3,872 tokens (`count`), 88,849 → 6,214 (`breakdown`).
-The newly discovered issue is a different layer — the model can still take
-the raw-text branch instead of the tool branch.
+**Do not revert any of the three shipped slices.** Each is measured:
+tool result 62,029 → 3,872 tokens (`count`) and 88,849 → 6,214
+(`breakdown`); the routing fix turned a wrong free-text answer into a
+verified deterministic one; the answer call fell 125,048 → 2,771. The
+problems found afterwards are different layers, not regressions in these.
 
 Note also: the original attachment's stored file is missing from local
 storage (`documents` row `20154058-c490-480d-8a4c-9f7b2a5a31a2` survives,
@@ -188,6 +202,78 @@ first.
   segment representation + flattening shim across all 5 — now 4, since
   NIM's removal — provider adapters). Closed, verified. Full detail:
   earlier entries in this same ledger (ADL-041 et seq., ADL-049).
+
+## Queued for Product Reasoning — six items from the 2026-08-25 document sessions (none started; each needs its own pass)
+
+Raised by the user after the three shipped ADL-055 slices, from live
+evidence in that entry. All six sit under an **ADR-029 revisit** — that ADR
+named its own revisit trigger ("once ≥2-3 concrete formats beyond the first
+slice exist"), and a second and third real document family (a Tally-style
+day book, an exam-fees list) have now been tested against it. None of the
+six requires code execution.
+
+1. **Table extraction generalisation.** `documentTableExtractionService.js:22`
+   sets `DELIMITER = ' | '`, so the "delimited" strategy only recognises
+   ARCNAVE's **own** xlsx/ods extractor output. Measured: csv, docx tables,
+   and PDF text-layer tables all fall through to `strategy: 'none'` — of
+   the formats users actually attach, only xlsx works generically. Proven
+   alternative, run against the real exam-fees PDF this session: `pdfjs-dist`
+   text items carry x/y transforms, and bucketing by y (rows) then x
+   (columns) reconstructs a merged-cell table that flat text extraction
+   scrambles beyond use. Pure deterministic library work, no LLM.
+2. **Operation vocabulary.** Missing: `join` (cross-document — the gap that
+   produced a fabricated reconciliation, see ADL-055), numeric comparison
+   (`<` / `>` / between — "entries below ₹5000" is inexpressible today),
+   `validate`, and column-indexed `groupBy` (`documentAggregateService.aggregate`
+   still throws unless `groupBy === 'key'`). ADR-029's own target diagram
+   already names filter/group/count/sum/sort/join/validate, so this is
+   deferred work, not barred work — RS-AIG-018 is untouched by a wider
+   *closed* vocabulary.
+3. **`maxToolCallsPerTurn` above 1.** The bounded loop is built and shipped
+   (ADR-030 P2(c)) but has never taken a continuation in recorded traffic —
+   zero `tool_select_continue` rows across all `ai_llm_call` audit rows. One
+   tool call per turn means no read-check-refine, which is most of how a
+   correct answer is actually reached on a messy document.
+4. **A refusal path.** ✅ **SHIPPED 2026-08-25** — [`ai-chat-document-coverage-refusal-approved-spec.md`](../60-product-reasoning/ai-chat-document-coverage-refusal-approved-spec.md), scoped to the one measured case (incomplete document coverage). A general refusal framework for other capability gaps is still open and still FUTURE. Originally: there was no mechanism to end a turn with "I cannot do
+   this". The pipeline is answer-producing by construction:
+   tool_select → tool → tool_answer → answer. Prompt guidance for this was
+   proven insufficient **twice in one session** — a pre-existing
+   "if the data is scoped differently... say so explicitly" rule and a
+   round-40 addition both failed to fire on the same turn.
+5. **Tool granularity audit.** 73 tools are permitted for `principal`. The
+   count is a direct consequence of not having a general execution
+   primitive — each tool *is* a permission, risk-level and audit boundary,
+   which is correct. But it is worth testing each against that standard:
+   two operations with the same role, same risk level and same Business
+   Service could be one tool with a parameter; different roles must stay
+   separate. ADL-053's artifact tool-naming confusion is a symptom of
+   granularity that is too fine.
+6. **Tool exposure: names always visible, schemas lazy.** ARCNAVE currently
+   *guesses* which tools are relevant via embedding similarity, and that
+   guess measurably failed (ADL-055 Finding: `analyze_document_table` was
+   not retrieved for the natural question **or** for the prior spec's own
+   canonical example). The alternative, and the pattern Claude Code's own
+   harness uses: the model always sees every permitted tool's **name**, and
+   fetches a schema on demand. The model asks instead of a retriever
+   guessing. Round 39's bug is structurally impossible under that design.
+   Note this is now evidence-backed, unlike the same idea when it was
+   floated (and correctly rejected) as speculation earlier in the session.
+
+**The rule these share, demonstrated three times in one session:** replacing
+a guess with a structural fact worked every time (round 39's pinned tool;
+the deterministic verifier catching a fabricated breakdown); asking the
+model to police itself in prompt text failed every time (round 40's
+insufficiency guidance, and the pre-existing scope rule beside it). Prefer
+a deterministic check over an instruction.
+
+**Not on this list, deliberately:** exposing `Bash`-equivalent arbitrary
+execution. ARCNAVE already has scoped equivalents of the other primitives —
+`search_documents` (`aiToolRegistry.js:789`) is its grep,
+`list_institutional_documents` (`:1005`) is its glob, both RLS-scoped and
+permission-checked, which is the correct form for multi-tenant. Arbitrary
+execution stays barred by RS-AIG-018 / ADL-036 / ADR-029; its benefit
+belongs at build time (a developer ships an extractor once) rather than at
+runtime (an LLM writes code against another tenant's uploaded file).
 
 ## Available next work (none started — each needs its own fresh planning pass before any code is written, except the first which is a direct re-run, not a design task)
 

@@ -228,6 +228,48 @@ const FILE_TOOL_NAMES = new Set(['generate_document', 'export_artifact', 'export
 // ai-chat-document-tool-routing-approved-spec.md.
 const DOCUMENT_ANALYSIS_TOOL_NAME = 'analyze_document_table';
 
+// Returns {analysed, uncovered} when this turn's tools demonstrably could
+// not have answered across every document attached to it, or null when
+// coverage is fine (the overwhelmingly common case).
+//
+// Deliberately structural, never intent-based: it compares the documents
+// the turn actually resolved against the attachmentIds the tools were
+// actually invoked with. Trying instead to detect whether a QUESTION
+// "means" a cross-document comparison would be exactly the unreliable
+// intent matching that caused the defect, so it cannot also be the fix —
+// see the spec's OUT OF SCOPE row barring it.
+//
+// N <= 1 can never be under-covered, so single-attachment turns (nearly all
+// of them) short-circuit here and behave exactly as before.
+function detectDocumentCoverageGap(documents, priorTurns) {
+  if (!Array.isArray(documents) || documents.length < 2) return null;
+  const covered = new Set(
+    priorTurns
+      .map((turn) => turn.arguments && turn.arguments.attachmentId)
+      .filter((id) => typeof id === 'string' && id !== ''),
+  );
+  // A tool that takes no attachmentId at all (students_roster, say)
+  // contributes nothing here — coverage is about documents, not tool count.
+  if (covered.size === 0 || covered.size >= documents.length) return null;
+  return {
+    analysed: documents.filter((d) => covered.has(d.attachmentId)).map((d) => d.fileName),
+    uncovered: documents.filter((d) => !covered.has(d.attachmentId)).map((d) => d.fileName),
+  };
+}
+
+// Composed here, deterministically, rather than asked of the model — the
+// whole point is that this sentence cannot be talked out of. Names what WAS
+// analysed (so a user who attached two documents but only cared about one
+// still gets their answer, via the evidence field), states the missing
+// capability plainly, and says what to do next.
+function buildCoverageRefusal({ analysed, uncovered }) {
+  const list = (names) => names.map((n) => `"${n}"`).join(', ');
+  return `I analysed ${list(analysed)} only. I can't compare or reconcile data across `
+    + `separate documents yet, so I have nothing to say about ${list(uncovered)} in relation to it — `
+    + 'and I won\'t guess. The figures I did compute are attached as evidence. '
+    + 'Ask about one document at a time, or tell me which single document you want analysed.';
+}
+
 function pinDocumentAnalysisTool(tools, roleTools, documents) {
   // documents, never attachments generally: resolveChatAttachments already
   // splits images out, and this tool cannot operate on an image.
@@ -2067,6 +2109,47 @@ async function askAgent(client, question, {
       systemPromptChars: aiContextAssembly.flattenToPrompts(decisionContext).systemPrompt.length,
       toolCount: tools.length,
     });
+  }
+
+  // ai-chat-document-coverage-refusal-approved-spec.md / ADL-055.
+  // Deterministic capability check, computed from what the tools were
+  // ACTUALLY invoked with — never from the model's own sense of how much it
+  // covered. Same posture (and same reason) as imageAnalysisUnavailable
+  // above: a backstop the LLM cannot bypass, not an instruction it has to
+  // remember. Two separate prompt instructions already failed to prevent
+  // the exact turn this exists for.
+  const coverageGap = invokedTools.length > 0
+    ? detectDocumentCoverageGap(documents, priorTurns) : null;
+  if (coverageGap) {
+    // The answer call is SKIPPED, not merely overridden. Asking the model
+    // to narrate an answer it cannot support is what produced the
+    // fabrication this check exists for: two documents attached, one
+    // analysed, and a student-group breakdown invented to sum to the known
+    // total. Nothing computed is lost — evidence still carries the real
+    // tool result, so the UI keeps the figures.
+    const mergedSanitizedContext = {
+      preamble: aiPromptSafetyLayer.SAFETY_PREAMBLE,
+      boundaryStart: aiPromptSafetyLayer.BOUNDARY_START,
+      boundaryEnd: aiPromptSafetyLayer.BOUNDARY_END,
+      entries: mergedEntries,
+    };
+    const evidence = buildEvidence(mergedSanitizedContext);
+    return {
+      ...mergedSanitizedContext,
+      ...imageMeta,
+      question,
+      toolUsed: priorTurns[0].toolName,
+      toolsUsed: priorTurns.map((t) => t.toolName),
+      answer: buildCoverageRefusal(coverageGap),
+      documentCoverageIncomplete: true,
+      usage: usageTotal,
+      presentation: null,
+      evidence,
+      evidenceTrail: buildEvidenceTrail(evidence),
+      // No model-authored numeric claim exists to check — this text is
+      // composed here, from the coverage facts.
+      verification: { status: 'INSUFFICIENT_EVIDENCE' },
+    };
   }
 
   if (invokedTools.length === 0) {

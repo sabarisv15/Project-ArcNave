@@ -3734,3 +3734,127 @@ test('askAgent: evidence/verification/toolsUsed are unchanged by dropping the hi
     });
   });
 });
+
+// --- Document coverage refusal ------------------------------------------
+// ai-chat-document-coverage-refusal-approved-spec.md / ADL-055. Two
+// documents attached, one analysed, and the model narrated a completed
+// cross-document reconciliation with a subgroup breakdown invented to sum
+// to the known total. The check is structural (which attachmentIds the
+// tools were actually invoked with), never intent-based.
+
+const ANALYSIS_RESULT = {
+  status: 'ok', strategy: 'sequential_id', total: 77, matchedCount: 21, scopedCount: 41,
+  sample: [{ key: '1133:24700311', serialNo: '1133', regNo: '24700311', count: 1 }],
+  sampleShown: 1, sampleOmitted: 20,
+};
+
+function twoDocDownloads() {
+  const byId = {
+    'att-1': fakeDocumentDownload({ file_name: 'EXAM FEES ece(sw).pdf' }),
+    'att-2': fakeDocumentDownload({ file_name: '111_cons_result_apr2026.pdf' }),
+  };
+  return async (client, id) => byId[id] || byId['att-1'];
+}
+
+async function runTurn(t, { attachmentIds, toolArgs, responses, extractText = 'RESULT SHEET 819 RA' }) {
+  t.mock.method(documentService, 'downloadDocument', twoDocDownloads());
+  t.mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: extractText, method: 'text_layer' }));
+  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ANALYSIS_RESULT);
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  let result;
+  const bodies = [];
+  const queue = [...responses];
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(async (url, options) => {
+      bodies.push(JSON.parse(options.body));
+      return queue.shift()();
+    }, async () => {
+      result = await aiService.askAgent(client, 'Compare these two documents.', { identityContext, attachmentIds });
+    });
+  });
+  return { result, llmCalls: bodies.length };
+}
+
+test('askAgent: two documents attached but only one analysed -> deterministic refusal, and the answer call is never made', async (t) => {
+  const { result, llmCalls } = await runTurn(t, {
+    attachmentIds: ['att-1', 'att-2'],
+    responses: [() => mockToolCallResponse('analyze_document_table', {
+      attachmentId: 'att-2', filter: { pattern: 'RA' }, operation: 'count',
+    })],
+  });
+  assert.equal(result.documentCoverageIncomplete, true);
+  // Exactly one LLM call: the tool-select decision. No answer call.
+  assert.equal(llmCalls, 1, 'the answer call must be skipped, not merely overridden');
+  assert.match(result.answer, /111_cons_result_apr2026\.pdf/, 'names what WAS analysed');
+  assert.match(result.answer, /EXAM FEES ece\(sw\)\.pdf/, 'names what was not');
+  assert.match(result.answer, /won't guess/);
+});
+
+test('askAgent: the refusal keeps the real computed figures in evidence — nothing measured is thrown away', async (t) => {
+  const { result } = await runTurn(t, {
+    attachmentIds: ['att-1', 'att-2'],
+    responses: [() => mockToolCallResponse('analyze_document_table', {
+      attachmentId: 'att-2', filter: { pattern: 'RA' }, operation: 'count',
+    })],
+  });
+  assert.equal(result.evidence[0].recordCount, 21);
+  assert.deepEqual(result.toolsUsed, ['analyze_document_table']);
+  // No model-authored numeric claim exists to verify against.
+  assert.deepEqual(result.verification, { status: 'INSUFFICIENT_EVIDENCE' });
+});
+
+test('askAgent: a SINGLE attached document is never refused — the overwhelmingly common case is unchanged', async (t) => {
+  const { result, llmCalls } = await runTurn(t, {
+    attachmentIds: ['att-2'],
+    responses: [
+      () => mockToolCallResponse('analyze_document_table', { attachmentId: 'att-2', filter: { pattern: 'RA' }, operation: 'count' }),
+      () => mockAnswerResponse('There are 77 arrears across 21 students.'),
+    ],
+  });
+  assert.equal(result.documentCoverageIncomplete, undefined);
+  assert.equal(llmCalls, 2, 'the answer call still runs');
+  assert.match(result.answer, /77 arrears/);
+});
+
+test('askAgent: no tool ran -> unchanged, the model answered from the hint which carries every document', async (t) => {
+  const { result } = await runTurn(t, {
+    attachmentIds: ['att-1', 'att-2'],
+    responses: [() => mockAnswerResponse('Both documents list ECE Sandwich students.')],
+  });
+  assert.equal(result.documentCoverageIncomplete, undefined);
+  assert.match(result.answer, /Both documents/);
+});
+
+test('askAgent: a tool taking no attachmentId does not count as covering a document', async (t) => {
+  t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }]));
+  const { result } = await runTurn(t, {
+    attachmentIds: ['att-1', 'att-2'],
+    responses: [
+      () => mockToolCallResponse('academic_class_timetable', {}),
+      () => mockAnswerResponse('Here is the timetable.'),
+    ],
+  });
+  // covered.size === 0 -> not a coverage gap, just an unrelated tool call.
+  assert.equal(result.documentCoverageIncomplete, undefined);
+});
+
+test('askAgent: images do not count toward the document total', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async (client, id) => (id === 'img-1'
+    ? fakeImageDownload()
+    : fakeDocumentDownload({ file_name: '111_cons_result_apr2026.pdf' })));
+  t.mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: 'RESULT SHEET 819 RA', method: 'text_layer' }));
+  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ANALYSIS_RESULT);
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  let result;
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponse('analyze_document_table', { attachmentId: 'att-2', filter: { pattern: 'RA' }, operation: 'count' }),
+      mockAnswerResponse('There are 77 arrears.'),
+    ]), async () => {
+      result = await aiService.askAgent(client, 'How many arrears?', { identityContext, attachmentIds: ['img-1', 'att-2'] });
+    });
+  });
+  assert.equal(result.documentCoverageIncomplete, undefined, 'one document + one image is not an under-covered turn');
+});

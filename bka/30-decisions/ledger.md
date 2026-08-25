@@ -3519,6 +3519,52 @@ cheaper-but-different numbers would be a failure, not a success. Full suite
 (5 net new tests). Remaining cost is the `tool_select` hint at ~125k, which
 is load-bearing and explicitly OUT OF SCOPE in that spec.
 
+**Follow-up slice — structural refusal on incomplete document coverage.**
+Product Reasoning →
+[`ai-chat-document-coverage-refusal-approved-spec.md`](../60-product-reasoning/ai-chat-document-coverage-refusal-approved-spec.md),
+implemented and live-re-run the same day. This addresses the fabrication
+recorded below (two documents attached, one analysed, a reconciliation
+asserted with a subgroup breakdown invented to sum to 41).
+
+`detectDocumentCoverageGap` compares the documents the turn resolved against
+the `attachmentId` values the tools were **actually invoked with**; when
+`N >= 2` and coverage is short, `askAgent` skips the answer call entirely
+and returns a message composed here, deterministically. Skipping is the
+design, not an optimisation: asking the model to narrate an answer it cannot
+support is what produced the fabrication. Generalises the pattern
+`imageAnalysisUnavailable` (`aiService.js:1663`) already establishes for the
+vision capability gap — its own comment states the principle, *"a safe
+backstop, not reliant on the model remembering the instruction."* Prompt
+guidance was explicitly rejected as the mechanism: two separate instructions
+(the pre-existing "if the data is scoped differently… say so explicitly"
+rule and round 40's own addition) both failed to fire on this exact turn.
+
+Deliberately structural, never intent-based — detecting whether a *question*
+means a cross-document comparison would be the same unreliable intent
+matching that caused the defect, so it is barred in the spec rather than
+deferred.
+
+Live re-run, same two PDFs, same question:
+
+| | before | after |
+|---|---|---|
+| answer | claimed all 41 students covered, with a fabricated 16/7/5/4/9 breakdown | names both files, states the missing capability, says what to do next |
+| `verification` | `CONFLICT`, `claimedNumbers: [7,5,9]` | `INSUFFICIENT_EVIDENCE` |
+| LLM calls | 2 | **1** — answer call never made |
+| input tokens | 67,774 | 64,180 |
+
+`evidence` still carries the real computed figures (`recordCount` 21, total
+77 across 41 scoped), so a user who attached two documents but cared about
+one loses nothing. Full suite **2137/2139**, same 2 pre-existing unrelated
+failures, zero regressions (6 net new tests).
+
+**Verification stays advisory.** Asked as part of the same pass and decided
+unchanged: RS-AIG-019 / ADL-037 are not superseded. A false CONFLICT is
+real and was observed the same day — "the remaining 21 students have no
+arrears" is a correct derivation (55 scoped − 34 matched) flagged only
+because it is not itself a known count. Blocking on CONFLICT would suppress
+correct answers; the coverage check works independently of it.
+
 **One non-regression worth recording.** Run 2 returned
 `verification: CONFLICT, claimedNumbers: [21]` — the model wrote "the
 remaining 21 students have no arrears", a correct derivation (55 scoped − 34

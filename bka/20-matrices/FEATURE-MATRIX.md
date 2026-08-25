@@ -292,3 +292,28 @@ happens when the tool result is insufficient — both had multiple valid
 product behaviours no existing rule settled). User chose: drop it entirely
 from the answer call; on an insufficient result, state plainly that the
 analysis doesn't include it and ask for what would be needed.
+
+## AI Assistant chat — Structural refusal when a turn's documents are not all covered
+
+Source: [`ai-chat-document-coverage-refusal-approved-spec.md`](../60-product-reasoning/ai-chat-document-coverage-refusal-approved-spec.md),
+analyzed 2026-08-25. Backend-only, no new page/screen. First of six items
+queued in `CURRENT-STATE.md` after the three shipped ADL-055 slices.
+Trigger: two documents attached, one analysed, and the model narrated it as
+a completed cross-document reconciliation with a subgroup breakdown
+fabricated to sum to the known total. Generalises the deterministic
+capability-check pattern `imageAnalysisUnavailable` (`aiService.js:1663`)
+already establishes for the vision gap, to the analysis-coverage gap.
+
+| Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| AI Assistant chat | Existing chat-attachment roles | — | Deterministic document-coverage check; answer call skipped and replaced when `N >= 2` documents but tools covered fewer | Attach 2+ documents and ask a question spanning them | none (message on existing chat surface) | `askAgent` tool-invocation params; `resolveChatAttachments`'s `{images, documents}` | none | Unchanged, read-only | Not built | CORE | three shipped ADL-055 slices | Resolved — replace the answer, don't just flag it |
+| AI Assistant chat | — | — | Refusal names the analysed attachment and reports what WAS computed (evidence retained) | Same | none | same | none | Unchanged | Not built | REQUIRED SUPPORT | — | Keeps the check from being merely obstructive |
+| AI Assistant chat | — | — | Making `verifyNumericClaims` CONFLICT blocking | — | — | — | — | — | Not built | FUTURE | — | Asked and decided: **stays advisory**; false CONFLICT observed same day ("remaining 21 students") |
+| AI Assistant chat | — | — | A general refusal framework for other capability gaps | — | — | — | — | — | Not built | FUTURE | — | Only the measured case ships |
+| AI Assistant chat | — | — | Detecting whether a question *intends* a cross-document comparison | — | — | — | — | — | Not built | FUTURE — barred in spirit | — | Unreliable intent matching is the defect; it cannot be the fix |
+
+One batched Product Refinement question was asked (§15 threshold met on
+two items: what happens on detected insufficiency, and whether CONFLICT
+should become blocking). User chose: replace the answer with a specific,
+actionable message; leave verification advisory (RS-AIG-019 / ADL-037
+unchanged, so no new ledger entry is required for that answer).

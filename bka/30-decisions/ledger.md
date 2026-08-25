@@ -3895,3 +3895,108 @@ ReDoS protection on model-supplied patterns (no measured case).
 
 **Status:** Resolved — pending implementation.
 [`ai-chat-invalid-tool-pattern-approved-spec.md`](../60-product-reasoning/ai-chat-invalid-tool-pattern-approved-spec.md).
+
+### ADL-057
+**Per-question row identity is caller-supplied data, like every other
+semantic mapping on this path — and three of item 2's four capabilities are
+blocked by measurement, not by preference.**
+
+Product Reasoning pass over queued item 2 ("operation vocabulary"), raised
+by the user after the [ADL-055](#adl-055) slices as four capabilities:
+`join`, numeric comparison, `validate`, and column-indexed `groupBy`. The
+pass ships **one**.
+
+**`join` is blocked, and the block inverts the recommended order.** The
+only measured cross-document scenario is the exam-fees list against the
+result sheet — the turn that fabricated a 16+7+5+4+9 breakdown to sum to
+41, made honest by
+[`ai-chat-document-coverage-refusal-approved-spec.md`](../60-product-reasoning/ai-chat-document-coverage-refusal-approved-spec.md).
+Since item 1 slice 1 shipped, the exam-fees PDF **refuses**
+(`unreliable_extraction`, 17/23 markers, 6 orphans, 3 collapsed). A join
+built now could not be validated against the scenario that motivated it,
+because one operand is a document this system correctly declines to read.
+`join` becomes buildable **after** item 1 slice 2, not before — and slice
+2's already-decided partial-trust behaviour (identity-only records, numeric
+operations refused) is precisely what a join needs, since a join matches
+identities. `CURRENT-STATE.md`'s recommendation of item 2 before item 1
+slice 2 is superseded by this.
+
+**Column-indexed `groupBy` is blocked**, exactly as ADL-055's addendum
+predicted: the day book's source omits empty cells rather than emitting
+consecutive tabs, so a row with no debit amount arrives with 5 cells
+against a 6-column header and column index 4 is not the same field on every
+row. Grouping by index would produce a confident wrong grouping with no
+signal — the silent-false-positive class item 1 slice 1 shipped to
+eliminate. **A premise correction carried forward:**
+`documentTableExtractionService.js:318-322` still asserts the `delimited`
+strategy is "exact by construction… nothing for a coverage check to be
+uncertain about." True of row identification, false of column alignment.
+The comment is corrected in this slice so the next pass does not read it
+and conclude column indexing is safe.
+
+**`validate` has no measured case** and ADR-029 names it without defining
+its semantics. The refusal spec's own rule applies unchanged: gaps ship
+when they are measured, not speculatively. FUTURE, not asked about.
+
+**A new finding, in no prior entry, found by reading the code this pass.**
+`splitOn` (`documentTableExtractionService.js:83`) emits `{ key: null,
+cells }` for every delimited row; `aggregate` carries forward only
+`key`/`serialNo`/`regNo` plus the value; `summarize`'s bounded sample is
+drawn from those rows. So an `include`-mode filtered list over the day book
+returns **839 rows of `{ key: null, serialNo: null, regNo: null }`** — a
+list with no list in it. Invisible today because
+`document-aggregate-service.test.js:25` hand-supplies `key: '1'`; no test
+runs real extractor output through `aggregate`. Numeric comparison is a
+filtered-list operation by nature, so it cannot ship without this fixed.
+
+**Decision.** `operation: 'compare'` joins the closed `OPERATIONS` enum
+(`lt`/`lte`/`gt`/`gte`/`between`), matching against the record's own **row
+text** and never a cell index — which is what puts it on the safe side of
+ADL-055's own stated boundary ("row-text pattern matching is unaffected;
+column-indexed `groupBy` is not") by construction rather than by caveat.
+Row identity comes from a caller-supplied `identityPattern`, a sibling to
+`sectionPattern`: per-question semantic meaning arrives as plain data,
+never pre-learned, never cached at extraction time, never evaluated as
+code — ADR-029's own doctrine, extended to identity rather than a new
+mechanism invented for it. When neither `serialNo`/`regNo` nor an
+`identityPattern` is available, the tool returns `identity_required` rather
+than an anonymous list: a fifth member of the established failure-status
+set, on the same principle that a useless answer is a wrong answer.
+
+One §15-threshold question was asked (threshold 1 and 2 both met — no
+existing rule settles row identity; the payload-bounds spec bounds the
+payload without ruling on it). Options offered: `identityPattern`, emitting
+full row cells, a positional index only, or deferring numeric comparison
+too. **User chose `identityPattern`.** Emitting full row cells was rejected
+on measurement: it would undo the payload-bounds slice's 125,048 → 2,771
+answer-call reduction and put numbers back in front of the model as text it
+could read itself, weakening the [RS-AIG-019](../10-specification/RS-AIG-ai-governance.md#rs-aig-019)
+posture the deterministic path exists to hold.
+
+**One narrow normalisation is permitted and its blast radius is stated:**
+`,` separators and a leading `₹`/`Rs.`/whitespace are stripped from the
+captured numeric text before `Number()`, for `compare` **only**. This is
+numeric parsing, not regex-dialect normalisation, so [ADL-056](#adl-056)'s
+"no normalisation anywhere" rule is about a different thing and is not
+weakened — and `identityPattern` must not share a helper with the other two
+regex params, for the reason ADL-056 records. The consequence is recorded
+rather than fixed: `sum` and `compare` will parse `"1,234"` differently,
+because `matchSum` is shipped and verified and changing it in a slice that
+did not measure it is the mid-implementation scope expansion workflow §18
+forbids.
+
+**Sequencing.** ADL-056's slice should ship first. This spec adds seven
+validation cases to `documentAggregateService`, and every
+`DocumentAggregateValidationError` today ends the whole `/ai/ask` turn as an
+HTTP 500 (`aiService.js:2215`, no try/catch). Shipping this first would
+multiply the 500 paths rather than the honest ones.
+
+**Also FUTURE:** `sort` (in ADR-029's vocabulary, unmeasured, not part of
+item 2 as raised — recorded so it is not silently lost), raising
+`maxToolCallsPerTurn` above 1 (an `identity_required` result still consumes
+the turn's only tool call, so the model cannot retry with an
+`identityPattern` — the same limitation ADL-056 measured), and the tool
+granularity audit.
+
+**Status:** Resolved — pending implementation.
+[`ai-chat-document-numeric-comparison-approved-spec.md`](../60-product-reasoning/ai-chat-document-numeric-comparison-approved-spec.md).

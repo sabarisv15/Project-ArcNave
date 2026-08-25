@@ -479,3 +479,60 @@ implementation does not inherit them unexamined:
   `i`; the latter is deliberately case-sensitive. A shared
   "normalisePattern" helper applied to both would give the model the
   opposite of what it asked for, with no error.
+
+---
+
+## AI Assistant chat — Numeric comparison in the document operation vocabulary
+
+Source: [`ai-chat-document-numeric-comparison-approved-spec.md`](../60-product-reasoning/ai-chat-document-numeric-comparison-approved-spec.md),
+analyzed 2026-08-25. Backend-only, no new page/screen. Queued item 2
+("operation vocabulary"), raised as four capabilities — `join`, numeric
+comparison, `validate`, column-indexed `groupBy`. **One of the four ships.**
+The other three are blocked by measured facts, each with its unblocking
+condition named below, not deferred by preference.
+
+Two blocks and one new finding drove that:
+
+- **`join` has no trustworthy second operand.** Since item 1 slice 1
+  shipped, the exam-fees PDF — one side of the only measured join scenario
+  — correctly refuses with `unreliable_extraction` (17/23 markers). `join`
+  becomes buildable **after** item 1 slice 2, inverting the order
+  `CURRENT-STATE.md` recommended.
+- **Column-indexed `groupBy` is blocked by the day book's column
+  misalignment** (source omits empty cells; 5 cells against a 6-column
+  header), exactly as ADL-055's addendum predicted. Building it would
+  reintroduce the silent-false-positive class item 1 slice 1 shipped to
+  remove.
+- **New finding, not in any prior entry:** `splitOn` emits `key: null` for
+  every delimited row and `aggregate`/`summarize` never carry cell content,
+  so an `include`-mode list over the day book returns 839 rows of
+  `{ key: null, serialNo: null, regNo: null }`. Masked by
+  `document-aggregate-service.test.js:25`, which hand-supplies `key: '1'`;
+  no test runs real extractor output through `aggregate`.
+
+| Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| AI Assistant chat | Existing chat-attachment roles | — | `operation: 'compare'` — numeric threshold (`lt`/`lte`/`gt`/`gte`/`between`) over row text | Ask "entries below ₹5000" of an attached document | none (existing chat surface) | `documentAggregateService.aggregate` (4th member of `OPERATIONS`) | none | Unchanged (L1, read-only) | Not built | CORE | ADL-056's slice should ship first | Resolved — row text only, never a cell index |
+| AI Assistant chat | — | — | Caller-supplied `identityPattern` so a matched row can name itself | Same | none | `documentAnalysisService.analyzeAttachment` param | none | Unchanged | Not built | CORE | finding 4 above | **Resolved by §15 question — caller-supplied `identityPattern`**, sibling to `sectionPattern` |
+| AI Assistant chat | — | — | `identity_required` failure status when a list would be anonymous | Same, without `identityPattern` over a delimited source | none | `documentAnalysisService` | none | Unchanged | Not built | REQUIRED SUPPORT | 5th member of the established failure-status set | Resolved — refuse, never return a null-keyed list |
+| AI Assistant chat | — | — | `rowValue` reads the compare value; `total`-first ordering pinned | — | — | `documentAggregateService.summarize` | none | Unchanged | Not built | REQUIRED SUPPORT | `breakdown` depends on `total`-first | Resolved |
+| AI Assistant chat | — | — | `nonNumericRows` / `unmatchedRows` / `multiMatchRows` reported | — | — | `documentAggregateService` | none | Unchanged | Not built | REQUIRED SUPPORT | — | Resolved — deterministic counts, never absorbed silently |
+| AI Assistant chat | — | — | Narrow the "exact by construction" comment to row identification | — | — | `documentTableExtractionService.js:318-322` | none | Unchanged | Not built | REQUIRED SUPPORT | day-book measurement | Comment only; `coverage` stays `null` for `delimited` |
+| AI Assistant chat | — | — | Cross-document `join` | — | — | — | — | — | Not built | FUTURE — **blocked** | item 1 slice 2 (PDF geometry) | Unblocks once the exam-fees PDF stops refusing |
+| AI Assistant chat | — | — | Column-indexed `groupBy` | — | — | `aggregate` still throws unless `groupBy === 'key'` | — | — | Not built | FUTURE — **blocked** | a per-row column-alignment trust check | That check is its own pass, not a rider |
+| AI Assistant chat | — | — | `validate` | — | — | — | — | — | Not built | FUTURE | — | Named in ADR-029's vocabulary, no measured case, no defined semantics |
+| AI Assistant chat | — | — | `sort` | — | — | — | — | — | Not built | FUTURE | — | Also in ADR-029's vocabulary, not part of item 2 as raised; recorded so it isn't lost |
+| AI Assistant chat | — | — | Making `sum` and `compare` parse `"1,234"` identically | — | — | `matchSum` | — | — | Not built | FUTURE | — | Real inconsistency; `matchSum` is shipped and verified, changing it here would be mid-slice scope expansion |
+| AI Assistant chat | — | — | Exposing row cell content to the model | — | — | — | — | — | Not built | **REJECTED this pass** | — | Was an option in the §15 question; would undo the payload-bounds slice's measured 125,048 → 2,771 reduction |
+
+One §15-threshold question was asked. It met threshold 1 (the feature
+cannot be correctly implemented without choosing between multiple valid
+behaviors) and threshold 2 (no existing rule settles it — the
+payload-bounds spec bounds the payload without ruling on row identity):
+**how a matched delimited row should identify itself.** User chose
+**caller-supplied `identityPattern`**.
+
+Not asked, because rules and evidence settled them (workflow §15 steps 2–3):
+the three deferrals. Each is blocked by a measured fact, not by a product
+preference, so per §15 they are classified and recorded — never escalated
+into a question.

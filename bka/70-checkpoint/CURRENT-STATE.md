@@ -10,6 +10,19 @@ only links to it.
 
 ## Active Task
 
+**Item 2's Product Reasoning pass is complete (2026-08-25, no code written)
+— [ADL-057](../30-decisions/ledger.md#adl-057),
+[`ai-chat-document-numeric-comparison-approved-spec.md`](../60-product-reasoning/ai-chat-document-numeric-comparison-approved-spec.md).**
+Item 2 was raised as four capabilities; **one ships**. `join` is blocked
+until item 1 slice 2 (its second operand, the exam-fees PDF, now correctly
+refuses), column-indexed `groupBy` is blocked by the day book's column
+misalignment, and `validate` has no measured case. **This inverts the
+order recommended below: item 1 slice 2 now comes before `join`.** A new
+finding drove the one §15 question asked: `splitOn` emits `key: null` for
+every delimited row and nothing carries cell content forward, so an
+`include`-mode list over the day book returns 839 anonymous rows. Row
+identity will come from a caller-supplied `identityPattern`.
+
 **Item 1 slice 1 is shipped — six slices now shipped from the ADL-055 thread.**
 
 Approved Spec:
@@ -140,9 +153,22 @@ Live check before it is called done: invoke the analysis path with
 explanatory answer and no 500. Regression: the reference question must
 still return **77 arrears / 21 students**.
 
+ADL-057 reinforces this ordering independently: its own slice adds seven
+validation cases to `documentAggregateService`, and every
+`DocumentAggregateValidationError` currently ends the turn as an HTTP 500.
+Shipping ADL-057 before ADL-056 would multiply the 500 paths.
+
+**Then `/build-slice` against
+[`ai-chat-document-numeric-comparison-approved-spec.md`](../60-product-reasoning/ai-chat-document-numeric-comparison-approved-spec.md)**
+(ADL-057, pass complete 2026-08-25, no code written). Its live check needs
+`APRDAYBOOK.pdf`, which is deliberately not in git or any backup archive.
+
 After that, each unstarted and each needing its own pass:
 
 - **Item 1 slice 2 — PDF geometric reconstruction** (`pdfjs-dist` x/y).
+  **Now the prerequisite for `join`**, per ADL-057 — its partial-trust
+  behaviour (identity-only records) is what a join needs, and until it
+  lands the only measured join scenario has no readable second operand.
   Explicitly OUT OF SCOPE in the shipped spec. Measured: y-bucketing
   recovers the exam-fees PDF's identity columns 23/23 where flat text gives
   4, but numeric columns are **misattributed** — per-semester figures print
@@ -151,13 +177,16 @@ After that, each unstarted and each needing its own pass:
   Its partial-trust behaviour is **already decided** (identity-only records,
   numeric operations refused) and recorded in the ADL-055 addendum; that
   slice builds against it rather than re-deciding it.
-- **Item 2 — operation vocabulary** (`join`, numeric comparison, `validate`,
-  column-indexed `groupBy`). Read the day-book note below before starting.
+- **Item 2 — operation vocabulary.** ✅ **PASS COMPLETE 2026-08-25**
+  (ADL-057). Numeric comparison is specified and ready to build; `join`,
+  column-indexed `groupBy`, `validate` and `sort` are each recorded FUTURE
+  with their unblocking condition named. Do not re-reason them — read
+  ADL-057 and the spec's OUT OF SCOPE table.
 - **Item 3 — `maxToolCallsPerTurn` above 1.**
 - **Item 5 — tool granularity audit.**
 
-Recommended next after the ADL-056 slice above: **item 2**, then item 1
-slice 2.
+Recommended order, as revised by ADL-057: **ADL-056's slice → ADL-057's
+slice → item 1 slice 2 → `join`'s own pass.**
 
 **A finding item 2 must not rediscover:** the Tally day book now extracts as
 839 `delimited` records (its PDF text layer is tab-separated), but its
@@ -355,7 +384,11 @@ six requires code execution.
    `DELIMITER = ' | '`, so `delimited` only recognises ARCNAVE's own
    xlsx/ods output; and all of this is pure deterministic library work, no
    LLM, nowhere near RS-AIG-018.
-2. **Operation vocabulary.** Missing: `join` (cross-document — the gap that
+2. **Operation vocabulary.** ✅ **PASS COMPLETE 2026-08-25** — ADL-057,
+   [`ai-chat-document-numeric-comparison-approved-spec.md`](../60-product-reasoning/ai-chat-document-numeric-comparison-approved-spec.md).
+   One of four capabilities ships (numeric comparison); the other three are
+   blocked by measurement, each with its condition named. Originally:
+   Missing: `join` (cross-document — the gap that
    produced a fabricated reconciliation, see ADL-055), numeric comparison
    (`<` / `>` / between — "entries below ₹5000" is inexpressible today),
    `validate`, and column-indexed `groupBy` (`documentAggregateService.aggregate`

@@ -79,6 +79,41 @@ disproved the session's own hypothesis and surfaced this unrelated,
 much larger cost centre. Workspace design is **paused, not cancelled** —
 it is listed in the Approved Spec's OUT OF SCOPE and needs its own pass.
 
+## Session handover (2026-08-25) — continuing on a different machine or account
+
+Everything needed to continue is **in git**. `git clone` plus the two local
+prerequisites below is the whole setup; nothing about the work lives only
+in a chat transcript.
+
+**Read in this order** (the protocol's own retrieval order):
+`CLAUDE.md` → `bka/index.md` → this file → the Approved Spec named in
+"Exact next action" → [ADL-055](../30-decisions/ledger.md#adl-055) and
+[ADL-056](../30-decisions/ledger.md#adl-056).
+
+**Two things are NOT in git and must be recreated locally:**
+
+1. `backend/.env.local.sh` — gitignored, holds DB and Vertex AI
+   credentials. Not in any backup archive, deliberately. Recreate it from
+   your own secret store; no live check can run without it.
+2. The three real sample documents behind every measurement in this thread
+   (`111_cons_result_apr2026.pdf`, `EXAM FEES ece(sw) III YR 7 SEM.pdf`,
+   `APRDAYBOOK.pdf`). They contain **real student names, dates of birth and
+   register numbers**, so they are deliberately not committed and not
+   included in any backup archive. `backend/scripts/extraction-coverage-probe.js`
+   expects them under the current `DOWNLOADS` constant at the top of that
+   file; change it when the path differs. Every number those probes
+   produced is already recorded in ADL-055, so the documents are needed
+   only to re-measure, never to understand what was measured.
+
+**Local prerequisites:** `docker compose up -d db`, then
+`docker compose run --rm app npm test` for the full suite. `node --test
+tests/` in bare directory form fails on this Windows/git-bash host — see
+Standing notes at the end of this file.
+
+**Known-good baseline to check against after cloning:** full suite
+**2164 tests, 2162 pass**, the 2 pre-existing unrelated failures listed
+under Standing notes. Anything else is a real regression.
+
 ## Exact next action
 
 **Run `/build-slice` against [`ai-chat-invalid-tool-pattern-approved-spec.md`](../60-product-reasoning/ai-chat-invalid-tool-pattern-approved-spec.md)**

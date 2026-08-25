@@ -10,8 +10,14 @@ only links to it.
 
 ## Active Task
 
-**None in flight — two shipped, the next one is queued below.**
-Document-question tool routing
+**None in flight — all three slices of the ADL-055 thread are shipped.**
+The raw attachment text no longer rides in the answer call
+([`ai-chat-attachment-hint-answer-call-approved-spec.md`](../60-product-reasoning/ai-chat-attachment-hint-answer-call-approved-spec.md)):
+`tool_answer` fell 125,048 → **2,771** tokens and the turn halved to
+127,937, with the deterministic figures and evidence byte-identical. Full
+suite 2131/2133, zero regressions.
+
+Before that, document-question tool routing
 ([`ai-chat-document-tool-routing-approved-spec.md`](../60-product-reasoning/ai-chat-document-tool-routing-approved-spec.md))
 is implemented and live-re-measured: the original failing question now
 returns `toolsUsed: ["analyze_document_table"]` and `verification: PASS`,
@@ -37,36 +43,38 @@ it is listed in the Approved Spec's OUT OF SCOPE and needs its own pass.
 
 ## Exact next action
 
-**Run `/product-reasoning` for the duplicated attachment hint.** This is the
-P1 the user sequenced explicitly after routing, and routing is now done and
-re-measured, so the confound that blocked it is gone.
+**None queued — the ADL-055 thread is complete.** All three slices are
+shipped, each with its own Approved Spec, its own commit, and its own live
+re-measurement. Nothing is half-built.
 
-The single question to answer, and nothing wider:
+Final measured position for the reference question (*"How many arrears are
+there in the ECE Sandwich section?"*, the real 278,403-char result sheet):
 
-> Does the full attachment hint genuinely need to be present in **both** the
-> `tool_select` and the `tool_answer` request?
+| | start | now |
+|---|---|---|
+| `tool_select` | 124,548 | 125,166 |
+| `tool_answer` | — (no tool ran) | 2,771 |
+| turn total | 124,548 | **127,937** |
+| answer | "14 students" (**wrong**) | 77 arrears / 21 students |
+| `verification` | `undefined` | **PASS** |
 
-Measured facts to start from — **do not re-derive them**, they are in
-[ADL-055](../30-decisions/ledger.md#adl-055):
+The remaining ~125k is `buildAttachmentHint` in the **decision** call only.
+It is load-bearing there (a no-tool question is answered from it, and it
+carries the verbatim `attachmentId` — `aiService.js:603-608`) and is
+explicitly FUTURE in
+[`ai-chat-attachment-hint-answer-call-approved-spec.md`](../60-product-reasoning/ai-chat-attachment-hint-answer-call-approved-spec.md).
+Do not start on it without a pass and its own live evidence.
 
-- `buildAttachmentHint` produces **211,604 chars (~124.5k tokens)** for the
-  real result sheet (278,403 extracted chars).
-- It rides in both calls: the re-measured turn was `tool_select` 125,168 +
-  `tool_answer` 125,048 = **250,216 input tokens**, of which roughly 249k is
-  the same document twice.
-- The turn total rose from 124,548 (one call, wrong answer, no tool) to
-  250,216 (two calls, correct verified answer). That is the cost of
-  correctness, not a regression — the duplication is the thing to attack.
-- Relevant budget: `DEFAULT_ATTACHMENT_TOTAL_CHAR_BUDGET` = 200,000 chars,
-  `aiService.js:521`.
-
-Minimal removal/replacement, then re-measure the same question again.
+**The original thread this began as is still paused and still unstarted:**
+the Curriculum persistent workspace (ARC.md / STATE.md / INDEX.md, skills,
+agents, sub-agents). ADL-055 Decision (b) records the one thing already
+settled about it — do **not** design its context tiers around prompt
+caching. Everything else about it is open and needs its own pass.
 
 **Still out of scope, unchanged:** Gemini prompt-cache work, per-attachment
 retrieval index, generic tool-result cap, retrieval tuning (`TOP_K`,
-`SIMILARITY_DISTANCE_THRESHOLD`, `RANK_CAP`), a mandatory-tool mechanism, a
-policy-module nudge, and the Curriculum persistent-workspace design
-(ARC.md / STATE.md / INDEX.md, skills, agents) this whole thread began as.
+`SIMILARITY_DISTANCE_THRESHOLD`, `RANK_CAP`), a mandatory-tool mechanism,
+and a policy-module nudge.
 
 **Then, and only then, P1:** `buildAttachmentHint` is 211,604 chars
 (~124.5k tokens) for this document and rides in **both** the `tool_select`

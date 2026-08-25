@@ -266,3 +266,29 @@ established pattern in the same file (the bounded-plan meta-tool at
 `resolveChatAttachments`'s existing return shape; and classifying question
 intent to decide whether to pin is ruled out by correctness, since
 unreliable intent matching is the defect being fixed.
+
+## AI Assistant chat — Raw attachment text dropped from the answer call
+
+Source: [`ai-chat-attachment-hint-answer-call-approved-spec.md`](../60-product-reasoning/ai-chat-attachment-hint-answer-call-approved-spec.md),
+analyzed 2026-08-25. Backend-only, no new page/screen. Third slice of the
+[ADL-055](../30-decisions/ledger.md#adl-055) thread, sequenced by the user
+to run *after* the routing re-measurement so the two could not confound
+each other. `promptQuestion` carried `buildAttachmentHint`'s ~124.5k tokens
+into both LLM calls of a tool-using turn; the answer call already has the
+deterministic result, so the raw text there only re-opens the narration
+branch routing had just closed.
+
+| Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| AI Assistant chat | Existing chat-attachment roles | — | Answer call composes from the tool result, not the raw attachment text | Ask a counting question over an attached document | none (unchanged) | `answerPromptQuestion` in `askAgent`; `summarizeToolResult` | none | Unchanged | Built | CORE | routing slice above (shipped) | Resolved — drop it entirely, not a bounded excerpt |
+| AI Assistant chat | — | — | Same treatment for the plan path's `plan_synthesis` call | Same, via a multi-step plan | none | `executeWorkflowPlan` (`aiService.js:1291`) | none | Unchanged | Built | REQUIRED SUPPORT | — | Not asked — the same decision applies identically |
+| AI Assistant chat | — | — | Honest "the analysis doesn't include that" when the tool result can't answer the question | Ask for a figure the tool didn't compute (e.g. a percentage) | none | `TOOL_RESULT_ANSWER_SYSTEM_PROMPT` | none | Unchanged | Built | REQUIRED SUPPORT | CORE action-truthfulness rule | Resolved — say so and ask, never guess, never re-call |
+| AI Assistant chat | — | — | Reducing/restructuring the hint in the **`tool_select`** call (~125k, now the remaining cost) | — | — | — | — | — | Not built | FUTURE | — | Load-bearing there: direct answers + verbatim `attachmentId` (`aiService.js:603-608`) |
+| AI Assistant chat | — | — | Changing `buildAttachmentHint` itself (budget, truncation, content) | — | — | — | — | — | Not built | FUTURE | — | This slice changed only *which call* receives it |
+
+One batched Product Refinement question was asked (§15 threshold met on
+two items: whether the answer call keeps the raw text at all, and what
+happens when the tool result is insufficient — both had multiple valid
+product behaviours no existing rule settled). User chose: drop it entirely
+from the answer call; on an insufficient result, state plainly that the
+analysis doesn't include it and ask for what would be needed.

@@ -3622,3 +3622,115 @@ test('askAgent: the tool is offered exactly once when retrieval already returned
   const names = toolNamesFrom(capturedBody);
   assert.equal(names.filter((n) => n === 'analyze_document_table').length, 1);
 });
+
+// --- The answer call carries the tool result, not the raw document -------
+// ai-chat-attachment-hint-answer-call-approved-spec.md. Correctness first:
+// once a deterministic tool has run, leaving the raw attachment text beside
+// its result lets the model narrate from raw text instead of the computed
+// value — the measured pre-routing failure (claimed 14 students; the tool
+// computes 77 arrears across 21).
+
+const ATTACHMENT_TEXT_MARKER = 'fake-document-bytes';
+
+async function captureRequestBodies(t, askOptions, responses) {
+  t.mock.method(documentService, 'downloadDocument', async () => fakeDocumentDownload());
+  t.mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: `RESULT SHEET ${ATTACHMENT_TEXT_MARKER} 819 25400122 RA RA`, method: 'text_layer',
+  }));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const bodies = [];
+  const queue = [...responses];
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(async (url, options) => {
+      bodies.push(JSON.parse(options.body));
+      return queue.shift()();
+    }, async () => {
+      await aiService.askAgent(client, 'How many arrears are in the ECE Sandwich section?', {
+        identityContext, ...askOptions,
+      });
+    });
+  });
+  return bodies;
+}
+
+const bodyText = (body) => JSON.stringify(body.messages);
+
+test('askAgent: the ANSWER call omits the attached document text, while the DECISION call still carries it', async (t) => {
+  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
+    status: 'ok', strategy: 'sequential_id', total: 77, matchedCount: 21, scopedCount: 41,
+    sample: [{ key: '819:25400122', serialNo: '819', regNo: '25400122', count: 4 }],
+    sampleShown: 1, sampleOmitted: 20,
+  }));
+  const bodies = await captureRequestBodies(t, { attachmentIds: ['att-1'] }, [
+    () => mockToolCallResponse('analyze_document_table', { attachmentId: 'att-1', filter: { pattern: 'RA' }, operation: 'count' }),
+    () => mockAnswerResponse('There are 77 arrears across 21 students.'),
+  ]);
+  assert.equal(bodies.length, 2);
+  assert.ok(bodyText(bodies[0]).includes(ATTACHMENT_TEXT_MARKER), 'decision call must still carry the document');
+  assert.ok(!bodyText(bodies[1]).includes(ATTACHMENT_TEXT_MARKER), 'answer call must NOT carry the raw document');
+});
+
+test('askAgent: the answer call still carries the deterministic tool result it must answer from', async (t) => {
+  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
+    status: 'ok', strategy: 'sequential_id', total: 77, matchedCount: 21, scopedCount: 41,
+    sample: [{ key: '819:25400122', serialNo: '819', regNo: '25400122', count: 4 }],
+    sampleShown: 1, sampleOmitted: 20,
+  }));
+  const bodies = await captureRequestBodies(t, { attachmentIds: ['att-1'] }, [
+    () => mockToolCallResponse('analyze_document_table', { attachmentId: 'att-1', filter: { pattern: 'RA' }, operation: 'count' }),
+    () => mockAnswerResponse('There are 77 arrears across 21 students.'),
+  ]);
+  const answerBody = bodyText(bodies[1]);
+  assert.ok(answerBody.includes('77'), 'the deterministic total must reach the answer call');
+  assert.ok(answerBody.includes('matchedCount'), 'the tool result shape must reach the answer call');
+});
+
+test('askAgent: non-attachment hints (history) survive in the answer call — only the attachment hint is dropped', async (t) => {
+  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
+    status: 'ok', strategy: 'sequential_id', total: 77, matchedCount: 21, scopedCount: 41,
+    sample: [], sampleShown: 0, sampleOmitted: 0,
+  }));
+  const bodies = await captureRequestBodies(t, {
+    attachmentIds: ['att-1'],
+    history: [{ role: 'user', content: 'earlier-turn-marker' }, { role: 'assistant', content: 'ok' }],
+  }, [
+    () => mockToolCallResponse('analyze_document_table', { attachmentId: 'att-1', filter: { pattern: 'RA' }, operation: 'count' }),
+    () => mockAnswerResponse('There are 77 arrears.'),
+  ]);
+  assert.ok(bodyText(bodies[1]).includes('earlier-turn-marker'), 'history hint must survive in the answer call');
+  assert.ok(!bodyText(bodies[1]).includes(ATTACHMENT_TEXT_MARKER));
+});
+
+test('askAgent: a turn where NO tool runs is unchanged — the direct answer still sees the document', async (t) => {
+  const bodies = await captureRequestBodies(t, { attachmentIds: ['att-1'] }, [
+    () => mockAnswerResponse('This document lists examination results.'),
+  ]);
+  assert.equal(bodies.length, 1);
+  assert.ok(bodyText(bodies[0]).includes(ATTACHMENT_TEXT_MARKER), 'summarise-this-document must keep working');
+});
+
+test('askAgent: evidence/verification/toolsUsed are unchanged by dropping the hint from the answer call', async (t) => {
+  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
+    status: 'ok', strategy: 'sequential_id', total: 77, matchedCount: 21, scopedCount: 41,
+    sample: [{ key: '819:25400122', serialNo: '819', regNo: '25400122', count: 4 }],
+    sampleShown: 1, sampleOmitted: 20,
+  }));
+  t.mock.method(documentService, 'downloadDocument', async () => fakeDocumentDownload());
+  t.mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: `RESULT SHEET ${ATTACHMENT_TEXT_MARKER}`, method: 'text_layer',
+  }));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponse('analyze_document_table', { attachmentId: 'att-1', filter: { pattern: 'RA' }, operation: 'count' }),
+      mockAnswerResponse('There are 77 arrears across 21 students.'),
+    ]), async () => {
+      const result = await aiService.askAgent(client, 'How many arrears?', { identityContext, attachmentIds: ['att-1'] });
+      assert.deepEqual(result.toolsUsed, ['analyze_document_table']);
+      assert.equal(result.verification.status, 'PASS');
+      assert.equal(result.evidence[0].recordCount, 21);
+    });
+  });
+});

@@ -3480,6 +3480,45 @@ duplicate hint.
 Full suite after this change: **2126/2128**, same 2 pre-existing unrelated
 failures, zero regressions (6 net new tests).
 
+**P1 — the duplicated attachment hint, resolved (same session).** Product
+Reasoning pass →
+[`ai-chat-attachment-hint-answer-call-approved-spec.md`](../60-product-reasoning/ai-chat-attachment-hint-answer-call-approved-spec.md).
+The question was narrow: does the full hint need to be in both calls? It
+does need to be in `tool_select` (a no-tool question like "summarise this
+document" is answered from it, and it carries the verbatim `attachmentId`
+per `aiService.js:603-608`) — and it is actively harmful in the answer call,
+where the deterministic result is already present and the raw text merely
+re-opens the narration branch the routing slice just closed. User chose:
+drop it from the answer call; when the tool result doesn't answer the
+question, say so and ask rather than guess.
+
+Implemented as `answerPromptQuestion` — `promptQuestion` minus the
+attachment hint, keeping history/project/focus/memory — routed to both
+`summarizeToolResult` and `executeWorkflowPlan`'s `plan_synthesis` (the same
+"compose an answer from tool results" step by a different route; classified
+REQUIRED SUPPORT, not asked about, since the same decision applies
+identically). The insufficient-result guidance went into the existing
+`TOOL_RESULT_ANSWER_SYSTEM_PROMPT` `STATIC` segment rather than a new
+policy module. `buildAttachmentHint` itself is untouched — only which call
+receives it changed.
+
+Live re-measurement, same question, same document:
+
+| | before routing | after routing | after this |
+|---|---|---|---|
+| `tool_select` | 124,548 | 125,168 | 125,166 |
+| `tool_answer` | — (no tool ran) | 125,048 | **2,771** |
+| turn total | 124,548 | 250,216 | **127,937** |
+| answer | "14 students" (**wrong**) | 77 arrears / 21 students | 77 arrears / 21 students |
+| `verification` | `undefined` | PASS | PASS |
+
+The answer call fell 45x and the turn halved, with the deterministic figures
+and evidence byte-identical — the spec's own acceptance bar was that
+cheaper-but-different numbers would be a failure, not a success. Full suite
+**2131/2133**, same 2 pre-existing unrelated failures, zero regressions
+(5 net new tests). Remaining cost is the `tool_select` hint at ~125k, which
+is load-bearing and explicitly OUT OF SCOPE in that spec.
+
 **One non-regression worth recording.** Run 2 returned
 `verification: CONFLICT, claimedNumbers: [21]` — the model wrote "the
 remaining 21 students have no arrears", a correct derivation (55 scoped − 34

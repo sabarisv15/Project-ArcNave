@@ -91,7 +91,18 @@ const TOOL_RESULT_ANSWER_SYSTEM_PROMPT = 'Answer the question in plain, natural 
   + 'as if it answers the literal question. If this tool represents a different action than the one the user '
   + 'literally asked for (e.g. they asked to delete something but this tool only submits a status-change '
   + 'request for approval), say so explicitly. Keep the answer short. Any money figure is always in Indian '
-  + 'Rupees — write it with the ₹ symbol (e.g. ₹90,000), never $ or USD.';
+  + 'Rupees — write it with the ₹ symbol (e.g. ₹90,000), never $ or USD. '
+  // The answer call no longer carries the attached document's raw text
+  // (see answerPromptQuestion in askAgent), so "the data doesn't cover
+  // this" is now a genuinely reachable state rather than one the model
+  // could always paper over by re-reading the document. Say so and ask —
+  // never guess, and never answer from a document this call can no longer
+  // see. Same posture as CORE's action-truthfulness rule, extended from
+  // "an action that didn't happen" to "a figure that wasn't computed".
+  + "If the tool data doesn't contain what was asked (e.g. it computed counts but the question asked for a "
+  + 'percentage, or it covers a different scope), say plainly that the analysis does not include that and ask '
+  + 'for what you would need to compute it — never estimate it, and never answer from an attached document '
+  + 'instead of the tool data.';
 
 function listTools() {
   return aiToolRegistry.listTools();
@@ -1736,6 +1747,29 @@ async function askAgent(client, question, {
   const memoryHint = await buildMemoryHint(client, identityContext);
   const hints = [historyHint, projectHint, focusHint, memoryHint, attachmentHint].filter(Boolean).join('\n\n');
   const promptQuestion = hints ? `${hints}\n\nQuestion: ${question}` : question;
+  // The ANSWER-call variant: identical, minus the attachment hint. Once a
+  // deterministic tool has run, its bounded result is already present as
+  // boundary-wrapped evidence, and leaving the raw document text beside it
+  // re-opens the exact failure the routing slice closed — the model can
+  // narrate from raw text instead of the computed result. That failure was
+  // measured, not theorised: the pre-routing answer to "How many arrears
+  // are there in the ECE Sandwich section?" claimed 14 students when the
+  // tool computes 77 arrears across 21. Correctness is the reason; the
+  // ~124.5k tokens saved (about 95% of that call) is the side effect.
+  //
+  // Every other hint is kept — history/project/focus/memory are small and
+  // carry continuity the answer step genuinely needs. The decision call
+  // still gets the full hint above, which is what keeps "summarise this
+  // document" working and supplies the verbatim attachmentId (see
+  // buildAttachmentHint's own comment).
+  //
+  // Safety framing is unaffected: summarizeToolResult/executeWorkflowPlan
+  // build their own boundary-wrapped context via renderForLlm, which owns
+  // the preamble and markers independently of buildAttachmentHint. This
+  // drops document text, never rule-9 framing.
+  // See ai-chat-attachment-hint-answer-call-approved-spec.md.
+  const answerHints = [historyHint, projectHint, focusHint, memoryHint].filter(Boolean).join('\n\n');
+  const answerPromptQuestion = answerHints ? `${answerHints}\n\nQuestion: ${question}` : question;
 
   // Research mode short-circuits before a single ARCNAVE tool is even
   // listed — see askGeneralChat's own comment above it. Anything
@@ -1911,7 +1945,11 @@ async function askAgent(client, question, {
         };
       }
 
-      return executeWorkflowPlan(client, resolved, promptQuestion, {
+      // answerPromptQuestion, not promptQuestion: plan_synthesis is the
+      // same "compose an answer from tool results" step as the single-tool
+      // path below, reached by a different route, so it gets the same
+      // treatment — otherwise an identical raw-text fallback survives here.
+      return executeWorkflowPlan(client, resolved, answerPromptQuestion, {
         identityContext, identityBlock, adapter, aiConfig, hasHistory: historyHint !== '',
       }, onDelta, onStep);
     }
@@ -2080,7 +2118,7 @@ async function askAgent(client, question, {
     // finished.
     onStep({ phase: 'synthesizing', toolName: priorTurns[priorTurns.length - 1].toolName });
     const { text: answer, usage: synthUsage } = await summarizeToolResult(
-      client, identityContext, mergedSanitizedContext, promptQuestion, invokedTools, adapter, aiConfig, identityBlock, historyHint !== '', onDelta, blockedActionNote,
+      client, identityContext, mergedSanitizedContext, answerPromptQuestion, invokedTools, adapter, aiConfig, identityBlock, historyHint !== '', onDelta, blockedActionNote,
     );
     usageTotal = addUsage(usageTotal, synthUsage);
     const presentation = aiExperienceLayer.buildPresentation({

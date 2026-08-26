@@ -49,13 +49,31 @@ leading ₹ cannot be captured through the word-boundary wrapper; the total
 accumulated float noise) — all recorded in the
 [ADL-057 addendum](../30-decisions/ledger.md#adl-057-addendum--implemented-2026-08-25).
 
-**Open risk on that slice, unverified:** the `identityPattern` design
-assumes the MODEL can write a good pattern. Writing one by hand took three
-attempts — the naive version returned `"Apr"` for every row and still
-looked like a pass. `rowsWithoutIdentity` catches a pattern that matches
-NOTHING, but not one that matches the WRONG thing. A live turn confirming
-the model picks `compare` and supplies a usable `identityPattern` is the
-obvious next check and has not been run.
+**That open risk is now MEASURED, and it is real** (2026-08-26, two
+independent live runs via `backend/scripts/identity-pattern-live-turn.js`).
+The model picks `operation: 'compare'` and the right comparison unaided,
+2/2 — but **2/2 it cannot write a usable `identityPattern` at the
+production default of `maxToolCallsPerTurn = 1`**: it builds the pattern
+around tab characters, and tabs do not survive (`splitOn` trims each cell,
+`recordText` joins with a single space). Run 1 returned `ok` with **0 of
+100 rows named**; run 2 lost the answer to `no_matching_records`. Nothing
+in the tool description tells the model what a row looks like by the time a
+pattern is applied — that is the root cause.
+
+The honest-failure design held: neither run invented party names.
+
+**At cap 3, 2/2 the model self-corrected on its second call** and returned
+100/100 rows named with 21 real party names. That is the **first recorded
+case in this project of a tool-use-loop continuation being useful** (zero
+`tool_select_continue` rows exist in all audit history) and the concrete
+evidence ADL-056 said was missing.
+
+Two follow-ups, neither done: **(a)** tell the model in
+`analyze_document_table`'s description that row text is space-joined, never
+tab-separated — cheap, targeted, but not named in the Approved Spec, so it
+needs a decision rather than an in-place patch (workflow §17); **(b)** item
+3 should carry this measurement into its own pass. Full detail:
+[ADL-057 open-risk check](../30-decisions/ledger.md#adl-057-open-risk-check--the-model-cannot-write-a-usable-identitypattern-at-cap-1-2026-08-26).
 
 **Item 2's Product Reasoning pass is complete (2026-08-25, no code written)
 — [ADL-057](../30-decisions/ledger.md#adl-057),

@@ -4179,7 +4179,64 @@ the probe's own comments. This is a real risk to the `identityPattern`
 design, which assumes the MODEL can supply a good pattern: a bad one
 produces a plausible-looking but useless list. `rowsWithoutIdentity`
 catches the no-match case but **not** the matched-the-wrong-thing case.
-Whether the model reliably writes a good `identityPattern` is unverified,
-and is the obvious next live check.
 
-**Status:** Resolved — implemented and verified.
+#### ADL-057 open-risk check — the model CANNOT write a usable identityPattern at cap 1 (2026-08-26)
+
+Run via the new `backend/scripts/identity-pattern-live-turn.js` (real
+Gemini, real seeded tenant, the real day book uploaded as a chat
+attachment; `analyzeAttachment` is WRAPPED to record the params the model
+chose, never stubbed). The question asked was the natural one: *"In the
+attached day book, which entries are below 5000? List them with the party
+name."* **Two independent runs, and they agree.**
+
+**The model chooses the right operation.** 2/2 it selected
+`operation: 'compare'` with a sensible `filter.pattern` and the correct
+`comparison: { operator: 'lt', value: 5000 }`. That half of the design
+works unaided.
+
+**It cannot write the identityPattern.** 2/2 at the production default of
+`maxToolCallsPerTurn = 1`, the pattern it supplied was built around **tab
+characters** — `"^\d{1,2}-[A-Za-z]{3}-\d{2}\s*\t([^\t]+)"` and
+variants. Tabs do not survive: `splitOn` **trims** each cell and
+`recordText` joins them with a **single space**, so no pattern containing
+`\t` can ever match. Outcomes: run 1 returned `ok` with **0 of 100 rows
+named**; run 2 put `\t` in the filter pattern too and returned
+`no_matching_records`, losing the answer entirely.
+
+**Nothing in the tool description tells the model what a row looks like by
+the time a pattern is applied.** That is the root cause, and it is
+specific and cheap — not a flaw in the identityPattern concept.
+
+**The honest-failure design held.** In neither run did the model invent
+party names. Run 1 said plainly that the names *"couldn't be extracted…
+so they aren't available to list individually"* while still reporting the
+correct 153 / ₹337,884.77. A useless answer, but not a false one.
+
+**Item 3 is now measured, not speculative.** At `maxToolCallsPerTurn = 3`
+(raised for OBSERVATION only, the way ai-behavioral-suite.js scopes its own
+category K — no product change), 2/2 the model's first call failed the same
+way and its **second call self-corrected**, dropping `\t` for `\s+` and
+returning **100/100 rows named, 21 distinct real party names** (`B K
+AGENCIES`, `KEVIN DIESEL`, `PRABU AUTO SPARES`…) with the right total.
+
+This is the **first recorded case in this project of a tool-use-loop
+continuation being useful** — `CURRENT-STATE.md` records zero
+`tool_select_continue` rows across all `ai_llm_call` audit history. It is
+also the concrete evidence [ADL-056](#adl-056) said was missing when it
+noted that a clean failure status *"still consumes the turn's only tool
+call"*: read-check-retry converts a failed answer into a correct one here,
+2/2, on a real document.
+
+**Two follow-ups, neither done, neither silently absorbed:**
+
+- **Tell the model what row text looks like** (cells trimmed, joined with a
+  single space, never tab-separated) in `analyze_document_table`'s
+  description. Cheap and targeted, and it serves this slice's already-
+  approved CORE ("have each matched row say which entry it is"), but it is
+  a change the Approved Spec does not name — so it is recorded here for a
+  decision rather than patched in place, per workflow §17.
+- **Item 3** (`maxToolCallsPerTurn` above 1) now has its first piece of
+  real supporting evidence and should carry this measurement into its own
+  pass.
+
+**Status:** Resolved — implemented and verified. One open finding above.

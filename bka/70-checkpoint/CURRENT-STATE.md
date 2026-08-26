@@ -34,6 +34,29 @@ clear explanation instead of a 500. A second check pinned the narration
 deterministically and confirmed it does not blame the user's file. **This
 slice is complete.**
 
+**Item 1 slice 2's Product Reasoning pass is complete (2026-08-26, no code
+written) — [ADL-058](../30-decisions/ledger.md#adl-058),
+[`ai-chat-pdf-geometric-reconstruction-approved-spec.md`](../60-product-reasoning/ai-chat-pdf-geometric-reconstruction-approved-spec.md).**
+Geometry is adopted as a **fallback only** (after flat text yields
+`unreliable_extraction` or `none`, PDFs only), and its records are
+**always partial trust**. Four probes measured first: geometry is *faster*
+than flat text on small PDFs and 1.2x on 400 pages (the latency objection
+does not hold); joining rows with `' | '` would take the result sheet from
+1,603 records to **7,084** and switch the coverage check off entirely, so a
+**single space** is a tested constraint; the reference answer under geometry
+is **identical** (77/21, 20 sections); and the exam-fees PDF reports
+`coverage: reliable 23/23` while ARAVINDAN's record holds ASHWIN's figures —
+coverage counts ROWS, and neither it nor geometry fixes COLUMN attribution.
+
+The one §15 question **narrowed a rule the user had previously approved**
+(ADL-055's "answers count/list questions"): whole tokens migrate between
+records, so per-record `count` is wrong too. User chose **identity and
+record count only** — `count`/`sum`/`breakdown`/`compare` are all refused on
+partial-trust records. Also found: `pdfjs-dist` is only a **transitive**
+dependency via `pdf-parse@2.4.5` and must be declared.
+
+**Exact next action for this thread: `/build-slice` against that spec.**
+
 **ADL-057's slice is implemented and verified (2026-08-25).** Numeric
 comparison ships: `operation: 'compare'` with a closed operator set, over
 ROW TEXT and never a cell index, plus a caller-supplied `identityPattern`
@@ -239,10 +262,10 @@ Shipping ADL-057 before ADL-056 would multiply the 500 paths.
 
 After that, each unstarted and each needing its own pass:
 
-- **Item 1 slice 2 — PDF geometric reconstruction** (`pdfjs-dist` x/y).
-  **Now the prerequisite for `join`**, per ADL-057 — its partial-trust
-  behaviour (identity-only records) is what a join needs, and until it
-  lands the only measured join scenario has no readable second operand.
+- **Item 1 slice 2 — PDF geometric reconstruction.** ✅ **PASS COMPLETE
+  2026-08-26** (ADL-058). Spec written, no code. Still the prerequisite for
+  `join`. Do not re-reason it — read ADL-058 and the spec's OUT OF SCOPE
+  table.
   Explicitly OUT OF SCOPE in the shipped spec. Measured: y-bucketing
   recovers the exam-fees PDF's identity columns 23/23 where flat text gives
   4, but numeric columns are **misattributed** — per-semester figures print

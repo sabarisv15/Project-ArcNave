@@ -557,3 +557,53 @@ a good pattern. `rowsWithoutIdentity` catches a pattern matching nothing,
 not one matching the wrong thing — a hand-written first attempt returned
 `"Apr"` for every row and still looked like a pass.
 
+
+---
+
+## AI Assistant chat — PDF geometric reconstruction as a trust-bounded fallback
+
+Source: [`ai-chat-pdf-geometric-reconstruction-approved-spec.md`](../60-product-reasoning/ai-chat-pdf-geometric-reconstruction-approved-spec.md),
+analyzed 2026-08-26. Backend-only, no new page/screen. Queued item 1 slice 2
+— explicitly OUT OF SCOPE in the shipped extraction-trust spec, and named by
+ADL-057 as cross-document `join`'s prerequisite.
+
+Four read-only probes were run before any design was written:
+
+- **Cost:** geometry is FASTER than flat text on small PDFs (89 ms vs 194;
+  211 vs 346) and 1.2x on a 400-page one (2,391 vs 1,979). The assumed
+  latency objection does not hold.
+- **Separator:** joining rows with `' | '` (the service's own `DELIMITER`)
+  moves the result sheet from 1,603 records to **7,084**, turns the coverage
+  check off entirely, and makes every row `key: null`. A **single space**
+  keeps 1,603 / reliable 1781/1781 and lifts the exam-fees PDF from 4
+  UNRELIABLE records to 23.
+- **Regression:** the reference answer under geometry is **77 arrears / 21
+  students, 20 sections** — identical.
+- **The trap:** geometry makes the exam-fees PDF report
+  `coverage: reliable 23/23` while ARAVINDAN's record holds ASHWIN's figures
+  and ASHWIN's are missing. Coverage counts ROWS; neither it nor geometry
+  fixes COLUMN attribution.
+
+| Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| AI Assistant chat | Existing chat-attachment roles | — | Geometric re-extraction as a fallback after flat text fails | Attach a merged-cell PDF and ask about it | none (existing chat surface) | `documentAnalysisService`, `pdfjs-dist` | none | Unchanged (L1, read-only) | Not built | CORE | flat-text ladder must stay first | Resolved — fallback, never default; zero-regression by construction |
+| AI Assistant chat | — | — | `partial_extraction` status carrying recordCount + identity sample | Same | none | `documentAnalysisService` | none | Unchanged | Not built | CORE | 7th member of the failure/degradation status set | Resolved — geometry records are ALWAYS partial trust, whatever coverage says |
+| AI Assistant chat | — | — | `count`/`sum`/`breakdown`/`compare` all refused on partial-trust records | Same | none | `documentAnalysisService` | none | Unchanged | Not built | CORE | — | **Resolved by §15 question — identity and record count only**, narrowing ADL-055's own approved rule |
+| AI Assistant chat | — | — | Single-space separator, commented and pinned by test | — | — | geometry join site | none | Unchanged | Not built | REQUIRED SUPPORT | — | Resolved — failure mode is silent and catastrophic, so it is tested |
+| AI Assistant chat | — | — | Declare `pdfjs-dist` in `dependencies` | — | — | `package.json` | none | Unchanged | Not built | REQUIRED SUPPORT | currently transitive via `pdf-parse@2.4.5` | Resolved — a production path cannot rest on a transitive dep |
+| AI Assistant chat | — | — | Tool description explains `partial_extraction` | — | — | `aiToolRegistry` | none | Unchanged | Not built | REQUIRED SUPPORT | ADL-055's re-upload defect | Resolved — never blame the user's file |
+| AI Assistant chat | — | — | x-column-boundary detection | — | — | — | — | — | Not built | FUTURE — **the thing that would lift partial trust** | done by HAND in ADL-055's analysis, never automatically | Its own pass; it would re-open every operation refused here |
+| AI Assistant chat | — | — | Cross-document `join` | — | — | — | — | — | Not built | FUTURE | **this slice** | Prerequisite satisfied once this ships; still needs its own pass |
+| AI Assistant chat | — | — | Geometry as the default PDF path | — | — | — | — | — | Not built | FUTURE | — | Plausible on measurement, but "identical" rests on one reference question and geometry emits 22% more characters |
+| AI Assistant chat | — | — | A `list` / `identify` operation | — | — | — | — | — | Not built | FUTURE — **considered and rejected** | — | Not needed: `partial_extraction` already carries the count and identities, so no vocabulary is added |
+
+One §15-threshold question was asked. It met threshold 1 and 2, and had a
+further reason to be asked rather than decided: it **narrows a rule the user
+themselves approved** in ADL-055 ("answers count/list questions, refuses
+sum/total"). The measurement showed whole tokens migrate between records, so
+per-record `count` is wrong too. User chose **identity and record count
+only**.
+
+Not asked, because rules and evidence settled them (workflow §15 steps 2-3):
+fallback vs default, the separator, refusing rather than guessing, and
+whether a new operation is needed.

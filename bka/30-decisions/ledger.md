@@ -4262,3 +4262,95 @@ attempt is wrong for a reason no description can pre-empt.
 
 **Status:** Resolved — implemented, verified, and re-verified after the
 description fix.
+
+
+### ADL-058
+**Geometric PDF reconstruction is adopted as a trust-bounded FALLBACK, and
+row coverage must never be read as column attribution.**
+
+Product Reasoning pass over queued item 1 slice 2, the slice
+[ADL-055](#adl-055) deferred and [ADL-057](#adl-057) named as cross-document
+`join`'s prerequisite. Four read-only probes were run against the real
+documents before any design was written; every number here is measured.
+
+**The latency objection does not hold.** Geometry was assumed too slow for a
+live `/ai/ask` turn. Measured, it is *faster* than the current flat-text
+path on small PDFs (exam fees 89 ms vs 194; day book 211 vs 346) and costs
+about 400 ms extra on a 400-page one (2,391 vs 1,979). That widened the
+design space rather than narrowing it, and is why a default-geometry design
+had to be rejected on other grounds rather than on cost.
+
+**The separator is load-bearing, and the obvious choice is a trap.**
+Geometry emits one line per printed row with the row's cells joined. Joining
+with `' | '` — which is `documentTableExtractionService`'s own `DELIMITER` —
+silently moves both documents onto the `delimited` strategy: the result
+sheet goes **1,603 records to 7,084**, coverage stops running entirely
+(`delimited` carries `coverage: null`), and every row comes back
+`key: null`, the anonymous-row defect ADL-057 had to add
+`identity_required` for. With a **single space** the result sheet stays at
+1,603 records, reliable 1781/1781, and the exam-fees PDF goes from 4
+UNRELIABLE records to 23. The separator is now a commented, tested
+constraint rather than an implementation detail.
+
+**No regression.** Under geometry with a space separator the verified
+reference question returns **77 arrears / 21 students across 20 detected
+sections** — identical to flat text on every figure.
+
+**The finding that shapes the design.** Under geometry the exam-fees PDF
+reports `coverage: { reliable: true, 23/23, orphanCount: 0,
+collapsedRecords: 0 }` — fully trusted — while its records read:
+
+- serial 3 (ARAVINDAN G) holds `1 1 65 625 690`, which are **ASHWIN's**
+  figures
+- serial 4 (ASHWIN JOHN EDISON S) holds only `0 0 1`; his own are missing
+
+The coverage check counts **rows**. Geometry fixes rows. Neither fixes
+**column attribution** — on this document the per-student figures print
+above their student inside a merged cell, so content migrates between
+records. Adopting geometry naively would take a document that is today
+honestly refused and answer it confidently: **ADL-055's exact defect,
+re-created one layer up and green-lit by ADL-055's own check.**
+
+**Decision.** Geometry runs **only as a fallback** — after flat text yields
+`unreliable_extraction` or `strategy: 'none'`, for `application/pdf` only.
+Chosen on evidence rather than caution: a default-geometry design is
+plausible on the measurements, but "identical" was established on one
+reference question and geometry produces 22% more characters, so other
+questions are not proven equivalent. A fallback is zero-regression **by
+construction** — the working document never reaches the new code.
+
+Geometry-derived records are **always partial trust**, whatever
+`assessCoverage` says, and return a new `partial_extraction` status carrying
+`recordCount` plus a bounded identity sample.
+
+**A premise correction that narrows a rule the user previously approved.**
+ADL-055's second §15 answer recorded: *"the deterministic path returns the
+records and answers count/list questions, and refuses sum/total questions."*
+That was decided believing identities were recovered and only numeric
+columns misattributed. The measurement above is stronger: whole tokens
+migrate between records, so a per-record `count` is wrong too — counting
+`625` gives ARAVINDAN 2 (his own plus ASHWIN's) and ASHWIN 0. Because this
+changes a rule the user themselves set, it was put back to them as this
+pass's one §15 question. **User chose: identity and record count only.**
+`count`, `sum`, `breakdown` and `compare` are all refused on a
+partial-trust record set — every operation that reads *inside* a record.
+
+**Also found:** `pdfjs-dist` is resolved only **transitively**, through
+`pdf-parse@2.4.5`, and appears in neither `dependencies` nor
+`devDependencies`. A production path cannot rest on that; the slice declares
+it explicitly.
+
+Not asked, because rules and evidence settled them (workflow §15 steps 2-3):
+fallback versus default (measured regression risk governs); the separator
+(measured); whether to refuse rather than guess (this thread's own standing
+rule, proven repeatedly); and whether a new `list` operation is needed (it
+is not — `partial_extraction` carries the count and the identities directly,
+so no vocabulary is added).
+
+**Explicitly FUTURE:** x-column-boundary detection, which is the only thing
+that would lift partial trust and which was done **by hand** during ADL-055's
+analysis, never automatically; cross-document `join`, whose prerequisite this
+slice is; and making geometry the default PDF path.
+
+**Status:** Resolved — pending implementation.
+[`ai-chat-pdf-geometric-reconstruction-approved-spec.md`](../60-product-reasoning/ai-chat-pdf-geometric-reconstruction-approved-spec.md).

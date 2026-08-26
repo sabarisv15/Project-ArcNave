@@ -1050,18 +1050,44 @@ file not in git:
   next to Vertex's normal context capacity. The underlying timeout risk
   itself is still open, unmitigated.
 
+**Fifth pass, same day — F2 closed via local Docker after the Cloud Run
+redeploy was blocked.** Owner approved a real redeploy; the image was
+rebuilt and pushed via Cloud Build successfully
+(`asia-south1-docker.pkg.dev/project-8bcf740a-a7bd-4aea-974/arcnave/sandbox-service:20260826-redeploy1`),
+but the actual `gcloud run deploy` step was denied by an automated
+permission classifier (independent of the owner's own approval) —
+the exact command (image + `--timeout=240`, up from the live 30s,
++ `--memory=1Gi`, + the same VPC isolation flags) was handed to the
+owner to run themselves; **not yet confirmed run**.
+
+Owner's redirect: verify locally with Docker instead. Built and ran the
+same image standalone (`arcnave-sandbox-local`, port 8081, fresh
+dev-only secret), deliberately kept OFF the `docker-compose` project's
+own network (confirmed via `docker inspect` — sandbox on `bridge`,
+`app` on `gstack_default`, no shared network path) so ADL-059's "no
+path to ARCNAVE's DB/API" property holds even for local dev; `app`
+reaches it via `host.docker.internal:8081` after repointing
+`SANDBOX_SERVICE_URL`/`SANDBOX_SERVICE_TOKEN` in the root `.env` and
+recreating the container. **Verified live, real LibreOffice
+recalculation:** plain `execute_code` (2+2=4), a `saveAs` PASS case
+(`=SUM(A1:A2)` recalculated and confirmed still a formula), and a
+`saveAs` FAIL case (a literal `30` written where a formula was
+expected → `verdict: "failed"`, names the exact cell and reason) — the
+gate genuinely rejects, not a rubber stamp. F2 marked closed on this
+basis; the live Cloud Run revision itself is still the old image until
+the owner runs the handed-over deploy command.
+
 **Still genuinely blocked, not mechanically clearable — surfaced to the
 owner, not unilaterally resolved:**
 - **F1, F4, F5** — each needs a product/business decision only the owner
   can make (which web-search provider; build research mode or drop
   `suggest_research`; whether `fetch_sports_data`/`places_search` have a
-  real campus need).
-- **F2/F2a/F2b** — rebuilding and redeploying the sandbox Cloud Run image
-  is a real, live infra action; needs explicit permission first, same as
-  every other deploy this thread has asked before doing.
-- **F11** — the uncommitted `backend/`/`sandbox-service/` work needs
-  explicit permission to commit, same standing discipline as the
-  original `sandbox-service/` push.
+  real campus need). Owner's answer this pass: leave open for now.
+- **F2a/F2b** — cold-start cost and the 210s single-request transport
+  risk are Cloud-Run-specific concerns the local verification above
+  doesn't touch (a warm local container on a tiny fixture proves
+  nothing about either) — still open, still need the actual cloud
+  redeploy plus a realistic-size measurement.
 - **F3** — needs the exam-fees PDF, deliberately not in git (real
   student PII) — can only be run on a machine that still has it locally.
 - **F11a** — the flaky full-suite failure count needs real investigation

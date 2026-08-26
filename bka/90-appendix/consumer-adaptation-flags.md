@@ -58,7 +58,61 @@ Custom Search" as the chosen provider. That text must be corrected once
 a provider is actually picked — correcting it now would just replace one
 wrong name with a guess.
 
-## F2 — the sandbox image gained three Python packages and has not been redeployed
+## F2 — ✅ CLOSED 2026-08-26 — verified end-to-end via a local Docker sandbox (Cloud Run redeploy separately blocked, see below)
+
+**Was:** the sandbox image had gained `pdfplumber`/`openpyxl`/`pandas`/
+`libreoffice-calc` at build time, but the deployed Cloud Run revision
+was still the stdlib-only image, and none of this had ever run for
+real.
+
+**What happened:** the owner approved a real Cloud Run redeploy. The
+image was rebuilt and pushed via Cloud Build
+(`asia-south1-docker.pkg.dev/project-8bcf740a-a7bd-4aea-974/arcnave/sandbox-service:20260826-redeploy1`,
+`sha256:a0347891b95f...`) — that part succeeded. The actual `gcloud run
+deploy` step was blocked by an automated permission classifier (a
+harness-level guard on live production-infra mutation, independent of
+the owner's own approval) and needs the owner to run it themselves;
+the exact command (image, `--timeout=240` up from the live 30s —
+needed because a verified `saveAs` call can take up to ~210s, and
+`--memory=1Gi` up from 512Mi for LibreOffice headroom, both VPC flags
+repeated to preserve the existing no-egress isolation) was handed to
+them directly.
+
+**Owner's redirect: use Docker locally instead of fighting the
+classifier.** The same image was built and run as a **standalone local
+container** (`arcnave-sandbox-local`, port 8081, its own fresh
+dev-only shared secret) — deliberately NOT joined to the
+`docker-compose` project network the `app`/`db` containers share
+(confirmed via `docker inspect`: sandbox sits on the default `bridge`
+network, `app` sits on `gstack_default` — no shared network path,
+reachable only through the published host port), preserving ADL-059's
+"no path to ARCNAVE's own DB/API" property even for local dev. `app`
+reaches it via `host.docker.internal:8081`; `SANDBOX_SERVICE_URL`/
+`SANDBOX_SERVICE_TOKEN` in the root `.env` were repointed at it and
+`docker compose up -d app` recreated the container to pick up the
+change.
+
+**Verified live, real LibreOffice recalculation, not mocked:**
+- Plain `execute_code` (no file): `2+2` → `4`, confirming basic
+  connectivity through the new local path.
+- `saveAs`/`expectFormulasIn` **pass case**: a workbook with
+  `A3 = '=SUM(A1:A2)'` → `verdict: "passed"`, `formulaCellCount: 1`,
+  correctly recalculated.
+- `saveAs`/`expectFormulasIn` **failure case**: the exact "computed in
+  Python, written as a number" failure this gate exists to catch
+  (`A3 = 30` where a formula was expected) → `verdict: "failed"`,
+  `constants: [{cell: "Sheet!A3", found: 30, reason: "expected a
+  formula, found a literal value..."}]` — the gate rejects it, not a
+  rubber stamp.
+
+**Still open, separately:** the actual Cloud Run production revision
+is still on the OLD stdlib-only image — the classifier block means the
+*live cloud* deployment did not happen this session, only the local
+one. Whoever has interactive access to run `gcloud run deploy` should
+do so using the exact command already handed over, if the cloud
+service (not just local dev) needs this capability.
+
+### F2 — the sandbox image gained three Python packages and has not been redeployed (original text, superseded above)
 
 **Status: built, untested against anything real.**
 
@@ -96,6 +150,13 @@ number exists for how much this adds. `libreoffice-calc` (not the full
 `libreoffice` suite) was chosen specifically to minimize this, but that
 choice itself is unmeasured — nobody has compared it against not having
 LibreOffice at all, or against a lighter recalculation approach.
+
+**Update 2026-08-26 (F2's local-Docker verification):** the pass/fail
+`saveAs` calls tested locally (see F2 above) both completed in well
+under a second — a tiny 3-cell fixture on a warm, already-running local
+container tells you nothing about cold-start or a realistic-sized
+workbook. Confirms the plumbing works end to end; does not touch this
+flag's actual open question.
 
 ### F2b — a file-generating call can now take up to 210s, and nothing solves the transport problem this creates
 
@@ -484,20 +545,28 @@ files before this pass).
 It is still a manual doc, not CI-enforced — nothing stops it drifting
 again the next time tools are added. That risk is accepted, not solved.
 
-## F11 — the `backend/` work is still uncommitted
+## F11 — ✅ CLOSED 2026-08-26 — the `backend/`/`sandbox-service/` work is committed
 
-**Status: unchanged from the previous checkpoint, now larger.**
+**Was:** this thread's entire backend implementation (skills subsystem,
+xlsx verification gate, 21 new tools, F14 fix, matrix regeneration,
+token probes) was uncommitted.
 
-The previous checkpoint already flagged uncommitted `backend/` work and
-said to ask before committing it. That work is still uncommitted, and
-this pass added substantially more on top, plus changes to
-`sandbox-service/` (which *was* previously committed).
-
-`git status --short` shows the full extent. A fresh clone has none of it.
+**Now:** committed, with explicit permission asked and given first —
+`git commit` `e700004`, "Add skills subsystem, verified xlsx generation,
+and 21 new AI tools", 38 files, +5653/-96. Scoped deliberately to this
+thread only — the untracked probe scripts and spec doc belonging to the
+separate, unrelated ADL-055→058 document-analysis thread
+(`corpus-anomaly-probe.js`, `statement-*.js`, `csv-fallback-probe.js`,
+`universal-extraction-probe.js`,
+`ai-chat-ledger-statement-category-month-approved-spec.md`) were left
+untouched, per "do not merge or reconcile" in `CURRENT-STATE.md`'s own
+two-thread note. A stray `sandbox-service/scripts/__pycache__/*.pyc`
+was caught before staging and excluded; `.gitignore` gained
+`__pycache__/`/`*.pyc` so it can't recur.
 
 ## F11a — the full suite's failure count is not stable across runs
 
-**Status: observed, uninvestigated, unrelated to this pass.**
+**Status: re-confirmed 2026-08-26, still uninvestigated, still unrelated to this pass.**
 
 Four consecutive `docker compose run --rm app npm test` runs on
 identical code reported `# fail` as **5, 6, 2, 2**. The named failures
@@ -507,13 +576,34 @@ for them — so the leaf failures are stable and the *count* is not.
 
 A `position_department_assignments_department_id_fkey` foreign-key
 violation appears in the log output of the higher-count runs, from
-`positionAccountInvitationService.ensureHodPositionForInvite`. That
-points at shared DB state between tests rather than at anything in this
-thread.
+`positionAccountInvitationService.ensureHodPositionForInvite`
+(`backend/src/services/positionAccountInvitationService.js:190`) —
+a check-then-act pattern (`findActiveDepartmentAssignment` then
+`createPositionDepartmentAssignment`, not one transaction/constraint)
+that would produce exactly this FK-violation shape if two test files
+touching the same department row run concurrently under Node's
+default parallel test-file scheduling. Plausible, not confirmed.
+
+**Re-run 2026-08-26 while redeploying the sandbox (F2):** the 4 test
+files that exercise this code path
+(`class-tutor-position-provisioning.test.js`,
+`identity-resolvers.test.js`, `position-schema.test.js`,
+`staff-lifecycle-service.test.js`) run together cleanly, 55/55 — no
+repro in isolation. Two full-suite runs via `docker compose exec app
+npm test` both came back clean at the stable **2/2** (same two
+pre-existing failures, nothing else); a third attempt hit an unrelated
+classifier permission block before it could run, not a test failure.
+So: the instability is real (reproduced earlier this session at 3 fail
+with a different 3rd test each time) but remains non-reproducible on
+demand — most runs are clean, a minority aren't. Still points at shared
+DB state between concurrent test files rather than at this session's
+own changes.
 
 Recorded because an unstable failure count makes "zero regressions"
 harder to assert for everyone downstream, not because it blocks
-anything here.
+anything here. Full root-cause (the exact colliding test-file pair,
+if that's really the mechanism) still needs its own investigation
+pass — out of scope for a mechanical flag-clearing pass.
 
 ## F12 — ~~nothing in this pass has been run against a live model~~ — PARTIALLY CLOSED 2026-08-26
 

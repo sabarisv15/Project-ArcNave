@@ -4352,5 +4352,84 @@ that would lift partial trust and which was done **by hand** during ADL-055's
 analysis, never automatically; cross-document `join`, whose prerequisite this
 slice is; and making geometry the default PDF path.
 
-**Status:** Resolved — pending implementation.
+**Status:** Resolved — pending implementation, **but see the addendum
+below before building it.**
 [`ai-chat-pdf-geometric-reconstruction-approved-spec.md`](../60-product-reasoning/ai-chat-pdf-geometric-reconstruction-approved-spec.md).
+
+#### ADL-058 addendum — native PDF reading measured, and it beats geometry at the one thing geometry cannot do (2026-08-26)
+
+Raised by the user immediately after the pass: *"why write specs instead of
+adopting an agent"*, citing Google's ADK `high-volume-document-analyzer`
+sample. A fair question, measured rather than argued. (The sample itself
+could not be read — WebFetch failed — so nothing here is a claim about that
+repo; what was measured is the **pattern**: handing the PDF to Gemini
+natively as a document part, so it sees the printed layout.)
+
+**A correction to how the founding evidence was being used, including by
+this assistant.** The origin of this whole thread is recorded as *"a direct
+Gemini-app upload and ARCNAVE's chat disagreed"* — and the Gemini app's own
+number was **never recorded**. What was later proven wrong (ADL-055,
+"14 students" vs the tool's 77) was ARCNAVE's own **free-text counting over
+flat extracted text**. That is not the same thing as Gemini reading the PDF
+natively, which had never been measured at all. Citing the origin as
+evidence against native reading was not a sound argument.
+
+**Measured — native reading is EXCELLENT at attribution, on a small
+document.** Exam-fees PDF, structured extraction of all 23 rows,
+**5 runs at temperature 1** (an earlier run at temperature 0 was discarded:
+self-consistency proves nothing when the model is near-deterministic by
+construction):
+
+- 23 rows returned every run, **5/5 fully self-consistent** on `regNo`,
+  `arrears` and `totalFees`
+- **23/23 identities match** the deterministic geometry reference
+- ASHWIN JOHN EDISON S is attributed `arrears: 1, totalFees: 690` — which
+  matches ADL-055's own **hand-verified** note that his `1,1,65,625,690`
+  belongs to him. Independent corroboration of the exact case geometry
+  gets wrong.
+
+So on the one document ADL-058 was written for, native reading solves the
+merged-cell column-attribution problem that **x-column-boundary detection
+was listed as FUTURE to solve**.
+
+**Measured — native reading CANNOT count.** Asked only "how many rows does
+this document contain", temperature 0:
+
+| document | Gemini | truth |
+|---|---|---|
+| exam fees | **2** | 23 |
+| day book | **7** | 839 |
+| result sheet | **16** | 1,603 |
+
+Not one close. This is ADR-029's central split, re-confirmed from the other
+direction: the model may read a row while being unable to count the rows.
+
+**Measured — native reading does not scale.** Full extraction: exam fees
+23/23 in 10 s; day book 795 rows in 62 s; the 400-page result sheet
+**failed outright** (`fetch failed` after 300 s). Even the count-only call
+on it cost **212,822 input tokens and 38 s**. The deterministic path reads
+the same document in 2 s.
+
+**An unplanned corroboration in the day book's numbers.** Gemini returned
+**795** rows where the deterministic detector produces 839. ADL-057's own
+compare probe reported `scoped 839, unmatched 44` — and 839 − 44 = **795
+exactly**. The 44 are page headers/footers the `delimited` detector counts
+as rows and Gemini excludes. Suggestive rather than proof, but it points the
+same way: on *reading*, the model was arguably more correct than the parser.
+
+**What this means for ADL-058, and why it is not being applied
+unilaterally.** ADL-058's CORE is geometry-as-fallback with **permanent**
+partial trust, because column attribution was believed unobtainable without
+x-boundary detection. That premise is now measurably false for small
+documents. A better fallback may be: native read for attribution, **verified
+against the deterministic identity set** (the 23/23 match is real
+verification, not trust), with counting and aggregation still done by the
+deterministic tool and the native path never used above a size bound.
+
+That is a change to an Approved Spec's CORE, so per workflow §16/§17 it
+requires a decision rather than an in-place edit. Recorded here; ADL-058
+must not be built until it is settled.
+
+Probes kept and rerunnable: `backend/scripts/native-pdf-vs-deterministic-probe.js`
+(self-consistency, billable) and `backend/scripts/native-pdf-scale-probe.js`
+(`count` / `extract` modes, billable).

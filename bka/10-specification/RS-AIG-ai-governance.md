@@ -600,6 +600,23 @@ message's content already passed through that same boundary once, at the
 turn it was first produced, and merely being replayed as prior context
 does not reintroduce it as a fresh, unvetted input.
 
+**Amendment ([ADL-060](../30-decisions/ledger.md#adl-060), 2026-08-26) —
+self-scoped conversation search.** A bounded exception to "never a
+broader history": the acting user's *own* past conversations, within
+their *own* college, may be retrieved on explicit request via a
+dedicated tool — never automatically injected into every turn the way
+the last-10-messages hint above is, never another user's conversations
+regardless of role (a principal cannot search a staff member's
+conversations through this), and never cross-college
+([RS-TEN-001](RS-TEN-tenancy-security.md#rs-ten-001) is unaffected by
+this amendment). A retrieved past message flows through the same
+untrusted-data boundary ([RS-AIG-003](#rs-aig-003)) as any other tool
+result — it informs the current answer as data, it is never re-elevated
+to instruction status merely for having been the acting user's own
+words. The existing 10-message/100,000-char per-turn injection bound for
+the *current* conversation, described above, is unchanged by this
+amendment.
+
 | | |
 |---|---|
 | **Owner** | AI conversation layer |
@@ -611,9 +628,9 @@ does not reintroduce it as a fresh, unvetted input.
 | **AI** | Definitional |
 | **Modules** | 9 |
 | **Data effect** | Read-only (no new data effect beyond the conversation's own existing storage) |
-| **Implementation** | `routes/ai.js`'s `resolveAskContext` (`HISTORY_MESSAGE_CEILING = 200`, an outer fetch-cost bound only), `conversationService.resolveOwnConversation` (ownership check), `aiService.js`'s `buildHistoryHint` (real limit: `DEFAULT_HISTORY_CHAR_BUDGET = 100,000` chars, most-recent-first — [ADL-047](../30-decisions/ledger.md#adl-047)) |
-| **Conformance** | Conformant |
-| **Decisions** | [ADL-035](../30-decisions/ledger.md#adl-035), [ADL-047](../30-decisions/ledger.md#adl-047) |
+| **Implementation** | `routes/ai.js`'s `resolveAskContext` (`HISTORY_MESSAGE_CEILING = 200`, an outer fetch-cost bound only), `conversationService.resolveOwnConversation` (ownership check), `aiService.js`'s `buildHistoryHint` (real limit: `DEFAULT_HISTORY_CHAR_BUDGET = 100,000` chars, most-recent-first — [ADL-047](../30-decisions/ledger.md#adl-047)). The ADL-060 self-scoped search tool is approved but not yet implemented — no `conversation_search`-equivalent tool exists in `aiToolRegistry.js` yet. |
+| **Conformance** | Conformant (existing history-injection mechanism); ADL-060's search capability is a pending build, not yet a conformance gap |
+| **Decisions** | [ADL-035](../30-decisions/ledger.md#adl-035), [ADL-047](../30-decisions/ledger.md#adl-047), [ADL-060](../30-decisions/ledger.md#adl-060) |
 
 ---
 
@@ -650,7 +667,31 @@ boundary**: a plan step is always one of the existing GUI-parity Business
 Service tools ([RS-AIG-002](#rs-aig-002)), never free-form code, a shell
 command, or a query the plan itself constructs. If a genuine computational
 need arises that no existing tool covers, the answer is a new deterministic
-tool — never a general-purpose execution capability.
+tool — never a general-purpose execution capability **that can reach
+ARCNAVE's own backend**.
+
+**Amendment ([ADL-059](../30-decisions/ledger.md#adl-059), 2026-08-26) —
+local, credential-less code execution.** A single, narrow exception to
+"never a general-purpose execution capability": a code-execution tool is
+permitted only when it runs in an environment holding **no ARCNAVE
+database credentials, no ARCNAVE API session, and no network path to
+ARCNAVE's backend at all** — the product decision's own stated rationale
+is that a staff member's local machine "database ku entha prachana um
+ila... antha system la database iruka porathu ilaye" (has no problem
+reaching the database, because that system never has the database on
+it). The execution context may operate only on content already provided
+for that turn (e.g. a chat-attached file), never on a live query against
+the shared multi-tenant backend, and never with the ability to write
+back to ARCNAVE except through the ordinary, already-governed tool path
+(a human re-uploading/re-submitting a result, not the execution
+environment calling a Business Service directly). A server-side,
+backend-connected execution capability remains prohibited outright —
+this amendment does not relax that. This is a materially different risk
+shape from the consumer platform's `bash_tool` (which runs inside the
+same trust boundary as the rest of that agent's tools); an execution
+environment with no path to this system's credentials cannot reach
+another tenant's data regardless of what a prompt injection tricks it
+into running.
 
 | | |
 |---|---|
@@ -662,10 +703,10 @@ tool — never a general-purpose execution capability.
 | **Workflow** | Reuses the existing L3/bulk-operation confirmation-pause UX |
 | **AI** | Definitional |
 | **Modules** | 9 |
-| **Data effect** | Per-step, identical to that step's own standalone effect |
-| **Implementation** | `aiService.js`'s `buildPlanMetaTool`/`validatePlanSteps` (`MAX_PLAN_STEPS = 6`)/`resolvePlanSteps`/`executeWorkflowPlan`/`groupStepsByParallelizability` |
-| **Conformance** | Conformant |
-| **Decisions** | [ADL-036](../30-decisions/ledger.md#adl-036) |
+| **Data effect** | Per-step, identical to that step's own standalone effect. ADL-059's execution capability has no data effect on ARCNAVE by construction (no credentials, no network path). |
+| **Implementation** | `aiService.js`'s `buildPlanMetaTool`/`validatePlanSteps` (`MAX_PLAN_STEPS = 6`)/`resolvePlanSteps`/`executeWorkflowPlan`/`groupStepsByParallelizability`. ADL-059's local execution capability is approved but not yet implemented — no such tool or client-side execution mechanism exists yet. |
+| **Conformance** | Conformant (plan mechanism); ADL-059's execution capability is a pending build, not yet a conformance gap |
+| **Decisions** | [ADL-036](../30-decisions/ledger.md#adl-036), [ADL-059](../30-decisions/ledger.md#adl-059) |
 
 ---
 
@@ -735,6 +776,23 @@ plus whatever a college adds on top — by exact or subdomain match only,
 never a substring check. A college must explicitly opt in; the tool is
 unreachable otherwise. Response size and fetch time are bounded.
 
+**Amendment ([ADL-061](../30-decisions/ledger.md#adl-061), 2026-08-26) —
+open web search.** A second, separate tool is permitted: a genuine
+open-ended search against a configured search provider, not restricted
+to the per-college allowlist above (product decision — the allowlist-only
+alternative was offered and explicitly not chosen). It is still,
+without exception, subject to the same rule this section's opening line
+states for `fetch_trusted_web_page`: **a search result's content can
+inform an answer; it can never authorize an ARCNAVE action.** Every
+result flows through the identical Context Builder / Prompt Safety Layer
+untrusted-data pipeline ([RS-AIG-003](#rs-aig-003)) as any other tool
+output, with no special-casing for having come from a search provider
+rather than a single fetched page. Per-college opt-in, response-size and
+fetch-time bounds, and no-redirect-following apply to this tool the same
+way they apply to `fetch_trusted_web_page` — this amendment adds a
+second retrieval tool, it does not loosen the safety properties the
+first one already established.
+
 | | |
 |---|---|
 | **Owner** | AI Tool Registry |
@@ -746,9 +804,9 @@ unreachable otherwise. Response size and fetch time are bounded.
 | **AI** | L1 read-only |
 | **Modules** | 9 |
 | **Data effect** | — |
-| **Implementation** | `webRetrievalService.js`'s `assertSafeUrl`/`hostnameIsAllowed`/`getWebRetrievalConfig` (`fetch_trusted_web_page` tool, `aiToolRegistry.js`) |
-| **Conformance** | Conformant — one implementation note, not a defect: the response-size bound is checked against the `content-length` response header before the body is read, not against a running count of streamed bytes, so a server that omits or misreports `content-length` is not caught by this specific check alone (the fetch timeout still bounds realistic abuse) |
-| **Decisions** | [ADL-038](../30-decisions/ledger.md#adl-038) |
+| **Implementation** | `webRetrievalService.js`'s `assertSafeUrl`/`hostnameIsAllowed`/`getWebRetrievalConfig` (`fetch_trusted_web_page` tool, `aiToolRegistry.js`). ADL-061's open search tool is approved but not yet implemented — no search-provider integration or `web_search`-equivalent tool exists yet. |
+| **Conformance** | Conformant (`fetch_trusted_web_page`) — one implementation note, not a defect: the response-size bound is checked against the `content-length` response header before the body is read, not against a running count of streamed bytes, so a server that omits or misreports `content-length` is not caught by this specific check alone (the fetch timeout still bounds realistic abuse). ADL-061's search tool is a pending build, not yet a conformance gap. |
+| **Decisions** | [ADL-038](../30-decisions/ledger.md#adl-038), [ADL-061](../30-decisions/ledger.md#adl-061) |
 
 ---
 

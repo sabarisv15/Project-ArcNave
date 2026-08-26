@@ -1,6 +1,14 @@
 # Current State
 
-_Last updated: 2026-08-25._
+_Last updated: 2026-08-26._
+
+**Two active threads now tracked** (protocol §2's explicit provision for a
+genuinely parallel, unrelated second task) — the ADL-055→058 document-
+analysis thread below (untouched this session), and the new
+**consumer-tool-inventory adaptation thread** (this session's own work),
+recorded in its own section near the bottom before "Standing notes". Read
+whichever one the next request names; do not merge or reconcile them into
+one narrative, they are unrelated.
 
 Governed by [`00-protocol.md`](00-protocol.md). Per that protocol's own
 §2 (never duplicate content that has a canonical home elsewhere), this
@@ -546,6 +554,37 @@ six requires code execution.
    Note this is now evidence-backed, unlike the same idea when it was
    floated (and correctly rejected) as speculation earlier in the session.
 
+7. **Date-led ledger statement extraction + category×month aggregation.**
+   ✅ **PASS COMPLETE 2026-08-26 (no code written)** —
+   [`ai-chat-ledger-statement-category-month-approved-spec.md`](../60-product-reasoning/ai-chat-ledger-statement-category-month-approved-spec.md).
+   A fourth real document family (a dealer/bank ledger statement PDF,
+   date-led rows — distinct from the result sheet, exam-fees list, and
+   Tally day book already studied). A live user session attached a real
+   53-page statement and asked for a category×month debit/credit
+   breakdown; ARCNAVE's chat answered wrong 3× (including once in a fresh
+   conversation after the item-6 catalogue fix), each time a different
+   wrong total — `aiService.js:213-222`'s own documented retrieval/judgment
+   gap, reproduced live on new vocabulary.
+   Adds a third `documentTableExtractionService` strategy
+   (`date_led_rows`, `DD.MM.YYYY`-triggered, `cells`-shaped like
+   `delimited`) and two new `documentAggregateService.aggregate` groupBy
+   values (`'month'`, `'category'`, plus `['month','category']` together),
+   gated so they are only accepted when the detected strategy is
+   `date_led_rows` — never extended to `delimited`/day-book records.
+   **Explicitly does not lift Item 2's column-indexed-groupBy block** for
+   the Tally day book: measured this ledger's 1020 dated rows all carry
+   exactly 13 columns with no omitted empty cells (`{13: 1020}`,
+   `0` blank debit/credit cells) — a different, unblocked case, confirmed
+   by probe rather than assumed. Independent ground truth for the live
+   check: PLB ₹1,70,722.00 credit, SD ₹3,14,676.15 debit, grand total
+   ₹3,44,970.15 debit / ₹15,72,350.84 credit — cross-verified against a
+   previously-built reference workbook for the same statement, exact to
+   the rupee. Does not touch or require ADL-058 (PDF geometry) — this
+   document has no merged-cell/column-misalignment problem to begin with.
+   Not yet built; not inserted ahead of the existing "Exact next action"
+   below — sequencing between this and ADL-058's build-slice is an open
+   choice for whoever picks this up next.
+
 **The rule these share, demonstrated three times in one session:** replacing
 a guess with a structural fact worked every time (round 39's pinned tool;
 the deterministic verifier catching a fabricated breakdown); asking the
@@ -554,13 +593,24 @@ insufficiency guidance, and the pre-existing scope rule beside it). Prefer
 a deterministic check over an instruction.
 
 **Not on this list, deliberately:** exposing `Bash`-equivalent arbitrary
-execution. ARCNAVE already has scoped equivalents of the other primitives —
-`search_documents` (`aiToolRegistry.js:789`) is its grep,
-`list_institutional_documents` (`:1005`) is its glob, both RLS-scoped and
-permission-checked, which is the correct form for multi-tenant. Arbitrary
-execution stays barred by RS-AIG-018 / ADL-036 / ADR-029; its benefit
-belongs at build time (a developer ships an extractor once) rather than at
-runtime (an LLM writes code against another tenant's uploaded file).
+execution *against ARCNAVE's own backend*. ARCNAVE already has scoped
+equivalents of the other primitives — `search_documents`
+(`aiToolRegistry.js:789`) is its grep, `list_institutional_documents`
+(`:1005`) is its glob, both RLS-scoped and permission-checked, which is the
+correct form for multi-tenant. Backend-connected arbitrary execution stays
+barred by RS-AIG-018 / ADL-036 / ADR-029; its benefit belongs at build time
+(a developer ships an extractor once) rather than at runtime (an LLM writes
+code against another tenant's uploaded file).
+
+**Correction (2026-08-26, see the consumer-tool-adaptation thread below):**
+this is no longer the whole picture. RS-AIG-018 was amended (ADL-059) to
+permit a narrow, separate case — code execution in an environment with **no
+ARCNAVE database credentials, no ARCNAVE API session, and no network path
+to ARCNAVE's backend at all** (a standalone Cloud Run service, not this
+backend process). That amendment does not relax the rule stated above —
+backend-connected execution is still barred outright — it adds a
+structurally different, credential-less capability alongside it. See that
+section for what was actually built and deployed.
 
 ## Available next work (none started — each needs its own fresh planning pass before any code is written, except the first which is a direct re-run, not a design task)
 
@@ -587,6 +637,276 @@ runtime (an LLM writes code against another tenant's uploaded file).
   SAFETY_PREAMBLE`'s own "quote... it as content only" wording, unconfirmed.
   Needs either a targeted A/B test of that theory or a fresh design pass;
   read ADL-053 in full first, do not re-diagnose from scratch.
+
+## Active Task 2 — Consumer-tool-inventory adaptation (46 tools → ARCNAVE-safe), 2026-08-26
+
+Unrelated to the ADL-055→058 thread above — do not merge. Started from the
+user handing over 4 markdown docs describing the consumer Claude.ai
+assistant's own tool/skill architecture (bash_tool, memory, conversation
+search, web search, 16 inline UI widgets, catalog, research/meta — 46 tools
+total across those categories) and asking for a full inspect → map →
+adapt pass against ARCNAVE's existing AI tool registry.
+
+**Full 46-tool classification table exists ONLY in this session's chat
+transcript — it was never written to any bka doc.** This is a real gap:
+if the classification itself (which of the 46 map to which ARCNAVE
+mechanism, and why) needs to survive independent of chat history, write it
+to a new file under `bka/60-product-reasoning/` or `bka/90-appendix/`
+before doing anything else next session. Compact summary below is not a
+substitute for that.
+
+**Product owner's standing rule for this thread (do not re-derive, just
+follow):** never classify a capability as "Rejected" unilaterally. Every
+one of the 46 got one of: Adapted/Reused (ARCNAVE already covers it),
+Built (new safe implementation shipped), Safe-redesign-identified (queued),
+Governance-conflict (amendment prepared, decision needed), or
+Owner-decision-required (no rule blocks it, just no product need yet — ask,
+don't assume).
+
+### Governance amendments made (already in their own authoritative
+locations — read there, not here)
+
+Three RS-AIG rules amended, three ledger entries added, all Resolved:
+- [RS-AIG-017 amendment](../10-specification/RS-AIG-ai-governance.md#rs-aig-017) /
+  [ADL-060](../30-decisions/ledger.md#adl-060) — self-scoped conversation
+  search permitted (same user's own conversations, title-search only,
+  never cross-user/cross-college).
+- [RS-AIG-018 amendment](../10-specification/RS-AIG-ai-governance.md#rs-aig-018) /
+  [ADL-059](../30-decisions/ledger.md#adl-059) — credential-less code
+  execution permitted, in an environment with zero ARCNAVE DB/API/network
+  access.
+- [RS-AIG-020 amendment](../10-specification/RS-AIG-ai-governance.md#rs-aig-020) /
+  [ADL-061](../30-decisions/ledger.md#adl-061) — open web search permitted
+  (not just the existing allowlist-only `fetch_trusted_web_page`).
+
+`bka/tools/validate.py` run after these edits: same 23 pre-existing errors
+as before (unrelated ADL-055→058 addendum-anchor gaps), zero new errors.
+
+### Code built and tested this session (backend/) — **NOT YET COMMITTED**
+
+Only `sandbox-service/` (below) is committed and pushed
+(`origin/master@ce73da9`). Everything in `backend/` is still uncommitted —
+`git status --short` will show it all as modified/untracked. Do not lose
+this by assuming a fresh clone has it.
+
+New files:
+- `backend/src/services/aiInteractionService.js` — presentation-only
+  validators (`buildChoicePrompt`, `buildOptionsCard`, `buildQuiz`,
+  `buildTranslationCard`, `buildSteps`)
+- `backend/src/services/sandboxExecutionService.js` — ADL-059 HTTP client
+- `backend/src/services/webSearchService.js` — ADL-061 client, **currently
+  hardcoded to Google Custom Search — see BLOCKED note below, this needs a
+  provider rewrite before it's usable**
+- `backend/src/services/weatherService.js` — OpenWeatherMap client, built,
+  not yet configured (no `OPENWEATHER_API_KEY` set)
+- `backend/tests/ai-generic-capability-adaptation.test.js`
+- `backend/tests/sandbox-execution-service.test.js`
+- `backend/tests/web-search-weather-service.test.js`
+
+Modified files:
+- `backend/src/config.js` — added `sandboxServiceUrl`, `sandboxServiceToken`,
+  `googleSearchApiKey`, `googleSearchEngineId`, `openWeatherApiKey` (all
+  optional, not `required()` — each throws its own `*NotConfiguredError` at
+  call time)
+- `backend/src/services/aiToolRegistry.js` — 10 new tools registered:
+  `ai_memory_list`, `ask_user_choice`, `conversation_search`,
+  `present_options`, `present_quiz`, `present_translation`,
+  `present_steps`, `execute_code`, `web_search`, `weather_fetch` (all L1,
+  Internal, all 4 roles, none `humanOnly`)
+- `backend/src/services/aiExperience/sectionBuilder.js` — new section
+  builders: `buildChart`, `buildTimeline`, `buildPresentationTool`
+  (dispatches `choices`/`optionsCard`/`quiz`/`translation`/`steps` by tool
+  name)
+- `backend/src/services/aiExperience/qualityGuard.js` — normalize/
+  `hasContent` extended for all new section types
+- `backend/src/services/aiExperience/markdown.js` — render functions for
+  chart (unicode bar), timeline, optionsCard, quiz (+ answer key),
+  translation (table), steps
+- `backend/tests/ai-experience-layer.test.js` — extended with chart/
+  timeline/choices/optionsCard/quiz/translation/steps test coverage
+
+New top-level directory, **committed and pushed**
+(`origin/master@ce73da9`):
+- `sandbox-service/` — `server.js`, `Dockerfile`, `package.json` — the
+  ADL-059 standalone execution service. **Deployed and live**: Cloud Run,
+  project `project-8bcf740a-a7bd-4aea-974`, region `asia-south1`, service
+  `arcnave-sandbox-service`, routed through isolated VPC
+  `arcnave-sandbox-vpc`/subnet `arcnave-sandbox-subnet` with
+  `--vpc-egress=all-traffic` and a deny-all-egress firewall rule (no route
+  to the public internet or to ARCNAVE's own VPC exists). Auth: shared
+  secret via `x-sandbox-auth` header (`--allow-unauthenticated` at the
+  Cloud Run level — IAM invoker auth was designed but never coded, see
+  Known gaps below).
+
+### Verified test baseline (run individually per file, `source
+backend/.env.local.sh` first)
+
+```
+node --test tests/ai-experience-layer.test.js              → 39/39
+node --test tests/ai-generic-capability-adaptation.test.js → 26/26
+node --test tests/ai-tool-registry-uat-wiring.test.js       → 15/15
+node --test tests/ai-tool-registry-analytics-level.test.js → 6/6
+node --test tests/ai-memory-service.test.js                 → 23/23
+node --test tests/ai-tool-retrieval-service.test.js         → 6/6
+node --test tests/ai.test.js                                → 28/28
+node --test tests/ai-service.test.js                        → 180/182
+node --test tests/sandbox-execution-service.test.js          → 9/9
+node --test tests/web-search-weather-service.test.js         → 7/7
+```
+
+The 2 `ai-service.test.js` failures are the same pre-existing,
+unrelated `fetch_trusted_web_page` role-assertion failures documented in
+Standing notes below (predate this session by 5 days, commit `578dc3f`,
+2026-08-21) — not a regression from this thread.
+
+**Live end-to-end verification, not just unit tests:** `execute_code`
+confirmed working against the real deployed Cloud Run sandbox (not
+mocked) — real Python execution, wrong/missing auth correctly 401s, 15s
+timeout kills an infinite loop, runs as non-root. Confirmed again after a
+secret rotation (see Known gaps). `web_search` and `weather_fetch` are
+NOT live — see below.
+
+### BLOCKED — web_search provider (Google Custom Search is dead for new
+projects)
+
+Chose Google Custom Search JSON API originally (product owner's own pick
+from an offered list). Fully configured correctly — API enabled, billing
+linked, key correctly scoped, quota available (10,000/day, 0.04% used) —
+and it **still fails with a persistent 403**: `"This project does not have
+the access to Custom Search JSON API."` Root-caused via live web search
+(not a guess this time): **Google has closed this API to new
+customers/projects ahead of its full discontinuation on 2027-01-01** — no
+configuration fixes it. Sources: [Google Developer forums
+thread](https://discuss.google.dev/t/custom-search-json-api-returns-403-permission-denied-on-new-org-new-account-restriction/347093),
+[Programmable Search Engine Community
+thread](https://support.google.com/programmable-search/thread/421229041),
+[GitHub issue confirming the same root cause](https://github.com/diegosouzapw/OmniRoute/issues/1984).
+
+**Exact next action for this sub-thread:** pick a real, working provider —
+**Tavily** (built for LLM/agent search, ~1000 free/month) or **Brave
+Search API** (independent index, ~2000 free/month) were offered; the user
+had not chosen either when the session paused. Once chosen:
+1. Sign up, get the API key (both are single-key setups, no GCP-style
+   CSE/project dance).
+2. Rewrite `backend/src/services/webSearchService.js` — it currently
+   calls `https://www.googleapis.com/customsearch/v1` specifically; the
+   whole `search()` function body needs replacing for the new provider's
+   endpoint/response shape. Keep the same exported shape (`search(client,
+   collegeId, query)` → `[{title, url, snippet}]`) so
+   `aiToolRegistry.js`'s `web_search` tool registration and
+   `backend/tests/web-search-weather-service.test.js` don't need to
+   change.
+3. Update `config.js`'s `googleSearchApiKey`/`googleSearchEngineId`
+   fields to whatever the new provider actually needs (likely a single
+   key, dropping the engine-id field entirely).
+4. Update the [RS-AIG-020 amendment
+   text](../10-specification/RS-AIG-ai-governance.md#rs-aig-020) and
+   [ADL-061](../30-decisions/ledger.md#adl-061) — both currently say
+   "Google Custom Search" as the chosen provider; that's now factually
+   wrong and must be corrected to whichever provider is actually used.
+5. Re-run the opt-in + live test pattern from step 6 below.
+
+### Not yet done — weather_fetch
+
+Code complete (`weatherService.js`), never configured. Needs
+`OPENWEATHER_API_KEY` (sign up at openweathermap.org, free tier) set in
+`backend/.env.local.sh`. Was deprioritized behind the web_search
+troubleshooting; genuinely trivial once picked back up (same shape as the
+sandbox/search opt-in pattern below).
+
+### Per-college opt-in pattern (needed for web_search and weather_fetch
+before they'll actually run for any college, even with keys set)
+
+`fetch_trusted_web_page`'s own opt-in pattern, reused. Real college used
+for testing this session: `collegeId = 'demo'` (**note: this is
+`colleges.college_id`, the human-readable slug — NOT `colleges.id`, the
+UUID.** Confirmed via `pg_get_constraintdef` on
+`configurations_college_id_fkey`: `FOREIGN KEY (college_id) REFERENCES
+colleges(college_id)`. This tripped up the first opt-in attempt this
+session — don't repeat that mistake.). Exact pattern used (adapt the
+`category`/`collegeId` for whichever tool needs opting in):
+
+```js
+const client = await pool.connect();
+await client.query('BEGIN');
+await client.query("SELECT set_config('app.current_tenant', $1, true)", [collegeId]);
+await configurationService.setConfiguration(client, {
+  collegeId, category: 'web_search', configuration: { enabled: true }, expectedVersion: 0, userId: null,
+});
+await client.query('COMMIT');
+```
+
+`expectedVersion: 0` is required (not optional) the first time a category
+row is created for a college — omitting it throws `"category ... does not
+exist yet; expectedVersion must be null or 0"`.
+
+### Known gaps / not done, flagged not silently skipped
+
+- **IAM invoker auth for the sandbox service was designed
+  (`Cloud Run service.md` discussion) but never coded** — `sandboxExecutionService.js`
+  only sends the shared-secret header, no Google identity token. The
+  Cloud Run service is currently `--allow-unauthenticated`, protected only
+  by the shared secret. Add identity-token minting to
+  `sandboxExecutionService.js` if the second auth layer is still wanted.
+- **A real secret was accidentally exposed in this chat transcript once**
+  (an unredacted `grep` of `.env.local.sh`) — rotated immediately after
+  (new `SANDBOX_SHARED_SECRET` generated in Cloud Shell, Cloud Run service
+  updated via `gcloud run services update --update-env-vars`, local
+  `.env.local.sh` updated by the user directly, re-verified live
+  end-to-end working). Not an outstanding risk, but note the discipline
+  going forward: never `grep`/`cat` a secrets file without redaction, and
+  generate secrets only in a context whose output won't land in a visible
+  transcript.
+- **Real gaps from the 46-tool reclassification, approved but not
+  actually built** (own-goal, not a decision reversal):
+  - `recent_chats` / `read_conversation` — ADL-060 approved "self-scoped
+    conversation search" broadly; only title-search (`conversation_search`)
+    was actually built. Listing recent conversations (no search term) and
+    opening/reading one specific past conversation's full content are
+    separate, still-missing tools.
+  - `featured_card_display_v0` — product owner explicitly said "build
+    pannunga" (build it) bundled with `present_options`; only
+    `present_options` was built. Featured/single-match card section
+    (scope: single unambiguous top-match display only, never an implied
+    "AI's best pick" — see the conversation's own safety reasoning for
+    why) is still unbuilt.
+  - `visualize:show_widget` — identified as a safe-redesign candidate
+    (SVG-only, schema-validated, from structured data only) but never
+    built; low priority per that same discussion.
+- **Real gaps, never fully resolved/decided:**
+  - `image_search` — bundled "yes" in an early grouped question, never
+    built, never explicitly re-confirmed or declined afterward.
+  - `product_carousel_display_v0` — never explicitly asked; the user
+    picked "day-by-day calendar view" (built, as the `timeline` section)
+    from a question that bundled both, but carousel itself was never
+    separately decided.
+  - Plugin/skill catalog (`search_plugins`, `search_skills`,
+    `suggest_plugin_install`, `suggest_skills`, `recommend_claude_apps`) —
+    user said "yes, plan for the future" (directional approval only); no
+    architecture/design pass has happened.
+  - `visualize:read_me`, `recipe_display_v0`, `end_conversation`,
+    `suggest_research` — never asked about at all after the initial
+    classification pass.
+- `bka/20-matrices/ai-capability-matrix.md` still not regenerated — was
+  already stale before this session (66 documented vs. the real count),
+  now further stale (real count is 66 + 10 new = 76, not counting
+  whatever the pre-session drift already was). Manual doc, not
+  CI-enforced (confirmed via `validate.py`), so not blocking, just
+  accumulating drift.
+
+### Exact next action for this thread
+
+1. **Commit the uncommitted backend work** (ask the user first, same
+   discipline as the `sandbox-service/` push — they scoped that push
+   narrowly on purpose, don't assume blanket permission for the rest).
+2. **Pick a web_search provider** (Tavily or Brave — see BLOCKED section
+   above) and rewrite `webSearchService.js` for it, then correct the
+   ADL-061/RS-AIG-020 "Google Custom Search" text to match reality.
+3. **Get `OPENWEATHER_API_KEY`** set and opt in a test college (pattern
+   above), verify live.
+4. Once those two are live, revisit the "Known gaps" list above with the
+   product owner — each needs either a build or an explicit decision,
+   per their own standing rule (no unilateral "Rejected").
 
 ## Standing, environment-level notes (unrelated to any specific task, keep until they stop being true)
 

@@ -21,6 +21,13 @@ function hasContent(sections) {
     sections.summary
     || (sections.keyMetrics && sections.keyMetrics.length > 0)
     || detailsHasRows
+    || (sections.chart && sections.chart.points && sections.chart.points.length > 0)
+    || (sections.timeline && sections.timeline.days && sections.timeline.days.length > 0)
+    || (sections.choices && sections.choices.options && sections.choices.options.length > 0)
+    || (sections.optionsCard && sections.optionsCard.options && sections.optionsCard.options.length > 0)
+    || (sections.quiz && sections.quiz.questions && sections.quiz.questions.length > 0)
+    || sections.translation
+    || (sections.steps && sections.steps.steps && sections.steps.steps.length > 0)
     || (sections.insights && sections.insights.length > 0)
     || (sections.recommendedActions && sections.recommendedActions.length > 0),
   );
@@ -33,6 +40,36 @@ function normalizeDetails(details) {
   return details;
 }
 
+function normalizeChart(chart) {
+  if (!chart || !Array.isArray(chart.points) || chart.points.length === 0) return null;
+  return chart;
+}
+
+function normalizeTimeline(timeline) {
+  if (!timeline || !Array.isArray(timeline.days) || timeline.days.length === 0) return null;
+  return timeline;
+}
+
+function normalizeChoices(choices) {
+  if (!choices || !Array.isArray(choices.options) || choices.options.length === 0) return null;
+  return choices;
+}
+
+function normalizeOptionsCard(optionsCard) {
+  if (!optionsCard || !Array.isArray(optionsCard.options) || optionsCard.options.length === 0) return null;
+  return optionsCard;
+}
+
+function normalizeQuiz(quiz) {
+  if (!quiz || !Array.isArray(quiz.questions) || quiz.questions.length === 0) return null;
+  return quiz;
+}
+
+function normalizeSteps(steps) {
+  if (!steps || !Array.isArray(steps.steps) || steps.steps.length === 0) return null;
+  return steps;
+}
+
 function validate(sections) {
   const cleaned = {
     title: sections.title,
@@ -40,6 +77,13 @@ function validate(sections) {
     summary: sections.summary || null,
     keyMetrics: (sections.keyMetrics || []).filter((m) => m && m.value),
     details: normalizeDetails(sections.details),
+    chart: normalizeChart(sections.chart),
+    timeline: normalizeTimeline(sections.timeline),
+    choices: normalizeChoices(sections.choices),
+    optionsCard: normalizeOptionsCard(sections.optionsCard),
+    quiz: normalizeQuiz(sections.quiz),
+    translation: sections.translation || null,
+    steps: normalizeSteps(sections.steps),
     insights: dedupe(sections.insights),
     recommendedActions: dedupe(sections.recommendedActions),
     persona: sections.persona || null,

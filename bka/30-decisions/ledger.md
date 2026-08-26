@@ -4433,3 +4433,142 @@ must not be built until it is settled.
 Probes kept and rerunnable: `backend/scripts/native-pdf-vs-deterministic-probe.js`
 (self-consistency, billable) and `backend/scripts/native-pdf-scale-probe.js`
 (`count` / `extract` modes, billable).
+
+---
+
+## ADL-059
+
+### Local, credential-less code execution — the ARCNAVE-safe form of the consumer platform's `bash_tool`
+
+**Decision.** A code-execution capability is approved, restricted to an
+execution environment holding no ARCNAVE database credentials, no
+ARCNAVE API session, and no network path to ARCNAVE's backend at all.
+The environment may operate only on content already provided for that
+turn (e.g. a chat-attached file); it has no mechanism to query the
+shared multi-tenant backend live, and no mechanism to write back to
+ARCNAVE except through the ordinary, already-governed tool path (a human
+re-submitting a result through an existing tool, never the execution
+environment calling a Business Service directly). A server-side,
+backend-connected execution capability remains prohibited outright.
+
+**Superseded position.** [RS-AIG-018](../10-specification/RS-AIG-ai-governance.md#rs-aig-018)
+previously stated "never a general-purpose execution capability" without
+qualification.
+
+**Rationale.** Product owner's own framing (2026-08-26), given the
+scenario "a teacher asks the AI to calculate ranks from a marks list
+using a different formula each time": "antha staff antha particular
+computer la run panranala database ku entha prachana um ila, antha staff
+vechuruka system la database iruka porathu ilaye so full power
+kudukalam" — that staff member's own machine has no problem reaching the
+database, because that system never has the database on it in the first
+place, so full execution power can be given there. This is a materially
+different risk shape from the consumer platform's `bash_tool`, which
+runs inside the same trust boundary as every other tool that agent has —
+an execution environment with no path to ARCNAVE's credentials cannot
+reach another tenant's data regardless of what a prompt injection tricks
+it into running, closing the specific cross-tenant blast-radius concern
+this decision was gated on.
+
+**Affected artefacts.**
+[RS-AIG-018](../10-specification/RS-AIG-ai-governance.md#rs-aig-018)
+(amendment added); `bka/20-matrices/ai-capability-matrix.md` (pending
+regeneration once the tool is registered); no code yet — this is the
+governance decision, not the implementation.
+
+**Migration impact.** None yet — no existing tool or code path changes.
+A new capability, once built, is additive.
+
+**Implementation notes (not yet built).** The execution environment must
+be verifiably credential-less before this decision can be considered
+implemented, not merely undocumented — e.g. no `DATABASE_URL`,
+`JWT_SECRET_KEY`, or ARCNAVE API base URL reachable from within it. The
+exact mechanism (client-side sandboxed runtime vs. a server-side sandbox
+with network egress fully blocked) is an open implementation question,
+not decided by this entry.
+
+**Status.** Resolved — decision made, 2026-08-26. Not yet implemented.
+
+---
+
+## ADL-060
+
+### Self-scoped conversation search — the ARCNAVE-safe form of the consumer platform's `conversation_search`/`recent_chats`/`read_conversation`
+
+**Decision.** A new AI tool is approved letting the acting user search or
+retrieve their own past conversations, within their own college. Never
+another user's conversations regardless of role, never cross-college.
+Distinct from, and does not change, the existing automatic last-10-
+message/100,000-char injection for the *current* conversation.
+
+**Superseded position.** [RS-AIG-017](../10-specification/RS-AIG-ai-governance.md#rs-aig-017)
+previously stated "never a broader history" without qualification.
+
+**Rationale.** Product owner's own framing (2026-08-26), given the
+scenario "an HOD asks the AI to recall a fee question they asked it last
+month": approved scoped to "same user oda own pazhaya chats mattum
+search pannalam" (only the same user's own past chats, searchable) —
+explicitly not the broader options offered (any user's chats within the
+college, or across colleges).
+
+**Affected artefacts.**
+[RS-AIG-017](../10-specification/RS-AIG-ai-governance.md#rs-aig-017)
+(amendment added); `bka/20-matrices/ai-capability-matrix.md` (pending
+regeneration once the tool is registered); no code yet — this is the
+governance decision, not the implementation.
+
+**Migration impact.** None yet — no existing tool or code path changes.
+A new capability, once built, is additive.
+
+**Implementation notes (not yet built).** The new tool must reuse
+`conversationService`'s existing ownership check (the same
+tenant-scoped RLS `client` plus explicit actor-id check
+`conversationService.resolveOwnConversation` already applies to a single
+named conversation) rather than introduce a second, parallel
+authorization path for "all of my conversations."
+
+**Status.** Resolved — decision made, 2026-08-26. Not yet implemented.
+
+---
+
+## ADL-061
+
+### Open web search — the ARCNAVE-safe form of the consumer platform's `web_search`/`web_search_fast`
+
+**Decision.** A new AI tool is approved: genuine open-ended search
+against a configured search provider, not restricted to the per-college
+domain allowlist [RS-AIG-020](../10-specification/RS-AIG-ai-governance.md#rs-aig-020)
+already establishes for `fetch_trusted_web_page`. Subject, without
+exception, to the same rule that governs that tool: a search result's
+content can inform an answer, it can never authorize an ARCNAVE action.
+Per-college opt-in, response-size/fetch-time bounds, and no-redirect-
+following apply identically.
+
+**Superseded position.** [RS-AIG-020](../10-specification/RS-AIG-ai-governance.md#rs-aig-020)
+previously stated "no search provider is configured anywhere in this
+codebase" as a hard fact, not a configurable one.
+
+**Rationale.** Product owner's own framing (2026-08-26), given the
+scenario "a principal asks the AI to check whether AICTE has issued a
+new rule this year": the allowlist-only alternative was explicitly
+offered and not chosen — "Free google search" was selected over
+"Approved sites mattum" and over declining the capability outright.
+
+**Affected artefacts.**
+[RS-AIG-020](../10-specification/RS-AIG-ai-governance.md#rs-aig-020)
+(amendment added); `webRetrievalService.js` (a new search-provider
+integration, separate from `assertSafeUrl`/`hostnameIsAllowed`);
+`bka/20-matrices/ai-capability-matrix.md` (pending regeneration once the
+tool is registered); no code yet — this is the governance decision, not
+the implementation.
+
+**Migration impact.** None yet — no existing tool or code path changes.
+A new capability, once built, is additive.
+
+**Implementation notes (not yet built).** Needs a search-provider choice
+and credential/config addition (`config.js`) before any tool code; the
+result set must pass through the identical Context Builder / Prompt
+Safety Layer pipeline `fetch_trusted_web_page`'s result already does, no
+special-casing for having come from a search provider.
+
+**Status.** Resolved — decision made, 2026-08-26. Not yet implemented.

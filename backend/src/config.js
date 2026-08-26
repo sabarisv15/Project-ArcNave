@@ -286,4 +286,30 @@ module.exports = {
     if (value > MAX_TOOL_CALLS_PER_TURN_CEILING) throw new Error(ERROR);
     return value;
   })(),
+
+  // ADL-059 — the credential-less code-execution sandbox. Deliberately
+  // NOT `required()`: this is a separate, not-yet-deployed service (see
+  // sandboxExecutionService.js's own file comment), so the main backend
+  // must start up fine with it entirely absent — sandboxExecutionService
+  // throws its own SandboxNotConfiguredError at call time instead,
+  // same shape webRetrievalService/imageGenerationService already use
+  // for "the capability exists in code before its infra/config does."
+  // No API key lives here: the sandbox service is a separate deployment
+  // with its own auth, never a value this main backend's own env holds.
+  sandboxServiceUrl: process.env.SANDBOX_SERVICE_URL || null,
+  // Must match sandbox-service's own SANDBOX_SHARED_SECRET — the second,
+  // independent auth layer alongside Cloud Run IAM invoker auth (see
+  // sandbox-service/server.js's own file comment).
+  sandboxServiceToken: process.env.SANDBOX_SERVICE_TOKEN || null,
+
+  // ADL-061 — open web search (Google Custom Search JSON API). Neither
+  // required() — webSearchService throws its own
+  // WebSearchNotConfiguredError at call time until both are set, same
+  // "capability exists in code before its credentials do" shape as
+  // sandboxServiceUrl above.
+  googleSearchApiKey: process.env.GOOGLE_SEARCH_API_KEY || null,
+  googleSearchEngineId: process.env.GOOGLE_SEARCH_ENGINE_ID || null,
+
+  // Weather fetch (OpenWeatherMap) — same not-yet-configured shape.
+  openWeatherApiKey: process.env.OPENWEATHER_API_KEY || null,
 };

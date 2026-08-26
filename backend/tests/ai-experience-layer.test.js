@@ -216,3 +216,138 @@ test('qualityGuard.validate', async (t) => {
     assert.equal(cleaned.details, null);
   });
 });
+
+test('aiExperienceLayer.buildPresentation — chart section (consumer-tool-adaptation: chart_display_v0)', async (t) => {
+  await t.test('a categorical + numeric array result gets a chart alongside its table, not instead of it', () => {
+    const rows = [
+      { className: 'CSE-A', attendanceRatePercent: 92 },
+      { className: 'CSE-B', attendanceRatePercent: 78 },
+      { className: 'ECE-A', attendanceRatePercent: 85 },
+    ];
+    const presentation = aiExperienceLayer.buildPresentation({
+      sanitizedContext: sanitizedContextFor('attendance_summary', rows),
+      question: 'attendance by class?', answer: 'Here is attendance by class.', toolUsed: 'attendance_summary', actorRole: 'hod', tool: null,
+    });
+    assert.equal(presentation.sections.chart.type, 'chart');
+    assert.equal(presentation.sections.chart.points.length, 3);
+    assert.equal(presentation.sections.chart.points[0].label, 'CSE-A');
+    assert.equal(presentation.sections.chart.points[0].value, 92);
+    assert.equal(presentation.sections.details.type, 'table');
+    assert.match(presentation.markdown, /### Chart/);
+    assert.match(presentation.markdown, /### Details/);
+  });
+
+  await t.test('a single-row result never charts (nothing to compare against)', () => {
+    const presentation = aiExperienceLayer.buildPresentation({
+      sanitizedContext: sanitizedContextFor('attendance_summary', [{ className: 'CSE-A', attendanceRatePercent: 92 }]),
+      question: 'q', answer: 'a', toolUsed: 'attendance_summary', actorRole: 'staff', tool: null,
+    });
+    assert.equal(presentation.sections.chart, null);
+  });
+
+  await t.test('a result with no numeric field never charts', () => {
+    const presentation = aiExperienceLayer.buildPresentation({
+      sanitizedContext: sanitizedContextFor('list_institutional_documents', [{ title: 'Circular A' }, { title: 'Circular B' }]),
+      question: 'q', answer: 'a', toolUsed: 'list_institutional_documents', actorRole: 'staff', tool: null,
+    });
+    assert.equal(presentation.sections.chart, null);
+  });
+});
+
+test('aiExperienceLayer.buildPresentation — choices section (consumer-tool-adaptation: ask_user_input_v0)', async (t) => {
+  await t.test('ask_user_choice renders as a choices section, never duplicated into Details', () => {
+    const presentation = aiExperienceLayer.buildPresentation({
+      sanitizedContext: sanitizedContextFor('ask_user_choice', { prompt: 'Which category?', options: ['Circulars', 'Curriculum', 'Policies'] }),
+      question: 'save this document', answer: 'Which category should this go under?', toolUsed: 'ask_user_choice', actorRole: 'staff', tool: aiToolRegistry.getTool('ask_user_choice'),
+    });
+    assert.deepEqual(presentation.sections.choices, { kind: 'choices', prompt: 'Which category?', options: ['Circulars', 'Curriculum', 'Policies'] });
+    assert.equal(presentation.sections.details, null);
+    assert.equal(presentation.sections.keyMetrics.length, 0);
+    const optionOccurrences = (presentation.markdown.match(/Circulars/g) || []).length;
+    assert.equal(optionOccurrences, 1);
+  });
+
+  await t.test('a non-ask_user_choice tool never produces a choices section even with a similarly-shaped result', () => {
+    const presentation = aiExperienceLayer.buildPresentation({
+      sanitizedContext: sanitizedContextFor('get_college_profile', { prompt: 'not a real question', options: ['a', 'b'] }),
+      question: 'q', answer: 'a', toolUsed: 'get_college_profile', actorRole: 'principal', tool: null,
+    });
+    assert.equal(presentation.sections.choices, null);
+  });
+});
+
+test('aiExperienceLayer.buildPresentation — timeline section (consumer-tool-adaptation: itinerary_display_v0)', async (t) => {
+  await t.test('list_calendar_events groups rows by start_date, sorted, alongside the full table', () => {
+    const rows = [
+      { title: 'Independence Day', start_date: '2026-08-15', event_type: 'Holiday' },
+      { title: 'Semester begins', start_date: '2026-08-01', event_type: 'Academic' },
+      { title: 'Mid-sem exams', start_date: '2026-08-15', event_type: 'Exam' },
+    ];
+    const presentation = aiExperienceLayer.buildPresentation({
+      sanitizedContext: sanitizedContextFor('list_calendar_events', rows),
+      question: 'q', answer: 'Here is the calendar.', toolUsed: 'list_calendar_events', actorRole: 'staff', tool: null,
+    });
+    assert.equal(presentation.sections.timeline.days.length, 2);
+    assert.equal(presentation.sections.timeline.days[0].date, '2026-08-01');
+    assert.equal(presentation.sections.timeline.days[1].events.length, 2);
+    assert.equal(presentation.sections.details.type, 'table');
+  });
+
+  await t.test('a non-calendar tool never produces a timeline even with a start_date-shaped field', () => {
+    const presentation = aiExperienceLayer.buildPresentation({
+      sanitizedContext: sanitizedContextFor('students_roster', [{ name: 'A', start_date: '2026-01-01' }, { name: 'B', start_date: '2026-01-02' }]),
+      question: 'q', answer: 'a', toolUsed: 'students_roster', actorRole: 'staff', tool: null,
+    });
+    assert.equal(presentation.sections.timeline, null);
+  });
+});
+
+test('aiExperienceLayer.buildPresentation — present_options section (consumer-tool-adaptation: options_card_display_v0)', async (t) => {
+  await t.test('renders as a neutral options card, never duplicated into Details', () => {
+    const presentation = aiExperienceLayer.buildPresentation({
+      sanitizedContext: sanitizedContextFor('present_options', { title: 'Ways to handle this', options: [{ label: 'Mark excused', description: 'valid reason given' }, { label: 'Flag for follow-up' }] }),
+      question: 'q', answer: 'Here are two approaches.', toolUsed: 'present_options', actorRole: 'staff', tool: aiToolRegistry.getTool('present_options'),
+    });
+    assert.equal(presentation.sections.optionsCard.options.length, 2);
+    assert.equal(presentation.sections.details, null);
+    assert.match(presentation.markdown, /Mark excused/);
+  });
+});
+
+test('aiExperienceLayer.buildPresentation — present_quiz section (consumer-tool-adaptation: quiz_display_v0)', async (t) => {
+  await t.test('renders questions and a separate answer key, never duplicated into Details', () => {
+    const presentation = aiExperienceLayer.buildPresentation({
+      sanitizedContext: sanitizedContextFor('present_quiz', { title: 'Quiz', questions: [{ question: 'What gas do plants absorb?', options: ['Oxygen', 'CO2'], correctIndex: 1 }] }),
+      question: 'q', answer: 'Here is a quiz.', toolUsed: 'present_quiz', actorRole: 'staff', tool: aiToolRegistry.getTool('present_quiz'),
+    });
+    assert.equal(presentation.sections.quiz.questions.length, 1);
+    assert.equal(presentation.sections.details, null);
+    assert.match(presentation.markdown, /Answer key/);
+  });
+});
+
+test('aiExperienceLayer.buildPresentation — present_translation section (consumer-tool-adaptation: translation_display_v0)', async (t) => {
+  await t.test('renders as a source/target table, never duplicated into Details', () => {
+    const presentation = aiExperienceLayer.buildPresentation({
+      sanitizedContext: sanitizedContextFor('present_translation', {
+        sourceText: 'Hello', sourceLang: 'English', targetText: 'Vanakkam', targetLang: 'Tamil',
+      }),
+      question: 'q', answer: 'Translated below.', toolUsed: 'present_translation', actorRole: 'staff', tool: aiToolRegistry.getTool('present_translation'),
+    });
+    assert.equal(presentation.sections.translation.targetText, 'Vanakkam');
+    assert.equal(presentation.sections.details, null);
+    assert.match(presentation.markdown, /Vanakkam/);
+  });
+});
+
+test('aiExperienceLayer.buildPresentation — present_steps section (consumer-tool-adaptation: step_card_display_v0)', async (t) => {
+  await t.test('renders as a numbered walkthrough, never duplicated into Details', () => {
+    const presentation = aiExperienceLayer.buildPresentation({
+      sanitizedContext: sanitizedContextFor('present_steps', { title: 'Fee correction', steps: ['Open profile', 'Click Request', 'Submit'] }),
+      question: 'q', answer: 'Here is how.', toolUsed: 'present_steps', actorRole: 'staff', tool: aiToolRegistry.getTool('present_steps'),
+    });
+    assert.equal(presentation.sections.steps.steps.length, 3);
+    assert.equal(presentation.sections.details, null);
+    assert.match(presentation.markdown, /1\. Open profile/);
+  });
+});

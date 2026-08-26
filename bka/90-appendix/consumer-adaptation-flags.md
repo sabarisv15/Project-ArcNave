@@ -605,41 +605,92 @@ anything here. Full root-cause (the exact colliding test-file pair,
 if that's really the mechanism) still needs its own investigation
 pass — out of scope for a mechanical flag-clearing pass.
 
-## F15 — live-checked (2026-08-26): the model doesn't connect "generate a file from this document's data" across the two tool calls that actually requires
+## F15 — PARTIALLY FIXED 2026-08-26: budget-exemption shipped and live-verified; the underlying two-tool-sequence gap is still open
 
-**Status: real, observed, unfixed — needs a design decision, not a one-line patch.**
+**Status: real, half-fixed. The reachability bug is gone; the capability gap it was hiding is not.**
 
-Live test via `backend/scripts/f12-live-tool-probe.js`, real Gemini,
-real 400-page/1603-record result-sheet PDF attached: asked *"Can you
-give me an Excel file breaking down the arrears in the ECE Sandwich
-section, with a formula-based total?"*
+**Original finding**, via `backend/scripts/f12-live-tool-probe.js`, real
+Gemini, real 400-page/1603-record result-sheet PDF attached: asked
+*"Can you give me an Excel file breaking down the arrears in the ECE
+Sandwich section, with a formula-based total?"*
 
 The model called `list_skills`, read that `xlsx` skill guidance exists,
 and then answered: *"The retrieved data only lists available code
 skills... and does not contain any student or arrear records... If you
 have the relevant sheet or records, please share..."* — despite the
-exact document being attached to the same turn.
-
-**Root cause, structurally, not a prompting slip:** `execute_code` runs
-in ADL-059's credential-less sandbox by design — no ARCNAVE DB/API
-access, so it cannot itself read an attachment. Building the requested
-file genuinely requires a **two-tool sequence** (`analyze_document_table`
-to pull the real arrears data out of the attachment, THEN `execute_code`
-with that data passed into the generated script) that nothing tells the
-model to perform. At `maxToolCallsPerTurn = 1` this is closed off
-entirely — but the model didn't even name the missing step or ask a
-clarifying question that implied it understood one existed; it treated
-`list_skills`'s output as if it were the data source itself.
+exact document being attached to the same turn. At
+`maxToolCallsPerTurn = 1`, `list_skills` alone spent the turn's only
+tool call, so nothing else could run.
 
 This is the concrete case [F7](#f7-the-output-format-policy-is-a-tool-not-prompt-text-and-that-is-a-real-limitation)'s
 "cap 1 competes with actually answering" concern and item 3
 (`maxToolCallsPerTurn` above 1, [ADL-057 open-risk
 check](../30-decisions/ledger.md#adl-057-open-risk-check--the-model-cannot-write-a-usable-identitypattern-at-cap-1-2026-08-26))
 both already named in the abstract, now reproduced concretely against
-this session's own new file-generation capability. Needs its own design
-pass (either raise the cap for this class of request, or have a skill's
-own guidance explicitly instruct "extract via analyze_document_table
-first, then pass the result into execute_code") — not attempted here.
+this session's own new file-generation capability.
+
+**Fix 1, shipped — `BUDGET_EXEMPT_LOOKUP_TOOLS`** (`aiService.js`,
+`askAgent`'s tool-use loop). `list_skills`, `describe_skill`,
+`decide_output_format`, `decide_image_route`,
+`describe_diagram_constraints`, and `capability_search` no longer
+consume `config.maxToolCallsPerTurn` — the same exemption
+`describe_tools` already had (that tool's own comment predicted exactly
+this failure: *"a fetch that ate the turn's only tool call would leave
+the model unable to call the very tool it just looked up, and the
+feature would be worse than useless"* — the skills subsystem and
+output-format tools shipped without it). `capability_explain` is
+deliberately NOT exempt — it reads real per-college configuration
+through a Business Service, so it is a data read, not a pure lookup.
+They still run through the Policy Gate, still audit, still count in
+`toolsUsed`, still anchor nothing (a new `primaryTool` picks the first
+NON-exempt invoked tool for presentation/verification, falling back to
+the first tool only if every call in the turn was a lookup). A separate
+`MAX_LOOKUP_CALLS = 3` backstop, checked before the handler runs (not a
+post-hoc counter reset, which would let the model loop in unlimited
+batches), stops an unbounded lookup loop from burning latency the
+budget exemption no longer bounds.
+
+5 new tests in `ai-service.test.js` pin: the exemption lets a real tool
+still run at cap 1; a lookup is still reported in `toolsUsed`; the
+`primaryTool`/anchor fix; the `MAX_LOOKUP_CALLS` backstop is a plain
+refusal, not a throw; and a NON-exempt tool still consumes the budget
+(the exemption is an allowlist, not a general softening). Full suite:
+2388/2390 (same 2 pre-existing failures, zero regressions).
+
+**Fix 1 verified live** (`backend/scripts/f15-cap2-live-retest.js`, cap
+temporarily raised to 2 for OBSERVATION ONLY — `config.js`'s own
+default stays 1, that decision needs its own pass, not a side effect of
+this one): first attempt hit the F13 timeout (a 4th live occurrence —
+see F13); second attempt completed with
+`toolsUsed: ["list_skills","describe_skill","execute_code","execute_code"]`
+— proof the exemption works exactly as designed: two lookups ran for
+free, then TWO real budgeted calls (the cap-2 ceiling) both went to
+`execute_code`.
+
+**Still open, a different and more specific gap than originally
+scoped:** the final answer was *"The arrears breakdown... hasn't been
+generated yet... would you like me to process that PDF and generate the
+Excel workbook"* — no file was produced even with two `execute_code`
+attempts and the budget no longer blocked by a lookup. The model never
+called `analyze_document_table` at all in this run. Per
+`file-reading/SKILL.md`, `execute_code` genuinely CAN read an
+attachment directly via its `attachmentId` (an earlier draft of this
+entry claimed it could not — that was wrong, corrected here) — so the
+model may have attempted to parse the 400-page PDF ad hoc inside the
+sandbox rather than reaching for the already-deterministic
+`analyze_document_table` path, and failed at that twice. This script
+only logged tool NAMES, not each call's arguments/stdout/stderr, so the
+exact reason the two `execute_code` calls didn't produce a file is
+**not captured** — recorded honestly as unknown rather than guessed at.
+
+**Next step, not attempted here:** re-run with per-call argument/result
+logging (the wrapping pattern `identity-pattern-live-turn.js` already
+uses on `documentAnalysisService.analyzeAttachment`) to see what the
+model actually sent to `execute_code`, and consider whether
+`file-reading/SKILL.md` should say plainly "if a domain-specific
+extraction tool exists for this data (`analyze_document_table`), call
+that first and pass its result into your script — do not re-parse a
+large document from scratch inside the sandbox."
 
 ## F16 — live-checked (2026-08-26): `present_diagram` is still never actually chosen for a natural "show me a diagram" request
 
@@ -682,6 +733,19 @@ processing that's slow" and for "the tool-select decision itself,
 independent of the question's content, is intermittently too slow with
 106 tools registered" — consistent with, though not proven by, the
 +19.0% token-cost delta F13 already measured.
+
+**Fourth occurrence (2026-08-26, F15 cap-2 live retest):** the FIRST
+attempt at `backend/scripts/f15-cap2-live-retest.js` — an
+attachment-heavy turn this time, the exact opposite content shape from
+the third occurrence above — hit the identical timeout on its first
+try; a second attempt (same question, same document, same process)
+completed normally. Now 2 timeouts on document-heavy turns, 1 on a
+plain text-only turn, all followed by a clean run on retry — the
+pattern looks like a genuine intermittent Vertex-side latency floor
+independent of question shape, not a specific trigger this project has
+found yet. Still unmitigated; still worth designing around (raising
+`MAX_TOTAL_STREAM_MS`, a client-side retry-once, or reducing the
+tool-select payload) before this is relied on for anything time-sensitive.
 
 ## F12 — ~~nothing in this pass has been run against a live model~~ — PARTIALLY CLOSED 2026-08-26
 

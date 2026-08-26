@@ -1,22 +1,29 @@
-// F12 live check — exercise more of the 18 new tools that have never
-// been selected by a real model (bka/90-appendix/consumer-adaptation-flags.md
-// #f12). Uses the real result-sheet PDF (111_cons_result_apr2026.pdf,
-// the same 278,403-char/400-page/1603-record document every ADL-055
-// measurement in this project is anchored to) as a real attachment,
-// asking natural questions shaped to make the model reach for
-// execute_code+saveAs (the xlsx gate, only unit/synthetic-tested so
-// far), capability_search/capability_explain, and present_diagram
-// (previously only tested with a deliberately-bad gradient fill).
+// F15 live retest, cap 2 (bka/90-appendix/consumer-adaptation-flags.md).
 //
-// Does not rig tool selection — the model picks; this only records
-// what it picked and whether the turn completed cleanly.
+// The first live session (f12-live-tool-probe.js) found the model spend
+// its only tool call (cap 1) on list_skills and then tell the user it
+// had no data, despite the document being attached. Two fixes landed:
+// (1) list_skills/describe_skill/decide_output_format/decide_image_route/
+// describe_diagram_constraints/capability_search are now exempt from the
+// tool-call BUDGET (they still run, still audit, still count toward
+// toolsUsed — see BUDGET_EXEMPT_LOOKUP_TOOLS in aiService.js), so a
+// lookup no longer eats the turn's only real tool call. (2) This script
+// additionally raises the OBSERVATION-only cap to 2, matching the exact
+// "observation only, item 3 territory" pattern
+// identity-pattern-live-turn.js already established — NOT a change to
+// config.js's own default, which stays 1 pending its own design pass.
 //
-// Prerequisites: docker compose up -d db/app; real Gemini/Vertex
-// credentials; SANDBOX_SERVICE_URL pointed at a reachable sandbox
-// (local Docker or Cloud Run). Makes real, billable Gemini calls.
+// Exemption alone gets the model to list_skills THEN
+// analyze_document_table (2 real tool uses, only 1 of which is
+// budgeted) — but building the actual xlsx needs a THIRD budgeted call
+// (execute_code, fed the analyze_document_table result). This script
+// measures whether cap 2 is enough, or whether the honest answer is
+// "still not in one turn even after the exemption."
 //
-// Run (inside the app container):
-//   node scripts/f12-live-tool-probe.js
+// Prerequisites: run inside the app container (docker compose exec
+// app node scripts/f15-cap2-live-retest.js) — same as
+// f12-live-tool-probe.js, reuses the local sandbox wiring from F2.
+// Makes real, billable Gemini calls.
 
 'use strict';
 
@@ -33,28 +40,16 @@ const { seedPrincipalPosition, cleanupPositionRows } = require('../tests/helpers
 
 embeddingService.isAvailable = () => false;
 
-// Run inside the app container (docker compose exec app ...), where the
-// real Gemini ADC, DB, and SANDBOX_SERVICE_URL (host.docker.internal, see
-// F2) are already wired — unlike the other scripts/*-live-turn.js probes,
-// which run natively on the Windows host. The PDF is copied to backend/
-// (bind-mounted into the container) rather than read from the host's
-// Downloads path directly, since the container can't see the host
-// filesystem outside that mount.
 const RESULT_SHEET = path.join(__dirname, '..', 'tmp-inspect.pdf');
-const PASSWORD = 'F12LiveToolProbePass123!';
-
-const QUESTIONS = [
-  'Can you give me an Excel file breaking down the arrears in the ECE Sandwich section, with a formula-based total?',
-  'What can you help me with when it comes to student marks and attendance? List your real capabilities.',
-  'Show me a diagram summarizing the arrears situation in the ECE Sandwich section.',
-];
+const PASSWORD = 'F15Cap2LiveRetestPass123!';
+const QUESTION = 'Can you give me an Excel file breaking down the arrears in the ECE Sandwich section, with a formula-based total?';
 
 async function seedTenant(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
-  const collegeId = `f12${suffix}`;
+  const collegeId = `f15${suffix}`;
   await adminPool.query(
     'INSERT INTO colleges (college_id, name, subdomain, address) VALUES ($1, $1, $2, $3)',
-    [collegeId, `f12tenant${suffix}`, 'f12-live-probe-address'],
+    [collegeId, `f15tenant${suffix}`, 'f15-cap2-retest-address'],
   );
   const passwordHash = await security.hashPassword(PASSWORD);
   const userResult = await adminPool.query(
@@ -64,7 +59,7 @@ async function seedTenant(adminPool) {
   );
   const userId = userResult.rows[0].id;
   await adminPool.query(
-    "INSERT INTO staff (college_id, user_id, full_name) VALUES ($1, $2, 'F12 Live Probe Principal')",
+    "INSERT INTO staff (college_id, user_id, full_name) VALUES ($1, $2, 'F15 Cap2 Retest Principal')",
     [collegeId, userId],
   );
   await seedPrincipalPosition(adminPool, { collegeId, userId });
@@ -99,20 +94,9 @@ async function withTenantClient(appPool, collegeId, fn) {
   }
 }
 
-function reportTurn(label, question, turn) {
-  console.log(`\n=== ${label} ===`);
-  console.log(`Q: ${question}`);
-  if (turn.error) {
-    console.log(`THREW ${turn.error.name}: ${turn.error.message}`);
-    return;
-  }
-  console.log(`toolsUsed: ${JSON.stringify(turn.toolsUsed || turn.toolUsed)}`);
-  console.log(`answer (first 500 chars): ${(turn.answer || '').slice(0, 500)}`);
-}
-
 async function main() {
   if (!fs.existsSync(RESULT_SHEET)) {
-    console.error(`Missing ${RESULT_SHEET} — deliberately not in git (real student PII).`);
+    console.error(`Missing ${RESULT_SHEET} — copy the result-sheet PDF to backend/tmp-inspect.pdf first (not in git, real PII).`);
     process.exit(2);
   }
 
@@ -120,6 +104,9 @@ async function main() {
   const appPool = new Pool({ connectionString: config.databaseUrl });
   const { collegeId, userId } = await seedTenant(adminPool);
   const identityContext = { userId, role: 'principal', collegeId };
+
+  const originalCap = config.maxToolCallsPerTurn;
+  config.maxToolCallsPerTurn = 2; // OBSERVATION ONLY — not config.js's own default.
 
   try {
     const attachment = await withTenantClient(appPool, collegeId, (client) => documentService.uploadChatAttachment(
@@ -130,25 +117,27 @@ async function main() {
       { actorUserId: userId },
     ));
     const attachmentId = attachment.id || (attachment.document && attachment.document.id);
-    console.log(`Seeded tenant ${collegeId}, attachment ${attachmentId}`);
+    console.log(`Seeded tenant ${collegeId}, attachment ${attachmentId}, maxToolCallsPerTurn=${config.maxToolCallsPerTurn}`);
+    console.log(`Q: ${QUESTION}`);
 
-    for (let i = 0; i < QUESTIONS.length; i += 1) {
-      const question = QUESTIONS[i];
-      // Q2 (capability question) deliberately has no attachment — it's not
-      // a document question, and attaching one would just distract the
-      // model's tool choice.
-      const attachmentIds = i === 1 ? [] : [attachmentId];
-      let turn;
-      try {
-        turn = await withTenantClient(appPool, collegeId, (client) => aiService.askAgent(
-          client, question, { identityContext, attachmentIds },
-        ));
-      } catch (err) {
-        turn = { error: err };
-      }
-      reportTurn(`Turn ${i + 1}`, question, turn);
+    let turn;
+    try {
+      turn = await withTenantClient(appPool, collegeId, (client) => aiService.askAgent(
+        client, QUESTION, { identityContext, attachmentIds: [attachmentId] },
+      ));
+    } catch (err) {
+      turn = { error: err };
+    }
+
+    if (turn.error) {
+      console.log(`THREW ${turn.error.name}: ${turn.error.message}`);
+    } else {
+      console.log(`toolsUsed: ${JSON.stringify(turn.toolsUsed || turn.toolUsed)}`);
+      console.log(`documentCoverageIncomplete: ${turn.documentCoverageIncomplete}`);
+      console.log(`answer (first 800 chars): ${(turn.answer || '').slice(0, 800)}`);
     }
   } finally {
+    config.maxToolCallsPerTurn = originalCap;
     await cleanupTenant(adminPool, collegeId).catch((err) => console.error('cleanup failed:', err.message));
     await appPool.end();
     await adminPool.end();

@@ -3982,6 +3982,86 @@ test('askAgent: schema fetches are capped, and exceeding the cap is a plain refu
   assert.match(result.answer, /Answered without it/);
 });
 
+// F15 (bka/90-appendix/consumer-adaptation-flags.md) — a live turn spent
+// its only tool call on list_skills, got back a list of names, and told
+// the user it had no data, with the document attached to that same turn.
+// These pin the exemption that fixes the reachability half of that.
+
+test('askAgent: a budget-exempt lookup does NOT consume maxToolCallsPerTurn, so the real tool still runs at cap 1', async (t) => {
+  t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }, { id: 't2' }]));
+  assert.equal(config.maxToolCallsPerTurn, 1, 'this test is only meaningful against the real default');
+  const { result } = await captureCatalogueTurn(t, {
+    retrieval: (tools) => tools.slice(0, 3),
+    responses: [
+      () => mockToolCallResponse('list_skills', {}),
+      () => mockToolCallResponse('academic_class_timetable', {}),
+      () => mockAnswerResponse('There are 2 periods scheduled.'),
+    ],
+  });
+  // Both ran, at cap 1. Before the exemption, list_skills alone ended the turn.
+  assert.deepEqual(result.toolsUsed, ['list_skills', 'academic_class_timetable']);
+  assert.match(result.answer, /2 periods/);
+});
+
+test('askAgent: a lookup is still a real tool use — audited and reported, not silently free', async (t) => {
+  t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }]));
+  const { result } = await captureCatalogueTurn(t, {
+    retrieval: (tools) => tools.slice(0, 3),
+    responses: [
+      () => mockToolCallResponse('describe_skill', { name: 'xlsx' }),
+      () => mockToolCallResponse('academic_class_timetable', {}),
+      () => mockAnswerResponse('One period.'),
+    ],
+  });
+  // Unlike describe_tools (which runs no handler and is excluded from
+  // toolsUsed entirely), these run real handlers and must stay visible.
+  assert.ok(result.toolsUsed.includes('describe_skill'), 'a lookup that ran a handler must be reported');
+});
+
+test('askAgent: presentation and verification anchor on the real tool, not a lookup that preceded it', async (t) => {
+  t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }]));
+  const { result } = await captureCatalogueTurn(t, {
+    retrieval: (tools) => tools.slice(0, 3),
+    responses: [
+      () => mockToolCallResponse('list_skills', {}),
+      () => mockToolCallResponse('academic_class_timetable', {}),
+      () => mockAnswerResponse('One period.'),
+    ],
+  });
+  // toolUsed drives buildPresentation and the numeric verifier. Anchoring
+  // it on list_skills would render the wrong shape and check the wrong result.
+  assert.equal(result.toolUsed, 'academic_class_timetable');
+});
+
+test('askAgent: budget-exempt lookups are themselves capped, and the limit is a plain refusal rather than a throw', async (t) => {
+  const lookup = () => mockToolCallResponse('list_skills', {});
+  const { bodies, result } = await captureCatalogueTurn(t, {
+    retrieval: (tools) => tools.slice(0, 3),
+    responses: [lookup, lookup, lookup, lookup, () => mockAnswerResponse('Answered without it.')],
+  });
+  // The backstop must be checked BEFORE the handler runs — a post-hoc
+  // counter reset would let the model loop in batches forever.
+  assert.match(JSON.stringify(bodies[bodies.length - 1].messages), /No more capability lookups are available/);
+  assert.match(result.answer, /Answered without it/);
+});
+
+test('askAgent: a NON-exempt tool still consumes the budget — the exemption is an allowlist, not a general softening', async (t) => {
+  t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }]));
+  assert.equal(config.maxToolCallsPerTurn, 1, 'this test is only meaningful against the real default');
+  const { result } = await captureCatalogueTurn(t, {
+    retrieval: (tools) => tools.slice(0, 3),
+    responses: [
+      // Cap reached after this ONE call — no further completeWithTools
+      // continuation happens. The next queued response is consumed by
+      // the separate synthesis call (summarizeToolResult), not by a
+      // second tool-selection turn.
+      () => mockToolCallResponse('academic_class_timetable', {}),
+      () => mockAnswerResponse('One period.'),
+    ],
+  });
+  assert.deepEqual(result.toolsUsed, ['academic_class_timetable']);
+});
+
 test('askAgent: a turn where retrieval pre-loaded the right tool makes the same number of LLM calls as before', async (t) => {
   t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }]));
   const { bodies } = await captureCatalogueTurn(t, {

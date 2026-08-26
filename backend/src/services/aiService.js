@@ -933,6 +933,57 @@ const SCHEMA_TOOL_NAME = 'describe_tools';
 // this many separate lookups is a plan, not a lookup.
 const MAX_SCHEMA_FETCHES = 3;
 
+// Budget-exempt lookup tools (F15, bka/90-appendix/consumer-adaptation-flags.md).
+//
+// These are REGISTERED tools with real handlers — unlike SCHEMA_TOOL_NAME
+// above, they run through the Policy Gate, audit and sanitisation
+// unchanged, and they DO count as a tool use for reporting. The only
+// thing this list changes is the BUDGET: they do not consume
+// config.maxToolCallsPerTurn.
+//
+// The criterion is exactly the one the describe_tools exemption already
+// uses (see the tool-use loop's own comment): a call that answers "what
+// could I do / how should I do it" rather than doing it. Verified per
+// tool at the time this list was written — every one of these six is
+// handed the `client` and never uses it: no Business Service, no
+// repository, no tenant data, nothing mutated.
+//
+//   list_skills                  -> skillService.listSkills()
+//   describe_skill               -> skillService.getSkill(name)
+//   decide_output_format         -> aiOutputFormatService.decideOutputFormat()
+//   decide_image_route           -> aiOutputFormatService.decideImageRoute()
+//   describe_diagram_constraints -> aiDiagramService.describeConstraints()
+//   capability_search            -> registry metadata for the actor's role
+//
+// capability_explain is deliberately NOT here: it reads real per-college
+// configuration through a Business Service to decide whether a capability
+// is enabled for this tenant, so it is a data read, not a pure lookup.
+//
+// Why this exists: F15 measured a live turn where the model spent its
+// only tool call on list_skills, got back a list of names, and then told
+// the user it had no data — with the document attached to that same
+// turn. That is precisely the failure the describe_tools comment below
+// predicted ("the feature would be worse than useless"); the skills
+// subsystem and the output-format policy tools shipped without the
+// exemption that reasoning already justified.
+//
+// A hardcoded set here rather than a `budgetExempt` flag on the tool: an
+// exemption from a safety budget should be auditable in one place, and a
+// registry flag would let any future tool grant itself unlimited calls.
+const BUDGET_EXEMPT_LOOKUP_TOOLS = new Set([
+  'list_skills',
+  'describe_skill',
+  'decide_output_format',
+  'decide_image_route',
+  'describe_diagram_constraints',
+  'capability_search',
+]);
+// Same backstop reasoning as MAX_SCHEMA_FETCHES: free of the tool budget
+// is not free of cost. Every lookup still spends a completeWithTools
+// round-trip, and F13 already measured the decision call running near its
+// 45s ceiling — an unbounded lookup loop would push it over.
+const MAX_LOOKUP_CALLS = 3;
+
 function firstSentence(text) {
   return String(text || '').split(/(?<=\.)\s/)[0].slice(0, 140).trim();
 }
@@ -2064,6 +2115,13 @@ async function askAgent(client, question, {
   let blockedActionNote;
 
   let schemaFetches = 0;
+  // Tool calls that actually spent the turn's budget. Distinct from
+  // invokedTools.length, which also counts BUDGET_EXEMPT_LOOKUP_TOOLS —
+  // those are real, audited tool uses (so they belong in invokedTools and
+  // in toolsUsed) that simply do not consume the budget. See that set's
+  // own comment.
+  let budgetedCalls = 0;
+  let lookupCalls = 0;
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
@@ -2169,6 +2227,32 @@ async function askAgent(client, question, {
     // Runs on EVERY iteration, not just the first — no loop iteration may
     // ever bypass this gate.
     const tool = aiToolRegistry.getTool(decision.toolName);
+
+    // Lookup backstop, checked BEFORE the handler runs so the limit is
+    // real (a post-hoc counter reset would just let the model loop in
+    // batches of MAX_LOOKUP_CALLS forever). Budget-exempt does not mean
+    // cost-free: each one still spends a completeWithTools round-trip,
+    // and F13 measured that call already running near its 45s ceiling.
+    // A plain refusal fed back as a tool result, never a throw — same
+    // shape as the schema-fetch limit, and ADL-056's own lesson that a
+    // loop backstop must not end the user's turn in an error.
+    if (BUDGET_EXEMPT_LOOKUP_TOOLS.has(decision.toolName) && lookupCalls >= MAX_LOOKUP_CALLS) {
+      priorTurns.push({
+        toolName: decision.toolName,
+        arguments: decision.arguments || {},
+        callId: decision.callId,
+        rawToolCall: decision.rawToolCall,
+        resultText: `No more capability lookups are available this turn (limit ${MAX_LOOKUP_CALLS}). `
+          + 'Use what you already know to answer, or say plainly what you would need.',
+      });
+      onStep({ phase: 'deciding' });
+      // eslint-disable-next-line no-await-in-loop
+      decision = await adapter.completeWithTools(aiConfig, decisionContext, priorTurns);
+      usageTotal = addUsage(usageTotal, decision.usage);
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+
     const isL3 = Boolean(tool && tool.level === 'L3');
     // Second optimization pass, finding #4: a bulk-capable L1/L2 tool
     // (mark_attendance_nl, academic_generate_timetable/reviseTimetable,
@@ -2224,13 +2308,23 @@ async function askAgent(client, question, {
       // a pre-planned exact count — this loop is adaptive, unlike
       // executeWorkflowPlan's own pre-planned totalSteps. In compatibility
       // mode (cap 1) this is always 1, matching pre-loop behavior exactly.
-      phase: 'running_tool', toolName: decision.toolName, stepIndex: invokedTools.length, totalSteps: config.maxToolCallsPerTurn,
+      // stepIndex counts BUDGETED calls, not invokedTools.length: a
+      // budget-exempt lookup must not advance a progress indicator whose
+      // denominator it does not consume (otherwise the UI shows "step 3
+      // of 2"). Unchanged on any turn without a lookup in it.
+      phase: 'running_tool', toolName: decision.toolName, stepIndex: budgetedCalls, totalSteps: config.maxToolCallsPerTurn,
     });
     const sanitizedContext = await invokeTool(client, decision.toolName, decision.arguments || {}, {
       identityContext, provider: adapter.name, model: aiConfig.model,
     });
     mergedEntries.push(...sanitizedContext.entries);
     invokedTools.push(tool);
+    const wasLookup = BUDGET_EXEMPT_LOOKUP_TOOLS.has(decision.toolName);
+    if (wasLookup) {
+      lookupCalls += 1;
+    } else {
+      budgetedCalls += 1;
+    }
     priorTurns.push({
       toolName: decision.toolName,
       arguments: decision.arguments || {},
@@ -2239,11 +2333,15 @@ async function askAgent(client, question, {
       resultText: renderToolResultText(sanitizedContext),
     });
 
-    if (invokedTools.length >= config.maxToolCallsPerTurn) {
+    // Budget is spent by real work only. A lookup answered "how should I
+    // do this" and left the turn's actual capability untouched — see
+    // BUDGET_EXEMPT_LOOKUP_TOOLS.
+    if (budgetedCalls >= config.maxToolCallsPerTurn) {
       // Cap reached — fall through to the synthesis fallback below
       // without another completeWithTools call.
       break;
     }
+
 
     onStep({ phase: 'deciding' });
     const continuationStartedAt = Date.now();
@@ -2276,6 +2374,17 @@ async function askAgent(client, question, {
   // above: a backstop the LLM cannot bypass, not an instruction it has to
   // remember. Two separate prompt instructions already failed to prevent
   // the exact turn this exists for.
+  // The tool the ANSWER is about, which is not always the first one called
+  // once BUDGET_EXEMPT_LOOKUP_TOOLS can precede it: a turn that calls
+  // describe_skill and then analyze_document_table is an
+  // analyze_document_table answer, and anchoring presentation or numeric
+  // verification on the lookup would render the wrong shape and check the
+  // wrong result. Falls back to the first tool when every call was a
+  // lookup (nothing else to be about). Identical to invokedTools[0] on
+  // every turn with no lookup in it — which is every turn that existed
+  // before this exemption.
+  const primaryTool = invokedTools.find((t) => !BUDGET_EXEMPT_LOOKUP_TOOLS.has(t.name)) || invokedTools[0];
+
   const coverageGap = invokedTools.length > 0
     ? detectDocumentCoverageGap(documents, priorTurns) : null;
   if (coverageGap) {
@@ -2299,7 +2408,7 @@ async function askAgent(client, question, {
       // From invokedTools, never priorTurns: priorTurns also carries
       // describe_tools schema lookups, which run no handler and are not a
       // tool USE (ai-tool-catalogue-approved-spec.md).
-      toolUsed: invokedTools[0].name,
+      toolUsed: primaryTool.name,
       toolsUsed: invokedTools.map((t) => t.name),
       answer: buildCoverageRefusal(coverageGap),
       documentCoverageIncomplete: true,
@@ -2326,9 +2435,9 @@ async function askAgent(client, question, {
       boundaryEnd: aiPromptSafetyLayer.BOUNDARY_END,
       entries: mergedEntries,
     };
-    const firstToolName = invokedTools[0].name;
+    const firstToolName = primaryTool.name;
     const presentation = aiExperienceLayer.buildPresentation({
-      sanitizedContext: mergedSanitizedContext, question, answer: decision.text, toolUsed: firstToolName, tool: invokedTools[0], actorRole: identityContext.role,
+      sanitizedContext: mergedSanitizedContext, question, answer: decision.text, toolUsed: firstToolName, tool: primaryTool, actorRole: identityContext.role,
     });
     const evidence = buildEvidence(mergedSanitizedContext);
     return {
@@ -2354,7 +2463,7 @@ async function askAgent(client, question, {
       boundaryEnd: aiPromptSafetyLayer.BOUNDARY_END,
       entries: mergedEntries,
     };
-    const firstToolName = invokedTools[0].name;
+    const firstToolName = primaryTool.name;
     // The tool(s) themselves are done — summarizeToolResult below is a
     // SEPARATE LLM call turning the result(s) into the answer. Without
     // this, the frontend kept showing "Running <tool>…" for that whole
@@ -2366,7 +2475,7 @@ async function askAgent(client, question, {
     );
     usageTotal = addUsage(usageTotal, synthUsage);
     const presentation = aiExperienceLayer.buildPresentation({
-      sanitizedContext: mergedSanitizedContext, question, answer, toolUsed: firstToolName, tool: invokedTools[0], actorRole: identityContext.role,
+      sanitizedContext: mergedSanitizedContext, question, answer, toolUsed: firstToolName, tool: primaryTool, actorRole: identityContext.role,
     });
     const evidence = buildEvidence(mergedSanitizedContext);
     return {

@@ -4097,5 +4097,89 @@ the turn's only tool call, so the model cannot retry with an
 `identityPattern` — the same limitation ADL-056 measured), and the tool
 granularity audit.
 
-**Status:** Resolved — pending implementation.
+**Status:** Resolved — implemented and verified 2026-08-25. See the
+addendum below.
 [`ai-chat-document-numeric-comparison-approved-spec.md`](../60-product-reasoning/ai-chat-document-numeric-comparison-approved-spec.md).
+
+#### ADL-057 addendum — implemented (2026-08-25)
+
+**Shape.** `operation: 'compare'` joins the closed `OPERATIONS` vocabulary
+with a closed `COMPARISON_OPERATORS` set (`lt`/`lte`/`gt`/`gte`/`between`,
+inclusive at both ends), matching against the record's own ROW TEXT and
+never a cell index — which is what keeps it on the safe side of ADL-055's
+measured boundary while column-indexed `groupBy` stays blocked. Row
+identity comes from a caller-supplied `identityPattern`, compiled plainly
+(no word-boundary wrapping, no `i` flag) and deliberately not sharing a
+helper with `filter.pattern` or `sectionPattern`, per ADL-056.
+
+`compareRecords` is its own entry point rather than a fourth branch of
+`aggregate`, and `aggregate` says so explicitly if called with `'compare'`.
+The comparison and `identityPattern` are validated as preconditions in
+`analyzeAttachment`, after the ownership check and before extraction, so a
+malformed call costs no work and returns `invalid_comparison` /
+`invalid_pattern` rather than throwing — the ADL-056 rule applied to the
+new parameters.
+
+**Four corrections this implementation made to its own Approved Spec**,
+all measured, none silently absorbed:
+
+1. **`summarize` could not be reused, contrary to the spec's "summarize
+   needs nothing else".** It derives `matched` as `rowValue(row) > 0`,
+   which is right for count/sum and wrong here: a comparison result of
+   exactly **0**, or a negative one (a day-book credit), is a legitimately
+   passing row that would have been dropped from both the count and the
+   sample. It would also have reported `scopedCount` as the number of
+   PASSING rows, since compare only ever hands it an already-filtered set.
+   `compareRecords` therefore computes its own summary in one pass. The
+   spec's required `total`-first ordering pin was still added, because
+   `breakdown` depends on it regardless.
+2. **A leading minus sign cannot be captured.** `compilePattern` wraps
+   every `filter.pattern` in word boundaries (ADL-055's fix for "RA"
+   matching inside "ANBARASAN"), and `-` is not a word character, so
+   `"-250"` captures as `"250"`. A negative-threshold question is
+   therefore **not expressible today**. The parser handles a sign fine;
+   only the delivery path is limited. Pinned by its own test rather than
+   left to surface as a wrong answer, and it needs its own pass because
+   the fix would change a shipped, verified operation's matching rule.
+3. **Same root cause: a pattern starting with `₹` can never match**, so
+   the permitted currency-prefix normalisation is only reachable when the
+   prefix is captured from mid-token (e.g. `"Rs. 900"`, where `R` is a
+   word character). Pinned.
+4. **The total accumulated floating-point noise.** Summing 153 real
+   day-book amounts produced `337884.76999999996` for a figure whose true
+   value is `337884.77`. Rounded at 1e-6 — far beyond any currency
+   precision, so no legitimate value is altered, only the artifact.
+
+**Verified.** Full suite **2218 tests, 2216 pass** — the same 2
+pre-existing `fetch_trusted_web_page` failures, zero regressions, **40 net
+new tests** (baseline 2178/2176).
+
+**Live-checked against the real Tally day book**, via the new read-only
+`backend/scripts/numeric-comparison-probe.js` (stubs only the
+ownership-checked byte download; extraction, the delimited detector and the
+comparison are genuine; no LLM, no database):
+
+- Without `identityPattern`: `identity_required`, not a list of nulls —
+  the defect this slice's pass found by reading the code.
+- "Entries below ₹5000": **153 of 839 rows, total ₹337,884.77**, every
+  returned row named by its party (`B K AGENCIES`, `KEVIN DIESEL`,
+  `PRABU AUTO SPARES`…), 44 unmatched rows reported honestly, 0
+  non-numeric.
+- `lt` and `gte` partition the numeric rows exactly (153 + 642 = 795), so
+  the operator is a real threshold and not a filter that passes everything.
+- Reference regression unchanged: **77 arrears across 21 students**.
+
+**One finding the probe itself produced, worth carrying forward.** Writing
+a working `identityPattern` took three attempts: the naive "first
+capitalised word" returned `"Apr"` for all 100 rows (from `"1-Apr-25"`) and
+still passed a non-null check, and a version anchored on multi-space runs
+matched the raw PDF line but not what the matcher sees — `splitOn` trims
+each cell and `recordText` joins with a single space. Both are recorded in
+the probe's own comments. This is a real risk to the `identityPattern`
+design, which assumes the MODEL can supply a good pattern: a bad one
+produces a plausible-looking but useless list. `rowsWithoutIdentity`
+catches the no-match case but **not** the matched-the-wrong-thing case.
+Whether the model reliably writes a good `identityPattern` is unverified,
+and is the obvious next live check.
+
+**Status:** Resolved — implemented and verified.

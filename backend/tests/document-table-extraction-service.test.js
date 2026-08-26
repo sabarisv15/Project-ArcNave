@@ -255,10 +255,12 @@ test('extractRecords: a roster with no identity marker reports coverage as not a
   assert.equal(result.coverage.reliable, true);
 });
 
-// The delimited strategy is exact by construction — one input line, one
-// row, nothing inferred — so there is nothing for a coverage check to be
-// uncertain about, and running one would invent a failure mode it doesn't
-// have.
+// For ROW IDENTIFICATION the delimited strategy is exact by construction —
+// one input line, one row, nothing inferred — so there is nothing for a
+// coverage check, which is a row-level check, to be uncertain about.
+// That scope is literal: it does not extend to COLUMN alignment, which the
+// real Tally day book breaks by omitting empty cells (ADL-055 addendum /
+// ADL-057). See documentTableExtractionService's own comment here.
 test('extractRecords: the delimited strategy carries no coverage assessment', () => {
   const result = extractRecords('a | b | c\nd | e | f');
   assert.equal(result.strategy, 'delimited');

@@ -34,6 +34,29 @@ clear explanation instead of a 500. A second check pinned the narration
 deterministically and confirmed it does not blame the user's file. **This
 slice is complete.**
 
+**ADL-057's slice is implemented and verified (2026-08-25).** Numeric
+comparison ships: `operation: 'compare'` with a closed operator set, over
+ROW TEXT and never a cell index, plus a caller-supplied `identityPattern`
+so a matched row can say which entry it is, plus `identity_required` when
+it cannot. Full suite **2218/2216** (same 2 pre-existing failures, zero
+regressions, 40 net new tests). Live-checked on the real Tally day book via
+`backend/scripts/numeric-comparison-probe.js`: **153 of 839 entries below
+₹5000, total ₹337,884.77**, every row named by its party, 44 unmatched rows
+reported honestly; reference regression unchanged at **77 arrears / 21
+students**. Four corrections to the spec were measured during
+implementation (summarize could not be reused; a leading minus and a
+leading ₹ cannot be captured through the word-boundary wrapper; the total
+accumulated float noise) — all recorded in the
+[ADL-057 addendum](../30-decisions/ledger.md#adl-057-addendum--implemented-2026-08-25).
+
+**Open risk on that slice, unverified:** the `identityPattern` design
+assumes the MODEL can write a good pattern. Writing one by hand took three
+attempts — the naive version returned `"Apr"` for every row and still
+looked like a pass. `rowsWithoutIdentity` catches a pattern that matches
+NOTHING, but not one that matches the WRONG thing. A live turn confirming
+the model picks `compare` and supplies a usable `identityPattern` is the
+obvious next check and has not been run.
+
 **Item 2's Product Reasoning pass is complete (2026-08-25, no code written)
 — [ADL-057](../30-decisions/ledger.md#adl-057),
 [`ai-chat-document-numeric-comparison-approved-spec.md`](../60-product-reasoning/ai-chat-document-numeric-comparison-approved-spec.md).**

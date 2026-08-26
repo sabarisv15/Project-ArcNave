@@ -11,8 +11,13 @@
 
 class DocumentAggregateValidationError extends Error {}
 
-const OPERATIONS = new Set(['count', 'sum', 'breakdown']);
+const OPERATIONS = new Set(['count', 'sum', 'breakdown', 'compare']);
 const FILTER_MODES = new Set(['annotate', 'include']);
+
+// ADL-057 — the numeric half of ADR-029's "filter". A closed operator set,
+// same discipline as OPERATIONS: the caller SELECTS one, it never authors
+// a comparison. 'between' is inclusive at both ends.
+const COMPARISON_OPERATORS = new Set(['lt', 'lte', 'gt', 'gte', 'between']);
 
 function recordText(record) {
   return record.cells ? record.cells.join(' ') : (record.block || '');
@@ -163,6 +168,14 @@ function aggregate(records, { groupBy = 'key', filter, operation = 'count' } = {
   if (!OPERATIONS.has(operation)) {
     throw new DocumentAggregateValidationError(`operation must be one of ${[...OPERATIONS].join(', ')}`);
   }
+  // 'compare' is a member of the closed vocabulary (that is what
+  // RS-AIG-018 cares about) but not of THIS function: it returns a
+  // filtered payload with its own deterministic counts, not one annotated
+  // row per record, so it has its own entry point rather than a fourth
+  // branch whose return shape disagrees with the other three.
+  if (operation === 'compare') {
+    throw new DocumentAggregateValidationError("operation 'compare' has its own entry point — call compareRecords, not aggregate");
+  }
   if (groupBy !== 'key') {
     throw new DocumentAggregateValidationError("groupBy must be 'key' in this slice");
   }
@@ -193,6 +206,197 @@ function aggregate(records, { groupBy = 'key', filter, operation = 'count' } = {
   }));
 
   return mode === 'include' ? annotated.filter((row) => row[valueKey] > 0) : annotated;
+}
+
+// ---------------------------------------------------------------------------
+// compare — ADL-057 / ai-chat-document-numeric-comparison-approved-spec.md.
+//
+// "Which day-book entries are below ₹5000?" was inexpressible: filter.pattern
+// can SELECT text and sum can TOTAL it, but nothing could test a number
+// against a threshold. This adds that, and — critically — adds it over the
+// record's own ROW TEXT, never a cell index.
+//
+// That distinction is the whole reason this ships while column-indexed
+// groupBy does not. ADL-055's addendum states the boundary from measurement:
+// the Tally day book's source omits empty cells rather than emitting
+// consecutive tabs, so a row with no debit amount arrives with 5 cells
+// against a 6-column header — "row-text pattern matching is unaffected;
+// column-indexed groupBy is not". This operation sits on the safe side of
+// that line by construction, not by a caveat.
+
+// The one normalisation permitted anywhere on this path, and deliberately
+// scoped to compare alone. Currency separators and a rupee prefix are
+// presentation, not value — "5,000" and "₹5,000" are the same number, and a
+// threshold question is unanswerable if they are not.
+//
+// This is NUMERIC parsing, not regex-dialect normalisation, so ADL-056's
+// "no normalisation anywhere" rule is about a different thing and is not
+// weakened: the caller's pattern is still rejected verbatim if it does not
+// compile, and is never rewritten.
+//
+// Note the consequence, recorded rather than fixed: matchSum above does NOT
+// strip separators, so `sum` and `compare` parse "1,234" differently. sum is
+// shipped and verified; changing it in a slice that did not measure it is
+// the mid-implementation scope expansion the Product Reasoning workflow
+// forbids. It is an OUT OF SCOPE item in this slice's own spec.
+const CURRENCY_PREFIX = /^[\s₹]*(?:Rs\.?)?\s*/i;
+const PLAIN_NUMBER = /^[+-]?\d+(?:\.\d+)?$/;
+
+// null rather than 0 for unparseable text — the same rule matchSum already
+// states: a match whose text is not a number is SKIPPED, never coerced to
+// zero. A coerced zero is a silently wrong answer to a threshold question
+// ("below ₹5000" would match every unreadable row).
+function parseNumeric(text) {
+  const cleaned = String(text).replace(CURRENCY_PREFIX, '').replace(/,/g, '').trim();
+  if (!PLAIN_NUMBER.test(cleaned)) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+function passesComparison(value, comparison) {
+  switch (comparison.operator) {
+    case 'lt': return value < comparison.value;
+    case 'lte': return value <= comparison.value;
+    case 'gt': return value > comparison.value;
+    case 'gte': return value >= comparison.value;
+    case 'between': return value >= comparison.value && value <= comparison.upperValue;
+    default: return false;
+  }
+}
+
+function validateComparison(comparison) {
+  if (!comparison || typeof comparison !== 'object') {
+    throw new DocumentAggregateValidationError("comparison is required when operation is 'compare'");
+  }
+  if (!COMPARISON_OPERATORS.has(comparison.operator)) {
+    throw new DocumentAggregateValidationError(`comparison.operator must be one of ${[...COMPARISON_OPERATORS].join(', ')}`);
+  }
+  if (typeof comparison.value !== 'number' || !Number.isFinite(comparison.value)) {
+    throw new DocumentAggregateValidationError('comparison.value must be a finite number');
+  }
+  const isBetween = comparison.operator === 'between';
+  const hasUpper = comparison.upperValue !== undefined && comparison.upperValue !== null;
+  if (isBetween && (!hasUpper || typeof comparison.upperValue !== 'number' || !Number.isFinite(comparison.upperValue))) {
+    throw new DocumentAggregateValidationError("comparison.upperValue must be a finite number when comparison.operator is 'between'");
+  }
+  // Rejected rather than ignored on the other four: an upperValue that
+  // silently does nothing looks to the caller like a range it never got.
+  if (!isBetween && hasUpper) {
+    throw new DocumentAggregateValidationError("comparison.upperValue is only valid when comparison.operator is 'between'");
+  }
+}
+
+// identityPattern's own compile step. Deliberately NOT routed through
+// compilePattern or documentAnalysisService's compileSectionPattern — see
+// INLINE_FLAG_PATTERN's comment above for why sharing pattern handling
+// across these parameters is the defect ADL-056 identified. This one
+// compiles plainly: no word-boundary wrapping (it extracts a name, not a
+// token) and no 'i' flag (predictable beats convenient — the caller can
+// supply casing or an alternation).
+function compileIdentityPattern(identityPattern) {
+  if (!identityPattern) return { regex: null };
+  try {
+    return { regex: new RegExp(identityPattern) };
+  } catch {
+    const shown = JSON.stringify(identityPattern);
+    const flagNote = INLINE_FLAG_PATTERN.test(identityPattern)
+      ? ' JavaScript does not support inline flags such as (?i). identityPattern is matched case-sensitively;'
+        + ' supply the exact casing you need, or an alternation.'
+      : '';
+    return { reason: `identityPattern is not valid JavaScript regular expression syntax: ${shown}.${flagNote}` };
+  }
+}
+
+// Extracted with a NON-global regex so exec carries no lastIndex state
+// between records — a stateful match here would make a row's identity
+// depend on which rows preceded it.
+function extractIdentity(record, identityRe) {
+  if (!identityRe) return null;
+  const m = identityRe.exec(recordText(record));
+  if (!m) return null;
+  return m[1] !== undefined ? m[1] : m[0];
+}
+
+// Returns the full payload the tool hands back for operation 'compare' —
+// rows plus the deterministic counts, computed in ONE pass so the two can
+// never disagree about the same record set.
+//
+// Why this does not go through summarize(), despite computing the same
+// shape: summarize derives `matched` as `rowValue(row) > 0`, which is
+// correct for count/sum (where a zero means "nothing matched") and WRONG
+// here. A comparison result of exactly 0, or a negative one (a day book
+// credit), is a legitimately passing row that summarize would silently drop
+// from both the count and the sample. It would also report scopedCount as
+// the number of PASSING rows rather than the number considered, because
+// compare only ever hands it an already-filtered set. Both are corrections
+// to this slice's own Approved Spec, which claimed "summarize needs nothing
+// else"; recorded in the ADL-057 addendum rather than papered over.
+function compareRecords(records, { filter, comparison, identityPattern, sampleSize = DEFAULT_SAMPLE_SIZE } = {}) {
+  if (!Array.isArray(records)) {
+    throw new DocumentAggregateValidationError('records must be an array');
+  }
+  validateComparison(comparison);
+  const mode = (filter && filter.mode) || 'include';
+  if (mode !== 'include') {
+    throw new DocumentAggregateValidationError("filter.mode must be 'include' when operation is 'compare'");
+  }
+
+  const re = compilePattern(filter);
+  if (!re) {
+    throw new DocumentAggregateValidationError("filter.pattern is required when operation is 'compare'");
+  }
+
+  const rows = [];
+  let unmatchedRows = 0;
+  let nonNumericRows = 0;
+  let multiMatchRows = 0;
+  let rowsWithoutIdentity = 0;
+
+  for (const record of records) {
+    const text = recordText(record);
+    re.lastIndex = 0;
+    const matches = [...text.matchAll(re)];
+    if (matches.length === 0) { unmatchedRows += 1; continue; }
+    // The FIRST match, matching matchSum's own capture rule. A pattern that
+    // matches several numbers in one row is ambiguous for a threshold
+    // question, so the count below makes that visible instead of letting
+    // the choice of "first" pass unremarked.
+    if (matches.length > 1) multiMatchRows += 1;
+    const first = matches[0];
+    const value = parseNumeric(first[1] !== undefined ? first[1] : first[0]);
+    if (value === null) { nonNumericRows += 1; continue; }
+    if (!passesComparison(value, comparison)) continue;
+
+    const identity = extractIdentity(record, identityPattern);
+    if (identityPattern && identity === null) rowsWithoutIdentity += 1;
+    rows.push({
+      key: record.key || null,
+      serialNo: record.serialNo || null,
+      regNo: record.regNo || null,
+      identity,
+      value,
+    });
+  }
+
+  const sample = rows.slice(0, sampleSize);
+  return {
+    // Rounded to kill binary floating-point accumulation noise, nothing
+    // more: summing 153 real day-book amounts produced
+    // 337884.76999999996 for a figure whose true value is 337884.77, and
+    // handing that to a model to narrate invites an answer that looks
+    // wrong to the user. Six decimal places is far beyond any currency
+    // precision, so no legitimate value is altered — only the artifact.
+    total: Math.round(rows.reduce((sum, row) => sum + row.value, 0) * 1e6) / 1e6,
+    matchedCount: rows.length,
+    scopedCount: records.length,
+    sample,
+    sampleShown: sample.length,
+    sampleOmitted: rows.length - sample.length,
+    unmatchedRows,
+    nonNumericRows,
+    multiMatchRows,
+    rowsWithoutIdentity,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -280,5 +484,14 @@ function summarize(rows, { sampleSize = DEFAULT_SAMPLE_SIZE } = {}) {
 }
 
 module.exports = {
-  aggregate, summarize, validateFilterPattern, DEFAULT_SAMPLE_SIZE, DocumentAggregateValidationError,
+  aggregate,
+  summarize,
+  compareRecords,
+  validateFilterPattern,
+  compileIdentityPattern,
+  validateComparison,
+  OPERATIONS,
+  COMPARISON_OPERATORS,
+  DEFAULT_SAMPLE_SIZE,
+  DocumentAggregateValidationError,
 };

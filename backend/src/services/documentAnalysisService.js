@@ -126,7 +126,7 @@ function filterBySection(records, sections, re) {
 // only supports the default 'key' grouping (one group per extracted
 // record) today, so there is nothing yet for a caller to usefully choose.
 async function analyzeAttachment(client, {
-  attachmentId, groupBy, filter, operation, serialRange, sectionPattern,
+  attachmentId, groupBy, filter, operation, serialRange, sectionPattern, comparison, identityPattern,
 } = {}, identityContext) {
   const downloaded = await loadOwnedAttachment(client, attachmentId, identityContext);
   const { document, buffer } = downloaded;
@@ -152,6 +152,23 @@ async function analyzeAttachment(client, {
   const compiledSection = compileSectionPattern(sectionPattern);
   if (compiledSection.reason) {
     return { status: 'invalid_pattern', parameter: 'sectionPattern', reason: compiledSection.reason };
+  }
+  // The third LLM-supplied regex (ADL-057). Same treatment, its own
+  // message, and deliberately not sharing a compile helper with the other
+  // two — ADL-056's finding.
+  const compiledIdentity = documentAggregateService.compileIdentityPattern(identityPattern);
+  if (compiledIdentity.reason) {
+    return { status: 'invalid_pattern', parameter: 'identityPattern', reason: compiledIdentity.reason };
+  }
+  // comparison is validated here too, so a malformed one costs no
+  // extraction work and reaches the model as a clean message rather than
+  // as a throw from deep inside the aggregate service.
+  if (operation === 'compare') {
+    try {
+      documentAggregateService.validateComparison(comparison);
+    } catch (err) {
+      return { status: 'invalid_comparison', reason: err.message };
+    }
   }
 
   const extraction = await documentTextExtractionService.extractPlainText(buffer, document.mime_type);
@@ -187,6 +204,31 @@ async function analyzeAttachment(client, {
   const scoped = filterBySection(bySerial, sections, compiledSection.regex);
   if (scoped.length === 0) {
     return { status: 'no_matching_records' };
+  }
+
+  // ADL-057 — a filtered list whose rows cannot say which entry they are is
+  // not a shorter answer, it is a useless one. A delimited source emits
+  // { key: null, cells } for every row (documentTableExtractionService's
+  // splitOn), and neither aggregate nor summarize ever carried cell content
+  // forward, so before this check "entries below ₹5000" over the day book
+  // returned 839 rows of { key: null, serialNo: null, regNo: null }.
+  // Refusing and naming the missing parameter is the honest form; the
+  // caller supplies identityPattern and asks again.
+  if (operation === 'compare') {
+    const hasIntrinsicIdentity = scoped.some((record) => record.serialNo || record.regNo);
+    if (!hasIntrinsicIdentity && !compiledIdentity.regex) {
+      return { status: 'identity_required' };
+    }
+    const compared = documentAggregateService.compareRecords(scoped, {
+      filter, comparison, identityPattern: compiledIdentity.regex,
+    });
+    // No row cleared the threshold. Same fact as an empty scope, same
+    // existing status — a valid question whose answer is "none", not a
+    // failure of this system.
+    if (compared.matchedCount === 0) {
+      return { status: 'no_matching_records' };
+    }
+    return { status: 'ok', strategy, ...compared };
   }
 
   const rows = documentAggregateService.aggregate(scoped, { groupBy, filter, operation });

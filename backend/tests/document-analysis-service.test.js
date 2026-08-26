@@ -344,3 +344,163 @@ test('analyzeAttachment: a roster with no identity marker is not refused', async
   );
   assert.equal(result.status, 'ok');
 });
+
+// --- ADL-057: operation 'compare' end to end through the analysis path ---
+
+// Tab-separated, so extractRecords genuinely returns the `delimited`
+// strategy — the whole point of the identity work below. Built as real
+// text and run through the real extractor rather than hand-assembled
+// records: hand-supplying a `key` is exactly what hid the anonymous-row
+// defect (document-aggregate-service.test.js:25) until ADL-057's pass.
+const DAYBOOK_TEXT = [
+  'Date\tParticulars\tVoucher\tDebit',
+  '01-04-2026\tANBU TRADERS\tPayment\t4500',
+  '02-04-2026\tBHARATH STORES\tReceipt\t12000',
+  '03-04-2026\tDEEPA SUPPLIES\tPayment\t1250',
+].join('\n');
+
+const AMOUNT = '([\\d,]+)$';
+const PARTY = '([A-Z]{2,}(?: [A-Z]{2,})*)';
+
+function daybookAttachment() {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: DAYBOOK_TEXT, method: 'text_layer' }));
+}
+
+test('analyzeAttachment: compare over a delimited source returns only the rows under the threshold, each identified', async () => {
+  daybookAttachment();
+  const result = await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID,
+    filter: { pattern: AMOUNT },
+    operation: 'compare',
+    comparison: { operator: 'lt', value: 5000 },
+    identityPattern: PARTY,
+  }, IDENTITY);
+  assert.equal(result.status, 'ok');
+  assert.equal(result.strategy, 'delimited');
+  assert.equal(result.matchedCount, 2);
+  assert.deepEqual(result.sample.map((r) => r.identity), ['ANBU TRADERS', 'DEEPA SUPPLIES']);
+  assert.deepEqual(result.sample.map((r) => r.value), [4500, 1250]);
+  assert.equal(result.total, 5750);
+});
+
+// The defect ADL-057's pass found by reading the code: every delimited row
+// carries key: null, and nothing ever carried cell content forward, so a
+// filtered list came back as rows of nulls. Refusing is the honest form.
+test('analyzeAttachment: compare on a delimited source with no identityPattern returns identity_required, never a list of anonymous rows', async () => {
+  daybookAttachment();
+  const result = await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID,
+    filter: { pattern: AMOUNT },
+    operation: 'compare',
+    comparison: { operator: 'lt', value: 5000 },
+  }, IDENTITY);
+  assert.deepEqual(result, { status: 'identity_required' });
+});
+
+// A roster already has serialNo/regNo, so it needs no identityPattern —
+// the refusal is about rows that would be anonymous, not about the
+// parameter being mandatory.
+test('analyzeAttachment: compare on a sequential_id source needs no identityPattern — it already has serial/reg numbers', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: '819 25400122 ANBARASAN V\nDoB: 24.04.2008 Fee 4500\n820 25400123 BHARATH K\nDoB: 11.02.2008 Fee 9000',
+    method: 'text_layer',
+  }));
+  const result = await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID,
+    filter: { pattern: 'Fee\\s+(\\d+)' },
+    operation: 'compare',
+    comparison: { operator: 'lt', value: 5000 },
+  }, IDENTITY);
+  assert.equal(result.status, 'ok');
+  assert.deepEqual(result.sample.map((r) => r.serialNo), ['819']);
+});
+
+test('analyzeAttachment: compare where no row clears the threshold degrades to no_matching_records', async () => {
+  daybookAttachment();
+  const result = await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID,
+    filter: { pattern: AMOUNT },
+    operation: 'compare',
+    comparison: { operator: 'lt', value: 10 },
+    identityPattern: PARTY,
+  }, IDENTITY);
+  assert.deepEqual(result, { status: 'no_matching_records' });
+});
+
+// Same posture ADL-056 established for the other two regexes: a clean
+// tool-level status naming the parameter, never a throw out of the turn.
+test('analyzeAttachment: an uncompilable identityPattern returns invalid_pattern naming identityPattern', async () => {
+  daybookAttachment();
+  const result = await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID,
+    filter: { pattern: AMOUNT },
+    operation: 'compare',
+    comparison: { operator: 'lt', value: 5000 },
+    identityPattern: '(?i)ANBU',
+  }, IDENTITY);
+  assert.equal(result.status, 'invalid_pattern');
+  assert.equal(result.parameter, 'identityPattern');
+});
+
+// A malformed comparison must not throw DocumentAggregateValidationError
+// out of the turn either — the ADL-056 rule applied to the new param.
+test('analyzeAttachment: a malformed comparison returns invalid_comparison instead of throwing out of the turn', async () => {
+  daybookAttachment();
+  const missing = await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID, filter: { pattern: AMOUNT }, operation: 'compare', identityPattern: PARTY,
+  }, IDENTITY);
+  assert.equal(missing.status, 'invalid_comparison');
+  const badOperator = await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID,
+    filter: { pattern: AMOUNT },
+    operation: 'compare',
+    comparison: { operator: 'roughly', value: 5000 },
+    identityPattern: PARTY,
+  }, IDENTITY);
+  assert.equal(badOperator.status, 'invalid_comparison');
+  assert.match(badOperator.reason, /comparison\.operator/);
+});
+
+// Validation runs before extraction, so a malformed call costs no work —
+// and, as with the pattern checks, after the ownership check.
+test('analyzeAttachment: comparison is validated before the document is extracted', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  const extractMock = mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: DAYBOOK_TEXT, method: 'text_layer' }));
+  await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID, filter: { pattern: AMOUNT }, operation: 'compare',
+  }, IDENTITY);
+  assert.equal(extractMock.mock.callCount(), 0);
+});
+
+test('analyzeAttachment: compare reports what it could not read, so a partial total is never presented as complete', async () => {
+  daybookAttachment();
+  const result = await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID,
+    filter: { pattern: '(\\S+)$' },
+    operation: 'compare',
+    comparison: { operator: 'lt', value: 5000 },
+    identityPattern: PARTY,
+  }, IDENTITY);
+  assert.equal(result.status, 'ok');
+  assert.ok(result.nonNumericRows > 0);
+  assert.equal(typeof result.unmatchedRows, 'number');
+  assert.equal(typeof result.multiMatchRows, 'number');
+  assert.equal(result.scopedCount, 4);
+});
+
+// The existing operations must be byte-unchanged by this slice.
+test('analyzeAttachment: count/sum/breakdown are unaffected by the compare additions', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: '819 25400122 ANBARASAN V\nDoB: 24.04.2008 2 R2023 RA\n3 R2023 RA',
+    method: 'text_layer',
+  }));
+  const counted = await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count',
+  }, IDENTITY);
+  assert.equal(counted.status, 'ok');
+  assert.equal(counted.total, 2);
+  assert.equal(counted.sample[0].identity, undefined);
+});

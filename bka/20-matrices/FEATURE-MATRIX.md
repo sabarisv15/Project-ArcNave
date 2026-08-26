@@ -512,7 +512,7 @@ Two blocks and one new finding drove that:
 
 | Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| AI Assistant chat | Existing chat-attachment roles | — | `operation: 'compare'` — numeric threshold (`lt`/`lte`/`gt`/`gte`/`between`) over row text | Ask "entries below ₹5000" of an attached document | none (existing chat surface) | `documentAggregateService.aggregate` (4th member of `OPERATIONS`) | none | Unchanged (L1, read-only) | Not built | CORE | ADL-056's slice should ship first | Resolved — row text only, never a cell index |
+| AI Assistant chat | Existing chat-attachment roles | — | `operation: 'compare'` — numeric threshold (`lt`/`lte`/`gt`/`gte`/`between`) over row text | Ask "entries below ₹5000" of an attached document | none (existing chat surface) | `documentAggregateService.compareRecords` (4th member of `OPERATIONS`, own entry point) | none | Unchanged (L1, read-only) | **Built + live-verified 2026-08-25** | CORE | ADL-056's slice should ship first | Resolved — row text only, never a cell index |
 | AI Assistant chat | — | — | Caller-supplied `identityPattern` so a matched row can name itself | Same | none | `documentAnalysisService.analyzeAttachment` param | none | Unchanged | Not built | CORE | finding 4 above | **Resolved by §15 question — caller-supplied `identityPattern`**, sibling to `sectionPattern` |
 | AI Assistant chat | — | — | `identity_required` failure status when a list would be anonymous | Same, without `identityPattern` over a delimited source | none | `documentAnalysisService` | none | Unchanged | Not built | REQUIRED SUPPORT | 5th member of the established failure-status set | Resolved — refuse, never return a null-keyed list |
 | AI Assistant chat | — | — | `rowValue` reads the compare value; `total`-first ordering pinned | — | — | `documentAggregateService.summarize` | none | Unchanged | Not built | REQUIRED SUPPORT | `breakdown` depends on `total`-first | Resolved |
@@ -536,3 +536,24 @@ Not asked, because rules and evidence settled them (workflow §15 steps 2–3):
 the three deferrals. Each is blocked by a measured fact, not by a product
 preference, so per §15 they are classified and recorded — never escalated
 into a question.
+
+**Implemented 2026-08-25** — see the
+[ADL-057 addendum](../30-decisions/ledger.md#adl-057-addendum--implemented-2026-08-25).
+Full suite 2218/2216, 40 net new tests, zero regressions. Live-checked on
+the real Tally day book: 153 of 839 entries below ₹5000, total ₹337,884.77,
+every row named by its party; reference regression unchanged at 77 arrears /
+21 students.
+
+Four corrections to the Approved Spec were measured during implementation
+and are recorded there, not absorbed silently: `summarize` could not be
+reused (its `rowValue > 0` derivation drops a legitimately zero or negative
+comparison result, and misreports `scopedCount`); a leading `-` and a
+leading `₹` cannot be captured through `filter.pattern`'s word-boundary
+wrapping, so a negative-threshold question is not expressible today; and the
+total accumulated floating-point noise.
+
+**One open risk, unverified:** `identityPattern` assumes the model can write
+a good pattern. `rowsWithoutIdentity` catches a pattern matching nothing,
+not one matching the wrong thing — a hand-written first attempt returned
+`"Apr"` for every row and still looked like a pass.
+

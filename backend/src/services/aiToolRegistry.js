@@ -1123,10 +1123,17 @@ registerTool({
   name: 'analyze_document_table',
   level: 'L1',
   dataClassification: 'Internal',
-  description: 'Deterministically counts, sums, or breaks down pattern matches across the rows of an already-uploaded '
-    + "chat-attached tabular document (e.g. a result sheet, attendance roster, or fee list) — use this instead of "
+  description: 'Deterministically counts, sums, breaks down, or numerically compares pattern matches across the rows '
+    + "of an already-uploaded chat-attached tabular document (e.g. a result sheet, attendance roster, fee list or day "
+    + 'book) — use this instead of '
     + 'counting/summing yourself whenever a question asks "how many"/"count"/"total"/consolidate across rows of an '
-    + 'attached document. Set filter.mode to "include" to get back only the rows matching filter.pattern (e.g. only '
+    + 'attached document. For a THRESHOLD question ("entries below ₹5000", "rows over 100", "amounts between 500 and '
+    + '2000") use operation "compare" with a comparison — never filter the rows yourself. With "compare" you must '
+    + 'also give identityPattern unless the document has its own serial/register numbers, because otherwise the '
+    + 'matching rows come back with nothing to identify them; if the tool returns status "identity_required", supply '
+    + 'identityPattern and ask again. A "compare" result also reports unmatchedRows, nonNumericRows and '
+    + 'multiMatchRows — if any of them is non-zero, say so rather than presenting the total as if it covered every '
+    + 'row. Set filter.mode to "include" to get back only the rows matching filter.pattern (e.g. only '
     + 'ABSENT/RA rows) instead of every row annotated with a mostly-zero column. If you don\'t know the exact serial '
     + 'range for a named cohort (e.g. "the Sandwich section"), use sectionPattern instead of guessing a range. The '
     + 'model never computes the count/sum/breakdown/filter itself — this tool does. If it returns status '
@@ -1140,7 +1147,8 @@ registerTool({
     + 'letters A and Z, so they match the wrong thing silently. Use ^ and $ instead. If the tool returns '
     + 'status "invalid_pattern", the "parameter" and "reason" '
     + 'fields say exactly which argument was rejected and why; that is a fault in the pattern supplied, not '
-    + 'in the document, so never tell the user their file is the problem.',
+    + 'in the document, so never tell the user their file is the problem. Status "invalid_comparison" means the '
+    + 'comparison object itself was malformed and its "reason" says how.',
   allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
   params: {
     type: 'object',
@@ -1149,13 +1157,28 @@ registerTool({
       filter: {
         type: 'object',
         properties: {
-          pattern: { type: 'string', description: 'A regular expression matched against each row\'s text. For operation "count", every match counts toward that row\'s result (e.g. "RA|Absent RA" for exam arrears). For operation "sum", each match\'s first capturing group (or the whole match if it has none) is parsed as a number and totaled per row (e.g. "Total Arrears\\s*:?\\s*(\\d+)"). For operation "breakdown", every match within each semester\'s own span is counted separately (e.g. "RA" to get a per-semester arrear count).' },
-          mode: { type: 'string', enum: ['annotate', 'include'], description: '"annotate" (default) returns every row with its count/sum/breakdown. "include" returns only the rows where the pattern matched at least once — use this for a real filtered list, not just an annotated total.' },
+          pattern: { type: 'string', description: 'A regular expression matched against each row\'s text. For operation "count", every match counts toward that row\'s result (e.g. "RA|Absent RA" for exam arrears). For operation "sum", each match\'s first capturing group (or the whole match if it has none) is parsed as a number and totaled per row (e.g. "Total Arrears\\s*:?\\s*(\\d+)"). For operation "breakdown", every match within each semester\'s own span is counted separately (e.g. "RA" to get a per-semester arrear count). For operation "compare", the FIRST match\'s first capturing group (or the whole match) is parsed as the row\'s number and tested against the comparison (e.g. "(\\d[\\d,]*\\.?\\d*)" to pick up an amount); commas and a leading ₹/Rs. are ignored when parsing.' },
+          mode: { type: 'string', enum: ['annotate', 'include'], description: '"annotate" (default) returns every row with its count/sum/breakdown. "include" returns only the rows where the pattern matched at least once — use this for a real filtered list, not just an annotated total. Operation "compare" is always "include" and rejects "annotate".' },
         },
         required: ['pattern'],
         additionalProperties: false,
       },
-      operation: { type: 'string', enum: ['count', 'sum', 'breakdown'], description: "The aggregate operation — 'count' (occurrences of filter.pattern per row), 'sum' (total of the numbers filter.pattern captures/matches per row), or 'breakdown' (occurrences of filter.pattern per semester within each row, for a document that lists a semester number before each exam attempt)." },
+      operation: { type: 'string', enum: ['count', 'sum', 'breakdown', 'compare'], description: "The aggregate operation — 'count' (occurrences of filter.pattern per row), 'sum' (total of the numbers filter.pattern captures/matches per row), 'breakdown' (occurrences of filter.pattern per semester within each row, for a document that lists a semester number before each exam attempt), or 'compare' (return only the rows whose number passes a numeric threshold — use this for any 'below/above/between' question)." },
+      comparison: {
+        type: 'object',
+        properties: {
+          operator: { type: 'string', enum: ['lt', 'lte', 'gt', 'gte', 'between'], description: "'lt' (<), 'lte' (<=), 'gt' (>), 'gte' (>=) or 'between' (inclusive at both ends)." },
+          value: { type: 'number', description: 'The threshold to compare each row\'s parsed number against. For "between", this is the lower bound.' },
+          upperValue: { type: 'number', description: 'The upper bound, inclusive. Required for "between" and rejected for every other operator.' },
+        },
+        required: ['operator', 'value'],
+        additionalProperties: false,
+        description: 'Required when operation is "compare", ignored otherwise. The threshold test applied to each row\'s parsed number.',
+      },
+      identityPattern: {
+        type: 'string',
+        description: 'Optional — a regular expression naming which part of a row identifies it (e.g. "^([A-Za-z][A-Za-z .&-]+)" for a party/ledger name). Its first capturing group, or the whole match, becomes each returned row\'s "identity". Matched case-sensitively. Required for operation "compare" on a document with no serial/register numbers of its own, otherwise the matching rows come back unidentifiable.',
+      },
       serialRange: {
         type: 'object',
         properties: {

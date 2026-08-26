@@ -315,10 +315,19 @@ function extractRecords(text) {
 
   const delimited = extractDelimitedRows(text);
   if (delimited.length > 0) {
-    // coverage: null, not a passing assessment — the delimited strategy is
-    // exact by construction (one input line, one row, nothing inferred), so
-    // there is nothing for a coverage check to be uncertain about. Running
-    // one here would invent a failure mode this strategy doesn't have.
+    // coverage: null, not a passing assessment — for ROW IDENTIFICATION the
+    // delimited strategy is exact by construction (one input line, one row,
+    // nothing inferred), so there is nothing for a coverage check, which is
+    // a row-level check, to be uncertain about.
+    //
+    // Read that scope literally: it does NOT extend to COLUMN alignment.
+    // Measured on the real Tally day book (ADL-055 addendum): its source
+    // omits empty cells instead of emitting consecutive tabs, so a row with
+    // no debit amount arrives with 5 cells against a 6-column header and
+    // cell index 4 is not the same field on every row. Anything matching
+    // against a row's TEXT is unaffected; anything addressing a cell by
+    // INDEX is not, which is why column-indexed groupBy is still blocked
+    // (ADL-057) and why operation 'compare' works on row text.
     return { strategy: 'delimited', records: delimited, sections: [], coverage: null };
   }
 

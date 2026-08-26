@@ -1,0 +1,10 @@
+{
+  "name": "arcnave-sandbox-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ADL-059 standalone code-execution sandbox — separate deployment from backend/, no ARCNAVE credentials, no network path to ARCNAVE's backend/DB.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

@@ -1088,6 +1088,48 @@ owner, not unilaterally resolved:**
   doesn't touch (a warm local container on a tiny fixture proves
   nothing about either) — still open, still need the actual cloud
   redeploy plus a realistic-size measurement.
+
+**Sixth pass, same day — a second live F12 session, using the real
+result-sheet PDF (`111_cons_result_apr2026.pdf`) the owner supplied
+directly.** Confirmed via `documentTableExtractionService.extractRecords`
+first: 278,403 chars, 400 pages, 1603 records, `strategy:
+sequential_id`, `coverage: reliable` — this is the SAME reference
+document every ADL-055 measurement in the other active thread is
+anchored to (its own stored copy had gone missing from local storage;
+this restores it). New script `backend/scripts/f12-live-tool-probe.js`
+(same seed-tenant/upload/askAgent/cleanup shape as the existing
+`*-live-turn.js` probes, run inside the app container so it reuses the
+already-wired local sandbox from the fifth pass) asked 3 natural
+questions against it, real Gemini/Vertex, real tenant. Three genuine
+findings, none rigged:
+
+- **F15 (new)** — asked for an Excel breakdown with a formula total;
+  the model called `list_skills`, read the `xlsx` guidance, and then
+  said it had no student/arrear data to work with — despite the exact
+  document being attached to the same turn. Root cause is structural:
+  `execute_code`'s sandbox has no ARCNAVE DB/API access by design
+  (ADL-059), so the request actually needs a two-tool sequence
+  (`analyze_document_table` first, then `execute_code` fed that
+  result) that nothing currently tells the model to perform, and
+  `maxToolCallsPerTurn = 1` forecloses it anyway.
+- **F16 (new)** — asked to "show me a diagram" of the arrears; the
+  model called `analyze_document_table` and hand-rendered its own
+  ASCII/unicode bar chart in the answer text rather than reaching for
+  `present_diagram`, which stayed unused. A discoverability gap,
+  distinct from F14 (which was about the crash-on-rejection once
+  `present_diagram` IS chosen).
+- **F13, third occurrence** — a plain, attachment-free capability
+  question ("what can you help me with on marks/attendance") also hit
+  the 45s `deciding`-phase timeout. Evidence against "it's attachment
+  processing that's slow" and for "tool-select itself is intermittently
+  too slow with 106 tools," independent of document load.
+
+`bka/90-appendix/consumer-adaptation-flags.md` now has F15/F16 recorded
+in full, and F12's own tracking table updated (5 of 21 new tools now
+exercised at least once, 16 still untested). `bka/tools/validate.py`:
+29 errors (one more occurrence of the same pre-existing
+undefined-ADL-057-ledger-anchor category already tracked elsewhere in
+this file — no new category introduced).
 - **F3** — needs the exam-fees PDF, deliberately not in git (real
   student PII) — can only be run on a machine that still has it locally.
 - **F11a** — the flaky full-suite failure count needs real investigation

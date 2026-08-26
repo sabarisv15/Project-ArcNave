@@ -605,6 +605,84 @@ anything here. Full root-cause (the exact colliding test-file pair,
 if that's really the mechanism) still needs its own investigation
 pass — out of scope for a mechanical flag-clearing pass.
 
+## F15 — live-checked (2026-08-26): the model doesn't connect "generate a file from this document's data" across the two tool calls that actually requires
+
+**Status: real, observed, unfixed — needs a design decision, not a one-line patch.**
+
+Live test via `backend/scripts/f12-live-tool-probe.js`, real Gemini,
+real 400-page/1603-record result-sheet PDF attached: asked *"Can you
+give me an Excel file breaking down the arrears in the ECE Sandwich
+section, with a formula-based total?"*
+
+The model called `list_skills`, read that `xlsx` skill guidance exists,
+and then answered: *"The retrieved data only lists available code
+skills... and does not contain any student or arrear records... If you
+have the relevant sheet or records, please share..."* — despite the
+exact document being attached to the same turn.
+
+**Root cause, structurally, not a prompting slip:** `execute_code` runs
+in ADL-059's credential-less sandbox by design — no ARCNAVE DB/API
+access, so it cannot itself read an attachment. Building the requested
+file genuinely requires a **two-tool sequence** (`analyze_document_table`
+to pull the real arrears data out of the attachment, THEN `execute_code`
+with that data passed into the generated script) that nothing tells the
+model to perform. At `maxToolCallsPerTurn = 1` this is closed off
+entirely — but the model didn't even name the missing step or ask a
+clarifying question that implied it understood one existed; it treated
+`list_skills`'s output as if it were the data source itself.
+
+This is the concrete case [F7](#f7-the-output-format-policy-is-a-tool-not-prompt-text-and-that-is-a-real-limitation)'s
+"cap 1 competes with actually answering" concern and item 3
+(`maxToolCallsPerTurn` above 1, [ADL-057 open-risk
+check](../30-decisions/ledger.md#adl-057-open-risk-check--the-model-cannot-write-a-usable-identitypattern-at-cap-1-2026-08-26))
+both already named in the abstract, now reproduced concretely against
+this session's own new file-generation capability. Needs its own design
+pass (either raise the cap for this class of request, or have a skill's
+own guidance explicitly instruct "extract via analyze_document_table
+first, then pass the result into execute_code") — not attempted here.
+
+## F16 — live-checked (2026-08-26): `present_diagram` is still never actually chosen for a natural "show me a diagram" request
+
+**Status: real, observed — a discoverability gap, distinct from F14.**
+
+Same live session, same attached PDF: asked *"Show me a diagram
+summarizing the arrears situation in the ECE Sandwich section."* The
+model called `analyze_document_table` (already well-exercised) and
+then **hand-rendered its own ASCII/unicode bar chart directly in the
+answer text** — register-number-keyed rows with a run of `■` characters
+per arrears count — rather than calling `present_diagram` (or even
+`present_options`/a chart-shaped presentation tool) with the same data.
+
+F14's live reproduction of `present_diagram` (the gradient-fill
+rejection) came from a *different* prompt that asked for a flowchart
+specifically; this is the first time "show me a diagram" was asked
+against real tabular data, and the model didn't reach for the
+presentation tool at all despite it being registered, permitted, and
+its constraints self-describable via `describe_diagram_constraints`.
+Consistent with the ADL-057 precedent this file already cites
+repeatedly: a tool passing every unit test is not the same as a tool
+the model discovers and uses unprompted. Needs its own investigation
+(tool description wording, retrieval catalogue placement, or accepting
+that "diagram" in a user's own words doesn't obviously map to an SVG
+tool) — not attempted here.
+
+## F13 — third live reproduction (2026-08-26): a plain, attachment-free capability question also timed out
+
+**Status: strengthens F13 above — the risk is not attachment/document-processing-specific.**
+
+Same live session: *"What can you help me with when it comes to
+student marks and attendance? List your real capabilities."* — no
+attachment at all, a question shaped for `capability_search`/
+`capability_explain` — **threw `Gemini (Vertex AI) request exceeded
+its overall time budget before a response was received`** during the
+`deciding` phase, the same failure mode F13 already recorded twice
+against document-heavy Curriculum turns. A third occurrence, this time
+with no document context at all, is evidence against "it's attachment
+processing that's slow" and for "the tool-select decision itself,
+independent of the question's content, is intermittently too slow with
+106 tools registered" — consistent with, though not proven by, the
++19.0% token-cost delta F13 already measured.
+
 ## F12 — ~~nothing in this pass has been run against a live model~~ — PARTIALLY CLOSED 2026-08-26
 
 **Status: a real live pass happened. It found exactly the two things this flag predicted, plus one it didn't.**
@@ -627,14 +705,28 @@ theoretical:
   `"deciding"` phase itself is now intermittently near or over its 45s
   budget. See **F13**.
 
-**Still open:** only 3 of the 21 new tools (`execute_code`,
-`present_diagram`, and implicitly whatever the model considered for the
-attendance question) were exercised even once. The other 18 — every
-other `present_*` tool, `capability_search`/`capability_explain`,
-`list_skills`/`describe_skill`, `conversation_*`, `ai_memory_revise`,
-`decide_output_format`/`decide_image_route`, `web_search_fast`/
-`image_search` (blocked on F1 regardless) — have never been selected by
-a real model in this project. The ADL-057 precedent (a tool that passed
-every unit test and that the model could not actually use because
-nothing told it what a row looked like) remains a live risk for all of
-them.
+**Update 2026-08-26, second live session (`backend/scripts/f12-live-tool-probe.js`,
+same real result-sheet PDF, 3 more turns):** `list_skills` and
+`analyze_document_table` (already-tested) were genuinely selected —
+see **F15** (the model read `list_skills`'s output but didn't connect
+it to the ALREADY-ATTACHED document, so the requested Excel file was
+never built) and **F16** (`present_diagram` still wasn't chosen for a
+direct "show me a diagram" ask — the model hand-rendered its own ASCII
+chart via `analyze_document_table` instead). A third **F13** timeout
+also occurred, this time on a plain attachment-free capability
+question — see that flag's own updated entry.
+
+**Still open:** 5 of the 21 new tools now exercised at least once
+(`execute_code`, `present_diagram`, `list_skills`, plus
+`analyze_document_table`/`capability_search`-shaped questions that
+either succeeded via a different tool or timed out before selection).
+16 remain untested: every other `present_*` tool
+(`present_featured`/`present_comparison`/`present_carousel`/
+`present_links`/`present_places`/`present_map`/`present_recipe`),
+`describe_diagram_constraints`, `capability_explain`, `describe_skill`,
+`conversation_*`, `ai_memory_revise`, `decide_output_format`/
+`decide_image_route`, `web_search_fast`/`image_search` (blocked on F1
+regardless). The ADL-057 precedent (a tool that passed every unit test
+and that the model could not actually use because nothing told it what
+a row looked like) remains a live risk for all of them — and F15/F16
+are now concrete instances of exactly that risk, not just a prediction.

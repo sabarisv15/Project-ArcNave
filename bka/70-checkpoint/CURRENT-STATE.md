@@ -55,7 +55,30 @@ record count only** — `count`/`sum`/`breakdown`/`compare` are all refused on
 partial-trust records. Also found: `pdfjs-dist` is only a **transitive**
 dependency via `pdf-parse@2.4.5` and must be declared.
 
+**Native PDF reading was measured immediately afterwards** (user asked why
+not adopt an agent instead — [ADL-058 addendum](../30-decisions/ledger.md#adl-058-addendum--native-pdf-reading-measured-and-it-beats-geometry-at-the-one-thing-geometry-cannot-do-2026-08-26)).
+Handing the exam-fees PDF to Gemini as a document part returns all 23 rows,
+**5/5 self-consistent at temperature 1**, identities matching the
+deterministic set 23/23, and attributes ASHWIN exactly as ADL-055's
+hand-verified note says — it solves the merged-cell attribution geometry
+cannot. It also **cannot count** (2 vs 23, 7 vs 839, 16 vs 1603) and **does
+not scale** (the 400-page sheet failed outright after 300 s; a count-only
+call cost 212,822 tokens). Also corrected there: citing this thread's origin
+as evidence against native reading was not sound — the Gemini app's own
+number was never recorded.
+
+**Decided:** build ADL-058 as specified, and give native attribution its
+**own pass** afterwards. ADL-058 is that pass's prerequisite, not its
+competitor — the deterministic 23 are what a native reading gets verified
+*against*, which is the difference between "the model said so" and
+RS-AIG-019's checked claim. The spec's FUTURE table now records both routes
+to lifting partial trust.
+
 **Exact next action for this thread: `/build-slice` against that spec.**
+
+**Then queued, needing its own pass: native-PDF attribution** — verified
+against ADL-058's deterministic identity set, size-bounded, and never used
+for counting.
 
 **ADL-057's slice is implemented and verified (2026-08-25).** Numeric
 comparison ships: `operation: 'compare'` with a closed operator set, over

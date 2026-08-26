@@ -3962,11 +3962,38 @@ returns `invalid_pattern` naming `sectionPattern`; an uncompilable
 case-sensitivity remedy; and the reference regression is unchanged —
 **77 arrears across 21 students**.
 
-**Not yet done, and not claimed:** the full `/ai/ask` turn through Gemini,
-confirming the model *narrates* the new status acceptably. The mechanism
-that produced the HTTP 500 is verified gone against real document bytes;
-what remains unverified is the narration, which needs the running app and
-billable Vertex calls.
+**Live-checked through the full `/ai/ask` turn**, via the second new
+script `backend/scripts/invalid-pattern-live-turn.js` (real Gemini calls,
+real seeded tenant, real uploaded chat attachment, same
+`aiService.askAgent` pipeline production traffic uses — the
+ai-behavioral-suite.js discipline). It uses the small exam-fees PDF rather
+than the result sheet on purpose: pattern validation now runs BEFORE
+extraction, so the attachment's size is irrelevant to what is checked and
+a real billable turn stays cheap.
+
+Two checks, and the first is the stronger one:
+
+- **The model supplied the bad pattern itself.** Asked to use the exact
+  `(?i)` pattern from the original failure, it called
+  `analyze_document_table` with it, the tool returned `invalid_pattern`,
+  and the turn completed with: *"The analysis could not be run because the
+  `sectionPattern` supplied is invalid. JavaScript regular expressions do
+  not support inline flags like `(?i)`... removing `(?i)` will allow the
+  pattern to run properly."* This is the original 500-producing scenario,
+  reproduced end to end and now answering correctly.
+- **Narration made deterministic.** Only the tool RESULT was stubbed — to
+  the exact object the real path returns, already verified against real
+  bytes by the probe — leaving the decision call, tool-use loop and answer
+  call genuinely live. The turn completed, produced a non-empty answer, and
+  did **not** blame the user's file (checked against the phrase list the
+  shipped tool description forbids, after the ADL-055 addendum's
+  re-upload defect).
+
+Note what check 1 does not prove: that the model reliably narrates this
+well every time. It is one live sample of nondeterministic behaviour, and
+the question had to name the bad pattern explicitly to reproduce a
+nondeterministic bug on demand. Check 2 exists precisely because check 1
+cannot be depended on to fire.
 
 ### ADL-057
 **Per-question row identity is caller-supplied data, like every other

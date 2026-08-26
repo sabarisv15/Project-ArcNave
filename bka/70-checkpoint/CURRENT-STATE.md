@@ -26,10 +26,13 @@ literals rather than being rejected; pinned by its own test, tool
 description corrected. Full detail:
 [ADL-056 addendum](../30-decisions/ledger.md#adl-056-addendum--implemented-2026-08-25).
 
-**Still open on that slice:** the full `/ai/ask` turn through Gemini,
-confirming the model *narrates* the new status acceptably. The mechanism
-behind the 500 is verified gone against real document bytes; the narration
-is not yet verified and is not claimed.
+**The full-turn live check is now done too** (2026-08-25), via
+`backend/scripts/invalid-pattern-live-turn.js` — real Gemini, real tenant,
+real uploaded attachment. The model supplied the exact `(?i)` pattern
+itself, the tool returned `invalid_pattern`, and the turn answered with a
+clear explanation instead of a 500. A second check pinned the narration
+deterministically and confirmed it does not blame the user's file. **This
+slice is complete.**
 
 **Item 2's Product Reasoning pass is complete (2026-08-25, no code written)
 — [ADL-057](../30-decisions/ledger.md#adl-057),
@@ -151,8 +154,8 @@ under Standing notes. Anything else is a real regression.
 ## Exact next action
 
 **~~Run `/build-slice` against [`ai-chat-invalid-tool-pattern-approved-spec.md`](../60-product-reasoning/ai-chat-invalid-tool-pattern-approved-spec.md)~~
-— DONE 2026-08-25**, see Active Task above. The only remaining piece is the
-full-turn narration check through Gemini.
+— DONE 2026-08-25**, see Active Task above. Complete, including the
+full-turn live check through Gemini.
 
 Historical context for that slice (pass complete 2026-08-25, no code written). Rationale and the two premise
 corrections it carries: [ADL-056](../30-decisions/ledger.md#adl-056).

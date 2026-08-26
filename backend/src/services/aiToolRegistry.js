@@ -1148,7 +1148,11 @@ registerTool({
     + 'status "invalid_pattern", the "parameter" and "reason" '
     + 'fields say exactly which argument was rejected and why; that is a fault in the pattern supplied, not '
     + 'in the document, so never tell the user their file is the problem. Status "invalid_comparison" means the '
-    + 'comparison object itself was malformed and its "reason" says how.',
+    + 'comparison object itself was malformed and its "reason" says how. '
+    + 'EVERY pattern here (filter.pattern, sectionPattern, identityPattern) is matched against a row whose columns '
+    + 'have already been TRIMMED and joined with a SINGLE SPACE — no tab characters and no runs of multiple spaces '
+    + 'survive, whatever the original file used, so a pattern containing \\t can never match anything. Anchor on the '
+    + 'neighbouring text instead.',
   allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
   params: {
     type: 'object',
@@ -1177,7 +1181,7 @@ registerTool({
       },
       identityPattern: {
         type: 'string',
-        description: 'Optional — a regular expression naming which part of a row identifies it (e.g. "^([A-Za-z][A-Za-z .&-]+)" for a party/ledger name). Its first capturing group, or the whole match, becomes each returned row\'s "identity". Matched case-sensitively. Required for operation "compare" on a document with no serial/register numbers of its own, otherwise the matching rows come back unidentifiable.',
+        description: 'Optional — a regular expression naming which part of a row identifies it (e.g. the party/ledger name). Its first capturing group, or the whole match, becomes each returned row\'s "identity". Matched case-sensitively. Required for operation "compare" on a document with no serial/register numbers of its own, otherwise the matching rows come back unidentifiable. IMPORTANT: by the time any pattern is applied, a row\'s columns have been TRIMMED and joined with a SINGLE SPACE — there are no tab characters and no runs of multiple spaces left, whatever the original file used. A pattern containing \\t can never match. Anchor on the neighbouring content instead, e.g. "^\\d+-[A-Za-z]+-\\d+\\s+(.+?)\\s+[\\d,]+\\.\\d{2}" to take the text between a leading date and an amount.',
       },
       serialRange: {
         type: 'object',

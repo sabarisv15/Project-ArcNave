@@ -4227,16 +4227,38 @@ noted that a clean failure status *"still consumes the turn's only tool
 call"*: read-check-retry converts a failed answer into a correct one here,
 2/2, on a real document.
 
-**Two follow-ups, neither done, neither silently absorbed:**
+**Follow-up (a) — FIXED and re-measured, 2026-08-26.** Asked and decided:
+the user chose to correct it in this slice rather than open a pass, on the
+ADL-055 precedent (a live check found forbidden refusal wording and it was
+corrected in place). Reasoning recorded: this makes the slice's
+already-approved CORE — "have each matched row say which entry it is" —
+actually work, and adds no capability the spec does not already name.
 
-- **Tell the model what row text looks like** (cells trimmed, joined with a
-  single space, never tab-separated) in `analyze_document_table`'s
-  description. Cheap and targeted, and it serves this slice's already-
-  approved CORE ("have each matched row say which entry it is"), but it is
-  a change the Approved Spec does not name — so it is recorded here for a
-  decision rather than patched in place, per workflow §17.
-- **Item 3** (`maxToolCallsPerTurn` above 1) now has its first piece of
-  real supporting evidence and should carry this measurement into its own
-  pass.
+The tool description now states, once centrally and again on
+`identityPattern`, that **every** pattern is matched against a row whose
+columns have already been trimmed and joined with a single space, that no
+tab or multi-space run survives, and that a pattern containing `\t` can
+never match — with a worked example anchoring on neighbouring text.
 
-**Status:** Resolved — implemented and verified. One open finding above.
+**Re-measured, two fresh live runs.** At the production default of
+`maxToolCallsPerTurn = 1`, **2/2 the model now writes a working
+`identityPattern` on its FIRST call** — e.g.
+`"^\d{1,2}-[A-Za-z]{3}-\d{2}\s+(.+?)\s+[\d,]+"` — returning **100/100 rows named,
+21 distinct real party names**, correct total. Turn B (cap 3) no longer
+needs its second call either: 2/2 it now completes in **one**. Before the
+fix the same script produced 0/100 named and a lost answer, 2/2. Full suite
+unchanged at **2218/2216**.
+
+The finding stands even though the fix was cheap: the model had no way to
+know what a row looks like by the time a pattern is applied, and no amount
+of `identityPattern` design would have supplied it.
+
+**Follow-up (b) — still open.** **Item 3** (`maxToolCallsPerTurn` above 1)
+now has its first piece of real supporting evidence and should carry this
+measurement into its own pass. Note the evidence survives the fix: the cap-3
+runs recorded above are still the only observed case of a continuation
+correcting a real failure, and they show retry works when the model's first
+attempt is wrong for a reason no description can pre-empt.
+
+**Status:** Resolved — implemented, verified, and re-verified after the
+description fix.

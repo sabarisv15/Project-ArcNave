@@ -68,11 +68,17 @@ case in this project of a tool-use-loop continuation being useful** (zero
 `tool_select_continue` rows exist in all audit history) and the concrete
 evidence ADL-056 said was missing.
 
-Two follow-ups, neither done: **(a)** tell the model in
-`analyze_document_table`'s description that row text is space-joined, never
-tab-separated — cheap, targeted, but not named in the Approved Spec, so it
-needs a decision rather than an in-place patch (workflow §17); **(b)** item
-3 should carry this measurement into its own pass. Full detail:
+**Follow-up (a) is FIXED and re-measured** (user's decision: correct it in
+this slice, on the ADL-055 precedent). The tool description now says every
+pattern is matched against a row whose columns are trimmed and joined with
+a single space, that no tab survives, with a worked example. **2/2 fresh
+live runs, the model now writes a working `identityPattern` on its FIRST
+call at cap 1** — 100/100 rows named, 21 real party names — where before it
+produced 0/100 and a lost answer, 2/2. Full suite unchanged at 2218/2216.
+
+**Follow-up (b) still open:** item 3 should carry this measurement into its
+own pass. The evidence survives the fix — those cap-3 runs remain the only
+observed case of a continuation correcting a real failure. Full detail:
 [ADL-057 open-risk check](../30-decisions/ledger.md#adl-057-open-risk-check--the-model-cannot-write-a-usable-identitypattern-at-cap-1-2026-08-26).
 
 **Item 2's Product Reasoning pass is complete (2026-08-25, no code written)

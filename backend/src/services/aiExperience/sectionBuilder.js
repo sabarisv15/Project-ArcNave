@@ -171,6 +171,40 @@ const PRESENTATION_TOOL_BUILDERS = {
   present_steps: (data) => (data && Array.isArray(data.steps)
     ? { kind: 'steps', title: data.title || null, steps: data.steps }
     : null),
+  present_featured: (data) => (data && Array.isArray(data.fields)
+    ? {
+      kind: 'featured', title: data.title || null, basis: data.basis || null, fields: data.fields,
+    }
+    : null),
+  present_comparison: (data) => (data && Array.isArray(data.attributes) && Array.isArray(data.items)
+    ? {
+      kind: 'comparison', title: data.title || null, attributes: data.attributes, items: data.items,
+    }
+    : null),
+  present_carousel: (data) => (data && Array.isArray(data.items)
+    ? { kind: 'carousel', title: data.title || null, items: data.items }
+    : null),
+  present_links: (data) => (data && Array.isArray(data.links)
+    ? { kind: 'links', links: data.links, untrusted: data.untrusted !== false }
+    : null),
+  present_places: (data) => (data && Array.isArray(data.places)
+    ? {
+      kind: 'places', title: data.title || null, places: data.places, showMap: false,
+    }
+    : null),
+  present_map: (data) => (data && Array.isArray(data.places)
+    ? {
+      kind: 'places', title: data.title || null, places: data.places, showMap: true,
+    }
+    : null),
+  present_recipe: (data) => (data && Array.isArray(data.ingredients) && Array.isArray(data.steps)
+    ? {
+      kind: 'recipe', title: data.title || null, servings: data.servings, ingredients: data.ingredients, steps: data.steps,
+    }
+    : null),
+  present_diagram: (data) => (data && typeof data.svg === 'string'
+    ? { kind: 'diagram', title: data.title || null, svg: data.svg }
+    : null),
 };
 
 function buildPresentationTool(toolName, data) {
@@ -199,6 +233,13 @@ function buildSections({
     quiz: presentation && presentation.kind === 'quiz' ? presentation : null,
     translation: presentation && presentation.kind === 'translation' ? presentation : null,
     steps: presentation && presentation.kind === 'steps' ? presentation : null,
+    featured: presentation && presentation.kind === 'featured' ? presentation : null,
+    comparison: presentation && presentation.kind === 'comparison' ? presentation : null,
+    carousel: presentation && presentation.kind === 'carousel' ? presentation : null,
+    links: presentation && presentation.kind === 'links' ? presentation : null,
+    places: presentation && presentation.kind === 'places' ? presentation : null,
+    recipe: presentation && presentation.kind === 'recipe' ? presentation : null,
+    diagram: presentation && presentation.kind === 'diagram' ? presentation : null,
     insights: [],
     recommendedActions: [],
     question: question || null,

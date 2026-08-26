@@ -264,6 +264,75 @@ async function exportArtifactAs(client, id, format, { userId, collegeId }) {
   return document;
 }
 
+// attachGeneratedFile — the consumer-tool-adaptation file-generation
+// slice (2026-08-26, see migration 1763600000000). Distinct from
+// publishArtifact above in the one way that matters: publishArtifact
+// converts THIS artifact's own markdown content via
+// markdownFormatConverter; this attaches bytes that came from somewhere
+// else entirely (the ADL-059 sandbox, e.g. an openpyxl/LibreOffice-
+// produced xlsx) — the artifact's `content` never held them and never
+// will. That is also why this does not call assertNotPublished: publish
+// and generation are separate lifecycles on the same row (separate
+// columns, see the migration's own comment), so a published artifact
+// can still receive a later generated file and vice versa.
+//
+// The gate is enforced HERE, not in the tool handler that calls this,
+// on purpose — CLAUDE.md rule 1 puts the real check in the Business
+// Service, and `verification` must be the FULL report object, never a
+// bare boolean: a caller that could pass `{passed: true}` on its own
+// has defeated the entire gate this function exists to enforce. There
+// is no "attach anyway" override in this slice.
+async function attachGeneratedFile(client, id, {
+  buffer, fileName, mimeType, verification,
+}, { userId, collegeId }) {
+  const existing = await resolveOwnArtifact(client, id, userId);
+
+  if (!verification || typeof verification !== 'object' || typeof verification.passed !== 'boolean') {
+    throw new ArtifactValidationError('verification must be the full verification report object, not a boolean or omitted');
+  }
+  if (!verification.passed) {
+    throw new ArtifactValidationError(
+      `generated file failed verification (${verification.verdict || 'unknown'}: ${verification.reason || 'no reason given'}) and was not attached`,
+    );
+  }
+
+  const document = await documentService.uploadPersonalDocument(client, {
+    collegeId,
+    title: existing.title,
+    folderName: 'AI Artifacts',
+    fileName,
+    mimeType,
+    fileBuffer: buffer,
+  }, { actorUserId: userId });
+
+  const artifact = await artifactRepository.update(client, id, {
+    generatedDocumentId: document.id,
+    generationVerified: true,
+  });
+
+  await auditLogRepository.createAuditLogEntry(client, {
+    collegeId,
+    userId,
+    action: 'artifact_file_generated',
+    entity: 'artifact',
+    entityId: id,
+    metadata: { documentId: document.id, verdict: verification.verdict },
+  });
+
+  // Same document_file_name/document_mime_type convention
+  // publishArtifact's own return already establishes, plus
+  // generatedDocumentId (camelCase — not a real column read, just this
+  // function naming which id field aiService.js's extractDocumentAttachment
+  // should key off, distinct from publishArtifact's published_document_id
+  // so the two paths are never confused for one another).
+  return {
+    ...artifact,
+    generatedDocumentId: document.id,
+    document_file_name: document.file_name,
+    document_mime_type: document.mime_type,
+  };
+}
+
 module.exports = {
   ArtifactValidationError,
   ArtifactNotFoundError,
@@ -277,4 +346,5 @@ module.exports = {
   deleteArtifact,
   publishArtifact,
   exportArtifactAs,
+  attachGeneratedFile,
 };

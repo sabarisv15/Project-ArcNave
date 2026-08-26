@@ -94,6 +94,14 @@ services:
       CLAUDE_PROJECT_ID: ${CLAUDE_PROJECT_ID:-}
       CLAUDE_LOCATION: ${CLAUDE_LOCATION:-}
       CLAUDE_MODEL: ${CLAUDE_MODEL:-}
+      # ADL-059 credential-less sandbox (execute_code) — a separate,
+      # already-deployed Cloud Run service, not built by this compose
+      # file. `:-` defaults, not `:?`: unset means
+      # sandboxExecutionService throws its own SandboxNotConfiguredError
+      # at call time, same "capability exists in code before its infra
+      # does" shape every other optional provider here already uses.
+      SANDBOX_SERVICE_URL: ${SANDBOX_SERVICE_URL:-}
+      SANDBOX_SERVICE_TOKEN: ${SANDBOX_SERVICE_TOKEN:-}
       # ADC, never a static API key (gemini.js's own comment) — mounted
       # read-only from the host's own `gcloud auth application-default
       # login` output below. Shared by both Gemini and Claude-on-Vertex —

@@ -302,11 +302,21 @@ module.exports = {
   // sandbox-service/server.js's own file comment).
   sandboxServiceToken: process.env.SANDBOX_SERVICE_TOKEN || null,
 
-  // ADL-061 — open web search (Google Custom Search JSON API). Neither
-  // required() — webSearchService throws its own
-  // WebSearchNotConfiguredError at call time until both are set, same
-  // "capability exists in code before its credentials do" shape as
+  // ADL-061 — open web search. Originally Google Custom Search JSON
+  // API; that API is closed to new projects ahead of its 2027-01-01
+  // discontinuation and returns a permanent 403 no matter how it is
+  // configured, so the provider is now selectable rather than baked in
+  // (webSearchService.js's own file comment carries the evidence).
+  // WEB_SEARCH_PROVIDER picks between 'brave' and 'tavily'; the key is
+  // whichever that provider issues. Not required() — webSearchService
+  // throws WebSearchNotConfiguredError at call time until it is set,
+  // same "capability exists in code before its credentials do" shape as
   // sandboxServiceUrl above.
+  webSearchProvider: process.env.WEB_SEARCH_PROVIDER || 'brave',
+  webSearchApiKey: process.env.WEB_SEARCH_API_KEY || null,
+  // Retained only so an existing .env.local.sh that still sets these
+  // does not silently look configured while pointing at the dead API.
+  // Nothing reads them any more.
   googleSearchApiKey: process.env.GOOGLE_SEARCH_API_KEY || null,
   googleSearchEngineId: process.env.GOOGLE_SEARCH_ENGINE_ID || null,
 

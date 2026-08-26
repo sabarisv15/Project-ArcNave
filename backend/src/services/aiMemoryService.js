@@ -170,6 +170,35 @@ async function recallGeneralFacts(client, { actorUserId }) {
   return aiMemoryRepository.listGeneralFacts(client, actorUserId);
 }
 
+// Revision, not deletion — so unlike forgetFact below, consent IS
+// required: rewriting a fact stores new content, and the consent gate
+// exists to cover storing, not to cover the row already being there.
+// assertValidFact runs on the replacement exactly as it does on a fresh
+// one, which is the point of routing this through the service rather
+// than letting a caller UPDATE the row: the identifier-number guard
+// would otherwise be trivially bypassable by remembering a clean fact
+// and then editing a roll number into it.
+//
+// No MAX_GENERAL_FACTS check here on purpose: an edit replaces one row
+// and cannot grow the count, so re-checking a full store would block a
+// user from correcting a fact precisely when they are at the cap.
+async function reviseFact(client, factId, newFact, { actorUserId }) {
+  assertValidFact(newFact);
+  const consent = await getConsent(client, { actorUserId });
+  if (!consent.consented) {
+    throw new AiMemoryConsentRequiredError(
+      'this user has not enabled AI memory yet — tell them they can turn it on in AI Memory settings, do not retry',
+    );
+  }
+  const updated = await aiMemoryRepository.updateGeneralFact(client, actorUserId, factId, newFact.trim());
+  if (updated === null) {
+    throw new AiMemoryValidationError(
+      `no remembered fact with id ${JSON.stringify(factId)} belongs to this user — list them first, do not retry with a guessed id`,
+    );
+  }
+  return updated;
+}
+
 // Deletion is always allowed regardless of current consent state, same
 // reasoning forgetPreference already documents.
 async function forgetFact(client, factId, { actorUserId }) {
@@ -188,5 +217,6 @@ module.exports = {
   forgetPreference,
   rememberFact,
   recallGeneralFacts,
+  reviseFact,
   forgetFact,
 };

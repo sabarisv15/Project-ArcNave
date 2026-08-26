@@ -89,6 +89,18 @@ async function countGeneralFacts(client, userId) {
   return result.rows[0].count;
 }
 
+// The `user_id = $1` predicate is the authorization, not a filter: a
+// fact belonging to another user simply matches no row and returns
+// null, so a guessed id can neither read nor rewrite someone else's
+// memory. Same shape as removeGeneralFact below.
+async function updateGeneralFact(client, userId, factId, fact) {
+  const result = await client.query(
+    'UPDATE ai_general_memory SET fact = $3 WHERE user_id = $1 AND id = $2 RETURNING *',
+    [userId, factId, fact],
+  );
+  return result.rows.length > 0 ? result.rows[0] : null;
+}
+
 async function removeGeneralFact(client, userId, factId) {
   const result = await client.query(
     'DELETE FROM ai_general_memory WHERE user_id = $1 AND id = $2 RETURNING id',
@@ -111,6 +123,7 @@ module.exports = {
   insertGeneralFact,
   listGeneralFacts,
   countGeneralFacts,
+  updateGeneralFact,
   removeGeneralFact,
   removeAllGeneralFactsForUser,
 };

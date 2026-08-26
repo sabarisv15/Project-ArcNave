@@ -15,19 +15,32 @@ const configurationService = require('./configurationService');
 // (RS-AIG-003), nothing special-cased for having come from a search
 // provider rather than a single fetched page.
 //
-// Provider: Google Custom Search JSON API (product decision). Needs
-// GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID — neither is
-// required() in config.js (mirrors sandboxServiceUrl's own "not yet
-// configured" shape): this service throws its own
-// WebSearchNotConfiguredError at call time until both are set, rather
-// than failing the whole backend's startup for a capability that isn't
-// live yet.
+// PROVIDER HISTORY — do not re-litigate this by trying Google again.
+// The original provider was the Google Custom Search JSON API. It was
+// configured correctly (API enabled, billing linked, key scoped, quota
+// unused) and still returned a permanent 403: "This project does not
+// have the access to Custom Search JSON API." Root cause is not
+// configuration — Google closed that API to new customers/projects
+// ahead of its 2027-01-01 discontinuation. No amount of setup fixes it.
+//
+// So the provider is now selected by config rather than baked in, and
+// two are implemented: Brave Search (independent index) and Tavily
+// (built for agent/LLM search). Both are single-key setups — neither
+// needs the Google engine-id dance. Adding a third is a new PROVIDERS
+// entry, not another rewrite of this file.
 
 const config = require('../config');
 
 const CONFIG_CATEGORY = 'web_search';
 const SEARCH_TIMEOUT_MS = 8000;
 const MAX_RESULTS = 5;
+// A "fast" search is the same provider call with a smaller result set —
+// the consumer platform's web_search_fast/web_search split is about how
+// much context a lookup is worth spending, not about a different index.
+// Modelling it as a separate provider would be inventing a distinction
+// neither Brave nor Tavily actually offers.
+const MAX_FAST_RESULTS = 3;
+const MAX_IMAGE_RESULTS = 8;
 const MAX_SNIPPET_CHARS = 500;
 
 class WebSearchNotConfiguredError extends Error {}
@@ -35,54 +48,156 @@ class WebSearchNotEnabledError extends Error {}
 class WebSearchValidationError extends Error {}
 class WebSearchRequestError extends Error {}
 
+function truncate(value, maxChars) {
+  return String(value || '').slice(0, maxChars);
+}
+
+// Each provider declares how to build a request and how to read its
+// response. Nothing else in this file knows which one is active.
+const PROVIDERS = {
+  brave: {
+    buildWebRequest(query, count) {
+      const url = new URL('https://api.search.brave.com/res/v1/web/search');
+      url.searchParams.set('q', query);
+      url.searchParams.set('count', String(count));
+      return { url, headers: { Accept: 'application/json', 'X-Subscription-Token': config.webSearchApiKey } };
+    },
+    readWebResults(body) {
+      const results = body && body.web && Array.isArray(body.web.results) ? body.web.results : [];
+      return results.map((item) => ({
+        title: truncate(item.title, 200),
+        url: String(item.url || ''),
+        snippet: truncate(item.description, MAX_SNIPPET_CHARS),
+      }));
+    },
+    buildImageRequest(query, count) {
+      const url = new URL('https://api.search.brave.com/res/v1/images/search');
+      url.searchParams.set('q', query);
+      url.searchParams.set('count', String(count));
+      return { url, headers: { Accept: 'application/json', 'X-Subscription-Token': config.webSearchApiKey } };
+    },
+    readImageResults(body) {
+      const results = body && Array.isArray(body.results) ? body.results : [];
+      return results.map((item) => ({
+        title: truncate(item.title, 200),
+        imageUrl: String((item.properties && item.properties.url) || ''),
+        sourceUrl: String(item.url || ''),
+      }));
+    },
+  },
+  tavily: {
+    buildWebRequest(query, count) {
+      const url = new URL('https://api.tavily.com/search');
+      return {
+        url,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.webSearchApiKey}` },
+        body: JSON.stringify({ query, max_results: count }),
+      };
+    },
+    readWebResults(body) {
+      const results = body && Array.isArray(body.results) ? body.results : [];
+      return results.map((item) => ({
+        title: truncate(item.title, 200),
+        url: String(item.url || ''),
+        snippet: truncate(item.content, MAX_SNIPPET_CHARS),
+      }));
+    },
+    // Tavily has no dedicated image index — it returns images alongside
+    // a normal web search. Declared explicitly as unsupported rather
+    // than faked, so image_search fails honestly on this provider
+    // instead of silently returning nothing.
+    buildImageRequest: null,
+    readImageResults: null,
+  },
+};
+
+function activeProvider() {
+  const provider = PROVIDERS[config.webSearchProvider];
+  if (!provider) {
+    throw new WebSearchNotConfiguredError(
+      `WEB_SEARCH_PROVIDER ${JSON.stringify(config.webSearchProvider)} is not a provider this service implements `
+      + `(expected one of ${Object.keys(PROVIDERS).join(', ')})`,
+    );
+  }
+  return provider;
+}
+
 async function getWebSearchConfig(client, collegeId) {
   const row = await configurationService.getConfiguration(client, { collegeId, category: CONFIG_CATEGORY });
   const stored = row ? row.configuration : {};
   return { enabled: Boolean(stored.enabled) };
 }
 
-async function search(client, collegeId, query) {
-  if (!config.googleSearchApiKey || !config.googleSearchEngineId) {
+// The four gates every search goes through, in the order that fails
+// cheapest first: is a provider configured at all, is the query real,
+// is this college opted in, and only then does a billable call happen.
+async function assertSearchable(client, collegeId, query) {
+  if (!config.webSearchApiKey) {
     throw new WebSearchNotConfiguredError(
-      'open web search is not configured yet (GOOGLE_SEARCH_API_KEY / GOOGLE_SEARCH_ENGINE_ID unset) — see ADL-061',
+      'open web search is not configured yet (WEB_SEARCH_API_KEY unset) — see ADL-061',
     );
   }
+  const provider = activeProvider();
   if (typeof query !== 'string' || !query.trim()) {
     throw new WebSearchValidationError('query is required and must be a non-empty string');
   }
-
   const searchConfig = await getWebSearchConfig(client, collegeId);
   if (!searchConfig.enabled) {
     throw new WebSearchNotEnabledError('open web search is not enabled for this college — opt in via configuration first');
   }
+  return provider;
+}
 
-  const url = new URL('https://www.googleapis.com/customsearch/v1');
-  url.searchParams.set('key', config.googleSearchApiKey);
-  url.searchParams.set('cx', config.googleSearchEngineId);
-  url.searchParams.set('q', query);
-  url.searchParams.set('num', String(MAX_RESULTS));
-
+async function callProvider({
+  url, method, headers, body,
+}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
   let response;
   try {
-    response = await fetch(url.toString(), { signal: controller.signal });
+    response = await fetch(url.toString(), {
+      method: method || 'GET', headers, body, signal: controller.signal,
+    });
   } catch (err) {
     throw new WebSearchRequestError(`search request failed: ${err.message}`);
   } finally {
     clearTimeout(timeout);
   }
-
   if (!response.ok) {
     throw new WebSearchRequestError(`search provider returned ${response.status}`);
   }
-  const body = await response.json();
-  const items = Array.isArray(body.items) ? body.items : [];
-  return items.slice(0, MAX_RESULTS).map((item) => ({
-    title: String(item.title || '').slice(0, 200),
-    url: String(item.link || ''),
-    snippet: String(item.snippet || '').slice(0, MAX_SNIPPET_CHARS),
-  }));
+  return response.json();
+}
+
+async function runWebSearch(client, collegeId, query, count) {
+  const provider = await assertSearchable(client, collegeId, query);
+  const body = await callProvider(provider.buildWebRequest(query.trim(), count));
+  return provider.readWebResults(body).slice(0, count);
+}
+
+async function search(client, collegeId, query) {
+  return runWebSearch(client, collegeId, query, MAX_RESULTS);
+}
+
+async function searchFast(client, collegeId, query) {
+  return runWebSearch(client, collegeId, query, MAX_FAST_RESULTS);
+}
+
+// image_search — returns URLs only, never bytes. ARCNAVE does not
+// proxy, cache or store a third-party image: doing so would put
+// unreviewed external binary content inside DocumentService, which owns
+// institutional documents. The frontend renders these as external
+// references, which also keeps the provider's own attribution intact.
+async function searchImages(client, collegeId, query) {
+  const provider = await assertSearchable(client, collegeId, query);
+  if (!provider.buildImageRequest) {
+    throw new WebSearchNotConfiguredError(
+      `the configured search provider ${JSON.stringify(config.webSearchProvider)} does not support image search`,
+    );
+  }
+  const body = await callProvider(provider.buildImageRequest(query.trim(), MAX_IMAGE_RESULTS));
+  return provider.readImageResults(body).slice(0, MAX_IMAGE_RESULTS);
 }
 
 module.exports = {
@@ -91,6 +206,12 @@ module.exports = {
   WebSearchValidationError,
   WebSearchRequestError,
   CONFIG_CATEGORY,
+  MAX_RESULTS,
+  MAX_FAST_RESULTS,
+  MAX_IMAGE_RESULTS,
+  PROVIDERS,
   getWebSearchConfig,
   search,
+  searchFast,
+  searchImages,
 };

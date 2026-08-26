@@ -26,6 +26,8 @@ const COLUMNS = [
   ['versionNumber', 'version_number'],
   ['publishedDocumentId', 'published_document_id'],
   ['publishedAt', 'published_at'],
+  ['generatedDocumentId', 'generated_document_id'],
+  ['generationVerified', 'generation_verified'],
   ['deletedAt', 'deleted_at'],
 ];
 

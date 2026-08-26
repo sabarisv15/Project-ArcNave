@@ -28,6 +28,13 @@ function hasContent(sections) {
     || (sections.quiz && sections.quiz.questions && sections.quiz.questions.length > 0)
     || sections.translation
     || (sections.steps && sections.steps.steps && sections.steps.steps.length > 0)
+    || (sections.featured && sections.featured.fields && sections.featured.fields.length > 0)
+    || (sections.comparison && sections.comparison.items && sections.comparison.items.length > 0)
+    || (sections.carousel && sections.carousel.items && sections.carousel.items.length > 0)
+    || (sections.links && sections.links.links && sections.links.links.length > 0)
+    || (sections.places && sections.places.places && sections.places.places.length > 0)
+    || (sections.recipe && sections.recipe.ingredients && sections.recipe.ingredients.length > 0)
+    || (sections.diagram && sections.diagram.svg)
     || (sections.insights && sections.insights.length > 0)
     || (sections.recommendedActions && sections.recommendedActions.length > 0),
   );
@@ -70,6 +77,19 @@ function normalizeSteps(steps) {
   return steps;
 }
 
+// Every one of these follows normalizeOptionsCard's rule: a section
+// whose own collection is empty is not a section, it is noise, so it
+// becomes null and hasContent falls through to the empty-state message.
+function normalizeByArray(section, key) {
+  if (!section || !Array.isArray(section[key]) || section[key].length === 0) return null;
+  return section;
+}
+
+function normalizeDiagram(diagram) {
+  if (!diagram || typeof diagram.svg !== 'string' || !diagram.svg.trim()) return null;
+  return diagram;
+}
+
 function validate(sections) {
   const cleaned = {
     title: sections.title,
@@ -84,6 +104,13 @@ function validate(sections) {
     quiz: normalizeQuiz(sections.quiz),
     translation: sections.translation || null,
     steps: normalizeSteps(sections.steps),
+    featured: normalizeByArray(sections.featured, 'fields'),
+    comparison: normalizeByArray(sections.comparison, 'items'),
+    carousel: normalizeByArray(sections.carousel, 'items'),
+    links: normalizeByArray(sections.links, 'links'),
+    places: normalizeByArray(sections.places, 'places'),
+    recipe: normalizeByArray(sections.recipe, 'ingredients'),
+    diagram: normalizeDiagram(sections.diagram),
     insights: dedupe(sections.insights),
     recommendedActions: dedupe(sections.recommendedActions),
     persona: sections.persona || null,

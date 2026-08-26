@@ -6,3 +6,5 @@ dist/
 backend/storage/
 backend/storage-backups/
 backend/.gcp/
+__pycache__/
+*.pyc

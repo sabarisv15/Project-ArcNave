@@ -719,6 +719,20 @@ function extractDocumentAttachment(toolName, result) {
       id: result.published_document_id, fileName: result.document_file_name, mimeType: result.document_mime_type, title: result.title,
     };
   }
+  // execute_code (consumer-tool-adaptation file-generation slice,
+  // 2026-08-26) — keyed off `generatedDocumentId`, deliberately a
+  // DIFFERENT field name from `published_document_id` above: a workbook
+  // this tool produces went through artifactService.attachGeneratedFile,
+  // never publishArtifact, and the two paths must never be confused
+  // for one another (see that function's own comment on why they are
+  // separate columns). Only present at all when the sandbox actually
+  // produced a file AND it passed verification — execute_code's own
+  // handler never sets this field on a failed/unverified/no-file result.
+  if (toolName === 'execute_code' && result.generatedDocumentId) {
+    return {
+      id: result.generatedDocumentId, fileName: result.document_file_name, mimeType: result.document_mime_type, title: result.title,
+    };
+  }
   return null;
 }
 

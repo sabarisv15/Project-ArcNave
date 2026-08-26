@@ -97,6 +97,79 @@ function renderSteps(steps) {
   return steps.title ? `**${steps.title}**\n\n${stepLines}` : stepLines;
 }
 
+// `basis` is rendered first and always — it is the whole reason this
+// card is allowed to exist under RS-AIG-013 (see
+// aiInteractionService.buildFeaturedCard). Dropping it in the Markdown
+// fallback would turn a stated match back into an implied recommendation.
+function renderFeatured(featured) {
+  const fieldLines = featured.fields.map((f) => `- **${f.label}:** ${f.value}`).join('\n');
+  return `**${featured.title}**\n\n_Matched on: ${featured.basis}_\n\n${fieldLines}`;
+}
+
+function renderComparison(comparison) {
+  const header = `| | ${comparison.items.map((i) => i.name).join(' | ')} |`;
+  const divider = `| --- | ${comparison.items.map(() => '---').join(' | ')} |`;
+  const rows = comparison.attributes.map(
+    (attribute, index) => `| **${attribute}** | ${comparison.items.map((i) => i.values[index]).join(' | ')} |`,
+  );
+  const table = [header, divider, ...rows].join('\n');
+  return comparison.title ? `**${comparison.title}**\n\n${table}` : table;
+}
+
+// No carousel UI exists in Markdown, so this renders as a plain list —
+// the same "structured data + Markdown fallback" split every other
+// section here uses. The order is caller-supplied and carries no
+// ranking claim, so nothing numbers these lines.
+function renderCarousel(carousel) {
+  const itemLines = carousel.items
+    .map((item) => (item.subtitle ? `- **${item.name}** — ${item.subtitle}` : `- **${item.name}**`))
+    .join('\n');
+  return carousel.title ? `**${carousel.title}**\n\n${itemLines}` : itemLines;
+}
+
+// The host is printed separately from the link text on purpose: these
+// URLs come from web_search, which is untrusted data, and a lookalike
+// domain hidden behind friendly link text is the exact failure this
+// avoids. The trailing note is not decoration — it is the untrusted-source
+// marker travelling with the content into a Markdown-only surface.
+function renderLinks(links) {
+  const linkLines = links.links
+    .map((l) => {
+      const snippet = l.snippet ? ` — ${l.snippet}` : '';
+      return `- [${l.title}](${l.url}) (${l.host})${snippet}`;
+    })
+    .join('\n');
+  return `${linkLines}\n\n_External sources — ARCNAVE has not verified these._`;
+}
+
+function renderPlaces(places) {
+  const placeLines = places.places
+    .map((p) => {
+      const address = p.address ? ` — ${p.address}` : '';
+      const coordinates = places.showMap && p.latitude !== null ? ` (${p.latitude}, ${p.longitude})` : '';
+      return `- **${p.name}**${address}${coordinates}`;
+    })
+    .join('\n');
+  return places.title ? `**${places.title}**\n\n${placeLines}` : placeLines;
+}
+
+function renderRecipe(recipe) {
+  const ingredientLines = recipe.ingredients
+    .map((i) => `- ${i.quantity} ${i.unit} ${i.name}`)
+    .join('\n');
+  const stepLines = recipe.steps.map((s, index) => `${index + 1}. ${s}`).join('\n');
+  return `**${recipe.title}** (serves ${recipe.servings})\n\n${ingredientLines}\n\n${stepLines}`;
+}
+
+// The SVG is emitted raw because aiDiagramService.buildDiagram has
+// already reduced it to an allowlisted static picture — no script, no
+// external reference, no event handler survives that check. Markdown
+// renderers that strip HTML will drop it harmlessly; the structured
+// `sections.diagram` is what a real frontend renders.
+function renderDiagram(diagram) {
+  return diagram.title ? `**${diagram.title}**\n\n${diagram.svg}` : diagram.svg;
+}
+
 function renderMarkdown(sections) {
   const parts = [`## ${sections.title}`];
 
@@ -141,6 +214,34 @@ function renderMarkdown(sections) {
 
   if (sections.steps) {
     parts.push(renderSteps(sections.steps));
+  }
+
+  if (sections.featured) {
+    parts.push(renderFeatured(sections.featured));
+  }
+
+  if (sections.comparison) {
+    parts.push(renderComparison(sections.comparison));
+  }
+
+  if (sections.carousel) {
+    parts.push(renderCarousel(sections.carousel));
+  }
+
+  if (sections.places) {
+    parts.push(renderPlaces(sections.places));
+  }
+
+  if (sections.recipe) {
+    parts.push(renderRecipe(sections.recipe));
+  }
+
+  if (sections.diagram) {
+    parts.push(renderDiagram(sections.diagram));
+  }
+
+  if (sections.links) {
+    parts.push(renderLinks(sections.links));
   }
 
   if (sections.choices) {

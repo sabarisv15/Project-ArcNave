@@ -269,3 +269,158 @@ test('ArtifactService (no DB)', async (t) => {
     );
   });
 });
+
+// attachGeneratedFile — consumer-tool-adaptation file-generation slice
+// (2026-08-26). The gate is enforced HERE (CLAUDE.md rule 1): every test
+// below that expects a rejection must also assert uploadPersonalDocument
+// was never called, because "refused but uploaded anyway" would be the
+// actual defect the gate exists to prevent.
+test('ArtifactService.attachGeneratedFile (no DB)', async (t) => {
+  const passedVerification = {
+    verdict: 'passed', passed: true, reason: 'ok', formulaCellCount: 2, expectedFormulaCellCount: 2,
+  };
+
+  await t.test('refuses when verification is missing entirely', async () => {
+    const findMock = t.mock.method(artifactRepository, 'findById', async () => ({
+      id: 'a1', user_id: 'u1', college_id: 'c1', deleted_at: null, title: 'Breakdown',
+    }));
+    const uploadMock = t.mock.method(documentService, 'uploadPersonalDocument', async () => { throw new Error('must not be called'); });
+    t.after(() => { findMock.mock.restore(); uploadMock.mock.restore(); });
+
+    await assert.rejects(
+      () => artifactService.attachGeneratedFile({}, 'a1', {
+        buffer: Buffer.from('x'), fileName: 'out.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }, { userId: 'u1', collegeId: 'c1' }),
+      artifactService.ArtifactValidationError,
+    );
+    assert.equal(uploadMock.mock.calls.length, 0);
+  });
+
+  await t.test('refuses a bare boolean verification — the caller must pass the full report, not a shortcut', async () => {
+    const findMock = t.mock.method(artifactRepository, 'findById', async () => ({
+      id: 'a1', user_id: 'u1', college_id: 'c1', deleted_at: null, title: 'Breakdown',
+    }));
+    const uploadMock = t.mock.method(documentService, 'uploadPersonalDocument', async () => { throw new Error('must not be called'); });
+    t.after(() => { findMock.mock.restore(); uploadMock.mock.restore(); });
+
+    await assert.rejects(
+      () => artifactService.attachGeneratedFile({}, 'a1', {
+        buffer: Buffer.from('x'), fileName: 'out.xlsx', mimeType: 'x', verification: true,
+      }, { userId: 'u1', collegeId: 'c1' }),
+      artifactService.ArtifactValidationError,
+    );
+    assert.equal(uploadMock.mock.calls.length, 0);
+  });
+
+  await t.test('refuses a failed verification and states the reason', async () => {
+    const findMock = t.mock.method(artifactRepository, 'findById', async () => ({
+      id: 'a1', user_id: 'u1', college_id: 'c1', deleted_at: null, title: 'Breakdown',
+    }));
+    const uploadMock = t.mock.method(documentService, 'uploadPersonalDocument', async () => { throw new Error('must not be called'); });
+    t.after(() => { findMock.mock.restore(); uploadMock.mock.restore(); });
+
+    await assert.rejects(
+      () => artifactService.attachGeneratedFile({}, 'a1', {
+        buffer: Buffer.from('x'),
+        fileName: 'out.xlsx',
+        mimeType: 'x',
+        verification: { verdict: 'failed', passed: false, reason: '1 expected formula cell(s) hold literal values' },
+      }, { userId: 'u1', collegeId: 'c1' }),
+      (err) => err instanceof artifactService.ArtifactValidationError && /literal values/.test(err.message),
+    );
+    assert.equal(uploadMock.mock.calls.length, 0);
+  });
+
+  await t.test('refuses an unverified verdict exactly like a failed one — there is no "attach anyway" path', async () => {
+    const findMock = t.mock.method(artifactRepository, 'findById', async () => ({
+      id: 'a1', user_id: 'u1', college_id: 'c1', deleted_at: null, title: 'Breakdown',
+    }));
+    const uploadMock = t.mock.method(documentService, 'uploadPersonalDocument', async () => { throw new Error('must not be called'); });
+    t.after(() => { findMock.mock.restore(); uploadMock.mock.restore(); });
+
+    await assert.rejects(
+      () => artifactService.attachGeneratedFile({}, 'a1', {
+        buffer: Buffer.from('x'),
+        fileName: 'out.xlsx',
+        mimeType: 'x',
+        verification: { verdict: 'unverified', passed: false, reason: 'no expect_formulas_in was declared' },
+      }, { userId: 'u1', collegeId: 'c1' }),
+      artifactService.ArtifactValidationError,
+    );
+    assert.equal(uploadMock.mock.calls.length, 0);
+  });
+
+  await t.test('a passed verification uploads the buffer, updates BOTH new columns, and audits under its own action', async () => {
+    const findMock = t.mock.method(artifactRepository, 'findById', async () => ({
+      id: 'a1', user_id: 'u1', college_id: 'c1', deleted_at: null, title: 'Breakdown',
+    }));
+    const uploadMock = t.mock.method(documentService, 'uploadPersonalDocument', async (client, args, opts) => {
+      assert.equal(args.collegeId, 'c1');
+      assert.equal(args.title, 'Breakdown');
+      assert.equal(args.folderName, 'AI Artifacts');
+      assert.equal(args.fileName, 'breakdown.xlsx');
+      assert.equal(args.mimeType, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      assert.equal(Buffer.isBuffer(args.fileBuffer), true);
+      assert.equal(opts.actorUserId, 'u1');
+      return { id: 'doc-9', file_name: args.fileName, mime_type: args.mimeType };
+    });
+    const updateMock = t.mock.method(artifactRepository, 'update', async (client, id, patch) => {
+      assert.equal(id, 'a1');
+      assert.equal(patch.generatedDocumentId, 'doc-9');
+      assert.equal(patch.generationVerified, true);
+      // publish's own columns must never be touched by this path.
+      assert.ok(!('status' in patch));
+      assert.ok(!('publishedDocumentId' in patch));
+      return { id, ...patch };
+    });
+    const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
+    t.after(() => {
+      findMock.mock.restore(); uploadMock.mock.restore(); updateMock.mock.restore(); auditMock.mock.restore();
+    });
+
+    const result = await artifactService.attachGeneratedFile({}, 'a1', {
+      buffer: Buffer.from('binary'),
+      fileName: 'breakdown.xlsx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      verification: passedVerification,
+    }, { userId: 'u1', collegeId: 'c1' });
+
+    assert.equal(result.generatedDocumentId, 'doc-9');
+    assert.equal(result.document_file_name, 'breakdown.xlsx');
+    assert.equal(auditMock.mock.calls[0].arguments[1].action, 'artifact_file_generated');
+    assert.deepEqual(auditMock.mock.calls[0].arguments[1].metadata, { documentId: 'doc-9', verdict: 'passed' });
+  });
+
+  await t.test('works on an already-PUBLISHED artifact — generation is a separate lifecycle from publish', async () => {
+    const findMock = t.mock.method(artifactRepository, 'findById', async () => ({
+      id: 'a1', user_id: 'u1', college_id: 'c1', deleted_at: null, title: 'Breakdown', status: 'published',
+    }));
+    const uploadMock = t.mock.method(documentService, 'uploadPersonalDocument', async (client, args) => ({
+      id: 'doc-10', file_name: args.fileName, mime_type: args.mimeType,
+    }));
+    const updateMock = t.mock.method(artifactRepository, 'update', async (client, id, patch) => ({ id, ...patch }));
+    const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
+    t.after(() => {
+      findMock.mock.restore(); uploadMock.mock.restore(); updateMock.mock.restore(); auditMock.mock.restore();
+    });
+
+    const result = await artifactService.attachGeneratedFile({}, 'a1', {
+      buffer: Buffer.from('x'), fileName: 'out.xlsx', mimeType: 'x', verification: passedVerification,
+    }, { userId: 'u1', collegeId: 'c1' });
+    assert.equal(result.generatedDocumentId, 'doc-10');
+  });
+
+  await t.test('still enforces ownership — another user\'s artifact is rejected before any upload', async () => {
+    const findMock = t.mock.method(artifactRepository, 'findById', async () => ({ id: 'a1', user_id: 'OTHER', deleted_at: null }));
+    const uploadMock = t.mock.method(documentService, 'uploadPersonalDocument', async () => { throw new Error('must not be called'); });
+    t.after(() => { findMock.mock.restore(); uploadMock.mock.restore(); });
+
+    await assert.rejects(
+      () => artifactService.attachGeneratedFile({}, 'a1', {
+        buffer: Buffer.from('x'), fileName: 'out.xlsx', mimeType: 'x', verification: passedVerification,
+      }, { userId: 'u1', collegeId: 'c1' }),
+      artifactService.ArtifactForbiddenError,
+    );
+    assert.equal(uploadMock.mock.calls.length, 0);
+  });
+});

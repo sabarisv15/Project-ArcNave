@@ -133,6 +133,223 @@ function buildSteps(title, steps) {
   return { title: cleanTitle, steps: cleanedSteps };
 }
 
+// present_featured — the ARCNAVE-safe form of the consumer platform's
+// featured_card_display_v0. That tool shows "the one best pick", which
+// is exactly what RS-AIG-013 forbids the AI from doing on an
+// institutional judgement. The adaptation is structural, same technique
+// buildOptionsCard already uses: this card cannot express a preference,
+// only a *match*. `basis` is REQUIRED and must state the objective
+// criterion the single result came from ("lowest attendance in
+// III-ECE-A"), so the card always reads as "this is the record your
+// filter returned", never "this is what I think you should pick". There
+// is no `score`, `rank`, or `recommended` field to fill.
+const MAX_BASIS_CHARS = 200;
+const MAX_FEATURED_LABEL_CHARS = 120;
+const MAX_FEATURED_FIELDS = 8;
+const MAX_FIELD_LABEL_CHARS = 60;
+const MAX_FIELD_VALUE_CHARS = 200;
+
+function buildFeaturedCard(title, basis, fields) {
+  const cleanTitle = requireNonEmptyString(title, 'title', MAX_FEATURED_LABEL_CHARS);
+  const cleanBasis = requireNonEmptyString(basis, 'basis', MAX_BASIS_CHARS);
+  if (!Array.isArray(fields) || fields.length === 0 || fields.length > MAX_FEATURED_FIELDS) {
+    throw new AiInteractionValidationError(`fields must be an array of 1-${MAX_FEATURED_FIELDS} label/value pairs`);
+  }
+  const cleanedFields = fields.map((f) => {
+    if (!f || typeof f !== 'object') {
+      throw new AiInteractionValidationError('each field must be an object with a label and value');
+    }
+    return {
+      label: requireNonEmptyString(f.label, 'each field label', MAX_FIELD_LABEL_CHARS),
+      value: requireNonEmptyString(f.value, 'each field value', MAX_FIELD_VALUE_CHARS),
+    };
+  });
+  return { title: cleanTitle, basis: cleanBasis, fields: cleanedFields };
+}
+
+// present_comparison — comparison_card_display_v0's ARCNAVE form. Same
+// RS-AIG-013 property as present_options: every item is described on the
+// SAME attributes and nothing marks a winner. There is deliberately no
+// `verdict`/`best` field. Attributes are declared once and every item
+// must supply exactly that set, so a model cannot quietly give one item
+// a flattering extra row the others do not have.
+const MIN_COMPARISON_ITEMS = 2;
+const MAX_COMPARISON_ITEMS = 4;
+const MAX_COMPARISON_ATTRIBUTES = 8;
+
+function buildComparisonCard(title, attributes, items) {
+  const cleanTitle = title ? requireNonEmptyString(title, 'title', MAX_TITLE_CHARS) : null;
+  if (!Array.isArray(attributes) || attributes.length === 0 || attributes.length > MAX_COMPARISON_ATTRIBUTES) {
+    throw new AiInteractionValidationError(`attributes must be an array of 1-${MAX_COMPARISON_ATTRIBUTES} shared attribute names`);
+  }
+  const cleanAttributes = attributes.map((a) => requireNonEmptyString(a, 'each attribute', MAX_FIELD_LABEL_CHARS));
+  if (!Array.isArray(items) || items.length < MIN_COMPARISON_ITEMS || items.length > MAX_COMPARISON_ITEMS) {
+    throw new AiInteractionValidationError(`items must be an array of ${MIN_COMPARISON_ITEMS}-${MAX_COMPARISON_ITEMS} things to compare`);
+  }
+  const cleanItems = items.map((item) => {
+    if (!item || typeof item !== 'object') {
+      throw new AiInteractionValidationError('each item must be an object with a name and values');
+    }
+    const name = requireNonEmptyString(item.name, 'each item name', MAX_FEATURED_LABEL_CHARS);
+    if (!Array.isArray(item.values) || item.values.length !== cleanAttributes.length) {
+      throw new AiInteractionValidationError(`item ${JSON.stringify(name)} must supply exactly ${cleanAttributes.length} values, one per declared attribute`);
+    }
+    const values = item.values.map((v) => requireNonEmptyString(v, `each value for ${name}`, MAX_FIELD_VALUE_CHARS));
+    return { name, values };
+  });
+  return { title: cleanTitle, attributes: cleanAttributes, items: cleanItems };
+}
+
+// present_carousel — product_carousel_display_v0's ARCNAVE form: a
+// browsable set with no ordering claim. Order is caller-supplied and
+// explicitly NOT a ranking; the shape has no score field, and the tool
+// description says so. Larger cap than a comparison because browsing a
+// set of electives/hostels/vendors is a real campus case.
+const MIN_CAROUSEL_ITEMS = 2;
+const MAX_CAROUSEL_ITEMS = 12;
+const MAX_CAROUSEL_SUBTITLE_CHARS = 200;
+
+function buildCarousel(title, items) {
+  const cleanTitle = title ? requireNonEmptyString(title, 'title', MAX_TITLE_CHARS) : null;
+  if (!Array.isArray(items) || items.length < MIN_CAROUSEL_ITEMS || items.length > MAX_CAROUSEL_ITEMS) {
+    throw new AiInteractionValidationError(`items must be an array of ${MIN_CAROUSEL_ITEMS}-${MAX_CAROUSEL_ITEMS} entries`);
+  }
+  const cleanItems = items.map((item) => {
+    if (!item || typeof item !== 'object') {
+      throw new AiInteractionValidationError('each item must be an object with a name');
+    }
+    return {
+      name: requireNonEmptyString(item.name, 'each item name', MAX_FEATURED_LABEL_CHARS),
+      subtitle: item.subtitle ? requireNonEmptyString(item.subtitle, 'each item subtitle', MAX_CAROUSEL_SUBTITLE_CHARS) : null,
+    };
+  });
+  return { title: cleanTitle, items: cleanItems };
+}
+
+// present_links — link_preview_display_v0's ARCNAVE form. The one real
+// safety property here is that a URL rendered as a card looks endorsed,
+// and these URLs come from web_search results, which are untrusted data
+// under RS-AIG-019/rule 9. So: http/https only (no javascript:, data:,
+// file:), the host is surfaced separately so a lookalike domain is
+// visible rather than hidden behind link text, and `untrusted: true`
+// rides along on every card for the frontend to badge. Nothing here
+// fetches anything — that is fetch_trusted_web_page's job, allowlisted.
+const MIN_LINKS = 1;
+const MAX_LINKS = 10;
+const MAX_SNIPPET_CHARS = 300;
+const ALLOWED_LINK_PROTOCOLS = new Set(['http:', 'https:']);
+
+function buildLinkPreviews(links) {
+  if (!Array.isArray(links) || links.length < MIN_LINKS || links.length > MAX_LINKS) {
+    throw new AiInteractionValidationError(`links must be an array of ${MIN_LINKS}-${MAX_LINKS} entries`);
+  }
+  const cleanLinks = links.map((link) => {
+    if (!link || typeof link !== 'object') {
+      throw new AiInteractionValidationError('each link must be an object with a url and title');
+    }
+    const rawUrl = requireNonEmptyString(link.url, 'each link url', MAX_FIELD_VALUE_CHARS);
+    let parsed;
+    try {
+      parsed = new URL(rawUrl);
+    } catch (err) {
+      throw new AiInteractionValidationError(`link url ${JSON.stringify(rawUrl)} is not a valid absolute URL`);
+    }
+    if (!ALLOWED_LINK_PROTOCOLS.has(parsed.protocol)) {
+      throw new AiInteractionValidationError(`link url ${JSON.stringify(rawUrl)} must use http or https`);
+    }
+    return {
+      url: parsed.toString(),
+      host: parsed.host,
+      title: requireNonEmptyString(link.title, 'each link title', MAX_FEATURED_LABEL_CHARS),
+      snippet: link.snippet ? requireNonEmptyString(link.snippet, 'each link snippet', MAX_SNIPPET_CHARS) : null,
+    };
+  });
+  return { links: cleanLinks, untrusted: true };
+}
+
+// present_places / present_map — places_list_display_v0 and
+// places_map_display_v0's ARCNAVE forms. Deliberately NOT backed by
+// Google Places: the consumer tools carry a mandatory-attribution
+// obligation tied to that provider's data, and ARCNAVE has no such
+// integration. These render places the CALLER already has — a campus
+// block, an exam centre, a hostel — so there is no third-party data and
+// no attribution requirement. Coordinates are range-checked; a place
+// with no coordinates is still valid in a list, just not on a map.
+const MIN_PLACES = 1;
+const MAX_PLACES = 20;
+const MAX_ADDRESS_CHARS = 300;
+
+function cleanPlace(place, requireCoordinates) {
+  if (!place || typeof place !== 'object') {
+    throw new AiInteractionValidationError('each place must be an object with a name');
+  }
+  const name = requireNonEmptyString(place.name, 'each place name', MAX_FEATURED_LABEL_CHARS);
+  const address = place.address ? requireNonEmptyString(place.address, 'each place address', MAX_ADDRESS_CHARS) : null;
+  const hasCoordinates = place.latitude !== undefined || place.longitude !== undefined;
+  if (requireCoordinates && !hasCoordinates) {
+    throw new AiInteractionValidationError(`place ${JSON.stringify(name)} needs latitude and longitude to appear on a map`);
+  }
+  if (!hasCoordinates) return { name, address, latitude: null, longitude: null };
+  const { latitude, longitude } = place;
+  if (typeof latitude !== 'number' || latitude < -90 || latitude > 90) {
+    throw new AiInteractionValidationError(`place ${JSON.stringify(name)} has an out-of-range latitude`);
+  }
+  if (typeof longitude !== 'number' || longitude < -180 || longitude > 180) {
+    throw new AiInteractionValidationError(`place ${JSON.stringify(name)} has an out-of-range longitude`);
+  }
+  return { name, address, latitude, longitude };
+}
+
+function buildPlacesList(title, places) {
+  const cleanTitle = title ? requireNonEmptyString(title, 'title', MAX_TITLE_CHARS) : null;
+  if (!Array.isArray(places) || places.length < MIN_PLACES || places.length > MAX_PLACES) {
+    throw new AiInteractionValidationError(`places must be an array of ${MIN_PLACES}-${MAX_PLACES} entries`);
+  }
+  return { title: cleanTitle, places: places.map((p) => cleanPlace(p, false)) };
+}
+
+function buildPlacesMap(title, places) {
+  const cleanTitle = title ? requireNonEmptyString(title, 'title', MAX_TITLE_CHARS) : null;
+  if (!Array.isArray(places) || places.length < MIN_PLACES || places.length > MAX_PLACES) {
+    throw new AiInteractionValidationError(`places must be an array of ${MIN_PLACES}-${MAX_PLACES} entries`);
+  }
+  return { title: cleanTitle, places: places.map((p) => cleanPlace(p, true)) };
+}
+
+// present_recipe — recipe_display_v0's ARCNAVE form. The campus case is
+// a mess/canteen menu costed per head, which is why `servings` is
+// required and quantities are numeric: the whole point is that the
+// frontend can rescale 40 servings to 400 without asking the model
+// again. A free-text quantity ("a handful") would make that impossible,
+// so it is rejected rather than accepted and silently un-scalable.
+const MIN_INGREDIENTS = 1;
+const MAX_INGREDIENTS = 40;
+const MAX_UNIT_CHARS = 30;
+
+function buildRecipe(title, servings, ingredients, steps) {
+  const cleanTitle = requireNonEmptyString(title, 'title', MAX_TITLE_CHARS);
+  if (!Number.isInteger(servings) || servings < 1) {
+    throw new AiInteractionValidationError('servings must be a positive integer');
+  }
+  if (!Array.isArray(ingredients) || ingredients.length < MIN_INGREDIENTS || ingredients.length > MAX_INGREDIENTS) {
+    throw new AiInteractionValidationError(`ingredients must be an array of ${MIN_INGREDIENTS}-${MAX_INGREDIENTS} entries`);
+  }
+  const cleanIngredients = ingredients.map((ing) => {
+    if (!ing || typeof ing !== 'object') {
+      throw new AiInteractionValidationError('each ingredient must be an object with a name and quantity');
+    }
+    const name = requireNonEmptyString(ing.name, 'each ingredient name', MAX_FIELD_LABEL_CHARS);
+    if (typeof ing.quantity !== 'number' || !Number.isFinite(ing.quantity) || ing.quantity <= 0) {
+      throw new AiInteractionValidationError(`ingredient ${JSON.stringify(name)} needs a positive numeric quantity so servings can be rescaled`);
+    }
+    return { name, quantity: ing.quantity, unit: requireNonEmptyString(ing.unit, `ingredient ${name}'s unit`, MAX_UNIT_CHARS) };
+  });
+  const { steps: cleanSteps } = buildSteps(null, steps);
+  return {
+    title: cleanTitle, servings, ingredients: cleanIngredients, steps: cleanSteps,
+  };
+}
+
 module.exports = {
   AiInteractionValidationError,
   MIN_OPTIONS,
@@ -142,4 +359,11 @@ module.exports = {
   buildQuiz,
   buildTranslationCard,
   buildSteps,
+  buildFeaturedCard,
+  buildComparisonCard,
+  buildCarousel,
+  buildLinkPreviews,
+  buildPlacesList,
+  buildPlacesMap,
+  buildRecipe,
 };

@@ -25,9 +25,9 @@ const configurationService = require('./configurationService');
 //
 // So the provider is now selected by config rather than baked in, and
 // three are implemented: Brave Search (independent index), Tavily
-// (built for agent/LLM search), and Gemini search-grounding. All three
-// are single-key setups — none needs the Google engine-id dance. Adding
-// a fourth is a new PROVIDERS entry, not another rewrite of this file.
+// (built for agent/LLM search), and Gemini search-grounding on Vertex.
+// The first two are single-key setups; the third needs no key at all.
+// Adding a fourth is a new PROVIDERS entry, not a rewrite of this file.
 //
 // 'gemini' is the owner's chosen provider (2026-08-28) and is
 // structurally unlike the other two: it is not a search index with an
@@ -35,12 +35,12 @@ const configurationService = require('./configurationService');
 // search Google runs on our behalf. Three consequences that are NOT
 // defects to be fixed later, they are what this provider is:
 //
-//   1. It needs a Generative Language API key (GEMINI_WEB_SEARCH_API_KEY),
-//      NOT the Vertex AI + ADC path config.gemini already uses for chat
-//      and embeddings. Deliberately a separate credential and a separate
-//      config field — a search key with a different scope, quota and
-//      blast radius should not be the same secret that can run the whole
-//      chat pipeline.
+//   1. It needs NO credential of its own. It runs on Vertex AI through
+//      the same project + ADC config.gemini already uses for chat and
+//      embeddings. An earlier revision of this file used a separate
+//      Generative Language API key; that path is measurably dead for a
+//      newly-issued key (grounded calls 429 on quota while plain calls
+//      succeed), and the provider entry below carries the measurement.
 //   2. Result URLs come back as Google redirect links
 //      (vertexaisearch.cloud.google.com/grounding-api-redirect/...),
 //      not the publisher's own URL. The redirect resolves in a browser;
@@ -60,7 +60,13 @@ const configurationService = require('./configurationService');
 const config = require('../config');
 
 const CONFIG_CATEGORY = 'web_search';
+// 8s is the right budget for a search API that just queries an index.
+// It is the WRONG budget for Gemini grounding, which is a model call
+// that runs a search inside itself — measured live at well over 8s, and
+// an abort here reads as "search request failed" rather than "you did
+// not wait long enough". Providers that need more say so.
 const SEARCH_TIMEOUT_MS = 8000;
+const GROUNDED_SEARCH_TIMEOUT_MS = 60000;
 const MAX_RESULTS = 5;
 // A "fast" search is the same provider call with a smaller result set —
 // the consumer platform's web_search_fast/web_search split is about how
@@ -139,20 +145,50 @@ const PROVIDERS = {
     readImageResults: null,
   },
   gemini: {
-    // Its own key, never config.gemini's Vertex/ADC credentials — see
-    // the file comment's point 1.
-    apiKey: () => config.geminiWebSearchApiKey,
-    keyEnvVar: 'GEMINI_WEB_SEARCH_API_KEY',
-    buildWebRequest(query, count) {
+    // VERTEX AI + ADC, not an API key. This was originally built against
+    // the Generative Language API with its own key, and that path is
+    // measurably dead for a new key (2026-08-28): the key authenticates
+    // fine (ListModels 200) but a grounded call returns 429 "exceeded
+    // your current quota, check your plan and billing details", 3/3,
+    // while a plain call on the same model seconds earlier returns only
+    // a transient 503. So it is the google_search tool's own entitlement
+    // that is missing, and no code change fixes it.
+    //
+    // Vertex has no such problem, because ARCNAVE's GCP project already
+    // bills for the chat and embedding traffic that runs through the
+    // exact same credentials. Live-verified on `global`/`gemini-3.7-flash`:
+    // 8 grounding chunks, 17 supports, and genuinely current results.
+    //
+    // This also removes a credential rather than adding one — the
+    // separate-secret argument for GEMINI_WEB_SEARCH_API_KEY is moot
+    // when there is no second secret.
+    apiKey: () => config.gemini.projectId,
+    keyEnvVar: 'GEMINI_PROJECT_ID (Vertex AI project, via ADC)',
+    async buildWebRequest(query, count) {
+      const loc = config.gemini.location || 'global';
+      // `global` has no regional subdomain — gemini.js's modelUrl already
+      // established this against the real API.
+      const host = loc === 'global' ? 'aiplatform.googleapis.com' : `${loc}-aiplatform.googleapis.com`;
+      const model = config.geminiWebSearchModel || config.gemini.model;
       const url = new URL(
-        `https://generativelanguage.googleapis.com/v1beta/models/${config.geminiWebSearchModel}:generateContent`,
+        `https://${host}/v1/projects/${config.gemini.projectId}/locations/${loc}`
+        + `/publishers/google/models/${model}:generateContent`,
       );
+      const { GoogleAuth } = require('google-auth-library'); // eslint-disable-line global-require
+      const client = await new GoogleAuth({ scopes: 'https://www.googleapis.com/auth/cloud-platform' }).getClient();
+      const { token } = await client.getAccessToken();
+      if (!token) {
+        throw new WebSearchNotConfiguredError(
+          'Google ADC returned no access token — run `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS',
+        );
+      }
       return {
         url,
         method: 'POST',
+        timeoutMs: GROUNDED_SEARCH_TIMEOUT_MS,
         headers: {
           'Content-Type': 'application/json',
-          'x-goog-api-key': config.geminiWebSearchApiKey,
+          Authorization: `Bearer ${token}`,
         },
         // The prompt asks for a search-shaped answer rather than a
         // conversational one, because everything this service returns is
@@ -165,7 +201,7 @@ const PROVIDERS = {
             role: 'user',
             parts: [{ text: `Search the web and summarise what the most relevant ${count} sources say about: ${query}` }],
           }],
-          tools: [{ google_search: {} }],
+          tools: [{ googleSearch: {} }],
         }),
       };
     },
@@ -249,10 +285,10 @@ async function assertSearchable(client, collegeId, query) {
 }
 
 async function callProvider({
-  url, method, headers, body,
+  url, method, headers, body, timeoutMs,
 }) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs || SEARCH_TIMEOUT_MS);
   let response;
   try {
     response = await fetch(url.toString(), {
@@ -271,7 +307,7 @@ async function callProvider({
 
 async function runWebSearch(client, collegeId, query, count) {
   const provider = await assertSearchable(client, collegeId, query);
-  const body = await callProvider(provider.buildWebRequest(query.trim(), count));
+  const body = await callProvider(await provider.buildWebRequest(query.trim(), count));
   return provider.readWebResults(body).slice(0, count);
 }
 
@@ -295,7 +331,7 @@ async function searchImages(client, collegeId, query) {
       `the configured search provider ${JSON.stringify(config.webSearchProvider)} does not support image search`,
     );
   }
-  const body = await callProvider(provider.buildImageRequest(query.trim(), MAX_IMAGE_RESULTS));
+  const body = await callProvider(await provider.buildImageRequest(query.trim(), MAX_IMAGE_RESULTS));
   return provider.readImageResults(body).slice(0, MAX_IMAGE_RESULTS);
 }
 

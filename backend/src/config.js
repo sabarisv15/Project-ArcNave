@@ -329,21 +329,19 @@ module.exports = {
   webSearchApiKey: process.env.WEB_SEARCH_API_KEY || null,
 
   // Gemini search-grounding as the web_search provider (owner's choice,
-  // 2026-08-28). DELIBERATELY its own key, not the `gemini` block above:
-  // that one is Vertex AI + ADC (no key at all), while grounding runs on
-  // the Generative Language API, which is key-based. Sharing one secret
-  // between "search the web" and "run the entire chat pipeline" would
-  // give a search credential the blast radius of the chat one.
-  geminiWebSearchApiKey: process.env.GEMINI_WEB_SEARCH_API_KEY || null,
-  // 'gemini-flash-latest', NOT a pinned version. Measured 2026-08-28:
-  // a pinned `gemini-2.5-flash` returns 404 for a newly-issued key —
-  // "no longer available to new users" — while still appearing in
-  // ListModels, so the failure is invisible until you actually call it.
-  // That is exactly the stale-provider-fact class §5.8 of the operating
-  // instructions warns about. The alias tracks whatever the current
-  // flash model is; pin it via GEMINI_WEB_SEARCH_MODEL if a specific
-  // version is ever needed for reproducibility.
-  geminiWebSearchModel: process.env.GEMINI_WEB_SEARCH_MODEL || 'gemini-flash-latest',
+  // 2026-08-28). Runs on VERTEX AI via config.gemini's own project and
+  // ADC — no key of its own. A separate Generative Language API key was
+  // tried first and abandoned: grounded calls on a new key 429 on quota
+  // while plain calls succeed, so the entitlement is missing and no
+  // configuration fixes it. Vertex works because this project already
+  // bills for the chat and embedding traffic on the same credentials.
+  // Defaults to NULL on purpose so webSearchService falls through to
+  // config.gemini.model — the model this project is already known to
+  // serve on Vertex. An earlier default of 'gemini-flash-latest' was a
+  // Generative Language API alias and is not a Vertex publisher model
+  // name; it must not be the fallback for a Vertex call. Set this only
+  // to pin grounding to a different model than chat uses.
+  geminiWebSearchModel: process.env.GEMINI_WEB_SEARCH_MODEL || null,
   // Retained only so an existing .env.local.sh that still sets these
   // does not silently look configured while pointing at the dead API.
   // Nothing reads them any more.

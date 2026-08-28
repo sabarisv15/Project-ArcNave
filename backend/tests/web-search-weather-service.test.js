@@ -28,11 +28,21 @@ function withConfigCleared(keys, fn) {
 }
 
 test('webSearchService.search — not configured', async (t) => {
-  await t.test('throws WebSearchNotConfiguredError when no API key is set', withConfigCleared(['googleSearchApiKey', 'googleSearchEngineId'], async () => {
-    await assert.rejects(
-      webSearchService.search(null, 'college-1', 'AICTE new rules'),
-      webSearchService.WebSearchNotConfiguredError,
-    );
+  // Pins the provider explicitly. It used to clear googleSearchApiKey /
+  // googleSearchEngineId — names left over from the Custom Search era
+  // that no longer gate anything, so the test passed only because the
+  // ambient provider happened to be unconfigured too.
+  await t.test('throws WebSearchNotConfiguredError when the provider has no key', withConfigCleared(['webSearchApiKey'], async () => {
+    const original = config.webSearchProvider;
+    config.webSearchProvider = 'brave';
+    try {
+      await assert.rejects(
+        webSearchService.search(null, 'college-1', 'AICTE new rules'),
+        webSearchService.WebSearchNotConfiguredError,
+      );
+    } finally {
+      config.webSearchProvider = original;
+    }
   }));
 });
 
@@ -129,21 +139,26 @@ test('gemini provider — readWebResults maps grounding chunks to results', asyn
   });
 });
 
-test('gemini provider — not configured reports ITS key, not the shared one', async (t) => {
-  await t.test('names GEMINI_WEB_SEARCH_API_KEY', withConfigCleared(
-    ['geminiWebSearchApiKey', 'webSearchApiKey'],
-    async () => {
-      const original = config.webSearchProvider;
-      config.webSearchProvider = 'gemini';
-      try {
-        await assert.rejects(
-          () => webSearchService.search({}, 'demo', 'anything'),
-          (err) => err instanceof webSearchService.WebSearchNotConfiguredError
-            && err.message.includes('GEMINI_WEB_SEARCH_API_KEY'),
-        );
-      } finally {
-        config.webSearchProvider = original;
-      }
-    },
-  ));
+// The gemini provider runs on Vertex AI + ADC and has NO key of its own,
+// so "not configured" for it means the Vertex project is missing — not
+// that some search key is unset. Naming the wrong variable here is the
+// bug this pins: an operator told to set GEMINI_WEB_SEARCH_API_KEY would
+// set a credential the provider never reads.
+test('gemini provider — not configured names the Vertex project, not a search key', async (t) => {
+  await t.test('reports GEMINI_PROJECT_ID', async () => {
+    const originalProvider = config.webSearchProvider;
+    const originalProject = config.gemini.projectId;
+    config.webSearchProvider = 'gemini';
+    config.gemini.projectId = null;
+    try {
+      await assert.rejects(
+        () => webSearchService.search({}, 'demo', 'anything'),
+        (err) => err instanceof webSearchService.WebSearchNotConfiguredError
+          && err.message.includes('GEMINI_PROJECT_ID'),
+      );
+    } finally {
+      config.webSearchProvider = originalProvider;
+      config.gemini.projectId = originalProject;
+    }
+  });
 });

@@ -1414,3 +1414,55 @@ findings:
 Google AI Studio project**, then rerun
 `node scripts/web-search-live-probe.js`. Nothing in ARCNAVE needs to
 change.
+
+## Fourteenth pass, 2026-08-28 — `web_search` is LIVE. Vertex grounding, no key at all
+
+The owner's suggestion (use Vertex AI rather than a Generative Language
+API key) was right and is now shipped and live-verified.
+
+**Why it works where the key did not:** the 429 was the `google_search`
+tool's own entitlement on a newly-issued Generative Language key.
+ARCNAVE's GCP project already bills for the chat and embedding traffic
+running through Vertex on the same ADC credentials, so grounding is
+entitled there. **This removed a credential instead of adding one** —
+`GEMINI_WEB_SEARCH_API_KEY` is gone from `config.js`, `.env.example` and
+`docker-compose.yml`.
+
+**Live-verified end to end**, twice, through the real service with a
+real college opt-in: an AICTE-norms query returned 4 grounded results in
+13.8s with 2026-27-cycle content, and a UGC-autonomous-colleges query
+returned 5. `webSearchQueries`, `groundingChunks` and `groundingSupports`
+all populate.
+
+Four things this pass found, each measured rather than assumed:
+
+1. **Grounding is model-discretionary.** The first Vertex call returned
+   200 with *no* `groundingMetadata` — the model answered from its own
+   knowledge instead of searching. `readWebResults` already treats that
+   as zero results rather than an error, which is the correct behaviour,
+   but it means an empty result set is not evidence of a broken call.
+2. **`SEARCH_TIMEOUT_MS = 8000` was wrong for this provider.** That
+   budget suits an index lookup; grounding is a model call that runs a
+   search inside itself and measured 13.8s. It aborted and surfaced as
+   "search request failed", which reads like a provider fault rather
+   than an impatient client. Added `GROUNDED_SEARCH_TIMEOUT_MS = 60000`,
+   carried per-request so only this provider pays it.
+3. **`gemini-flash-latest` is a Generative Language alias, not a Vertex
+   publisher model.** It briefly became the default and must not be —
+   `geminiWebSearchModel` now defaults to **null** so the call falls
+   through to `config.gemini.model` (`gemini-3.7-flash`), the model this
+   project is known to serve.
+4. **Two tests were passing for the wrong reason.** The "not configured"
+   test cleared `googleSearchApiKey`/`googleSearchEngineId` — dead names
+   from the Custom Search era that gate nothing — so it only passed
+   because the ambient provider happened to be unconfigured too. It now
+   pins the provider explicitly. 15/15.
+
+Result URLs remain Google redirect links, so the RS-AIG-020 point stands
+unchanged: `fetch_trusted_web_page`'s allowlist must stay a separate
+tool, because a redirect URL cannot be domain-matched without resolving
+it first.
+
+**Remaining for this capability: nothing blocking.** It is opted in for
+`demo` only; any other college needs the same `category: 'web_search'`
+opt-in.

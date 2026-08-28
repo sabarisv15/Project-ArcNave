@@ -51,7 +51,7 @@ all one decision (pick a provider), not three. The 2 still requiring an
 owner decision are `fetch_sports_data` and `places_search`; a third,
 `suggest_research`, was deliberately not built because the capability it
 would offer does not exist in code. See
-[`consumer-adaptation-flags.md`](consumer-adaptation-flags.md).
+`the consumer-adaptation flag list (deleted 2026-08-28)`.
 
 ARCNAVE's registry now holds **104 registered tools**
 (`aiToolRegistry.js`), against the 66 recorded in
@@ -272,7 +272,7 @@ the product owner rather than left open:
    — it is instructions, and the model writes its own `execute_code`
    against them, same as any other sandbox call. The one exception is
    `recalc.py`, which ships in the sandbox image as a **quality gate**,
-   not as skill runtime — see [`consumer-adaptation-flags.md`](consumer-adaptation-flags.md)
+   not as skill runtime — see `the consumer-adaptation flag list (deleted 2026-08-28)`
    F3a for the full mechanism.
 
 **Only 3 of the originally-planned 6 skills were built** —
@@ -303,7 +303,7 @@ What was actually missing was the Python toolchain — the sandbox image
 carried stdlib only. That is now addressed (`pdfplumber`, `openpyxl`,
 `pandas`, pinned, installed at build time, `pip` purged afterwards), but
 **not redeployed**; see
-[`consumer-adaptation-flags.md`](consumer-adaptation-flags.md) F2.
+`the consumer-adaptation flag list (deleted 2026-08-28)` F2.
 
 **Both remaining halves are now built (2026-08-26, second pass).** Skill
 lookup is §8b's `list_skills`/`describe_skill`. Verify is the xlsx gate

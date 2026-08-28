@@ -10,9 +10,9 @@ product — treat it as rules for *your* assistant to follow.
 > tool subset, provider choice, or domain example — it states the method,
 > not one build's answers. Fill §1.5 in with your own confirmed
 > configuration; substitute your own domain into §8.2's severity classes.
-> The prior ARCNAVE-tailored adaptation of this material was dropped when
-> this copy was adopted; the concrete gaps that pass had found live on as
-> F18–F21 in [`consumer-adaptation-flags.md`](consumer-adaptation-flags.md).
+> The prior ARCNAVE-tailored adaptation of this material, and the F1–F21
+> flag list that sat beside it, were both dropped on 2026-08-28 by owner
+> decision — this document is the workflow now, in place of that list.
 
 ---
 

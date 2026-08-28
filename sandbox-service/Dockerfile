@@ -27,12 +27,34 @@ FROM node:20-slim
 # python3-pip and the build deps are removed again afterwards so the
 # shipped image cannot install anything further even if code found a
 # way to reach a network.
+#
+# 2026-08-28: the owner adopted the 6-skill build package (pdf, docx,
+# pptx alongside the original three), and skillService discovers skills
+# by DIRECTORY — so copying those folders in made them instantly
+# visible to the model. Their SKILL.md files reach for libraries this
+# image did not have, which is precisely the failure the operating
+# instructions' §1.5 forbids ("never write a skill for a capability the
+# environment cannot actually back"). The honest fix is to back them,
+# not to ship guidance that fails:
+#   reportlab, pypdf - creating and manipulating PDFs (the `pdf` skill)
+#   python-docx      - the `docx` skill
+#   python-pptx      - the `pptx` skill
+#   pdf2image        - PDF page rasterisation (needs poppler-utils)
+#   pytesseract      - the scanned/OCR path, which §1.3 names as the
+#                      whole reason to keep a PDF-reading skill at all
+#                      (needs the tesseract-ocr binary, below)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 python3-pip \
     && pip3 install --no-cache-dir --break-system-packages \
         pdfplumber==0.11.4 \
         openpyxl==3.1.5 \
         pandas==2.2.3 \
+        reportlab==4.2.5 \
+        pypdf==5.1.0 \
+        python-docx==1.1.2 \
+        python-pptx==1.0.2 \
+        pdf2image==1.17.0 \
+        pytesseract==0.3.13 \
     && apt-get purge -y python3-pip \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
@@ -49,8 +71,23 @@ RUN apt-get update \
 # treats every added package as image-size and cold-start cost that must
 # earn its place. Real cost, measured after this build, not before: F2
 # is still open on that number.
+#
+# 2026-08-28: Writer and Impress are no longer dead weight. The docx and
+# pptx skills both drive `soffice --convert-to`, and file-reading routes
+# to them — Calc alone cannot open either format. tesseract-ocr and
+# poppler-utils are the native binaries pytesseract and pdf2image shell
+# out to; the Python wrappers above are useless without them.
+#
+# COST, stated rather than discovered later: this is a large increase on
+# an image that was already ~1.2GB, and its cold-start cost has never
+# been measured. That measurement is now more overdue, not less.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libreoffice-calc \
+    && apt-get install -y --no-install-recommends \
+        libreoffice-calc \
+        libreoffice-writer \
+        libreoffice-impress \
+        tesseract-ocr \
+        poppler-utils \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 

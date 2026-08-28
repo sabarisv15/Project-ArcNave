@@ -663,7 +663,7 @@ before continuing this thread:
 
 - [`consumer-tool-inventory-classification.md`](../90-appendix/consumer-tool-inventory-classification.md)
   — all 46 mapped, with counts before/after.
-- [`consumer-adaptation-flags.md`](../90-appendix/consumer-adaptation-flags.md)
+- `the consumer-adaptation flag list (deleted 2026-08-28)`
   — flags F1-F12 plus F2a-F2c added in the second pass below. Nothing
   blocking, everything unresolved.
 
@@ -1125,7 +1125,7 @@ findings, none rigged:
   processing that's slow" and for "tool-select itself is intermittently
   too slow with 106 tools," independent of document load.
 
-`bka/90-appendix/consumer-adaptation-flags.md` now has F15/F16 recorded
+`bka/90-appendix/the consumer-adaptation flag list (deleted 2026-08-28)` now has F15/F16 recorded
 in full, and F12's own tracking table updated (5 of 21 new tools now
 exercised at least once, 16 still untested). `bka/tools/validate.py`:
 29 errors (one more occurrence of the same pre-existing
@@ -1144,7 +1144,7 @@ this file — no new category introduced).
 **Seventh pass, 2026-08-27 — F2 fully closed against the real Cloud Run
 production revision (not just local Docker).** Full detail, including
 the parked IAM-invoker-auth investigation (F2d, new): see F2/F2d in
-[`consumer-adaptation-flags.md`](../90-appendix/consumer-adaptation-flags.md).
+`the consumer-adaptation flag list (deleted 2026-08-28)`.
 One-line summary: `arcnave-sandbox-service` updated in place (new image,
 2 vCPU/2Gi/240s, VPC isolation confirmed unchanged), live-verified with
 real openpyxl + LibreOffice recalculation (pass and fail cases both
@@ -1163,7 +1163,7 @@ ArtifactService split, the Action Manifest, the skills subsystem) are
 already stronger than the generic template asks, because they are
 service-ownership-enforced rather than prompted conventions. Five real,
 narrow gaps formalized as **F17-F21** in
-[`consumer-adaptation-flags.md`](../90-appendix/consumer-adaptation-flags.md)
+`the consumer-adaptation flag list (deleted 2026-08-28)`
 (same numbering sequence as the existing F1-F16, extended rather than a
 separate list) — most notably **F17: no crisis/self-harm handling
 policy exists anywhere in `RS-AIG-ai-governance.md` or the prompt safety
@@ -1292,7 +1292,7 @@ slugs".
 
 ### Exact next action for this thread
 
-Read [`consumer-adaptation-flags.md`](../90-appendix/consumer-adaptation-flags.md)
+Read `the consumer-adaptation flag list (deleted 2026-08-28)`
 first — it is the current, authoritative flag list; everything above
 this line in "Known gaps"/earlier "Exact next action" text is superseded
 by it.
@@ -1320,3 +1320,46 @@ re-attempt the same impersonation approach without reading F2d first.
 - `backend/.env.local.sh` no longer has a `NIM_API_KEY` line (removed
   2026-08-24, user's own request) — this file is gitignored, the change
   is local-only, nothing to reconcile in git.
+
+## Twelfth pass, 2026-08-28 — the flag list is GONE; the build package is the workflow now
+
+**Owner decision: delete every flag (F1–F21) and adopt the supplied
+`ARCNAVE_AI_Build_Package.zip` as the AI workflow instead.** Done.
+`consumer-adaptation-flags.md` is deleted; all 17 links to it were
+delinked and its 10 prose mentions rewritten, validator clean at 0/0.
+
+**Do not recreate a flag list.** The operating instructions are the
+workflow; problems get fixed or stated inline, not accumulated into a
+parallel register.
+
+What was installed:
+- `bka/90-appendix/ai-build-package/` — the package's own README and
+  `TOOLS_TO_BUILD.md` (32-tool checklist), kept verbatim as supplied.
+- `backend/src/skills/` — 3 → **6 skills** (`pdf`, `docx`, `pptx` added
+  to `xlsx`, `pdf-reading`, `file-reading`), with the vendor scripts,
+  references and OOXML schema bundles each ships.
+
+**The package's `AI_OPERATING_INSTRUCTIONS.md` is byte-identical to the
+copy already adapted** as `ai-operating-instructions.md` — verified by
+diff, so no second adaptation was needed.
+
+**Two things this pass had to fix rather than accept:**
+
+1. Copying the package **overwrote ARCNAVE's own `xlsx`/`pdf-reading`/
+   `file-reading` SKILL.md files** — the only place `execute_code`'s
+   `saveAs`/`expectFormulasIn` gate is documented for the model. The
+   vendor versions say nothing about it. Restored from git; the vendor
+   *scripts* are kept alongside. **Any future re-sync of this package
+   must not blind-copy those three files.**
+2. `skillService.loadSkills()` discovers skills **by directory**, so
+   copying `pdf`/`docx`/`pptx` in made them instantly live in
+   `list_skills` with nothing behind them. `sandbox-service/Dockerfile`
+   now installs `reportlab`, `pypdf`, `python-docx`, `python-pptx`,
+   `pdf2image`, `pytesseract`, plus LibreOffice Writer/Impress,
+   `tesseract-ocr` and `poppler-utils`. **Not deployed** — the running
+   Cloud Run revision still lacks all of them, so those three skills are
+   discoverable but unbacked until the owner rebuilds and redeploys.
+   That is the one genuinely open item from this pass.
+
+Verified: 6/6 skills load with descriptions; skills-subsystem tests
+26/26; `bka/tools/validate.py` 0 errors, 0 warnings.

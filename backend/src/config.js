@@ -335,7 +335,15 @@ module.exports = {
   // between "search the web" and "run the entire chat pipeline" would
   // give a search credential the blast radius of the chat one.
   geminiWebSearchApiKey: process.env.GEMINI_WEB_SEARCH_API_KEY || null,
-  geminiWebSearchModel: process.env.GEMINI_WEB_SEARCH_MODEL || 'gemini-2.5-flash',
+  // 'gemini-flash-latest', NOT a pinned version. Measured 2026-08-28:
+  // a pinned `gemini-2.5-flash` returns 404 for a newly-issued key —
+  // "no longer available to new users" — while still appearing in
+  // ListModels, so the failure is invisible until you actually call it.
+  // That is exactly the stale-provider-fact class §5.8 of the operating
+  // instructions warns about. The alias tracks whatever the current
+  // flash model is; pin it via GEMINI_WEB_SEARCH_MODEL if a specific
+  // version is ever needed for reproducibility.
+  geminiWebSearchModel: process.env.GEMINI_WEB_SEARCH_MODEL || 'gemini-flash-latest',
   // Retained only so an existing .env.local.sh that still sets these
   // does not silently look configured while pointing at the dead API.
   // Nothing reads them any more.

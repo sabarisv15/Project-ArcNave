@@ -1661,3 +1661,65 @@ isolation, not by reading an error message.
    wanted.
 
 Recorded so nobody spends a fourth session on this API.
+
+---
+
+# WHERE THINGS STAND — end of 2026-08-28
+
+Read this section first. Passes 9–18 above are chronological working
+notes; this is the settled position they add up to.
+
+## Shipped and live-verified this session
+
+| Capability | State |
+|---|---|
+| **Sandbox, 6 skills** | Deployed (`:20260828-skills6`, rev `-00005-9fj`, 4Gi, max-instances 8). All 9 Python packages + tesseract/poppler/LibreOffice Writer+Impress+Calc verified **functionally**, not just by import: real `.docx` (36,621 B), `.pptx` (28,213 B), reportlab `.pdf`, and `soffice` conversions both ways. |
+| **`web_search`** | Live on Vertex search-grounding. **No key of its own** — runs on `config.gemini`'s project + ADC. Opted in for **all 100 colleges**. |
+| **`web_fetch`** | Live on Vertex `urlContext`, registered L1, all four roles. Refuses when `urlRetrievalStatus` is not SUCCESS. |
+| **BKA validator** | **0 errors, 0 warnings.** There is no pre-existing-error baseline any more — a non-zero count is a real, new problem. |
+| **Flag list** | Deleted. The operating instructions are the workflow; do not recreate a parallel register. |
+
+## PARKED — image search (owner's decision, 2026-08-28: resolve later)
+
+**Not blocked by anything technical. Parked deliberately.** Everything
+needed to pick it up is measured and recorded — start from here, do not
+re-probe.
+
+| Route | Direction | State |
+|---|---|---|
+| Custom Search JSON API | text → web images | **DEAD, proven by isolation.** A wrong `cx` and a right `cx` return the identical 403; omitting `cx` returns a different error. The project-level access check fires before the search engine is consulted, so no Programmable Search Engine setting can change it. API already enabled. **Do not test this a fourth time.** |
+| Brave Search | text → web images | **Works, has an image index, was already implemented here.** Removed 2026-08-28 with the multi-provider code. Recoverable: `git show 2eb14f9^:backend/src/services/webSearchService.js`, plus one Brave API key. **Shortest path if this is wanted.** |
+| An older GCP project | text → web images | Same code, different project — the Custom Search restriction is per-project. Only viable if such a project exists. |
+| Cloud Vision `WEB_DETECTION` | image → similar web images | **Works.** API enabled this session (billed per request — disable if dropped). 10 similar / 7 full-matching / 10 pages on a test image, real publisher URLs. Probe: `backend/scripts/reverse-image-search-probe.js`. |
+| `multimodalembedding@001` + pgvector | image/text → our own corpus | **Works.** 1408 dims, image and text in one space, 3/3 correct ranking. **Vertex AI Vector Search is NOT needed** — pgvector is already in this stack. Probe: `backend/scripts/multimodal-embedding-probe.js`. |
+
+**Current live behaviour:** `image_search` throws
+`WebSearchNotConfiguredError` naming the absence, before any config read.
+That is deliberate — "no images found" and "this system cannot search
+images" are different answers.
+
+**Two decisions waiting, neither of them engineering:**
+1. Which direction is actually wanted — text→images, reverse lookup, or
+   own-corpus similarity? They are three different builds.
+2. If reverse lookup: sending a student's photo or ID scan to Google's
+   web-matching index is a **privacy and consent decision** for the owner
+   and the institution. It should not be built because it is technically
+   easy.
+
+**One gotcha to carry forward:** multimodal cosine scores for *correct*
+matches are only 0.17–0.23. Ranking is reliable; a fixed threshold is
+not. Do not reuse text retrieval's `SIMILARITY_DISTANCE_THRESHOLD`
+reasoning — different model, different space.
+
+## Also still open (unchanged by this session)
+
+- **`recent_chats` / `read_conversation`** — ADL-060 permits them; only
+  title-search was built.
+- **New colleges start with `web_search` disabled.** The opt-in covered
+  colleges existing at that moment. Making it universal means flipping
+  opt-in to opt-out — an RS-AIG-020 change, not a script.
+- **The ADL-055→058 document-analysis thread** — untouched all session.
+  Its own "Exact next action" still stands, with F3's warning now living
+  in this file: measure `pdfplumber.extract_tables()` against the
+  exam-fees PDF **before** building ADL-058's slice, because that slice
+  may not need to exist.

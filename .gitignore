@@ -9,3 +9,6 @@ backend/.gcp/
 __pycache__/
 *.pyc
 .sandbox-local-secret
+pitch-screenshots/
+arcnave-pitch-screenshots.zip
+sandbox-service/build-log.txt

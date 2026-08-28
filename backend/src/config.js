@@ -301,6 +301,19 @@ module.exports = {
   // independent auth layer alongside Cloud Run IAM invoker auth (see
   // sandbox-service/server.js's own file comment).
   sandboxServiceToken: process.env.SANDBOX_SERVICE_TOKEN || null,
+  // Cloud Run IAM invoker auth, the primary boundary in front of the
+  // shared secret above. Opt-in rather than inferred from the URL: the
+  // same image runs in docker-compose and in tests with no Google
+  // credentials anywhere, and a deployment that silently decided to
+  // demand them would fail at call time instead of at config time.
+  sandboxServiceIamAuth: process.env.SANDBOX_SERVICE_IAM_AUTH === 'true',
+  // The sandbox invoker service account's own key file — deliberately
+  // NOT the same variable as GOOGLE_APPLICATION_CREDENTIALS, which
+  // gemini.js/claude.js already read for the Gemini/Claude-on-Vertex
+  // ADC (see sandboxExecutionService.js's own comment on
+  // getIdTokenClient). Unset is a valid, supported state: GoogleAuth
+  // then falls back to its own ADC discovery.
+  sandboxServiceCredentialsPath: process.env.SANDBOX_SERVICE_CREDENTIALS_PATH || null,
 
   // ADL-061 — open web search. Originally Google Custom Search JSON
   // API; that API is closed to new projects ahead of its 2027-01-01

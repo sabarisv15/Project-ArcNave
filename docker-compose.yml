@@ -102,6 +102,22 @@ services:
       # does" shape every other optional provider here already uses.
       SANDBOX_SERVICE_URL: ${SANDBOX_SERVICE_URL:-}
       SANDBOX_SERVICE_TOKEN: ${SANDBOX_SERVICE_TOKEN:-}
+      # "true" only when SANDBOX_SERVICE_URL points at a Cloud Run
+      # service deployed --no-allow-unauthenticated.
+      SANDBOX_SERVICE_IAM_AUTH: ${SANDBOX_SERVICE_IAM_AUTH:-false}
+      # The sandbox-invoker service account's OWN key file, bind-mounted
+      # below — deliberately separate from GOOGLE_APPLICATION_CREDENTIALS
+      # (/app/.gcp/adc.json) above, which is the Gemini/Claude-on-Vertex
+      # ADC and must not double as the sandbox's run.invoker identity.
+      # Set together with SANDBOX_INVOKER_KEY_PATH below (the host-side
+      # file the volume mount pulls from) — deliberately two separate
+      # host vars, not one derived from the other, since older
+      # docker-compose parsers don't all support ${VAR:+alt} conditional
+      # interpolation and this needed to work without it. Left unset,
+      # this is an empty string, which config.js's `|| null` treats as
+      # "not configured" — getIdTokenClient() then falls back to its
+      # own ADC search rather than trying to read a path nothing mounted.
+      SANDBOX_SERVICE_CREDENTIALS_PATH: ${SANDBOX_SERVICE_CREDENTIALS_PATH:-}
       # ADC, never a static API key (gemini.js's own comment) — mounted
       # read-only from the host's own `gcloud auth application-default
       # login` output below. Shared by both Gemini and Claude-on-Vertex —
@@ -127,6 +143,11 @@ services:
       # dev-sandbox convenience, not something config.js or gemini.js
       # depends on existing.
       - ${GEMINI_ADC_PATH}:/app/.gcp/adc.json:ro
+      # Same optional-mount shape as the ADC line above: SANDBOX_INVOKER_KEY_PATH
+      # unset means this line does nothing and SANDBOX_SERVICE_CREDENTIALS_PATH
+      # (above) is empty, so getIdTokenClient() falls back to its own ADC
+      # search instead of a file that was never mounted.
+      - ${SANDBOX_INVOKER_KEY_PATH:-/dev/null}:/app/.gcp/sandbox-invoker.json:ro
       # Anonymous volume over node_modules: the bind mount above would
       # otherwise shadow the node_modules installed into the image
       # during `npm install` (the host's backend/ has none), since bind

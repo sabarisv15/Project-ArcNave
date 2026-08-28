@@ -1,5 +1,6 @@
 'use strict';
 
+const { GoogleAuth } = require('google-auth-library');
 const config = require('../config');
 
 // ADL-059 — credential-less code execution. This service is a thin HTTP
@@ -81,6 +82,78 @@ function assertConfigured() {
   }
 }
 
+// Cloud Run IAM invoker auth. With `--no-allow-unauthenticated`, Cloud
+// Run rejects any request that does not carry a Google-signed ID token
+// whose audience is the service's own URL — before the container is
+// reached, and before the request is billed. That is the primary
+// boundary; SANDBOX_SHARED_SECRET remains the second, independent layer
+// so that a single misconfigured IAM policy cannot open the endpoint on
+// its own.
+//
+// Built lazily and cached: getIdTokenClient() resolves credentials and
+// does its own token refresh internally, so constructing one per
+// execution would add a credential round-trip to every call. Not built
+// at module load, because this module is required in deployments and
+// tests that have no Google credentials at all and never call
+// executeCode.
+//
+// Deliberately its OWN credential file (config.sandboxServiceCredentialsPath
+// / SANDBOX_SERVICE_CREDENTIALS_PATH), never the ambient
+// GOOGLE_APPLICATION_CREDENTIALS — that variable is already claimed by
+// gemini.js/claude.js for the Gemini/Claude-on-Vertex ADC (see
+// docker-compose.yml). Falling back to it here would mean every
+// sandbox call authenticates as that broad Vertex-AI identity instead
+// of the narrow run.invoker-only service account Cloud Run IAM expects
+// — silently working (if that identity happens to also be an invoker)
+// while defeating the whole point of a separate low-privilege invoker
+// SA. `keyFile: undefined` when the path is unset falls through to
+// GoogleAuth's own ADC search (still not GOOGLE_APPLICATION_CREDENTIALS-
+// first in that search — this constructor argument always wins), which
+// is what environments authenticating via Workload Identity rather than
+// a key file (e.g. a future Cloud Run-hosted backend) want anyway.
+let idTokenClientPromise = null;
+
+function getIdTokenClient() {
+  if (idTokenClientPromise === null) {
+    idTokenClientPromise = new GoogleAuth({
+      keyFile: config.sandboxServiceCredentialsPath || undefined,
+    }).getIdTokenClient(config.sandboxServiceUrl);
+  }
+  return idTokenClientPromise;
+}
+
+// The headers for one /execute call. The shared secret always goes; the
+// IAM bearer token only where this deployment actually sits behind
+// Cloud Run IAM.
+async function buildAuthHeaders() {
+  const headers = {
+    'content-type': 'application/json',
+    'x-sandbox-auth': config.sandboxServiceToken,
+  };
+  if (!config.sandboxServiceIamAuth) return headers;
+  let issued;
+  try {
+    const client = await getIdTokenClient();
+    issued = await client.getRequestHeaders(config.sandboxServiceUrl);
+  } catch (err) {
+    // A credential fault is a deployment problem, not something the
+    // model or the user can act on. Surfaced as its own message rather
+    // than left to reach fetch() and come back as an opaque "sandbox
+    // request failed", and never cached: a client that failed to build
+    // must be rebuilt on the next call, not memoised as a rejection.
+    idTokenClientPromise = null;
+    throw new SandboxExecutionError(`sandbox IAM auth failed: ${err.message}`);
+  }
+  // google-auth-library returns a plain object here in v11 and a
+  // Headers instance in later majors — normalise both.
+  if (typeof issued.forEach === 'function' && typeof issued.get === 'function') {
+    issued.forEach((value, key) => { headers[key] = value; });
+  } else {
+    Object.assign(headers, issued);
+  }
+  return headers;
+}
+
 function assertValidRequest(code, files, outputFile, expectFormulasIn) {
   if (typeof code !== 'string' || !code.trim()) {
     throw new SandboxValidationError('code is required and must be a non-empty string');
@@ -146,11 +219,17 @@ async function executeCode({
   const timeoutMs = outputFile ? VERIFIED_EXECUTION_TIMEOUT_MS : EXECUTION_TIMEOUT_MS;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  // Built BEFORE the try below, deliberately: a credential fault is
+  // already a SandboxExecutionError with its own precise message, and
+  // running it inside the try would let the catch re-wrap it into
+  // "sandbox request failed: sandbox IAM auth failed: ..." — two
+  // prefixes for one fault, the outer one wrong (no request was made).
+  const headers = await buildAuthHeaders();
   let response;
   try {
     response = await fetch(`${config.sandboxServiceUrl}/execute`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-sandbox-auth': config.sandboxServiceToken },
+      headers,
       body: JSON.stringify({
         code, files: files || [], outputFile, expectFormulasIn,
       }),

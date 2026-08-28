@@ -315,18 +315,12 @@ module.exports = {
   // then falls back to its own ADC discovery.
   sandboxServiceCredentialsPath: process.env.SANDBOX_SERVICE_CREDENTIALS_PATH || null,
 
-  // ADL-061 — open web search. Originally Google Custom Search JSON
-  // API; that API is closed to new projects ahead of its 2027-01-01
-  // discontinuation and returns a permanent 403 no matter how it is
-  // configured, so the provider is now selectable rather than baked in
-  // (webSearchService.js's own file comment carries the evidence).
-  // WEB_SEARCH_PROVIDER picks between 'brave' and 'tavily'; the key is
-  // whichever that provider issues. Not required() — webSearchService
-  // throws WebSearchNotConfiguredError at call time until it is set,
-  // same "capability exists in code before its credentials do" shape as
-  // sandboxServiceUrl above.
-  webSearchProvider: process.env.WEB_SEARCH_PROVIDER || 'brave',
-  webSearchApiKey: process.env.WEB_SEARCH_API_KEY || null,
+  // ADL-061 — open web search and web fetch. ONE provider: Vertex AI
+  // search-grounding + urlContext, on config.gemini's own project and
+  // ADC. No key of its own. WEB_SEARCH_PROVIDER/WEB_SEARCH_API_KEY are
+  // gone with the Brave and Tavily providers (removed 2026-08-28, owner
+  // decision) — recoverable from git history if a non-Google index is
+  // ever wanted again.
 
   // Gemini search-grounding as the web_search provider (owner's choice,
   // 2026-08-28). Runs on VERTEX AI via config.gemini's own project and

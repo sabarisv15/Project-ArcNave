@@ -88,11 +88,8 @@ services:
       GEMINI_PROJECT_ID: ${GEMINI_PROJECT_ID:-}
       GEMINI_LOCATION: ${GEMINI_LOCATION:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
-      # ADL-061 open web search. The 'gemini' provider needs no key of
-      # its own — it grounds on Vertex AI using the three GEMINI_* vars
-      # above plus ADC. WEB_SEARCH_API_KEY is only for brave/tavily.
-      WEB_SEARCH_PROVIDER: ${WEB_SEARCH_PROVIDER:-}
-      WEB_SEARCH_API_KEY: ${WEB_SEARCH_API_KEY:-}
+      # ADL-061 open web search + web fetch. No key of its own — it runs
+      # on Vertex AI using the three GEMINI_* vars above plus ADC.
       GEMINI_WEB_SEARCH_MODEL: ${GEMINI_WEB_SEARCH_MODEL:-}
       # Claude on Vertex AI (2026-08-22) — same GCP project/ADC as Gemini
       # above, a second independently-selectable global-default provider

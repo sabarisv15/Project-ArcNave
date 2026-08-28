@@ -81,6 +81,12 @@ class WebSearchNotConfiguredError extends Error {}
 class WebSearchNotEnabledError extends Error {}
 class WebSearchValidationError extends Error {}
 class WebSearchRequestError extends Error {}
+class WebFetchFailedError extends Error {}
+
+// The one value meaning the page was actually retrieved. Anything else —
+// including the field being absent — means it was not.
+const URL_RETRIEVAL_SUCCESS = 'URL_RETRIEVAL_STATUS_SUCCESS';
+const MAX_FETCH_CHARS = 8000;
 
 function truncate(value, maxChars) {
   return String(value || '').slice(0, maxChars);
@@ -89,61 +95,6 @@ function truncate(value, maxChars) {
 // Each provider declares how to build a request and how to read its
 // response. Nothing else in this file knows which one is active.
 const PROVIDERS = {
-  brave: {
-    buildWebRequest(query, count) {
-      const url = new URL('https://api.search.brave.com/res/v1/web/search');
-      url.searchParams.set('q', query);
-      url.searchParams.set('count', String(count));
-      return { url, headers: { Accept: 'application/json', 'X-Subscription-Token': config.webSearchApiKey } };
-    },
-    readWebResults(body) {
-      const results = body && body.web && Array.isArray(body.web.results) ? body.web.results : [];
-      return results.map((item) => ({
-        title: truncate(item.title, 200),
-        url: String(item.url || ''),
-        snippet: truncate(item.description, MAX_SNIPPET_CHARS),
-      }));
-    },
-    buildImageRequest(query, count) {
-      const url = new URL('https://api.search.brave.com/res/v1/images/search');
-      url.searchParams.set('q', query);
-      url.searchParams.set('count', String(count));
-      return { url, headers: { Accept: 'application/json', 'X-Subscription-Token': config.webSearchApiKey } };
-    },
-    readImageResults(body) {
-      const results = body && Array.isArray(body.results) ? body.results : [];
-      return results.map((item) => ({
-        title: truncate(item.title, 200),
-        imageUrl: String((item.properties && item.properties.url) || ''),
-        sourceUrl: String(item.url || ''),
-      }));
-    },
-  },
-  tavily: {
-    buildWebRequest(query, count) {
-      const url = new URL('https://api.tavily.com/search');
-      return {
-        url,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.webSearchApiKey}` },
-        body: JSON.stringify({ query, max_results: count }),
-      };
-    },
-    readWebResults(body) {
-      const results = body && Array.isArray(body.results) ? body.results : [];
-      return results.map((item) => ({
-        title: truncate(item.title, 200),
-        url: String(item.url || ''),
-        snippet: truncate(item.content, MAX_SNIPPET_CHARS),
-      }));
-    },
-    // Tavily has no dedicated image index — it returns images alongside
-    // a normal web search. Declared explicitly as unsupported rather
-    // than faked, so image_search fails honestly on this provider
-    // instead of silently returning nothing.
-    buildImageRequest: null,
-    readImageResults: null,
-  },
   gemini: {
     // VERTEX AI + ADC, not an API key. This was originally built against
     // the Generative Language API with its own key, and that path is
@@ -241,15 +192,11 @@ const PROVIDERS = {
   },
 };
 
+// One provider now. Kept as a registry rather than inlined so the
+// request-building and response-reading stay separable, and so adding a
+// second is an entry rather than a rewrite.
 function activeProvider() {
-  const provider = PROVIDERS[config.webSearchProvider];
-  if (!provider) {
-    throw new WebSearchNotConfiguredError(
-      `WEB_SEARCH_PROVIDER ${JSON.stringify(config.webSearchProvider)} is not a provider this service implements `
-      + `(expected one of ${Object.keys(PROVIDERS).join(', ')})`,
-    );
-  }
-  return provider;
+  return PROVIDERS.gemini;
 }
 
 async function getWebSearchConfig(client, collegeId) {
@@ -262,20 +209,14 @@ async function getWebSearchConfig(client, collegeId) {
 // cheapest first: is a provider configured at all, is the query real,
 // is this college opted in, and only then does a billable call happen.
 async function assertSearchable(client, collegeId, query) {
-  // Provider first, then ITS key. The order matters: providers do not
-  // share one credential (gemini reads its own Generative Language API
-  // key, never config.gemini's Vertex/ADC path), so checking a single
-  // hardcoded field first would report the wrong variable as missing.
   const provider = activeProvider();
-  const apiKey = provider.apiKey ? provider.apiKey() : config.webSearchApiKey;
-  if (!apiKey) {
+  if (!config.gemini.projectId) {
     throw new WebSearchNotConfiguredError(
-      `open web search is not configured yet (${provider.keyEnvVar || 'WEB_SEARCH_API_KEY'} unset `
-      + `for provider ${JSON.stringify(config.webSearchProvider)}) — see ADL-061`,
+      'open web retrieval is not configured yet (GEMINI_PROJECT_ID unset — the Vertex AI project, reached via ADC) — see ADL-061',
     );
   }
   if (typeof query !== 'string' || !query.trim()) {
-    throw new WebSearchValidationError('query is required and must be a non-empty string');
+    throw new WebSearchValidationError('a non-empty query (or url, for fetchPage) is required');
   }
   const searchConfig = await getWebSearchConfig(client, collegeId);
   if (!searchConfig.enabled) {
@@ -324,18 +265,99 @@ async function searchFast(client, collegeId, query) {
 // unreviewed external binary content inside DocumentService, which owns
 // institutional documents. The frontend renders these as external
 // references, which also keeps the provider's own attribution intact.
-async function searchImages(client, collegeId, query) {
-  const provider = await assertSearchable(client, collegeId, query);
-  if (!provider.buildImageRequest) {
-    throw new WebSearchNotConfiguredError(
-      `the configured search provider ${JSON.stringify(config.webSearchProvider)} does not support image search`,
+// UNSUPPORTED since 2026-08-28. Brave was the only provider with an
+// image index, and it was removed on the owner's decision; Vertex search
+// grounding has none. This throws rather than returning an empty array,
+// because "no images found" and "this system cannot search images" are
+// different answers and the model must not report the first when the
+// second is true. Restoring it means restoring an image-capable
+// provider, not patching this function.
+// Throws BEFORE any config read: whether a college opted in is
+// irrelevant when the capability does not exist at all, and reading the
+// database to say so would be a query that can only ever be discarded.
+async function searchImages() {
+  throw new WebSearchNotConfiguredError(
+    'image search has no provider — Vertex search grounding does not return an image index, '
+    + 'and Brave (which did) was removed. This is an absent capability, not an empty result.',
+  );
+}
+
+// web_fetch — one named URL, read through Vertex's urlContext tool.
+//
+// THE LOAD-BEARING CHECK IS urlRetrievalStatus, NOT the HTTP status.
+// Measured live 2026-08-28 against https://www.aicte-india.org/: the
+// call returned HTTP 200 with urlRetrievalStatus
+// URL_RETRIEVAL_STATUS_ERROR — the page was NOT fetched — and the model
+// still produced fluent, confident bullets describing it, from its own
+// prior knowledge. A fetch tool that invents content when the fetch
+// failed is the exact fabrication class this project has spent ADL-055
+// onward removing. So unless the metadata says SUCCESS for this URL,
+// nothing is returned at all.
+function readFetchResult(body, requestedUrl) {
+  const candidate = body && Array.isArray(body.candidates) ? body.candidates[0] : null;
+  const entries = candidate && candidate.urlContextMetadata
+    && Array.isArray(candidate.urlContextMetadata.urlMetadata)
+    ? candidate.urlContextMetadata.urlMetadata : [];
+  const match = entries.find((e) => e && e.retrievedUrl === requestedUrl) || entries[0] || null;
+  const status = match && match.urlRetrievalStatus;
+  if (status !== URL_RETRIEVAL_SUCCESS) {
+    throw new WebFetchFailedError(
+      `the page at ${requestedUrl} could not be retrieved (${status || 'no retrieval status returned'}). `
+      + 'No summary is given: any text produced without the page would be invented rather than read.',
     );
   }
-  const body = await callProvider(await provider.buildImageRequest(query.trim(), MAX_IMAGE_RESULTS));
-  return provider.readImageResults(body).slice(0, MAX_IMAGE_RESULTS);
+  const text = ((candidate.content && candidate.content.parts) || [])
+    .map((part) => part.text || '').join('').trim();
+  if (!text) {
+    throw new WebFetchFailedError(`the page at ${requestedUrl} was retrieved but produced no readable content`);
+  }
+  return { url: requestedUrl, retrieved: true, content: String(text).slice(0, MAX_FETCH_CHARS) };
+}
+
+// Only plain http(s). Mirrors webRetrievalService's own discipline:
+// reject a malformed or non-web scheme BEFORE it reaches the model.
+function assertFetchableUrl(rawUrl) {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch (err) {
+    throw new WebSearchValidationError(`url ${JSON.stringify(rawUrl)} is not a valid URL`);
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new WebSearchValidationError('only http and https URLs can be fetched');
+  }
+  return parsed.toString();
+}
+
+// NOTE ON SCOPE: this does NOT replace webRetrievalService's
+// fetchTrustedPage. That tool is allowlist-bound; this one will read any
+// URL the model names. Both exist on purpose — RS-AIG-020 keeps the
+// allowlisted path separate precisely so "fetch anything" never quietly
+// becomes the allowlisted path's implementation.
+async function fetchPage(client, collegeId, rawUrl) {
+  await assertSearchable(client, collegeId, rawUrl);
+  const url = assertFetchableUrl(rawUrl.trim());
+  const provider = activeProvider();
+  const request = await provider.buildWebRequest(
+    `Read ${url} and report its content faithfully. Do not add anything the page does not say.`,
+    1,
+  );
+  request.body = JSON.stringify({
+    contents: [{
+      role: 'user',
+      parts: [{ text: `Read ${url} and report its content faithfully. Do not add anything the page does not say.` }],
+    }],
+    tools: [{ urlContext: {} }],
+  });
+  return readFetchResult(await callProvider(request), url);
 }
 
 module.exports = {
+  WebFetchFailedError,
+  URL_RETRIEVAL_SUCCESS,
+  MAX_FETCH_CHARS,
+  readFetchResult,
+  fetchPage,
   WebSearchNotConfiguredError,
   WebSearchNotEnabledError,
   WebSearchValidationError,

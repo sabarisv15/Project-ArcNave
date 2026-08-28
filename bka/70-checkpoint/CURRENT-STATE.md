@@ -1466,3 +1466,52 @@ it first.
 **Remaining for this capability: nothing blocking.** It is opted in for
 `demo` only; any other college needs the same `category: 'web_search'`
 opt-in.
+
+## Fifteenth pass, 2026-08-28 — all colleges opted in; Brave/Tavily removed; `web_fetch` on Vertex
+
+**1. Every college is opted in.** `backend/scripts/web-search-optin-all.js`:
+**99 enabled, 1 already enabled, 0 failed, 100/100 accounted.**
+
+**Worth knowing:** of those 100, exactly one — `demo`, "ARCNAVE Demo
+College" — is real. The other 99 are leftover test fixtures (`adm…`,
+`beh…`, `cls…`, `stf…` with hex suffixes). Harmless, but do not read
+"100 colleges enabled" as a production number.
+
+**A gap this does NOT close: a college created after this run starts
+disabled again.** The opt-in is a per-college config row, so it covers
+colleges that existed at that moment and nothing later. Making it
+universal for real would mean flipping `web_search` from opt-in to
+opt-out — a governance change to RS-AIG-020's shape, not a script. Not
+done unilaterally.
+
+**2. Brave and Tavily removed** (owner decision). One provider now:
+Vertex AI. `WEB_SEARCH_PROVIDER` and `WEB_SEARCH_API_KEY` are gone from
+`config.js`, `.env.example` and `docker-compose.yml`. Both provider
+implementations are recoverable from git history if a non-Google index
+is ever wanted.
+
+**Consequence, stated rather than buried: `image_search` now has no
+provider at all.** Brave was the only one with an image index and Vertex
+grounding has none. It throws `WebSearchNotConfiguredError` naming the
+absence, *before* any config read — "no images found" and "this system
+cannot search images" are different answers and the model must not
+report the first when the second is true.
+
+**3. `web_fetch` shipped, on Vertex's `urlContext` tool** — registered as
+an L1 tool for all four roles, alongside (never replacing)
+`fetch_trusted_web_page`. That one stays allowlist-bound; this one reads
+any URL the model names. RS-AIG-020 keeps them separate precisely so
+"fetch anything" never becomes the allowlisted path's implementation.
+
+**The load-bearing detail, found by measuring:** a failed retrieval
+returns **HTTP 200**. Asked to summarise `https://www.aicte-india.org/`,
+Vertex returned `urlRetrievalStatus: URL_RETRIEVAL_STATUS_ERROR` — the
+page was never fetched — and the model produced fluent, confident,
+entirely invented bullets describing it. `readFetchResult` therefore
+keys on `urlRetrievalStatus === URL_RETRIEVAL_STATUS_SUCCESS` and
+discards the model text otherwise. Both paths live-verified: Wikipedia
+returned 5,348 chars; aicte-india.org refuses with the reason named.
+
+Tests **20/20** (up from 15), including four pinning the refusal path,
+since a regression there means silent fabrication. Adjacent suites clean:
+generic-capability 26/26, uat-wiring 15/15, tool-retrieval 6/6.

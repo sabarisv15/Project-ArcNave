@@ -28,22 +28,22 @@ function withConfigCleared(keys, fn) {
 }
 
 test('webSearchService.search — not configured', async (t) => {
-  // Pins the provider explicitly. It used to clear googleSearchApiKey /
-  // googleSearchEngineId — names left over from the Custom Search era
-  // that no longer gate anything, so the test passed only because the
-  // ambient provider happened to be unconfigured too.
-  await t.test('throws WebSearchNotConfiguredError when the provider has no key', withConfigCleared(['webSearchApiKey'], async () => {
-    const original = config.webSearchProvider;
-    config.webSearchProvider = 'brave';
+  // There is ONE provider now and it has no key of its own, so "not
+  // configured" means the Vertex project is missing. Naming a search key
+  // here would send an operator to set a credential nothing reads.
+  await t.test('throws WebSearchNotConfiguredError when the Vertex project is unset', async () => {
+    const original = config.gemini.projectId;
+    config.gemini.projectId = null;
     try {
       await assert.rejects(
         webSearchService.search(null, 'college-1', 'AICTE new rules'),
-        webSearchService.WebSearchNotConfiguredError,
+        (err) => err instanceof webSearchService.WebSearchNotConfiguredError
+          && err.message.includes('GEMINI_PROJECT_ID'),
       );
     } finally {
-      config.webSearchProvider = original;
+      config.gemini.projectId = original;
     }
-  }));
+  });
 });
 
 test('weatherService.fetchCurrentWeather — not configured', async (t) => {
@@ -144,21 +144,55 @@ test('gemini provider — readWebResults maps grounding chunks to results', asyn
 // that some search key is unset. Naming the wrong variable here is the
 // bug this pins: an operator told to set GEMINI_WEB_SEARCH_API_KEY would
 // set a credential the provider never reads.
-test('gemini provider — not configured names the Vertex project, not a search key', async (t) => {
-  await t.test('reports GEMINI_PROJECT_ID', async () => {
-    const originalProvider = config.webSearchProvider;
-    const originalProject = config.gemini.projectId;
-    config.webSearchProvider = 'gemini';
-    config.gemini.projectId = null;
-    try {
-      await assert.rejects(
-        () => webSearchService.search({}, 'demo', 'anything'),
-        (err) => err instanceof webSearchService.WebSearchNotConfiguredError
-          && err.message.includes('GEMINI_PROJECT_ID'),
-      );
-    } finally {
-      config.webSearchProvider = originalProvider;
-      config.gemini.projectId = originalProject;
-    }
+
+// web_fetch's refusal path — the behaviour that matters most here.
+// Measured live: a FAILED retrieval still returned HTTP 200 and the
+// model wrote confident, invented bullets about the page. If this check
+// regresses, web_fetch starts fabricating silently.
+test('readFetchResult — refuses anything that was not actually retrieved', async (t) => {
+  const url = 'https://www.aicte-india.org/';
+  const withStatus = (status, text) => ({
+    candidates: [{
+      content: { parts: [{ text }] },
+      urlContextMetadata: { urlMetadata: [{ retrievedUrl: url, urlRetrievalStatus: status }] },
+    }],
+  });
+
+  await t.test('a retrieval error throws, and the model text is discarded', () => {
+    assert.throws(
+      () => webSearchService.readFetchResult(withStatus('URL_RETRIEVAL_STATUS_ERROR', 'Confident invented summary.'), url),
+      (err) => err instanceof webSearchService.WebFetchFailedError
+        && err.message.includes('could not be retrieved')
+        && !err.message.includes('Confident invented summary'),
+    );
+  });
+
+  await t.test('a missing retrieval status throws rather than defaulting to success', () => {
+    assert.throws(
+      () => webSearchService.readFetchResult({ candidates: [{ content: { parts: [{ text: 'x' }] } }] }, url),
+      webSearchService.WebFetchFailedError,
+    );
+  });
+
+  await t.test('success returns the content', () => {
+    const out = webSearchService.readFetchResult(withStatus(webSearchService.URL_RETRIEVAL_SUCCESS, 'Real page text.'), url);
+    assert.equal(out.retrieved, true);
+    assert.equal(out.content, 'Real page text.');
+  });
+
+  await t.test('retrieved but empty is a failure, not an empty success', () => {
+    assert.throws(
+      () => webSearchService.readFetchResult(withStatus(webSearchService.URL_RETRIEVAL_SUCCESS, '   '), url),
+      webSearchService.WebFetchFailedError,
+    );
+  });
+});
+
+test('image_search has no provider and says so', async (t) => {
+  await t.test('throws rather than returning an empty list', async () => {
+    await assert.rejects(
+      webSearchService.searchImages(null, 'college-1', 'campus'),
+      webSearchService.WebSearchNotConfiguredError,
+    );
   });
 });

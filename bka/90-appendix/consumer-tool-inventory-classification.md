@@ -189,7 +189,7 @@ remains unbuilt.
 |---|---|---|
 | `tool_search` | **Adapted** | The tool catalogue from [`ai-tool-catalogue-approved-spec.md`](../60-product-reasoning/ai-tool-catalogue-approved-spec.md) — names always visible, `describe_tools` fetches schemas on demand |
 | `ask_user_input_v0` | **Built** | `ask_user_choice` |
-| `suggest_research` | **Owner-decision required** | **Deliberately not built** — [`ai-copilot-research-mode-usage-imagegen-approved-spec.md`](../60-product-reasoning/ai-copilot-research-mode-usage-imagegen-approved-spec.md) has an approved spec but grepping `src/` for `researchMode`/`research_mode` returns nothing. The tool would offer a capability that does not exist. Flag F4 |
+| `suggest_research` | **Owner-decision required** | **Deliberately not built** — [`ai-copilot-research-mode-usage-imagegen-approved-spec.md`](../60-product-reasoning/ai-copilot-research-mode-usage-imagegen-approved-spec.md) has an approved spec but grepping `src/` for `researchMode`/`research_mode` returns nothing. The tool would offer a capability that does not exist. **Dropped by the owner 2026-08-28** |
 | `end_conversation` | **Built** | `conversation_archive` — archives, never deletes (`deleteConversation` exists and is irreversible; not something an LLM should reach for). Requires an explicit id rather than acting on "the current conversation" |
 
 Also built from the output-format framework rather than from this
@@ -281,7 +281,7 @@ the product owner rather than left open:
 `docx`, and `pptx` were NOT built: the sandbox has no PDF-writing
 library, no `python-docx`, no `python-pptx`, and LibreOffice there is
 Calc only. Writing a skill for a capability the sandbox cannot back
-would repeat the exact mistake `suggest_research` (F4) was built to
+would repeat the exact mistake `suggest_research` was deliberately not built to
 avoid. Recorded as flag F2c, not silently dropped.
 
 ### 8c. The file-attachment pipeline

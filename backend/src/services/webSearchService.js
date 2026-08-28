@@ -24,10 +24,38 @@ const configurationService = require('./configurationService');
 // ahead of its 2027-01-01 discontinuation. No amount of setup fixes it.
 //
 // So the provider is now selected by config rather than baked in, and
-// two are implemented: Brave Search (independent index) and Tavily
-// (built for agent/LLM search). Both are single-key setups — neither
-// needs the Google engine-id dance. Adding a third is a new PROVIDERS
-// entry, not another rewrite of this file.
+// three are implemented: Brave Search (independent index), Tavily
+// (built for agent/LLM search), and Gemini search-grounding. All three
+// are single-key setups — none needs the Google engine-id dance. Adding
+// a fourth is a new PROVIDERS entry, not another rewrite of this file.
+//
+// 'gemini' is the owner's chosen provider (2026-08-28) and is
+// structurally unlike the other two: it is not a search index with an
+// API in front of it, it is a model call whose answer is grounded in a
+// search Google runs on our behalf. Three consequences that are NOT
+// defects to be fixed later, they are what this provider is:
+//
+//   1. It needs a Generative Language API key (GEMINI_WEB_SEARCH_API_KEY),
+//      NOT the Vertex AI + ADC path config.gemini already uses for chat
+//      and embeddings. Deliberately a separate credential and a separate
+//      config field — a search key with a different scope, quota and
+//      blast radius should not be the same secret that can run the whole
+//      chat pipeline.
+//   2. Result URLs come back as Google redirect links
+//      (vertexaisearch.cloud.google.com/grounding-api-redirect/...),
+//      not the publisher's own URL. The redirect resolves in a browser;
+//      it is not a URL to string-match a domain allowlist against. Any
+//      future "is this source trusted" check must resolve it first —
+//      which is exactly why RS-AIG-020 keeps fetchTrustedPage's
+//      allowlist as a SEPARATE tool rather than folding it into this one.
+//   3. Snippets are assembled from the model's own grounded answer text,
+//      not quoted from the page. They are a paraphrase, and callers must
+//      not treat them as verbatim source text.
+//
+// A grounded call returns no results at all when Google decides the
+// query needed no search. That is reported as an empty array, the same
+// as any other zero-result search — never as a failure, and never
+// backfilled from the model's ungrounded knowledge.
 
 const config = require('../config');
 
@@ -110,6 +138,71 @@ const PROVIDERS = {
     buildImageRequest: null,
     readImageResults: null,
   },
+  gemini: {
+    // Its own key, never config.gemini's Vertex/ADC credentials — see
+    // the file comment's point 1.
+    apiKey: () => config.geminiWebSearchApiKey,
+    keyEnvVar: 'GEMINI_WEB_SEARCH_API_KEY',
+    buildWebRequest(query, count) {
+      const url = new URL(
+        `https://generativelanguage.googleapis.com/v1beta/models/${config.geminiWebSearchModel}:generateContent`,
+      );
+      return {
+        url,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': config.geminiWebSearchApiKey,
+        },
+        // The prompt asks for a search-shaped answer rather than a
+        // conversational one, because everything this service returns is
+        // derived from groundingMetadata — the prose is only the raw
+        // material the snippets are cut from. count is a hint; Google
+        // decides how many sources it actually grounds against, and
+        // runWebSearch slices to count afterwards regardless.
+        body: JSON.stringify({
+          contents: [{
+            role: 'user',
+            parts: [{ text: `Search the web and summarise what the most relevant ${count} sources say about: ${query}` }],
+          }],
+          tools: [{ google_search: {} }],
+        }),
+      };
+    },
+    readWebResults(body) {
+      const candidate = body && Array.isArray(body.candidates) ? body.candidates[0] : null;
+      const meta = candidate && candidate.groundingMetadata;
+      const chunks = meta && Array.isArray(meta.groundingChunks) ? meta.groundingChunks : [];
+      // groundingSupports ties spans of the answer text back to the
+      // chunk indices that support them. That mapping is the only thing
+      // resembling a per-source snippet this API offers, so it is built
+      // here rather than leaving every snippet empty.
+      const supports = meta && Array.isArray(meta.groundingSupports) ? meta.groundingSupports : [];
+      const snippetByChunk = new Map();
+      supports.forEach((support) => {
+        const text = support && support.segment && support.segment.text;
+        if (!text) return;
+        const indices = Array.isArray(support.groundingChunkIndices) ? support.groundingChunkIndices : [];
+        indices.forEach((i) => {
+          const existing = snippetByChunk.get(i);
+          snippetByChunk.set(i, existing ? `${existing} ${text}` : text);
+        });
+      });
+      return chunks.map((chunk, i) => {
+        const web = (chunk && chunk.web) || {};
+        return {
+          title: truncate(web.title, 200),
+          url: String(web.uri || ''),
+          snippet: truncate(snippetByChunk.get(i) || '', MAX_SNIPPET_CHARS),
+        };
+      }).filter((result) => result.url !== '');
+    },
+    // Search grounding has no image index. Declared unsupported rather
+    // than faked, same as Tavily — image_search fails honestly on this
+    // provider instead of silently returning nothing.
+    buildImageRequest: null,
+    readImageResults: null,
+  },
 };
 
 function activeProvider() {
@@ -133,12 +226,18 @@ async function getWebSearchConfig(client, collegeId) {
 // cheapest first: is a provider configured at all, is the query real,
 // is this college opted in, and only then does a billable call happen.
 async function assertSearchable(client, collegeId, query) {
-  if (!config.webSearchApiKey) {
+  // Provider first, then ITS key. The order matters: providers do not
+  // share one credential (gemini reads its own Generative Language API
+  // key, never config.gemini's Vertex/ADC path), so checking a single
+  // hardcoded field first would report the wrong variable as missing.
+  const provider = activeProvider();
+  const apiKey = provider.apiKey ? provider.apiKey() : config.webSearchApiKey;
+  if (!apiKey) {
     throw new WebSearchNotConfiguredError(
-      'open web search is not configured yet (WEB_SEARCH_API_KEY unset) — see ADL-061',
+      `open web search is not configured yet (${provider.keyEnvVar || 'WEB_SEARCH_API_KEY'} unset `
+      + `for provider ${JSON.stringify(config.webSearchProvider)}) — see ADL-061`,
     );
   }
-  const provider = activeProvider();
   if (typeof query !== 'string' || !query.trim()) {
     throw new WebSearchValidationError('query is required and must be a non-empty string');
   }

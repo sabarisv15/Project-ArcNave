@@ -327,6 +327,15 @@ module.exports = {
   // sandboxServiceUrl above.
   webSearchProvider: process.env.WEB_SEARCH_PROVIDER || 'brave',
   webSearchApiKey: process.env.WEB_SEARCH_API_KEY || null,
+
+  // Gemini search-grounding as the web_search provider (owner's choice,
+  // 2026-08-28). DELIBERATELY its own key, not the `gemini` block above:
+  // that one is Vertex AI + ADC (no key at all), while grounding runs on
+  // the Generative Language API, which is key-based. Sharing one secret
+  // between "search the web" and "run the entire chat pipeline" would
+  // give a search credential the blast radius of the chat one.
+  geminiWebSearchApiKey: process.env.GEMINI_WEB_SEARCH_API_KEY || null,
+  geminiWebSearchModel: process.env.GEMINI_WEB_SEARCH_MODEL || 'gemini-2.5-flash',
   // Retained only so an existing .env.local.sh that still sets these
   // does not silently look configured while pointing at the dead API.
   // Nothing reads them any more.

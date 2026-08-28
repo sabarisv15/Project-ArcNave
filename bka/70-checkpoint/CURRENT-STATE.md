@@ -711,7 +711,8 @@ What shipped:
   per-college authoring — the owner answered this directly). Only 3 of
   the originally-planned 6 skills were built; `pdf`(create)/`docx`/`pptx`
   were not, because the sandbox has no package to back them (F2c) —
-  writing that guidance anyway would have repeated the exact mistake F4
+  writing that guidance anyway would have repeated the exact mistake
+  `suggest_research` (dropped 2026-08-28)
   (`suggest_research`) was built to avoid.
 
 **Live-checked, not just unit-tested:** all four gate outcomes (pass,
@@ -1170,6 +1171,31 @@ layer**, which needs a product decision on scope before any code, not a
 unilateral build. F18/F19 are AI-Memory drift/behavioral-instruction
 gaps, F20 is the missing single-instance/capability persona statement,
 F21 is a foldable cost-tiering note for ADL-058's eventual build.
+
+**Eleventh pass, 2026-08-28 — owner decisions applied: F1 resolved, F4/F5/F17 dropped and DELETED.**
+
+- **F1 — provider decided: Gemini search-grounding.** A third `gemini`
+  entry in `webSearchService.js`'s `PROVIDERS` registry (the file's own
+  comment already anticipated this shape), plus `WEB_SEARCH_PROVIDER` /
+  `GEMINI_WEB_SEARCH_API_KEY` / `GEMINI_WEB_SEARCH_MODEL` through
+  `.env.example`, `config.js` and `docker-compose.yml`. Its key is
+  **deliberately separate** from `config.gemini` — that path is Vertex +
+  ADC (keyless); grounding is the key-based Generative Language API, and
+  a search credential should not carry the chat pipeline's blast radius.
+  Tests 7 → **15/15** (8 new, covering the grounding-chunk/support
+  snippet assembly, which is the only real logic in the provider).
+  **NOT live-checked** — the owner supplies the key, then a college opts
+  in. Until then this is verified code, not a verified capability.
+- **F4 (`suggest_research`), F5 (`fetch_sports_data`/`places_search`),
+  F17 (crisis/self-harm policy) — dropped by owner decision, sections
+  deleted outright** (owner chose deletion over marking-as-dropped when
+  asked). Every reference to them elsewhere was repaired, not left
+  dangling. **Note on F17:** the answer it was asking for is not lost —
+  §5.2 of [`ai-operating-instructions.md`](../90-appendix/ai-operating-instructions.md)
+  states the full crisis-handling policy (never deflect, provide
+  resources unprompted, no distress-deepening questions). What was
+  dropped is the commitment to implement it in ARCNAVE, not the
+  knowledge of what it would say.
 
 **Ninth pass, 2026-08-28 — the eighth pass's ARCNAVE-tailored write-up
 was dropped and replaced by the domain-neutral

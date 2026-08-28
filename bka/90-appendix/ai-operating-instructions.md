@@ -12,7 +12,7 @@ product — treat it as rules for *your* assistant to follow.
 > configuration; substitute your own domain into §8.2's severity classes.
 > The prior ARCNAVE-tailored adaptation of this material was dropped when
 > this copy was adopted; the concrete gaps that pass had found live on as
-> F17–F21 in [`consumer-adaptation-flags.md`](consumer-adaptation-flags.md).
+> F18–F21 in [`consumer-adaptation-flags.md`](consumer-adaptation-flags.md).
 
 ---
 

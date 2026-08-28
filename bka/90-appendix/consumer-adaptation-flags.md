@@ -28,7 +28,49 @@ started).
 
 ---
 
-## F1 — `web_search` has no working provider, and now neither do two new tools
+## F1 — ✅ DECIDED 2026-08-28 — provider is Gemini search-grounding; code and env wiring shipped, awaiting only the key
+
+**Owner's decision (2026-08-28): use Gemini, not Brave or Tavily.** This
+is the same answer the supplied operating-instructions template had
+already reached independently — its §1.5 chose Gemini search-grounding
+over standing up a separate search pipeline, on the grounds that the
+model call itself returns grounded, cited results.
+
+A third `PROVIDERS` entry (`gemini`) was added to
+[`webSearchService.js`](../../backend/src/services/webSearchService.js),
+exactly as that file's own comment anticipated — a new entry, not
+another rewrite. `WEB_SEARCH_PROVIDER`/`WEB_SEARCH_API_KEY`/
+`GEMINI_WEB_SEARCH_API_KEY`/`GEMINI_WEB_SEARCH_MODEL` are wired through
+`.env.example`, `config.js` and `docker-compose.yml`.
+
+**Three properties of this provider that are not defects to fix later:**
+
+1. It needs a **Generative Language API key**, not the Vertex AI + ADC
+   path `config.gemini` already uses for chat and embeddings — so it is
+   a deliberately separate secret (`GEMINI_WEB_SEARCH_API_KEY`). A
+   search credential should not carry the blast radius of the one that
+   runs the whole chat pipeline.
+2. Result URLs are **Google redirect links**, not the publisher's own
+   URL. They resolve in a browser but cannot be domain-matched against
+   an allowlist without resolving first — which is precisely why
+   RS-AIG-020 keeps `fetch_trusted_web_page`'s allowlist as a separate
+   tool rather than folding it into this one.
+3. Snippets are cut from the **model's own grounded answer**, not quoted
+   from the page. They are a paraphrase and must not be treated as
+   verbatim source text.
+
+**Still outstanding, and the only thing left:** the owner supplies the
+key, it goes in `backend/.env.local.sh` (gitignored), and a college is
+opted in (`category: 'web_search'`, `expectedVersion: 0`). Nothing has
+been live-checked against a real grounded call yet — until it is, this
+is verified code, not a verified capability.
+
+`image_search` has **no image index on this provider** (same as Tavily)
+and throws `WebSearchNotConfiguredError` by design rather than silently
+returning nothing. If image search matters, that needs Brave — which
+remains implemented and one env var away.
+
+### F1 — original text (superseded above)
 
 **Status: blocked on a decision only the product owner can make.**
 
@@ -207,7 +249,8 @@ Reason, discovered mid-implementation: the sandbox has `pdfplumber`,
 deliberately not installed — see F2a). Writing a skill telling the model
 how to create a `.docx` or `.pptx`, or build a new `.pdf`, through
 `execute_code` would describe a capability that does not exist — the
-exact anti-pattern F4 already named a reason NOT to build `suggest_research`.
+exact anti-pattern that was the recorded reason NOT to build
+`suggest_research` (dropped by the owner 2026-08-28).
 `file-reading`'s own SKILL.md says this plainly rather than staying
 silent about it. Adding these three packages is a real, boundable future
 option (same "fixed, reviewed allowlist" pattern the Dockerfile's own
@@ -502,33 +545,6 @@ of. 69+ other validation-error classes across the other 105 tools still
 end a turn as an uncaught throw rather than a tool result the model can
 react to. This fix does not touch that — it is scoped to exactly the one
 tool this live test happened to hit.
-
-## F4 — `suggest_research` was NOT built, on purpose
-
-**Status: deliberately not built; needs an owner decision.**
-
-`ai-copilot-research-mode-usage-imagegen-approved-spec.md` exists, but
-grepping `src/` for `researchMode`/`research_mode` returns **nothing** —
-research mode has an approved spec and no implementation.
-
-A `suggest_research` tool would therefore offer the user a capability
-ARCNAVE cannot deliver. That is the precise failure mode this whole
-thread has been removing (a model promising what the system cannot do),
-so it was left unbuilt rather than shipped as a broken promise.
-
-Two ways forward, both the owner's call: implement research mode first,
-or drop the tool.
-
-## F5 — `fetch_sports_data` and `places_search` were not built
-
-**Status: owner-decision, unchanged from the classification pass.**
-
-Neither has a provider and neither has a stated campus need.
-`present_places` and `present_map` (the *display* halves) were built and
-work on caller-supplied data, so the presentation path exists if a
-lookup source is ever named.
-
-Per the standing rule, these are recorded as undecided, not rejected.
 
 ## F6 — a real bug was found and fixed; the class of bug is worth remembering
 
@@ -902,43 +918,12 @@ and that the model could not actually use because nothing told it what
 a row looked like) remains a live risk for all of them — and F15/F16
 are now concrete instances of exactly that risk, not just a prediction.
 
-## F17 — no crisis/self-harm handling policy exists anywhere in ARCNAVE's AI governance
-
-**Status: genuine gap, needs an owner decision on scope before any code — the most severe of the five flags below (F17-F21), by this file's own "damage if forgotten" ordering.**
-
-Found 2026-08-27 while adapting an externally-supplied generic "AI
-Assistant Operating Instructions" template against ARCNAVE's real
-configuration. (That pass's own write-up was dropped 2026-08-28 when the
-owner adopted the domain-neutral
-[`ai-operating-instructions.md`](ai-operating-instructions.md) instead —
-its findings are F17-F21 here, so nothing was lost.)
-That template's Section 5.2 requires inverting normal caution during a
-crisis: never deflect, provide resources unprompted, don't ask
-distress-deepening clarifying questions. A search of
-`RS-AIG-ai-governance.md`, `aiPromptSafetyLayer.js`, and every tool
-description in `aiToolRegistry.js` for self-harm/crisis/suicide/distress
-handling returned **nothing** — not a rejected design, an absent one.
-
-ARCNAVE's users are principals/HODs/staff/class-tutors, not students
-directly, in most flows — but a class-tutor describing a student in
-distress, or a staff member themselves in crisis, typing into an AI
-chat about attendance or marks is not implausible in an education
-setting. No mechanism today does anything different with that input
-than any other message.
-
-**Not built here, on purpose:** whose crisis this should even cover
-(a student described by a staff user, the acting staff user themselves,
-or both), and what "provide resources" means for an Indian campus
-context (a specific helpline number is itself a product/compliance
-decision, not a technical one) are both **owner decisions**, per this
-file's own standing rule — not something to assume and build
-unilaterally.
-
 ## F18 — AI Memory has no defense against a stored behavioral instruction
 
 **Status: small, bounded gap — not urgent, no recorded incident.**
 
-Found in the same adaptation pass as F17. `ai_memory_remember_fact`
+Found in the same adaptation pass as the crisis-policy gap the owner
+dropped on 2026-08-28. `ai_memory_remember_fact`
 (`aiToolRegistry.js:2593-2619`) already refuses two content categories
 structurally: a fact about anyone other than the acting user, and any
 bare identifier number. Neither check would catch a user asking the AI

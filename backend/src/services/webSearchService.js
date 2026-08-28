@@ -199,10 +199,35 @@ function activeProvider() {
   return PROVIDERS.gemini;
 }
 
+// OPT-OUT, not opt-in (owner's decision 2026-08-28, RS-AIG-020
+// Amendment 2 / ADL-062) — and deliberately UNLIKE
+// webRetrievalService.getWebRetrievalConfig, which stays opt-in.
+//
+// The two tools are not the same risk. `fetch_trusted_web_page` carries
+// a per-college ALLOWLIST: its default-off state is what makes "which
+// domains may this college reach" a decision someone made rather than
+// one that happened. `web_search` has no allowlist to configure — there
+// is nothing a college would set up before first use, so a default-off
+// state bought no review, it only meant a college that never touched
+// configuration silently got a worse assistant than its neighbour.
+//
+// WHAT THIS TRADES AWAY, stated rather than discovered later: every
+// college now reaches the public internet through this tool without
+// anyone at that college having agreed to it. That is acceptable only
+// because RS-AIG-020's opening rule is unconditional — a search result
+// can inform an answer, it can never authorize an ARCNAVE action — and
+// because the tool is L1 read-only. It would NOT be acceptable for a
+// tool that writes, spends, or sends.
+//
+// An explicit `false` still wins. A college that opted out stays out;
+// only the ABSENCE of a stored value flipped meaning.
 async function getWebSearchConfig(client, collegeId) {
   const row = await configurationService.getConfiguration(client, { collegeId, category: CONFIG_CATEGORY });
-  const stored = row ? row.configuration : {};
-  return { enabled: Boolean(stored.enabled) };
+  const stored = (row && row.configuration) || {};
+  const enabled = stored.enabled === undefined || stored.enabled === null
+    ? true
+    : Boolean(stored.enabled);
+  return { enabled };
 }
 
 // The four gates every search goes through, in the order that fails
@@ -220,7 +245,11 @@ async function assertSearchable(client, collegeId, query) {
   }
   const searchConfig = await getWebSearchConfig(client, collegeId);
   if (!searchConfig.enabled) {
-    throw new WebSearchNotEnabledError('open web search is not enabled for this college — opt in via configuration first');
+    // Reachable only when a college explicitly stored `enabled: false`
+    // — absence now means enabled (see getWebSearchConfig). The message
+    // says "turned off", not "opt in first", because after Amendment 2
+    // the second sentence would be describing a step nobody skipped.
+    throw new WebSearchNotEnabledError('open web search is turned off for this college — it is on by default, so this college opted out');
   }
   return provider;
 }

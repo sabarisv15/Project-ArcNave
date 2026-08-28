@@ -29,6 +29,7 @@ const workflowChainService = require('../src/services/workflowChainService');
 const aiClassificationAccess = require('../src/services/aiClassificationAccess');
 const aiActorContext = require('../src/services/aiActorContext');
 const financeService = require('../src/services/financeService');
+const webRetrievalService = require('../src/services/webRetrievalService');
 const academicService = require('../src/services/academicService');
 const collegeProfileService = require('../src/services/collegeProfileService');
 const documentService = require('../src/services/documentService');
@@ -606,6 +607,54 @@ const CLASS_TUTOR_GRANTED_TOOLS = [
   // included class_tutor for all five before this audit list caught up.
   'ai_memory_consent_status', 'ai_memory_remember', 'ai_memory_forget',
   'ai_memory_remember_fact', 'ai_memory_forget_fact',
+
+  // ---------------------------------------------------------------
+  // 2026-08-28 audit catch-up. FORTY tools below already granted
+  // class_tutor in aiToolRegistry.js and were missing from this list,
+  // accumulated across three tool-building sessions. Nothing here is a
+  // new grant — every one is already live; this is the audit finally
+  // recording what the registry says, which is the whole reason the
+  // list exists. It went unnoticed because the test aborts on its first
+  // rejection failure, so one stale entry hid thirty-nine others.
+  //
+  // Grouped by the reason each grant is defensible, because a flat list
+  // of forty names would restore the audit's coverage while destroying
+  // its meaning.
+
+  // (a) No tenant data at all — these render or decide presentation and
+  // read nothing. Withholding them from class_tutor would degrade the
+  // answer's FORM, never restrict what it may see.
+  'ask_user_choice',
+  'present_options', 'present_quiz', 'present_translation', 'present_steps',
+  'present_featured', 'present_comparison', 'present_carousel', 'present_links',
+  'present_places', 'present_map', 'present_recipe', 'present_diagram',
+  'describe_diagram_constraints', 'decide_output_format', 'decide_image_route',
+
+  // (b) Platform-owned static text — skill and capability catalogues.
+  // The same bytes for every role and every college.
+  'list_skills', 'describe_skill', 'capability_search', 'capability_explain',
+
+  // (c) Same-actor, same reasoning as the ai_memory_* block above: the
+  // acting user's own memory, own conversations, own artifacts. ADL-060
+  // scoped the conversation tools to the actor's own history through
+  // conversationService's existing ownership check, never a parallel
+  // authorization path.
+  'ai_memory_revise', 'ai_memory_list',
+  'conversation_search', 'conversation_recent', 'conversation_read', 'conversation_archive',
+  'update_artifact_content', 'export_artifact', 'export_artifact_as', 'list_own_artifacts',
+  'generate_document', 'generate_image',
+
+  // (d) Outside ARCNAVE's data entirely — the public web, the weather,
+  // and ADL-059's credential-less sandbox, which by construction holds
+  // no DATABASE_URL and no network path to this backend. A prompt
+  // injection that reaches these reaches no tenant's data through them.
+  // (`image_search` is registered but has no provider and throws.)
+  'fetch_trusted_web_page', 'web_search', 'web_search_fast', 'web_fetch',
+  'image_search', 'weather_fetch', 'execute_code',
+
+  // (e) Acts only on a file the user attached to this turn — the
+  // attachment is already in the actor's hands before the tool runs.
+  'analyze_document_table',
 ];
 
 // RS-FIN-006 (D5, Stage 4): classificationOverrideRoles is a named,
@@ -2396,16 +2445,38 @@ test('aiService.askAgent: compatibility mode (default cap 1) — the fallback sy
 
 // --- fetch_trusted_web_page (P2.3) ---
 
-test('fetch_trusted_web_page: registered as L1/Internal, principal/hod only, and staff is rejected by the Policy Gate before webRetrievalService is ever touched', async () => {
+// This test previously asserted "principal/hod only" and had been
+// failing since commit 578dc3f widened the tool to all four tenant
+// roles — a widening `bka/20-matrices/ai-capability-matrix.md` §4.7 also
+// records, so the CODE was right and the assertion was stale.
+//
+// Rewritten to assert what actually protects this tool, which was never
+// the role list: the per-college ALLOWLIST and its opt-in. A permitted
+// role does not get to fetch anything — it gets as far as
+// webRetrievalService, which refuses until the college has opted in and
+// named the domain. That gate is unchanged by ADL-062, which flipped
+// only `web_search` to opt-out and deliberately left this tool alone.
+test('fetch_trusted_web_page: registered as L1/Internal for all four tenant roles, and a permitted role still cannot fetch without the college opting in', async () => {
   const tool = aiToolRegistry.getTool('fetch_trusted_web_page');
   assert.ok(tool, 'fetch_trusted_web_page must be registered');
   assert.equal(tool.level, 'L1');
   assert.equal(tool.dataClassification, 'Internal');
   assert.deepEqual(tool.params.required, ['url']);
+  assert.deepEqual([...tool.allowedRoles].sort(), ['class_tutor', 'hod', 'principal', 'staff']);
 
   await assert.rejects(
     () => aiToolRegistry.invokeTool('fetch_trusted_web_page', {
       client: fakeClient(), identityContext: { userId: 'u1', role: 'staff', collegeId: 'college-a' }, params: { url: 'https://ugc.gov.in' },
+    }),
+    (err) => err instanceof webRetrievalService.WebRetrievalNotEnabledError,
+  );
+
+  // A role with no grant at all is still stopped earlier, by the Policy
+  // Gate, before webRetrievalService is touched — proving the rejection
+  // above is the opt-in gate and not simply "everything throws".
+  await assert.rejects(
+    () => aiToolRegistry.invokeTool('fetch_trusted_web_page', {
+      client: fakeClient(), identityContext: { userId: 'u1', role: 'level2', collegeId: 'college-a' }, params: { url: 'https://ugc.gov.in' },
     }),
     aiToolRegistry.AiToolRoleNotPermittedError,
   );

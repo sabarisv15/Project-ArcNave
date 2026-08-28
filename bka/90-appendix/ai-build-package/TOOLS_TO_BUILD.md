@@ -16,10 +16,18 @@ other API-dependent tool is dropped.
 
 **`web_search` / `web_fetch`** → Gemini search-grounding.
 
-✅ **Built.** `web_search` is registered, and `webSearchService.js` has a
-`gemini` provider. **Not live-checked** — needs
-`GEMINI_WEB_SEARCH_API_KEY` and a per-college opt-in. Until then it is
-verified code, not a verified capability.
+✅ **Built and live-verified** (2026-08-28). `webSearchService.js` runs a
+single `gemini` provider on **Vertex AI + ADC** — it needs **no
+credential of its own**, so `GEMINI_WEB_SEARCH_API_KEY` was removed
+rather than set. `web_fetch` is registered alongside it and gates on
+Vertex's `urlRetrievalStatus`, not the HTTP status, because a 200 with a
+failed retrieval was measured to produce confident invented page content.
+Enabled for every college by default ([ADL-062](../../30-decisions/ledger.md#adl-062)).
+
+❌ **`image_search` has no provider** and throws an explicit
+"capability absent" error rather than returning an empty result. Parked
+by owner decision, with all five candidate routes already measured — see
+`CURRENT-STATE.md`, and do not re-probe Custom Search.
 
 ---
 
@@ -28,7 +36,7 @@ verified code, not a verified capability.
 | Package item | ARCNAVE tool |
 |---|---|
 | `memory_read`, `memory_write`, `memory_append`, `memory_str_replace`, `memory_delete`, `memory_list` | `ai_memory_*` family, incl. `ai_memory_list` |
-| `conversation_search`, `recent_chats`, `read_conversation` | `conversation_search` (title-search only — see "Still open" below) |
+| `conversation_search`, `recent_chats`, `read_conversation` | `conversation_search` (titles), `conversation_recent`, `conversation_read`, plus `conversation_archive` — all four built, all L1, all self-scoped |
 | `ask_user_input_v0` | `ask_user_choice` |
 | `visualize:read_me`, `visualize:show_widget` | `present_diagram` + `describe_diagram_constraints` |
 | `chart_display_v0` | `buildChart` section (unicode bar, `markdown.js`) |
@@ -52,7 +60,13 @@ verified code, not a verified capability.
 
 ## Still open
 
-- **`recent_chats` / `read_conversation`** — ADL-060 permits self-scoped
-  conversation retrieval; only title-search was built. These two are the
-  genuine remainder of that decision.
-- **`web_search` live check** — key, opt-in, one real grounded call.
+- **`image_search`** — the only unbuilt item on this page. Parked by
+  owner decision 2026-08-28; the blocking questions are which direction
+  is wanted and, for reverse lookup, whether sending a person's photo to
+  a public web-matching index is acceptable. Neither is engineering.
+
+Both items previously listed here are closed. `recent_chats` /
+`read_conversation` were **already built when this page said they were
+not** — the correction is recorded in
+[ADL-060](../../30-decisions/ledger.md#adl-060), including why: a Status
+line in a decision entry is not evidence about code.

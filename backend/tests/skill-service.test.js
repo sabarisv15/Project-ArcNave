@@ -12,9 +12,17 @@ const skillService = require('../src/services/skillService');
 const aiToolRegistry = require('../src/services/aiToolRegistry');
 
 test('skillService.listSkills', async (t) => {
+  // Six since 2026-08-28, when docx/pdf/pptx were adopted alongside the
+  // original three. An exact list rather than a count, deliberately: this
+  // assertion is what fails the moment a directory appears under
+  // src/skills/ that nobody meant to ship. skillService discovers skills
+  // BY DIRECTORY, so a copied folder is instantly visible to the model —
+  // and a skill whose SKILL.md reaches for a library the sandbox image
+  // does not carry is guidance that fails at the point of use. Adding a
+  // name here is the moment to check sandbox-service/Dockerfile backs it.
   await t.test('loads every skill shipped under src/skills/', () => {
     const names = skillService.listSkills().map((s) => s.name).sort();
-    assert.deepEqual(names, ['file-reading', 'pdf-reading', 'xlsx']);
+    assert.deepEqual(names, ['docx', 'file-reading', 'pdf', 'pdf-reading', 'pptx', 'xlsx']);
   });
 
   await t.test('every listed skill has a non-empty description', () => {

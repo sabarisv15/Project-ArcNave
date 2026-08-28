@@ -46,6 +46,55 @@ test('webSearchService.search — not configured', async (t) => {
   });
 });
 
+// RS-AIG-020 Amendment 2 / ADL-062. These three cases are the whole
+// difference between opt-in and opt-out, and the third is the one that
+// matters most: flipping the default must not quietly re-enable a
+// college that deliberately turned this off.
+test('getWebSearchConfig — on by default, off only when explicitly opted out', async (t) => {
+  const configurationService = require('../src/services/configurationService'); // eslint-disable-line global-require
+  const original = configurationService.getConfiguration;
+  async function withStoredRow(row, fn) {
+    configurationService.getConfiguration = async () => row;
+    try {
+      return await fn();
+    } finally {
+      configurationService.getConfiguration = original;
+    }
+  }
+
+  await t.test('no configuration row at all means enabled', async () => {
+    const result = await withStoredRow(null, () => webSearchService.getWebSearchConfig(null, 'college-1'));
+    assert.equal(result.enabled, true);
+  });
+
+  await t.test('a row that never mentions enabled means enabled', async () => {
+    const result = await withStoredRow(
+      { configuration: { somethingElse: 1 } },
+      () => webSearchService.getWebSearchConfig(null, 'college-1'),
+    );
+    assert.equal(result.enabled, true);
+  });
+
+  await t.test('an explicit false is still honoured — an opt-out survives the flip', async () => {
+    const result = await withStoredRow(
+      { configuration: { enabled: false } },
+      () => webSearchService.getWebSearchConfig(null, 'college-1'),
+    );
+    assert.equal(result.enabled, false);
+  });
+
+  await t.test('an opted-out college is refused with a message that does not tell it to opt in', async () => {
+    await withStoredRow({ configuration: { enabled: false } }, async () => {
+      await assert.rejects(
+        webSearchService.search(null, 'college-1', 'AICTE new rules'),
+        (err) => err instanceof webSearchService.WebSearchNotEnabledError
+          && /opted out/.test(err.message)
+          && !/opt in/.test(err.message),
+      );
+    });
+  });
+});
+
 test('weatherService.fetchCurrentWeather — not configured', async (t) => {
   await t.test('throws WeatherNotConfiguredError when no API key is set', withConfigCleared(['openWeatherApiKey'], async () => {
     await assert.rejects(

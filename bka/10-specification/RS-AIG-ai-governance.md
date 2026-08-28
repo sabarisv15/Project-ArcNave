@@ -628,8 +628,8 @@ amendment.
 | **AI** | Definitional |
 | **Modules** | 9 |
 | **Data effect** | Read-only (no new data effect beyond the conversation's own existing storage) |
-| **Implementation** | `routes/ai.js`'s `resolveAskContext` (`HISTORY_MESSAGE_CEILING = 200`, an outer fetch-cost bound only), `conversationService.resolveOwnConversation` (ownership check), `aiService.js`'s `buildHistoryHint` (real limit: `DEFAULT_HISTORY_CHAR_BUDGET = 100,000` chars, most-recent-first — [ADL-047](../30-decisions/ledger.md#adl-047)). The ADL-060 self-scoped search tool is approved but not yet implemented — no `conversation_search`-equivalent tool exists in `aiToolRegistry.js` yet. |
-| **Conformance** | Conformant (existing history-injection mechanism); ADL-060's search capability is a pending build, not yet a conformance gap |
+| **Implementation** | `routes/ai.js`'s `resolveAskContext` (`HISTORY_MESSAGE_CEILING = 200`, an outer fetch-cost bound only), `conversationService.resolveOwnConversation` (ownership check), `aiService.js`'s `buildHistoryHint` (real limit: `DEFAULT_HISTORY_CHAR_BUDGET = 100,000` chars, most-recent-first — [ADL-047](../30-decisions/ledger.md#adl-047)). ADL-060's self-scoped retrieval is built, as four L1 tools in `aiToolRegistry.js`: `conversation_search` (title search), `conversation_recent` (no search term), `conversation_read` (one conversation's messages) and `conversation_archive`. None implements its own authorization — each passes `actor.userId` into the same `conversationService` functions the user's own transcript UI calls, so `resolveOwnConversation` remains the single ownership path. |
+| **Conformance** | Conformant (existing history-injection mechanism). Conformant (ADL-060 tools) — two deliberate narrowings: `conversation_search` matches titles only, not message bodies, and `conversation_read` returns role/content/timestamp only, dropping each message's `rawData` and `presentation` so reading an old chat cannot re-inject an entire earlier document extraction into this turn. Returned message text re-enters the turn as untrusted data under [RS-AIG-003](#rs-aig-003), the user's own history being no exception (a past message can quote a hostile document verbatim). |
 | **Decisions** | [ADL-035](../30-decisions/ledger.md#adl-035), [ADL-047](../30-decisions/ledger.md#adl-047), [ADL-060](../30-decisions/ledger.md#adl-060) |
 
 ---
@@ -793,6 +793,22 @@ way they apply to `fetch_trusted_web_page` — this amendment adds a
 second retrieval tool, it does not loosen the safety properties the
 first one already established.
 
+**Amendment 2 ([ADL-062](../30-decisions/ledger.md#adl-062), 2026-08-28)
+— open web search is opt-OUT.** Amendment 1's "per-college opt-in"
+clause applies to the open search tool no longer: `web_search` /
+`web_search_fast` / `web_fetch` are enabled for every college unless
+that college has explicitly opted out. **`fetch_trusted_web_page` is
+untouched and remains opt-in** — the two defaults differ because their
+opt-in bought different things. The allowlist tool's default-off is what
+makes "which domains may this college reach" a decision someone made;
+the open search tool has no allowlist and nothing to configure before
+first use, so its default-off bought no review at all. Every other
+property Amendment 1 established — untrusted-data handling, L1
+read-only, response-size and fetch-time bounds, no redirect following —
+is unchanged. **The scope of this amendment is a default, not a
+permission**: it must not be cited for a tool that writes, spends, or
+sends, where an absent decision is not the same as a granted one.
+
 | | |
 |---|---|
 | **Owner** | AI Tool Registry |
@@ -804,9 +820,9 @@ first one already established.
 | **AI** | L1 read-only |
 | **Modules** | 9 |
 | **Data effect** | — |
-| **Implementation** | `webRetrievalService.js`'s `assertSafeUrl`/`hostnameIsAllowed`/`getWebRetrievalConfig` (`fetch_trusted_web_page` tool, `aiToolRegistry.js`). ADL-061's open search tool is approved but not yet implemented — no search-provider integration or `web_search`-equivalent tool exists yet. |
-| **Conformance** | Conformant (`fetch_trusted_web_page`) — one implementation note, not a defect: the response-size bound is checked against the `content-length` response header before the body is read, not against a running count of streamed bytes, so a server that omits or misreports `content-length` is not caught by this specific check alone (the fetch timeout still bounds realistic abuse). ADL-061's search tool is a pending build, not yet a conformance gap. |
-| **Decisions** | [ADL-038](../30-decisions/ledger.md#adl-038), [ADL-061](../30-decisions/ledger.md#adl-061) |
+| **Implementation** | `webRetrievalService.js`'s `assertSafeUrl`/`hostnameIsAllowed`/`getWebRetrievalConfig` (`fetch_trusted_web_page` tool, `aiToolRegistry.js`). ADL-061's open search tool is built and live: `webSearchService.js` (single Vertex AI search-grounding provider, no credential of its own — same project + ADC as chat/embeddings) behind `web_search`, `web_search_fast` and `web_fetch`. Its `getWebSearchConfig` implements Amendment 2's opt-out default; `getWebRetrievalConfig` deliberately still implements opt-in. |
+| **Conformance** | Conformant (`fetch_trusted_web_page`) — one implementation note, not a defect: the response-size bound is checked against the `content-length` response header before the body is read, not against a running count of streamed bytes, so a server that omits or misreports `content-length` is not caught by this specific check alone (the fetch timeout still bounds realistic abuse). Conformant (`web_search`/`web_fetch`) — two notes, both deliberate: search result URLs arrive as Google grounding redirects rather than publisher URLs, so they cannot be domain-matched without being resolved first (which is precisely why the allowlist tool stays separate), and `web_fetch` gates on Vertex's `urlRetrievalStatus` rather than the HTTP status, because a 200 with a failed retrieval was measured to produce confident invented page content. `image_search` has no provider and throws an explicit "capability absent" error rather than returning an empty result. |
+| **Decisions** | [ADL-038](../30-decisions/ledger.md#adl-038), [ADL-061](../30-decisions/ledger.md#adl-061), [ADL-062](../30-decisions/ledger.md#adl-062) |
 
 ---
 

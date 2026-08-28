@@ -1711,15 +1711,114 @@ matches are only 0.17–0.23. Ranking is reliable; a fixed threshold is
 not. Do not reuse text retrieval's `SIMILARITY_DISTANCE_THRESHOLD`
 reasoning — different model, different space.
 
-## Also still open (unchanged by this session)
+## The four open items, worked 2026-08-28 (image search stayed parked)
 
-- **`recent_chats` / `read_conversation`** — ADL-060 permits them; only
-  title-search was built.
-- **New colleges start with `web_search` disabled.** The opt-in covered
-  colleges existing at that moment. Making it universal means flipping
-  opt-in to opt-out — an RS-AIG-020 change, not a script.
-- **The ADL-055→058 document-analysis thread** — untouched all session.
-  Its own "Exact next action" still stands, with F3's warning now living
-  in this file: measure `pdfplumber.extract_tables()` against the
-  exam-fees PDF **before** building ADL-058's slice, because that slice
-  may not need to exist.
+The owner took the open-item list above and directed all four. Outcomes:
+
+**1. `web_search` default flipped to opt-out — done.**
+[ADL-062](../30-decisions/ledger.md#adl-062), RS-AIG-020 Amendment 2.
+Absence of a configuration row now means ON; an explicit `enabled: false`
+still wins, and a test asserts that a real opt-out survives the flip.
+**`fetch_trusted_web_page` is deliberately unchanged and stays opt-in** —
+it carries a per-college domain allowlist, so its default-off buys a
+review that `web_search`'s never did. The trade is recorded in ADL-062
+rather than left implicit: every college now reaches the public internet
+without anyone there having agreed, acceptable only for an L1 read-only
+tool. **Do not cite ADL-062 as precedent for a tool that writes, spends
+or sends.**
+
+**2. `pdfplumber` measured against the exam-fees PDF — it PASSES, and
+that changes what ADL-058 should be.** 23/23 identity rows, **0/23** rows
+failing their own arithmetic, and the named hand-verified case correct
+(ASHWIN carries 690, ARAVINDAN does not). The x-column-boundary detection
+ADL-058 lists as FUTURE has been installed in the sandbox since ADL-059
+and works with **no configuration**. So the warning this file carried was
+right: **ADL-058's slice must not be built on its old premise.** What is
+now open is a decision — geometry at permanent partial trust, or
+pdfplumber at verifiable full trust — and per workflow §16/§17 that is a
+Product Reasoning pass, not an in-place edit. Full result, caveats and
+the one strategy that must NOT be used: ADL-058 addendum 2. Probe prints
+its own verdict: `backend/scripts/pdfplumber-attribution-probe.js`.
+
+**3. `recent_chats` / `read_conversation` were already built.** This
+file, ADL-060, RS-AIG-017 and TOOLS_TO_BUILD.md all claimed otherwise for
+a day. `conversation_recent`, `conversation_read`, `conversation_search`
+and `conversation_archive` are all registered, all L1, all self-scoped
+through the same `conversationService` path the transcript UI uses.
+Verified in the registry, not inferred. **The lesson is recorded in
+ADL-060: a decision entry's Status line is not evidence about code.**
+
+**4. Sandbox cost measured — the big image is cheap to start and
+expensive to use.** The Dockerfile's own unsubstantiated cost note is now
+substantiated:
+
+| | measured |
+|---|---|
+| cold start (first request after idle) | **~1.0 s** client-side; ~0.7 s of it instance startup |
+| warm request | **79 ms** client-side / 28 ms server-side |
+| `import pandas` | 1,263 ms |
+| `import openpyxl` | 961 ms |
+| `import pdfplumber` | 422 ms |
+| `soffice` first launch in an instance | **6,156 ms** (3,276 ms on the second call) |
+
+**The image size did not translate into cold-start cost**, because
+nothing added to it runs at boot — LibreOffice and the Python packages
+are files on disk until something invokes them. The real cost is
+per-use, and `soffice`'s first launch dominates everything else combined.
+Probe: `backend/scripts/sandbox-coldstart-probe.js`.
+
+*One method that does not work, recorded so it is not rebuilt:*
+`/proc/uptime` cannot tell a cold instance from a warm one here — gVisor
+virtualises it, and it advances with the script's own execution time
+rather than wall-clock. Use Cloud Run's logs (a request whose start
+precedes its instance's "STARTUP TCP probe succeeded" entry was cold).
+
+## Full suite run in Docker, and what it exposed
+
+`docker compose exec app npm test` — **2408 / 2408 passing**, twice in a
+row. Three tests were failing before this pass and none of them was
+caused by it; all three were stale assertions from earlier sessions that
+nobody had run the full suite against:
+
+1. **`skillService.listSkills` still expected 3 skills.** Six have
+   shipped since 2026-08-28. The assertion is deliberately still an exact
+   list, not a count — it is what fails when a directory appears under
+   `src/skills/` that nobody meant to ship, and adding a name to it is
+   the moment to check `sandbox-service/Dockerfile` actually backs it.
+
+2. **`fetch_trusted_web_page` was asserted "principal/hod only"** and had
+   been failing since commit `578dc3f` widened it to all four tenant
+   roles — a widening `ai-capability-matrix.md` §4.7 also records, so the
+   code was right and the test was stale. Rewritten to assert what
+   actually protects that tool, which was never the role list: the
+   per-college allowlist and its opt-in, which ADL-062 deliberately did
+   not touch.
+
+3. **The `class_tutor` allowedRoles audit was 40 tools behind.** This is
+   the finding worth carrying forward. Forty tools already granted
+   `class_tutor` in the registry were missing from the audit list,
+   accumulated across three tool-building sessions. It stayed invisible
+   because that test aborts on its first failure — **one stale entry hid
+   thirty-nine others.** Nothing was newly granted; the list now records
+   what the registry already says, grouped by why each grant is
+   defensible (presentation-only, platform-static, same-actor,
+   outside-ARCNAVE, this-turn's-attachment) rather than as forty bare
+   names, so the audit keeps its teeth.
+
+**A known flake, not a fix.** One run failed three tests in
+`staff.test.js`'s teardown with `update or delete on table "colleges"
+violates foreign key constraint "platform_college_stats_college_id_fkey"`.
+The two subsequent runs passed clean and nothing was changed in between.
+`cleanupTenant` does not clear `platform_college_stats`, so this will
+recur. **Not investigated, not fixed** — recorded so the next person does
+not read it as a regression from their own change.
+
+## Also still open
+
+- **Image search** — parked, see the section above. Unchanged.
+- **`staff.test.js` teardown flake** — see above.
+- **`vision.googleapis.com` is enabled and billed per request.** Enabled
+  2026-08-28 for the reverse-lookup probe, nothing uses it. Disable it if
+  that route is dropped.
+- **The ADL-058 decision** created by item 2 above — the one genuinely
+  new open item this pass produced.

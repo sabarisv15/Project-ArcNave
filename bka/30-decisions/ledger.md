@@ -4434,6 +4434,70 @@ Probes kept and rerunnable: `backend/scripts/native-pdf-vs-deterministic-probe.j
 (self-consistency, billable) and `backend/scripts/native-pdf-scale-probe.js`
 (`count` / `extract` modes, billable).
 
+#### ADL-058 addendum 2 — the FUTURE item was already installed, and it passes (2026-08-28)
+
+**The premise this slice rests on is now measurably false, and the
+measurement was one run.** ADL-058 lists x-column-boundary detection as
+FUTURE — "the only thing that would lift partial trust, and which was done
+**by hand** during ADL-055's analysis, never automatically". That framing was
+written before [ADL-059](#adl-059) put **pdfplumber in the sandbox image**,
+where `extract_tables()` does exactly that detection as its ordinary job. The
+FUTURE item had been sitting installed and unqueried for two days.
+
+**The pass/fail case was named before the run, not chosen after it.** ADL-055
+hand-verified that `1 1 65 625 690` belongs to ASHWIN JOHN EDISON S while
+geometry gives it to ARAVINDAN G (serial 3) and leaves ASHWIN with `0 0 1`.
+Gemini's native read independently agreed with the hand verification. So
+pdfplumber passes if and only if ASHWIN carries 690 and ARAVINDAN does not.
+
+**Result — unambiguous pass, on the default `lines` strategy:**
+
+| check | result |
+|---|---|
+| identity rows recovered | **23 / 23** |
+| ASHWIN JOHN EDISON S | `1, 1, 65, 625, 690` — **correct** |
+| ARAVINDAN G | `0, 0, 0, 625, 625` — **correct** |
+| rows failing their own arithmetic (`fees = arrears × 65`, `total = fees + 625`) | **0 / 23** |
+
+The arithmetic check is the load-bearing one and was added precisely because
+the named case alone proves too little: misattribution moves a number into a
+row where it stops adding up, so 0/23 failures is a whole-document result
+rather than a spot check. Column headers are recovered too — this document's
+merged-cell layout, which defeated both flat text and geometry, is read
+correctly by an already-shipped library with **no configuration at all**.
+
+**The `text` strategy is measurably worse and must not be reached for.**
+`{'vertical_strategy': 'text', 'horizontal_strategy': 'text'}` splits column
+headers mid-word and detaches the numeric block from its student — it
+reproduces the exact defect, printing `1 1 65 625 690` floating *above* serial
+1. The default is the right setting, and the wrong setting fails in a way that
+looks like the library failing.
+
+**Consequence for ADL-058, stated as a bound rather than a recommendation.**
+ADL-058's CORE is geometry-as-fallback with **permanent** partial trust,
+justified solely by column attribution being unobtainable. On this document it
+is obtainable, automatically, today. That does not make ADL-058 wrong
+everywhere — one document is one document, and pdfplumber runs in the sandbox
+(a `execute_code` round trip) rather than in-process like the geometry path —
+but it does mean **the slice must not be built on the old premise**. What now
+needs deciding is whether the fallback is geometry at permanent partial trust
+or pdfplumber at verifiable full trust, and that is a change to an Approved
+Spec's CORE, so [workflow §16/§17](../60-product-reasoning/00-workflow.md)
+applies: a decision, not an in-place edit.
+
+**One honest caveat, not swept up.** Besides the 23 identity rows,
+`extract_tables()` also emits the merged cell's per-semester arrear
+continuation sub-rows. Their semantics were never established anywhere in this
+thread, and they do not all reconcile — most students' sub-rows sum with their
+identity row to the printed TOTAL NO OF ARREARS, but ASHWIN's sum to 2 against
+a printed 1. **The headline columns are unaffected** (that is what the 0/23
+arithmetic result measures). Anything that reads the sub-rows needs its own
+measurement first.
+
+Probe kept and rerunnable, and it prints its own verdict rather than a dump to
+be interpreted: `backend/scripts/pdfplumber-attribution-probe.js`. Not
+billable — no LLM call.
+
 ---
 
 ## ADL-059
@@ -4527,7 +4591,20 @@ tenant-scoped RLS `client` plus explicit actor-id check
 named conversation) rather than introduce a second, parallel
 authorization path for "all of my conversations."
 
-**Status.** Resolved — decision made, 2026-08-26. Not yet implemented.
+**Status.** Resolved — decision made 2026-08-26, **implemented 2026-08-27**
+as four L1 tools in `aiToolRegistry.js`: `conversation_search`,
+`conversation_recent`, `conversation_read`, `conversation_archive`. The
+implementation note above was followed — every one of them passes
+`actor.userId` into an existing `conversationService` function rather than
+adding an authorization path of its own.
+
+Recorded because it was got wrong once: this entry, `RS-AIG-017`,
+`TOOLS_TO_BUILD.md` and `CURRENT-STATE.md` all continued to list
+`recent_chats`/`read_conversation` as unbuilt for a day after they were
+built, and the next session's open-item list inherited the error. The tools
+were verified present in the registry on 2026-08-28; the stale claims were
+corrected then. **A decision entry's Status line is not evidence that code
+does or does not exist — the registry is.**
 
 ---
 
@@ -4571,4 +4648,64 @@ result set must pass through the identical Context Builder / Prompt
 Safety Layer pipeline `fetch_trusted_web_page`'s result already does, no
 special-casing for having come from a search provider.
 
-**Status.** Resolved — decision made, 2026-08-26. Not yet implemented.
+**Status.** Resolved — decision made, 2026-08-26. Implemented 2026-08-28
+(`webSearchService.js`, `web_search`/`web_fetch` in `aiToolRegistry.js`,
+live-verified against Vertex search grounding). The opt-in clause above
+was subsequently narrowed by [ADL-062](#adl-062).
+
+---
+
+## ADL-062
+
+### `web_search` becomes opt-out — every college gets it by default
+
+**Decision.** Open web search (`web_search`, `web_search_fast`,
+`web_fetch`) is enabled for every college unless that college has
+explicitly stored `enabled: false`. The absence of a configuration row
+now means ON. `fetch_trusted_web_page` is **unchanged** and remains
+opt-in.
+
+**Superseded position.** [ADL-061](#adl-061) and
+[RS-AIG-020](../10-specification/RS-AIG-ai-governance.md#rs-aig-020)'s
+first amendment both stated per-college opt-in for the open search tool,
+mirroring the allowlist tool. Only the open search tool's default flips;
+every other property ADL-061 established — untrusted-data handling, L1
+read-only, bounds, no redirect following — is untouched.
+
+**Rationale.** Owner's decision, 2026-08-28, taken after the alternative
+was stated plainly. The operational trigger: a one-off script opted in
+the 100 colleges that existed that day, which meant every college
+onboarded afterwards would silently get a weaker assistant than its
+neighbour, with nothing in the onboarding flow to notice the gap.
+
+The two tools' defaults differ because their opt-in bought different
+things. `fetch_trusted_web_page` carries a per-college domain allowlist:
+default-off is what makes "which domains may this college reach" a
+decision someone made. `web_search` has no allowlist and nothing to
+configure before first use, so default-off bought no review — it only
+produced the inconsistency above.
+
+**What this trades away, recorded rather than left implicit.** Every
+college now reaches the public internet through this tool without anyone
+at that college having agreed to it. This is acceptable only because
+RS-AIG-020's opening rule is unconditional (a search result can inform
+an answer, never authorize an action) and the tool is L1 read-only. **It
+would not be acceptable for a tool that writes, spends, or sends**, and
+this decision must not be cited as precedent for one.
+
+**Affected artefacts.**
+[RS-AIG-020](../10-specification/RS-AIG-ai-governance.md#rs-aig-020)
+(Amendment 2); `webSearchService.js` `getWebSearchConfig` (absence now
+means enabled) and its `WebSearchNotEnabledError` message (no longer
+tells an opted-out college to "opt in first", which would name a step
+nobody skipped); four tests in
+`backend/tests/web-search-weather-service.test.js`.
+
+**Migration impact.** None required. The 100 colleges opted in on
+2026-08-28 hold `enabled: true` rows, which agree with the new default;
+those rows are now redundant but harmless and are deliberately not
+deleted, since deleting them would erase the record that a deliberate
+opt-in ever happened. Any college that later stores `enabled: false`
+stays off — a real opt-out survives this flip, and a test asserts it.
+
+**Status.** Resolved and implemented, 2026-08-28.

@@ -1565,3 +1565,58 @@ would be meaningless.
 across uploaded documents is plausible; so is duplicate/near-duplicate
 detection on ID-proof scans. Those are different designs. The probe
 stays rerunnable so whichever is chosen starts from measurement.
+
+## Seventeenth pass, 2026-08-28 — both image-search routes measured; one dead, one works but answers a different question
+
+Owner proposed two routes. Both tested live rather than reasoned about.
+
+**Route 1 — Custom Search JSON API with `searchType=image` (TEXT → web
+image URLs): DEAD, re-measured today.** The key and `cx` are still in
+`.env.local.sh`, so this was a real call, not a recollection:
+`403 PERMISSION_DENIED — "This project does not have the access to
+Custom Search JSON API."` Identical to the text-search finding from
+2026-08-26. Google closed this API to new projects ahead of its
+2027-01-01 discontinuation; no configuration fixes it. **Do not try this
+a third time.**
+
+**Route 2 — Cloud Vision `WEB_DETECTION` (IMAGE → similar web images):
+WORKS.** `backend/scripts/reverse-image-search-probe.js`. On a test
+image: **10 visuallySimilarImages, 7 fullMatchingImages, 10
+pagesWithMatchingImages**, and — unlike search grounding — **real
+publisher URLs, not Google redirect links**.
+
+Two configuration facts that cost time and are worth not rediscovering:
+1. `vision.googleapis.com` **was not enabled** on the project. Enabled
+   this pass via `gcloud services enable vision.googleapis.com`. It is
+   billed per request; disable it if this route is dropped.
+2. ADC needs an explicit **quota project**, sent as the
+   `x-goog-user-project` header. Without it the call fails
+   `PERMISSION_DENIED` with a message about quota projects that reads
+   like a permissions problem and is not.
+3. Pass image **bytes**, not `imageUri` — Google's own fetcher is blocked
+   by many hosts (Wikipedia included), and that arrives as a per-image
+   "URL does not appear to be accessible by us", not a request error.
+
+`webEntities` quality tracks how distinctive the image is: a canyoning
+photo returned "Canyoning, Extreme sport, Canyon, Hiking, Climbing"
+(accurate); a generic stock landscape returned "Psychiatric-mental health
+nurse practitioner" and "Nascar" (nonsense). A hint, never a claim.
+
+**THE THING THAT MATTERS: these are opposite directions.** `image_search`
+was TEXT → images. Route 1 was the one that did that, and it is dead.
+Route 2 does IMAGE → images. So after this pass:
+
+| Capability | Status |
+|---|---|
+| Text → web images (`image_search`) | **Still no provider.** Vertex grounding returns no image index either. |
+| Image → similar web images (reverse) | **Available**, not built |
+| Image → similar images in OUR corpus | Available via multimodalembedding + pgvector, not built, no corpus |
+
+**Not built, and one reason is not technical.** The obvious campus use of
+reverse image search — checking whether a student's submitted photo or
+ID scan appears elsewhere online — means **uploading a student's face to
+Google's web-matching index**. That is a privacy and consent decision for
+the owner and probably for the institution, not an engineering call, and
+it sits squarely in the territory `CLAUDE.md` rule 8 and RS-AIG's data
+rules are protective about. It should not be built because it is
+technically easy.

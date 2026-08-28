@@ -58,7 +58,7 @@ Custom Search" as the chosen provider. That text must be corrected once
 a provider is actually picked — correcting it now would just replace one
 wrong name with a guess.
 
-## F2 — ✅ CLOSED 2026-08-26 — verified end-to-end via a local Docker sandbox (Cloud Run redeploy separately blocked, see below)
+## F2 — ✅ CLOSED 2026-08-26 (local Docker), ✅ FULLY CLOSED 2026-08-27 — the real Cloud Run production revision is now on the rebuilt image and live-verified
 
 **Was:** the sandbox image had gained `pdfplumber`/`openpyxl`/`pandas`/
 `libreoffice-calc` at build time, but the deployed Cloud Run revision
@@ -105,12 +105,31 @@ change.
   formula, found a literal value..."}]` — the gate rejects it, not a
   rubber stamp.
 
-**Still open, separately:** the actual Cloud Run production revision
-is still on the OLD stdlib-only image — the classifier block means the
-*live cloud* deployment did not happen this session, only the local
-one. Whoever has interactive access to run `gcloud run deploy` should
-do so using the exact command already handed over, if the cloud
-service (not just local dev) needs this capability.
+**Update 2026-08-27 — the real Cloud Run redeploy happened, and it is
+live-verified, not just local Docker.** The owner ran `gcloud` directly
+(the harness classifier still blocks live infra mutation for the
+assistant itself — every `gcloud run`/`gcloud iam` write in this pass
+was handed to the owner to execute). The existing, already-public
+`arcnave-sandbox-service` (not a new service name — see F2d for why)
+was updated in place via `gcloud run services update --image=...
+:20260826-redeploy1 --memory=2Gi --cpu=2 --timeout=240`, one step up
+from the `--memory=1Gi` originally handed over — the owner's own call,
+not re-litigated here. VPC isolation
+(`run.googleapis.com/network-interfaces` / `vpc-access-egress:
+all-traffic`) was confirmed **unchanged** by the update (`gcloud run
+services describe` re-checked after).
+
+**Verified live against the real Cloud Run URL** (not local Docker):
+plain `execute_code` (`2+2` → `4`); a `saveAs` PASS case
+(`=SUM(A1:A2)`) → `verdict: "passed"` in 7.97s; a `saveAs` FAIL case
+(`A3 = 30` where a formula was expected) → `verdict: "failed"`,
+`constants: [{cell: "Sheet!A3", found: 30, ...}]` in 4.50s — those two
+numbers are the first real timing data point against production
+infrastructure (still a 3-cell fixture, not a realistic-sized workbook
+— does not by itself close F2b). Root `.env`'s `SANDBOX_SERVICE_URL`
+was corrected back to this service (it had drifted to the abandoned
+`sandbox-service` name during the session — see F2d) with
+`SANDBOX_SERVICE_IAM_AUTH=false`, matching what is actually deployed.
 
 ### F2 — the sandbox image gained three Python packages and has not been redeployed (original text, superseded above)
 
@@ -196,6 +215,94 @@ comment already establishes for pdfplumber/openpyxl/pandas) — not
 attempted here because no measured case named a real need for it yet,
 matching the discipline this project has applied every other time a
 package or capability was added to that image.
+
+### F2d — Cloud Run IAM invoker auth was attempted, deployed correctly, and still 401s for an unresolved reason — parked, not solved
+
+**Status: real code exists** (`sandboxExecutionService.js`'s
+`buildAuthHeaders`/`getIdTokenClient`, `config.sandboxServiceIamAuth`,
+the `SANDBOX_SERVICE_IAM_AUTH`/`SANDBOX_INVOKER_KEY_PATH`/
+`SANDBOX_SERVICE_CREDENTIALS_PATH` wiring in `.env.example`/
+`docker-compose.yml`/`config.js`) **but nothing in production actually
+uses it.** `SANDBOX_SERVICE_IAM_AUTH=false` in the real `.env`.
+
+What happened, in order: the owner deployed a **second, differently-named**
+Cloud Run service (`sandbox-service`, not `arcnave-sandbox-service`) with
+`--no-allow-unauthenticated`, 2 vCPU/2Gi/240s, and a dedicated
+`sandbox-invoker@...` runtime-invoker service account — correctly, per the
+design this thread's own code already anticipated. Service-account key
+creation (the path `SANDBOX_INVOKER_KEY_PATH` assumes) is blocked outright
+by an org policy (`constraints/iam.disableServiceAccountKeyCreation`,
+confirmed via `gcloud iam service-accounts keys create` failing with
+`FAILED_PRECONDITION`) — so the code's key-file design **cannot work in
+this GCP org as written**, key creation being disabled is itself normal
+security hygiene, not a bug to route around.
+
+The documented Google-recommended alternative — grant
+`roles/iam.serviceAccountTokenCreator` and impersonate to mint a
+short-lived ID token — was tried instead, correctly: the project-level
+grant succeeded, `gcloud auth print-identity-token
+--impersonate-service-account=... --audiences=<service URL>` succeeded
+(valid token, correct `aud`/`sub`/expiry, confirmed by decoding the JWT),
+and the exact `sandbox-invoker` binding was confirmed present on the
+service via `gcloud run services get-iam-policy` (no condition, clean).
+**Every one of those calls still got a 401 straight from Google
+Frontend** — 2ms latency, empty body, never reaching the container.
+
+Ruled out, one at a time, all read-only/diagnostic:
+- Audience-URL form (vanity `.a.run.app` vs `PROJECT_NUMBER-REGION.run.app`)
+  — tried both, same result.
+- IAM propagation delay — waited and retried repeatedly over several
+  minutes.
+- **Google's own `gcloud run services proxy` tool**, using the owner's
+  personal account directly granted `run.invoker` on the service (not
+  impersonation at all) — same 401. This is the strongest single data
+  point: it rules out anything about manually-constructed headers or
+  this specific curl invocation.
+- VPC Service Controls — `accesscontextmanager.googleapis.com` had never
+  been enabled on the project; no perimeter can exist.
+- Domain-restricted sharing / ingress org policies
+  (`iam.allowedPolicyMemberDomains`, `run.allowedIngress`) — both
+  `effective` policy is `allowAll: true`.
+- Even re-granting `roles/run.invoker` to `allUsers` on that same service
+  (making it nominally as public as `arcnave-sandbox-service` already is)
+  **still 401'd** — meaning whatever is wrong is not scoped to the
+  identity-token path specifically.
+
+The one confirmed structural difference against the working service
+(`arcnave-sandbox-service`, diffed field-by-field via `gcloud run
+services describe --format=yaml`): a different `serviceAccountName`
+(`sandbox-runtime@...` vs the default compute SA) and **no VPC connector
+at all** (`run.googleapis.com/network-interfaces`/`vpc-access-egress`
+absent — this second service was accidentally deployed without ADL-059's
+own network-isolation property). Neither was confirmed as the actual
+cause before time ran out on this pass; both are candidates for whoever
+picks this up next.
+
+**Resolution taken this session, not a fix:** abandon the second service
+entirely (`gcloud run services delete sandbox-service`, done, owner
+confirmed) rather than keep debugging against a possibly
+double-broken target. F2's real verification instead updated the
+original, already-working `arcnave-sandbox-service` in place with the
+new image and resources, keeping its existing public ingress + shared
+secret (no IAM layer) — see F2 above. **IAM invoker auth as a second
+layer in front of the shared secret remains a real, open, unsolved
+problem** — not abandoned as an idea, just not diagnosable further
+without either GCP Support or someone with Console-level access to the
+org's Identity Platform / Cloud Run internals. Do not re-attempt the
+exact same impersonation-token approach without reading this section
+first; it has already been tried correctly and failed for a reason still
+unknown.
+
+**Housekeeping note, same discipline as the prior secret-exposure entry
+in `CURRENT-STATE.md`:** a real, short-lived (1-hour) impersonated ID
+token was pasted directly into chat twice during this diagnosis before
+the file-redirect pattern (`... | Out-File ...`, then read via the
+assistant's file-read tool instead of the terminal) was adopted for the
+rest of the session. Narrowly scoped (single Cloud Run service audience,
+no broader Google API access) and already expired by the time this was
+written — not treated as an outstanding credential risk, but the
+discipline going forward is the same as before: redirect tokens/secrets
+to a file, never paste them into a chat transcript.
 
 ## F3 — pdfplumber may make ADL-058 unnecessary, and that has not been measured
 
@@ -794,3 +901,105 @@ regardless). The ADL-057 precedent (a tool that passed every unit test
 and that the model could not actually use because nothing told it what
 a row looked like) remains a live risk for all of them — and F15/F16
 are now concrete instances of exactly that risk, not just a prediction.
+
+## F17 — no crisis/self-harm handling policy exists anywhere in ARCNAVE's AI governance
+
+**Status: genuine gap, needs an owner decision on scope before any code — the most severe of the five flags below (F17-F21), by this file's own "damage if forgotten" ordering.**
+
+Found 2026-08-27 while adapting an externally-supplied generic "AI
+Assistant Operating Instructions" template against ARCNAVE's real
+configuration. (That pass's own write-up was dropped 2026-08-28 when the
+owner adopted the domain-neutral
+[`ai-operating-instructions.md`](ai-operating-instructions.md) instead —
+its findings are F17-F21 here, so nothing was lost.)
+That template's Section 5.2 requires inverting normal caution during a
+crisis: never deflect, provide resources unprompted, don't ask
+distress-deepening clarifying questions. A search of
+`RS-AIG-ai-governance.md`, `aiPromptSafetyLayer.js`, and every tool
+description in `aiToolRegistry.js` for self-harm/crisis/suicide/distress
+handling returned **nothing** — not a rejected design, an absent one.
+
+ARCNAVE's users are principals/HODs/staff/class-tutors, not students
+directly, in most flows — but a class-tutor describing a student in
+distress, or a staff member themselves in crisis, typing into an AI
+chat about attendance or marks is not implausible in an education
+setting. No mechanism today does anything different with that input
+than any other message.
+
+**Not built here, on purpose:** whose crisis this should even cover
+(a student described by a staff user, the acting staff user themselves,
+or both), and what "provide resources" means for an Indian campus
+context (a specific helpline number is itself a product/compliance
+decision, not a technical one) are both **owner decisions**, per this
+file's own standing rule — not something to assume and build
+unilaterally.
+
+## F18 — AI Memory has no defense against a stored behavioral instruction
+
+**Status: small, bounded gap — not urgent, no recorded incident.**
+
+Found in the same adaptation pass as F17. `ai_memory_remember_fact`
+(`aiToolRegistry.js:2593-2619`) already refuses two content categories
+structurally: a fact about anyone other than the acting user, and any
+bare identifier number. Neither check would catch a user asking the AI
+to remember something like "always agree with me" or "never push back
+on my numbers" — phrased as a preference, this would currently be
+accepted as a legitimate freeform fact. The generic template's own
+reasoning for naming this as its own category (not just "off-topic
+content"): a stored instruction like this would let a user permanently
+degrade the AI's own honesty over time, one saved "preference" at a
+time — a different failure mode than the third-party-fact or
+identifier-number leaks the existing checks target.
+
+**Possible fix, not attempted:** a keyword/pattern backstop in
+`aiMemoryService.rememberFact` similar in spirit to the existing
+identifier-number regex backstop, or a description-level instruction to
+the model to decline such a request and explain why (weaker, per this
+project's own repeated finding that prompt-only guidance under-performs
+a deterministic check — see `CURRENT-STATE.md`'s "the rule these share,
+demonstrated three times in one session").
+
+## F19 — accumulated AI Memory facts are never re-validated for drift across sessions
+
+**Status: unmeasured, no recorded incident, same shape as F18.**
+
+`aiService.js`'s `decisionSegments` reuse guarantee (ADL-050) holds
+governance-bearing system content byte-identical **within one turn's
+tool-use loop** — a real, measured property. Nothing equivalent exists
+**across turns or sessions** for AI Memory's own accumulating facts:
+once a preference or freeform fact is remembered, it is carried forward
+indefinitely with no mechanism checking whether a large accumulated set
+has gradually reshaped the AI's behavior away from its own governance
+rules (the generic template's Section 5.5 concern). `MAX_GENERAL_FACTS`
+bounds the count, not the cumulative effect.
+
+## F20 — no explicit "single instance, no sub-agents, here is exactly what you have" statement anywhere in ARCNAVE's system prompt
+
+**Status: unmeasured risk — no audit row shows this actually happening.**
+
+The tool-catalogue system segment (`aiService.js`'s `buildToolCatalogue`)
+lists tool **names**, which is a structural, stronger version of "state
+your capabilities" for tools specifically — but nothing tells the model
+in prose that it is a single instance with no sub-agent hand-offs, or
+gives it the equivalent of the generic template's Section 1 rule for
+non-tool capabilities (e.g., "you have no image generation" is true only
+by omission — no tool exists — not stated anywhere the model would see
+it before being asked). Per [[measure-before-designing]], not worth
+adding prompt text for a failure mode nothing has actually observed yet;
+recorded so it is not silently forgotten if F12's ongoing live-testing
+of untested tools (image_search included) ever surfaces one.
+
+## F21 — no explicit cost-tiering rule between deterministic and expensive extraction paths
+
+**Status: minor, foldable into ADL-058's own eventual build-slice, not a standalone pass.**
+
+`analyze_document_table` (deterministic, cheap) versus geometric/native
+PDF reconstruction (ADL-058, measured slower, still FUTURE/unbuilt) is
+exactly the shape the generic template's Section 4.2 asks every
+cost-sensitive skill to state explicitly: a default cheap option and a
+named condition that triggers escalation. Today this is enforced only
+by which tools exist at all (geometry isn't built yet), not by a stated
+rule a tool description teaches the model to follow. When ADL-058 is
+eventually built, its own tool description should state the tiering
+explicitly rather than relying on the model to infer it — noted here so
+that build-slice doesn't skip it.

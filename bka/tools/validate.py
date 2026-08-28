@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import re
 import sys
+import unicodedata
 from collections import defaultdict
 from pathlib import Path
 
@@ -73,14 +74,53 @@ def warn(msg: str) -> None:
     warnings.append(msg)
 
 
-def slug(heading_text: str) -> str:
-    """Reproduce the anchor slug MkDocs/python-markdown generates."""
+def slugs(heading_text: str) -> set[str]:
+    """Every anchor spelling a heading is legitimately reachable by.
+
+    There is no single right answer here, and pretending otherwise is what
+    made this check unusable. These files are read in three places that
+    slugify differently, and the difference only ever shows up around
+    punctuation that gets stripped:
+
+        "ADL-055 addendum — item 1 slice 1 implemented (2026-08-25)"
+
+      GitHub  -> ...addendum--item...   (the em dash is removed; the spaces
+                                         either side each become a hyphen)
+      MkDocs  -> ...addendum-item...    (python-markdown collapses the run)
+
+    Measured across this doc set on 2026-08-28, both spellings are already
+    in use in real links — 11 anchors fail under the MkDocs rule alone and
+    12 fail under the GitHub rule alone, and they are *different* 11 and
+    12. So neither dialect is "the" correct one to enforce, and rewriting
+    every link to one of them would only break it for the other reader.
+
+    A link is therefore accepted when it matches ANY dialect's spelling of
+    a heading that genuinely exists. What this check is for is catching an
+    anchor pointing at a heading that is not there at all — renamed,
+    deleted, or never written — and that is exactly as detectable with a
+    set of candidates as with one.
+    """
     s = heading_text.strip().lower()
     s = re.sub(r"`|\*|_", "", s)
     s = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", s)  # link text only
-    s = re.sub(r"[^\w\s-]", "", s)
-    s = re.sub(r"[\s]+", "-", s.strip())
-    return s
+
+    # MkDocs/python-markdown: strip punctuation, then collapse each run of
+    # whitespace (and hyphens) down to a single separator.
+    mkdocs = re.sub(r"[^\w\s-]", "", s)
+    mkdocs = re.sub(r"[\s]+", "-", mkdocs.strip())
+
+    # python-markdown proper additionally NFKD-normalizes to ASCII first,
+    # and collapses hyphens together with whitespace.
+    ascii_folded = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
+    ascii_folded = re.sub(r"[^\w\s-]", "", ascii_folded).strip()
+    pymarkdown = re.sub(r"[-\s]+", "-", ascii_folded)
+
+    # GitHub: strip punctuation, then map each remaining space to a hyphen
+    # one-for-one — no collapsing, which is where the doubled hyphen comes
+    # from.
+    github = re.sub(r"[^\w\s-]", "", s).strip().replace(" ", "-")
+
+    return {mkdocs, pymarkdown, github}
 
 
 def md_files() -> list[Path]:
@@ -96,7 +136,7 @@ anchors: dict[Path, set[str]] = {}
 for path, text in texts.items():
     found = set()
     for _, heading in ANY_HEADING.findall(text):
-        found.add(slug(heading))
+        found |= slugs(heading)
     anchors[path] = found
 
 # --------------------------------------------------------------------------

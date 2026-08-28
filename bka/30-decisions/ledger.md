@@ -3825,7 +3825,7 @@ here rather than fixed in place, per the OUT OF SCOPE boundary.
 **Status:** Resolved — implemented and verified. Item 1's remaining slice
 (PDF geometric reconstruction) is unstarted and needs its own pass.
 
-### ADL-056
+## ADL-056
 **An invalid LLM-supplied pattern must fail the tool call, not the turn.**
 
 Raised from a live run during [ADL-055](#adl-055)'s item 1 slice 1
@@ -3995,7 +3995,7 @@ the question had to name the bad pattern explicitly to reproduce a
 nondeterministic bug on demand. Check 2 exists precisely because check 1
 cannot be depended on to fire.
 
-### ADL-057
+## ADL-057
 **Per-question row identity is caller-supplied data, like every other
 semantic mapping on this path — and three of item 2's four capabilities are
 blocked by measurement, not by preference.**
@@ -4264,7 +4264,7 @@ attempt is wrong for a reason no description can pre-empt.
 description fix.
 
 
-### ADL-058
+## ADL-058
 **Geometric PDF reconstruction is adopted as a trust-bounded FALLBACK, and
 row coverage must never be read as column attribution.**
 

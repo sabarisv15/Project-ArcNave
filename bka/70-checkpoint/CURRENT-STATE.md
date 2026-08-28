@@ -1140,6 +1140,130 @@ this file — no new category introduced).
 - **F2c, F7** — accepted, deliberate limitations; nothing to clear, only
   to keep in mind.
 
+**Seventh pass, 2026-08-27 — F2 fully closed against the real Cloud Run
+production revision (not just local Docker).** Full detail, including
+the parked IAM-invoker-auth investigation (F2d, new): see F2/F2d in
+[`consumer-adaptation-flags.md`](../90-appendix/consumer-adaptation-flags.md).
+One-line summary: `arcnave-sandbox-service` updated in place (new image,
+2 vCPU/2Gi/240s, VPC isolation confirmed unchanged), live-verified with
+real openpyxl + LibreOffice recalculation (pass and fail cases both
+correct). A separate, differently-named service was tried first for IAM
+invoker auth, hit an unresolved GCP-side 401 despite correct
+configuration (ruled out via Google's own `gcloud run services proxy`
+tool, not just manual curl), and was deleted rather than left running
+broken. Root `.env` corrected to point at the working service.
+
+**Eighth pass, 2026-08-27 — a generic "AI Assistant Operating
+Instructions" template (output/file/safety rules for adapting into any
+AI system prompt) was supplied and adapted against ARCNAVE's actual AI
+configuration, analysis only, no code.**
+Net finding: ARCNAVE's Sections 2-4 equivalents (DocumentService/
+ArtifactService split, the Action Manifest, the skills subsystem) are
+already stronger than the generic template asks, because they are
+service-ownership-enforced rather than prompted conventions. Five real,
+narrow gaps formalized as **F17-F21** in
+[`consumer-adaptation-flags.md`](../90-appendix/consumer-adaptation-flags.md)
+(same numbering sequence as the existing F1-F16, extended rather than a
+separate list) — most notably **F17: no crisis/self-harm handling
+policy exists anywhere in `RS-AIG-ai-governance.md` or the prompt safety
+layer**, which needs a product decision on scope before any code, not a
+unilateral build. F18/F19 are AI-Memory drift/behavioral-instruction
+gaps, F20 is the missing single-instance/capability persona statement,
+F21 is a foldable cost-tiering note for ADL-058's eventual build.
+
+**Ninth pass, 2026-08-28 — the eighth pass's ARCNAVE-tailored write-up
+was dropped and replaced by the domain-neutral
+[`ai-operating-instructions.md`](../90-appendix/ai-operating-instructions.md),
+on the owner's direct instruction (keep the method, not one build's
+answers). Doc-only, no code.** What changed against the supplied source:
+§1.5 "Confirmed configuration for this build" (the college-domain skill
+table, the 32-of-46 tool subset, the Gemini search-grounding choice) is
+replaced by a **template plus the rule for what earns a place**,
+including an explicit "never write a skill for a capability the
+environment cannot back" line (the F2c lesson, stated generically);
+§8.2's severity table now names domain-neutral failure *classes* with
+the same severity bands; §1.6's flow chart no longer names a provider.
+F17-F21 are untouched and remain the surviving record of the eighth
+pass. `bka/tools/validate.py`: 30 errors, all pre-existing ADL-055→058
+addendum-anchor gaps — the 2 broken links this deletion created were
+repointed, zero new errors.
+
+**Skill-suggestion check against the real project, same pass (no code):**
+the source doc's five "keep" skills map to 3 built / 2 absent —
+`xlsx`, `pdf-reading`, `file-reading` all exist under
+`backend/src/skills/`; `pdf`(create) and `docx` do not, and neither does
+`pptx`, for the reason F2c already records (no `reportlab`/`pypdf`/
+`fpdf`, no `python-docx`, no `python-pptx`, LibreOffice **Calc only** in
+`sandbox-service/Dockerfile`). The doc's own drop list (vendor product
+knowledge, consumer task skills, frontend/design skills, plugin-authoring
+helpers) is already satisfied — none of them exist here. Its §4.2
+"multiple skills can apply, check every plausibly relevant one" rule is
+satisfiable in ARCNAVE: `list_skills`/`describe_skill` are both in
+`aiService.js`'s `BUDGET_EXEMPT_LOOKUP_TOOLS` (`:973`), so up to
+`MAX_LOOKUP_CALLS = 3` skill lookups run without consuming
+`maxToolCallsPerTurn`. Nothing was built from this check.
+
+**Also this pass, doc-only:**
+[`ai-attachment-execution-flow.md`](../90-appendix/ai-attachment-execution-flow.md)
+— the real end-to-end attachment path (upload → `resolveChatAttachments`
+→ budget/hint → `pinDocumentAnalysisTool` → `tool_select` → Policy Gate →
+`analyze_document_table` / `execute_code` → `detectDocumentCoverageGap`
+→ `tool_answer` → `verifyNumericClaims`), traced from source with file
+and line references, plus what is deliberately NOT in that path
+(`date_led_rows`, ADL-058 geometry, cross-document `join`, in-place file
+editing). Its mermaid diagram was **rendered** via `mermaid-cli` before
+committing (30 nodes, no syntax errors) — the source doc's own §3.3
+verification rule applied to itself.
+
+**Tenth pass, 2026-08-28 — `bka/tools/validate.py` now PASSES clean for
+the first time in this thread: 33 errors → 0, 0 warnings.** Every
+"pre-existing error" count recorded in the passes above (23, 28, 30, 33)
+was the same two root causes, and both are fixed. **Do not re-record a
+pre-existing-error baseline — there isn't one any more. A non-zero count
+from here on is a real, new problem.**
+
+1. **`ADL-056`/`ADL-057`/`ADL-058` were H3** (`### ADL-0NN`) while all 58
+   other entries — including `ADL-055` immediately before and
+   `ADL-059`/`060`/`061` immediately after — are H2. `LEDGER_HEADING`
+   only registers `^##\s+ADL-\d{3}$` as a definition, so those three
+   counted as *undefined* and every document citing them errored.
+   Promoted to H2 (the inconsistency was the bug, not the regex — widening
+   it would have made a genuinely misplaced heading count as a definition).
+   Anchors are level-independent, so no link changed. `ledger entries`
+   reported by the validator: 58 → **61**.
+2. **The slugifier enforced one anchor dialect while the doc set uses
+   two.** Around stripped punctuation, GitHub renders
+   `addendum — item` as `addendum--item` (each space becomes a hyphen)
+   and python-markdown/MkDocs as `addendum-item` (the run collapses).
+   Measured across the whole doc set: **11 anchors fail under the MkDocs
+   rule alone, 12 under the GitHub rule, and they are different sets** —
+   so neither dialect is the correct one to enforce and rewriting links to
+   either would break them for the other reader. `slug()` is now
+   `slugs()`, returning every dialect's spelling of a heading; a link
+   resolves if it matches any. The check's actual purpose — an anchor
+   pointing at a heading that does not exist — is unchanged, and was
+   **regression-tested**: a deliberately broken anchor and a reference to
+   a nonexistent ledger id both still error. (Writing that test id
+   literally here would itself trip the check — which is the check
+   working.)
+
+That widening then exposed **one genuinely broken anchor** it had been
+masking: `ai-capability-matrix.md`'s `execute_code` row linked to F2's
+old title, which was renamed when F2 was closed on 2026-08-27. Anchor
+repointed. **Note, not fixed (content, not an anchor):** that same row's
+prose still reads "The deployed Cloud Run image still lacks the packages
+this needs live — F2, open", which contradicts F2's own current heading
+(`FULLY CLOSED 2026-08-27 — ... live-verified`). Worth correcting next
+time that matrix is touched.
+
+`mkdocs.yml` was also found stale while tracing this — its
+`docs_dir: docs` points at a directory that does not exist under `bka/`,
+and its `nav` predates `40-uat`/`50-frontend`/`60-product-reasoning`/
+`70-checkpoint`. The site is therefore not built from these files today;
+they are read in the repo. Not fixed here, and the reason the
+two-dialect answer above is the right one rather than "just use MkDocs
+slugs".
+
 ### Exact next action for this thread
 
 Read [`consumer-adaptation-flags.md`](../90-appendix/consumer-adaptation-flags.md)
@@ -1147,9 +1271,12 @@ first — it is the current, authoritative flag list; everything above
 this line in "Known gaps"/earlier "Exact next action" text is superseded
 by it.
 
-Next: present F1/F4/F5 (owner decisions), F2/F2a/F2b redeploy and F11
-commit (each needs explicit permission) to the user rather than acting
-on any of them unilaterally.
+Next: present F1/F4/F5 (owner decisions), F2b (still unmeasured at
+realistic workbook size) and F11 commit (each needs explicit permission)
+to the user rather than acting on any of them unilaterally. F2/F2a are
+now closed (see Seventh pass above); F2d (IAM invoker auth) is open but
+not actionable without GCP Support or org Console access — do not
+re-attempt the same impersonation approach without reading F2d first.
 
 ## Standing, environment-level notes (unrelated to any specific task, keep until they stop being true)
 

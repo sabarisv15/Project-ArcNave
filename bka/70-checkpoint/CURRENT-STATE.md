@@ -1515,3 +1515,53 @@ returned 5,348 chars; aicte-india.org refuses with the reason named.
 Tests **20/20** (up from 15), including four pinning the refusal path,
 since a regression there means silent fabrication. Adjacent suites clean:
 generic-capability 26/26, uat-wiring 15/15, tool-retrieval 6/6.
+
+## Sixteenth pass, 2026-08-28 — Vertex multimodal embeddings MEASURED, deliberately not built
+
+Owner asked to try `multimodalembedding` + Vertex AI Vector Search for
+image search. Measured with `backend/scripts/multimodal-embedding-probe.js`
+(read-only — no DB writes, no index created, no tool registered).
+
+**It works, and better than the suggestion needed:**
+
+- `multimodalembedding@001` is reachable in **us-central1, asia-south1
+  and global** — all three return **1408 dimensions**.
+- Image and text embeddings land in the **same space**, so text→image
+  retrieval works directly. Verified with three generated images (red
+  square / blue circle / green background) and three text queries:
+  **3/3 ranked the correct image first**, by a wide margin (0.2262 vs
+  0.0863 and 0.0659; 0.2085 vs 0.0126 and 0.0120; 0.1663 vs 0.0299 and
+  0.0010).
+
+**Vertex AI Vector Search is NOT needed.** ARCNAVE already runs
+`pgvector/pgvector:pg16` and already has a vector-column pattern
+(`ai_document_chunks`). Similarity can be computed in Postgres against
+the same DB. Vector Search is a separate, always-on, billed index +
+endpoint — skipping it avoids standing infrastructure for a capability
+with no workload yet.
+
+**A gotcha worth pinning:** the absolute cosine scores for *correct*
+matches are low — **0.17 to 0.23**. Ranking is reliable; a fixed
+similarity threshold would not be. Do **not** reuse
+`SIMILARITY_DISTANCE_THRESHOLD` reasoning from text retrieval here — a
+different model and a different space, and comparing the two numbers
+would be meaningless.
+
+**Two reasons it was not built:**
+
+1. **This is not `image_search`.** That tool searched the open *web* and
+   has had no provider since Brave was removed. This is similarity over
+   a corpus we index ourselves. Shipping it under the old name would
+   answer a different question than the one asked.
+2. **There is no corpus and no named workload.** `SELECT count(*) FROM
+   documents` on the dev DB returns **0**, images included. Building an
+   embedding pipeline now would index nothing, and the operating
+   instructions' own §1.5 rule — a capability earns its place when a
+   named, real workload needs it — is the reason to stop here rather
+   than a formality.
+
+**Open question for the owner:** what should image similarity actually
+*do* in a campus system? "Find the photo matching this description"
+across uploaded documents is plausible; so is duplicate/near-duplicate
+detection on ID-proof scans. Those are different designs. The probe
+stays rerunnable so whichever is chosen starts from measurement.

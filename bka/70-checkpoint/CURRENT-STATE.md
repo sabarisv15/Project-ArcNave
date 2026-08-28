@@ -1,6 +1,135 @@
 # Current State
 
-_Last updated: 2026-08-26._
+_Last updated: 2026-08-28._
+
+---
+
+# ⛔ READ FIRST — TWO DECISIONS WAITING ON THE OWNER
+
+**The owner said (2026-08-28): "I will answer these next session."** Both
+are product decisions, not engineering ones — nothing is blocked on code,
+and nothing here needs to be worked out again.
+
+**This section is deliberately self-contained.** Every fact needed to act
+on either answer is written out below, with exact file paths. **Do not run
+a retrieval subagent, and do not re-run any probe, to prepare for these.**
+The measurements are done; re-measuring costs money (some probes are
+billable) and proves nothing new. If a link is followed at all, follow only
+the two named at the end of each decision.
+
+**Do not start implementing either one before the owner answers**, and do
+not ask about them unprompted — they were parked on purpose.
+
+---
+
+## DECISION 1 — PDF table reading: keep geometry, or switch to pdfplumber?
+
+**Why this is being asked.** [ADL-058](../30-decisions/ledger.md#adl-058)
+approved a slice built on the premise that correct column attribution was
+unobtainable without x-column-boundary detection, which had only ever been
+done **by hand**. That premise is now measurably false, so the slice as
+approved would spend real effort solving a problem an already-installed
+library solves for free. Changing an Approved Spec's CORE requires a
+decision (workflow §16/§17), not an in-place edit — which is why this is
+here rather than done.
+
+**What was measured, 2026-08-28** (`backend/scripts/pdfplumber-attribution-probe.js`,
+not billable, prints its own verdict — rerunnable but there is no reason
+to):
+
+| check | pdfplumber, default `lines` strategy |
+|---|---|
+| identity rows recovered | **23 / 23** |
+| ASHWIN JOHN EDISON S (the hand-verified case) | `1, 1, 65, 625, 690` — correct |
+| ARAVINDAN G (who geometry wrongly gave those figures to) | `0, 0, 0, 625, 625` — correct |
+| rows failing their own arithmetic (`fees = arrears × 65`, `total = fees + 625`) | **0 / 23** |
+
+The arithmetic row is the load-bearing one: misattribution moves a number
+into a row where it stops adding up, so 0/23 is a whole-document result,
+not a spot check.
+
+**The two answers, and what each one means:**
+
+- **"Switch to pdfplumber."** Then ADL-058's geometry-as-permanent-partial-
+  trust slice is largely **not built** — the biggest single saving
+  available right now. A new Product Reasoning pass replaces its CORE with:
+  pdfplumber for attribution, verified against the deterministic identity
+  set, with counting and aggregation still done deterministically. Cost to
+  weigh: pdfplumber runs in the **sandbox** (an `execute_code` round trip,
+  ~79 ms warm plus a 422 ms import), not in-process like the geometry path.
+- **"Keep geometry as approved."** Then ADL-058 is built as written and the
+  measurement stands as recorded evidence against it. Defensible on one
+  ground only: one document is one document, and no other PDF family has
+  been tested with pdfplumber.
+
+**Three things NOT to do, each already established:**
+1. Do not use `{'vertical_strategy': 'text', 'horizontal_strategy': 'text'}`.
+   It reproduces the exact original defect (floats the numeric block above
+   the wrong student) and looks like the library failing. **The default is
+   the working setting.**
+2. Do not build anything on the merged-cell continuation sub-rows.
+   `extract_tables()` emits them, their semantics were never established,
+   and they do not all reconcile (ASHWIN's sum to 2 against a printed 1).
+   The headline columns are unaffected. Sub-rows need their own measurement.
+3. Do not re-measure native Gemini reading. Already done and recorded: it
+   is excellent at attribution on small documents, **cannot count**
+   (2 vs 23, 7 vs 839, 16 vs 1603), and fails outright on the 400-page one.
+
+**Read only these two if more is needed:**
+[ADL-058 addendum 2](../30-decisions/ledger.md#adl-058-addendum-2--the-future-item-was-already-installed-and-it-passes-2026-08-28)
+and, if the answer is "switch",
+[`ai-chat-pdf-geometric-reconstruction-approved-spec.md`](../60-product-reasoning/ai-chat-pdf-geometric-reconstruction-approved-spec.md).
+
+---
+
+## DECISION 2 — Image search: which direction, and is the privacy cost acceptable?
+
+**Two questions, and the second only applies to one answer.**
+
+**(a) Which direction is wanted?** These are three different builds, not
+three settings of one:
+
+| direction | the real request behind it | route already proven to work |
+|---|---|---|
+| **text → web images** | staff wants a picture for a presentation | **Brave** — `git show 2eb14f9^:backend/src/services/webSearchService.js` + one Brave API key. Shortest path by far. |
+| **image → similar web images** (reverse) | is this uploaded certificate someone else's? | **Cloud Vision `WEB_DETECTION`** — verified: 10 similar / 7 full-matching / 10 pages, real publisher URLs. `backend/scripts/reverse-image-search-probe.js` |
+| **image/text → our own photos** | find our own lab photos among 40,000 | **`multimodalembedding@001` + pgvector** — verified 3/3 correct ranking, 1408 dims. **Vertex AI Vector Search is NOT needed.** `backend/scripts/multimodal-embedding-probe.js` |
+
+**(b) Only if reverse lookup is chosen:** sending a student's photo or ID
+scan to Google's public web-matching index is a **privacy and consent
+decision for the owner and the institution**. It is technically easy, which
+is not a reason to build it. This question does not arise for the other two
+directions.
+
+**Do not test Google Custom Search a fourth time.** It is dead by
+isolation, not by misconfiguration: a wrong `cx` and a right `cx` return
+the identical 403, while omitting `cx` returns a *different* error — the
+project-level access check fires before the search engine is consulted, so
+no Programmable Search Engine setting can change it. (An older GCP project
+would work, since the restriction is per-project — only viable if such a
+project exists.)
+
+**One gotcha to carry into any own-corpus build:** multimodal cosine
+scores for *correct* matches are only **0.17–0.23**. Ranking is reliable; a
+fixed threshold is not. Do not reuse text retrieval's
+`SIMILARITY_DISTANCE_THRESHOLD` reasoning — different model, different space.
+
+**Current live behaviour, deliberately:** `image_search` is registered but
+throws `WebSearchNotConfiguredError` naming the absence, **before any
+config read** — "no images found" and "this system cannot search images"
+are different answers and the model must not give the first when the second
+is true.
+
+**Housekeeping tied to this decision:** `vision.googleapis.com` was enabled
+on 2026-08-28 for the reverse-lookup probe and is **billed per request**.
+Nothing uses it. **Disable it if reverse lookup is not chosen.**
+
+**Everything above is already in the PARKED section further down this
+file** — that section and this one are the same facts; this one exists so
+the decision is visible without reading 1,800 lines. If they ever
+disagree, the PARKED section is the older copy.
+
+---
 
 **Two active threads now tracked** (protocol §2's explicit provision for a
 genuinely parallel, unrelated second task) — the ADL-055→058 document-

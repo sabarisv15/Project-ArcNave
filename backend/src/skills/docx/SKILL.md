@@ -4,6 +4,32 @@ description: "Use this skill whenever the user wants to create, read, edit, or m
 license: Proprietary. LICENSE.txt has complete terms
 ---
 
+## ARCNAVE sandbox note — read this before any `soffice` call
+
+Verified live on the deployed sandbox, 2026-08-28.
+
+`soffice` **exits 77 and converts nothing** unless you give it a
+writable profile directory. The container runs as a non-root user with
+no writable HOME, so LibreOffice cannot create its default profile. It
+does not fail loudly — it exits non-zero having written no output, and
+if a file of the target name already exists from an earlier step you
+will conclude it worked.
+
+Always pass `-env:UserInstallation`:
+
+```python
+prof = os.path.join(os.getcwd(), "lo-profile")
+subprocess.run([
+    "soffice", "--headless", "--norestore", "--invisible",
+    f"-env:UserInstallation=file://{prof}",
+    "--convert-to", "pdf", "--outdir", "out", src,
+], capture_output=True, timeout=180)
+```
+
+Then **check the output file exists** — never trust the exit code alone.
+`sandbox-service/scripts/recalc.py` is the working reference for this.
+
+
 # DOCX creation, editing, and analysis
 
 A `.docx` is a ZIP archive of XML files. Choose your approach by task:

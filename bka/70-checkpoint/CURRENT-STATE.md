@@ -1363,3 +1363,54 @@ diff, so no second adaptation was needed.
 
 Verified: 6/6 skills load with descriptions; skills-subsystem tests
 26/26; `bka/tools/validate.py` 0 errors, 0 warnings.
+
+## Thirteenth pass, 2026-08-28 — sandbox redeployed, all 6 skills now genuinely backed; web_search still blocked
+
+**Sandbox: deployed and live-verified.** New image
+`:20260828-skills6` built via Cloud Build (3m13s) and deployed to
+`arcnave-sandbox-service`, asia-south1, revision `-00005-9fj`.
+
+**Memory is 4Gi, NOT the 5Gi asked for.** `MemAllocPerProjectRegion`
+in asia-south1 allows 40GiB and the quota is computed as
+**memory × 10**, regardless of `--max-instances` (tested at 8 and at 6 —
+the request stayed 50GiB both times). 4Gi × 10 = exactly 40GiB and
+deploys; 5Gi needs a quota-increase request for the region. Up from the
+previous 2Gi either way. `--max-instances` is now 8.
+
+**Live-verified on the deployed revision, not assumed:** all 9 Python
+packages import (`pdfplumber`, `openpyxl`, `pandas`, `reportlab`,
+`pypdf`, `python-docx`, `python-pptx`, `pdf2image`, `pytesseract`),
+`tesseract`/`pdftoppm`/`soffice` are on PATH, and `swriter`/`simpress`/
+`scalc` all exist. Then functionally, not just by import: a real `.docx`
+(36,621 B), `.pptx` (28,213 B) and reportlab `.pdf` were created,
+`pypdf` read the PDF back, and `soffice` converted both docx→pdf
+(15,334 B) and pptx→pdf (1,339 B). **All 6 skills are now honestly
+backed.**
+
+**One real gotcha found and written into the `docx`/`pptx` skills:**
+`soffice` exits **77 and produces nothing** without
+`-env:UserInstallation=file://<writable dir>` — the container has no
+writable HOME, so LibreOffice cannot create its default profile. It
+fails quietly, and if the target filename already exists from an earlier
+step it looks like success. The first test here made exactly that
+mistake. `recalc.py` already did it correctly; the vendor SKILL.md files
+did not mention it because they assume a normal environment.
+
+**`web_search` — still blocked, and the blocker is now precisely
+identified.** The owner's key is valid (ListModels 200, 39 models). Two
+findings:
+1. The pinned default `gemini-2.5-flash` returns **404 "no longer
+   available to new users"** while still appearing in ListModels — the
+   failure is invisible until called. Default changed to
+   `gemini-flash-latest`.
+2. **Grounding has no quota on this key.** Isolated by running a plain
+   call and a grounded call on the same model seconds apart: plain
+   returns 503 (transient overload), grounded returns 429 "exceeded your
+   current quota, check your plan and billing details" — 3/3 attempts.
+   So it is the `google_search` tool's own entitlement, not rate
+   limiting and not our request shape.
+
+**Exact next action for `web_search`: enable billing on the key's
+Google AI Studio project**, then rerun
+`node scripts/web-search-live-probe.js`. Nothing in ARCNAVE needs to
+change.

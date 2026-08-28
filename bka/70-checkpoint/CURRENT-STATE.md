@@ -1620,3 +1620,44 @@ the owner and probably for the institution, not an engineering call, and
 it sits squarely in the territory `CLAUDE.md` rule 8 and RS-AIG's data
 rules are protective about. It should not be built because it is
 technically easy.
+
+## Eighteenth pass, 2026-08-28 — Custom Search image search PROVEN closed, with an isolating experiment
+
+The owner supplied the full setup procedure (enable the API, configure a
+Programmable Search Engine with "Search the entire web" and "Image
+search" ON). Rather than re-assert the earlier 403, both halves were
+checked directly.
+
+**Step 1 was already done.** `gcloud services list --enabled` shows
+`customsearch.googleapis.com` enabled on the project; re-running
+`gcloud services enable` is a no-op.
+
+**Step 2 cannot matter, and here is the experiment that proves it:**
+
+| Call | Result |
+|---|---|
+| Real `cx` + `searchType=image` | 403 `PERMISSION_DENIED` — "This project does not have the access to Custom Search JSON API." |
+| Real `cx`, plain text search | **identical** 403 |
+| **Deliberately invalid `cx`** | **identical** 403 |
+| No `cx` at all | **400** `INVALID_ARGUMENT` |
+| No key at all | 403 "Method doesn't allow unregistered callers" |
+
+A wrong `cx` and a right `cx` produce the *same* error, while omitting
+`cx` produces a *different* one. So the request IS parsed and validated —
+and the project-level access check fires before the search engine is ever
+consulted. **No Programmable Search Engine setting can change this
+outcome, because the `cx` is never reached.** This is now settled by
+isolation, not by reading an error message.
+
+**The only real routes to TEXT → web image URLs:**
+1. An **older GCP project** that already had Custom Search access before
+   Google closed it to new customers. Same code, different project — the
+   restriction is per-project, and this project is on the wrong side of
+   it.
+2. **A different provider.** Brave Search has an image index and was
+   already implemented here — it was removed on 2026-08-28 with the rest
+   of the multi-provider code and is recoverable from git history plus
+   one API key. That is the shortest path if this capability is actually
+   wanted.
+
+Recorded so nobody spends a fourth session on this API.

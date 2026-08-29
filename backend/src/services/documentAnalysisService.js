@@ -8,15 +8,26 @@
 //   documentTextExtractionService -> existing plain-text extraction (unchanged)
 //   documentTableExtractionService -> structural record detection (new)
 //   documentAggregateService      -> fixed count/sum operations (new)
-// Never persists anything — every result here is transient, scoped to one
-// /ai/ask turn, same lifecycle images/documents already have in
-// aiService.resolveChatAttachments (ADR-029's "no schema changes" call).
+// Never persists an analysis RESULT — every answer here is transient,
+// scoped to one /ai/ask turn, same lifecycle images/documents already have
+// in aiService.resolveChatAttachments (ADR-029's "no schema changes"
+// call). Review Finding #6 (2026-08-29) adds exactly one audit-log entry
+// for the pdfplumber fallback's own lifecycle (attempted/skipped/
+// completed/failed) — an operational trail, not a persisted result, same
+// category as resolveChatAttachments' own ai_attachment_analyzed/
+// ai_attachment_extraction_failed entries via the same
+// auditLogRepository.createAuditLogEntry this file now also calls
+// directly (an established Business Service convention — see e.g.
+// documentService.js, staffService.js, ~28 other services in this repo).
 
 const documentService = require('./documentService');
 const documentTextExtractionService = require('./documentTextExtractionService');
 const documentTableExtractionService = require('./documentTableExtractionService');
 const documentAggregateService = require('./documentAggregateService');
+const documentRowIntegrityService = require('./documentRowIntegrityService');
 const sandboxExecutionService = require('./sandboxExecutionService');
+const auditLogRepository = require('../repositories/auditLogRepository');
+const config = require('../config');
 
 class DocumentAnalysisValidationError extends Error {}
 
@@ -81,6 +92,55 @@ async function reconstructViaPdfplumber(buffer) {
 function pdfFallbackApplies(mimeType, strategy, coverage) {
   return mimeType === 'application/pdf'
     && (strategy === 'none' || (coverage && coverage.applicable && !coverage.reliable));
+}
+
+// Review Finding #6 — the ONE structured, non-sensitive audit trail for
+// this fallback's own lifecycle, distinct from the RETURNED provenance
+// fields below (this is "what happened," not "what the caller got back").
+// action mirrors the finding's own vocabulary (skipped/attempted-and-
+// failed/attempted-and-completed); resultStatus/reason, when present,
+// describe the fallback's OWN verdict at the point it resolved, never the
+// unrelated business-logic status a turn might later return (e.g.
+// no_matching_records). Never logs document text, extracted values,
+// student names/DoBs/marks/fees, or a stack trace — attachmentId is the
+// same document-row UUID resolveChatAttachments' own ai_attachment_analyzed
+// entry already logs as entityId, not new exposure.
+async function logPdfFallbackEvent(client, identityContext, attachmentId, fields) {
+  await auditLogRepository.createAuditLogEntry(client, {
+    collegeId: identityContext.collegeId,
+    userId: identityContext.userId,
+    action: 'ai_pdf_table_fallback',
+    entity: 'ai_attachments',
+    entityId: attachmentId,
+    metadata: {
+      event: 'pdf_table_fallback',
+      enabled: config.pdfPlumberFallbackEnabled,
+      fallbackProvider: 'pdfplumber',
+      ...fields,
+    },
+  });
+}
+
+// Review Finding #6 — structured provenance for BACKEND/downstream
+// consumers, distinct from logPdfFallbackEvent's audit trail above (that
+// is "what happened"; this is "what the caller got back"). Deliberately
+// never exposes the raw 'pdfplumber' provider name or the '_pdfplumber'
+// strategy suffix to a user — those stay internal implementation detail;
+// aiToolRegistry's tool description already explains 'unreliable_
+// extraction'/'row_integrity_unverified' to the model in user-safe terms
+// without naming either. trustReason is only ever attached when a fallback
+// result did NOT reach full trust — a verified fallback (pdfplumberReconstructed
+// true, reaching this point at all means Finding #3's gate already passed)
+// carries no trustReason, since there is no refusal to explain.
+function fallbackProvenance(pdfplumberReconstructed, extra = {}) {
+  if (!pdfplumberReconstructed) return { fallbackUsed: false };
+  return {
+    fallbackUsed: true,
+    fallbackProvider: 'pdfplumber',
+    reconstructionType: 'layout_based',
+    primaryExtractionReliable: false,
+    ...extra,
+  };
 }
 
 // Same ownership chain as aiService.resolveChatAttachments — repeated
@@ -245,34 +305,64 @@ async function analyzeAttachment(client, {
   } = documentTableExtractionService.extractRecords(extraction.text);
 
   // ADL-063 — only reached when flat text already failed reliability on a
-  // PDF. Re-extracts via pdfplumber in the sandbox and runs the result
-  // back through the SAME extractRecords/assessCoverage pipeline flat text
-  // just went through. If that reconstruction is now reliable, it
-  // replaces strategy/records/sections/coverage wholesale and the rest of
-  // this function proceeds exactly as it would for any other reliable
-  // document — full trust, not a new restricted status, because it passed
-  // the identical gate every trusted document passes. If the sandbox is
-  // unavailable or the reconstruction is still not reliable, these stay
-  // exactly as flat text left them and the two checks below fire as they
-  // do today.
-  if (pdfFallbackApplies(document.mime_type, strategy, coverage)) {
+  // PDF. Re-extracts via pdfplumber in the sandbox and runs the result back
+  // through the SAME extractRecords/assessCoverage pipeline flat text just
+  // went through. If that reconstruction is at least as accounted-for as
+  // flat text's own gate requires, it replaces strategy/records/sections/
+  // coverage wholesale — but, per Review Finding #3 (2026-08-29), it does
+  // NOT thereby earn full trust the way a reliable flat-text/native
+  // extraction does. assessCoverage only proves every identity marker
+  // (DoB) is accounted for once; it was never a check that the OTHER cell
+  // values in each row are attached to the right identity — a layout-
+  // reconstructed table can have every DoB present and unique while a
+  // numeric column is still shifted onto the wrong student. ADL-063's
+  // original "full trust because it passed the identical gate" reasoning
+  // is exactly the false equivalence this finding corrects. If the sandbox
+  // is unavailable or the reconstruction is still not reliable, these stay
+  // exactly as flat text left them and the checks below fire as they do
+  // today.
+  //
+  // Review Finding #6 (2026-08-29) — the whole block below only ever runs
+  // when config.pdfPlumberFallbackEnabled is true, checked BEFORE
+  // reconstructViaPdfplumber (a real sandbox round trip) is ever called —
+  // the disabled path costs nothing beyond the boolean check itself.
+  // fallbackTrustReason is computed here rather than re-deriving it lower
+  // down, so ONE log call below can report the fallback's real terminal
+  // verdict (Finding #3's own gate, a few lines down, only re-reads it).
+  let pdfplumberReconstructed = false;
+  let fallbackTrustReason = null;
+  const fallbackApplicable = pdfFallbackApplies(document.mime_type, strategy, coverage);
+  if (fallbackApplicable && !config.pdfPlumberFallbackEnabled) {
+    await logPdfFallbackEvent(client, identityContext, attachmentId, { action: 'skipped' });
+  } else if (fallbackApplicable) {
+    const startedAt = Date.now();
     const reconstructed = await reconstructViaPdfplumber(buffer);
-    if (reconstructed) {
+    if (!reconstructed) {
+      await logPdfFallbackEvent(client, identityContext, attachmentId, {
+        action: 'failed', durationMs: Date.now() - startedAt,
+      });
+    } else {
       const fallback = documentTableExtractionService.extractRecords(reconstructed);
       const fallbackReliable = fallback.strategy !== 'none'
         && (!fallback.coverage || !fallback.coverage.applicable || fallback.coverage.reliable);
       if (fallbackReliable) {
-        // Metadata only, for audit/observability — callers must not branch
-        // on this suffix; every operation below treats these records
-        // exactly like any other reliable extraction.
         strategy = `${fallback.strategy}_pdfplumber`;
         ({ records, sections, coverage } = fallback);
+        pdfplumberReconstructed = true;
+        const integrity = documentRowIntegrityService.assessRowIntegrity(records);
+        fallbackTrustReason = integrity.verified ? null : 'row_integrity_unverified';
       }
+      await logPdfFallbackEvent(client, identityContext, attachmentId, {
+        action: 'completed',
+        resultStatus: pdfplumberReconstructed && !fallbackTrustReason ? 'ok' : 'unreliable_extraction',
+        ...(fallbackTrustReason ? { reason: fallbackTrustReason } : {}),
+        durationMs: Date.now() - startedAt,
+      });
     }
   }
 
   if (strategy === 'none') {
-    return { status: 'unrecognized_layout' };
+    return { status: 'unrecognized_layout', ...fallbackProvenance(pdfplumberReconstructed) };
   }
   // Recognizing a layout is not the same as reading it correctly, and until
   // this check existed nothing told the two apart: a real exam-fees PDF
@@ -289,13 +379,40 @@ async function analyzeAttachment(client, {
       recordsDetected: records.length,
       rowsExpected: coverage.markerCount,
       rowsAccountedFor: coverage.accountedCount,
+      ...fallbackProvenance(pdfplumberReconstructed),
+    };
+  }
+  // Review Finding #3 — identity-marker coverage proves record presence,
+  // not row-level value alignment. A pdfplumber/layout-reconstructed table
+  // has no independent check yet for whether a numeric or other non-
+  // identity cell landed on the correct row, so it is capped at the same
+  // partial-trust signal an unreliable flat-text extraction already gets,
+  // regardless of how clean its identity-marker coverage is — UNLESS
+  // documentRowIntegrityService independently discovers a real,
+  // document's-own arithmetic relation (e.g. a rate scaling, a running
+  // total) that holds across every single record. That is the "independent
+  // row-integrity check" this comment used to say did not exist yet; a
+  // document with no such discoverable structure still falls through to
+  // the same cap as before, unchanged. This rule is mandatory in every
+  // enabled-fallback path — Review Finding #6 controls only whether the
+  // fallback is ATTEMPTED at all, never whether a result earns trust once
+  // it runs.
+  if (pdfplumberReconstructed && fallbackTrustReason) {
+    return {
+      status: 'unreliable_extraction',
+      strategy,
+      recordsDetected: records.length,
+      rowsExpected: coverage ? coverage.markerCount : records.length,
+      rowsAccountedFor: coverage ? coverage.accountedCount : records.length,
+      reason: fallbackTrustReason,
+      ...fallbackProvenance(true, { trustReason: fallbackTrustReason }),
     };
   }
 
   const bySerial = filterBySerialRange(records, serialRange);
   const scoped = filterBySection(bySerial, sections, compiledSection.regex);
   if (scoped.length === 0) {
-    return { status: 'no_matching_records' };
+    return { status: 'no_matching_records', ...fallbackProvenance(pdfplumberReconstructed) };
   }
 
   // ADL-057 — a filtered list whose rows cannot say which entry they are is
@@ -309,7 +426,7 @@ async function analyzeAttachment(client, {
   if (operation === 'compare') {
     const hasIntrinsicIdentity = scoped.some((record) => record.serialNo || record.regNo);
     if (!hasIntrinsicIdentity && !compiledIdentity.regex) {
-      return { status: 'identity_required' };
+      return { status: 'identity_required', ...fallbackProvenance(pdfplumberReconstructed) };
     }
     const compared = documentAggregateService.compareRecords(scoped, {
       filter, comparison, identityPattern: compiledIdentity.regex,
@@ -318,9 +435,11 @@ async function analyzeAttachment(client, {
     // existing status — a valid question whose answer is "none", not a
     // failure of this system.
     if (compared.matchedCount === 0) {
-      return { status: 'no_matching_records' };
+      return { status: 'no_matching_records', ...fallbackProvenance(pdfplumberReconstructed) };
     }
-    return { status: 'ok', strategy, ...compared };
+    return {
+      status: 'ok', strategy, ...compared, ...fallbackProvenance(pdfplumberReconstructed),
+    };
   }
 
   const rows = documentAggregateService.aggregate(scoped, { groupBy, filter, operation });
@@ -330,7 +449,9 @@ async function analyzeAttachment(client, {
   // request (ADL-055) and, worse, left the LLM to do the very arithmetic
   // this service exists to perform. See
   // ai-chat-document-analysis-payload-bounds-approved-spec.md.
-  return { status: 'ok', strategy, ...documentAggregateService.summarize(rows) };
+  return {
+    status: 'ok', strategy, ...documentAggregateService.summarize(rows), ...fallbackProvenance(pdfplumberReconstructed),
+  };
 }
 
 module.exports = { analyzeAttachment, DocumentAnalysisValidationError };

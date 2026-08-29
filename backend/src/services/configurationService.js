@@ -197,17 +197,30 @@ function resolveDefaultProvider() {
   return GLOBAL_CONFIG_BUILDERS[configured] ? configured : 'gemini';
 }
 
-// Returns { provider, config, adapter } — config is plain, decrypted
-// (apiKey already usable), never a caller's concern to decrypt itself.
-// adapter is the real module from aiProviders/ (gemini.js/claude.js/
-// selfHosted.js/openai.js), already resolved so callers never branch
-// on provider name themselves.
+// Returns { provider, config, adapter, configSource } — config is plain,
+// decrypted (apiKey already usable), never a caller's concern to decrypt
+// itself. adapter is the real module from aiProviders/ (gemini.js/
+// claude.js/selfHosted.js/openai.js), already resolved so callers never
+// branch on provider name themselves.
+//
+// configSource (Review Finding #7, 2026-08-29) — 'college_explicit' when
+// aiConfigRepository has a real row for this college, 'platform_default'
+// when it doesn't (row === null) and this is the global fallback below.
+// Added because callers previously had no way to tell these two cases
+// apart once this function returned: resolveAiConfig below is the reason
+// this distinction needs to survive past this function's own return,
+// since "does a resolved config exist" and "did the COLLEGE choose it"
+// are different questions once an experimental override is in the
+// picture. Purely additive to every existing caller (askAboutTool and
+// others just destructure {adapter, config} and never look at this key).
 async function getAiConfig(client, collegeId) {
   const row = await aiConfigRepository.findByCollegeId(client, collegeId);
 
   if (row === null) {
     const provider = resolveDefaultProvider();
-    return { provider, config: GLOBAL_CONFIG_BUILDERS[provider](), adapter: aiProviders.getAdapter(provider) };
+    return {
+      provider, config: GLOBAL_CONFIG_BUILDERS[provider](), adapter: aiProviders.getAdapter(provider), configSource: 'platform_default',
+    };
   }
 
   // A college row with provider='gemini' has no projectId — Vertex AI's
@@ -224,7 +237,58 @@ async function getAiConfig(client, collegeId) {
     embeddingModel: row.embedding_model,
     fastModel: row.fast_model,
   };
-  return { provider: row.provider, config, adapter: aiProviders.getAdapter(row.provider) };
+  return {
+    provider: row.provider, config, adapter: aiProviders.getAdapter(row.provider), configSource: 'college_explicit',
+  };
+}
+
+// Review Finding #7 — the ONE place config.experimentalReasoningModel is
+// allowed to change what a college gets, and the only condition under
+// which it may: configSource is 'platform_default' (no
+// college_ai_config row at all), never 'college_explicit'. An explicit
+// row — however it's configured, correct or not — always wins; this
+// function never re-validates or second-guesses it, same as getAiConfig
+// itself never has. There is no disabled/opt-out column on
+// college_ai_config today (schema.sql has no such field) — a college
+// that wants no AI simply never gets one, which getAiConfig already
+// treats as the 'platform_default' case; that's a real product-policy
+// gap, not something this function should paper over by inventing a
+// column that doesn't exist. allowExperimentalFallback is the caller's
+// own opt-in (askAgent's two reasoning-mode call sites only) — every
+// other getAiConfig caller (askAboutTool, etc.) keeps calling getAiConfig
+// directly and is structurally untouched by this function existing at
+// all.
+function experimentalReasoningOverride() {
+  if (!globalConfig.experimentalReasoningModel) return null;
+  return {
+    provider: 'vertex_maas',
+    config: {
+      projectId: globalConfig.gemini.projectId,
+      location: globalConfig.gemini.location,
+      model: globalConfig.experimentalReasoningModel,
+    },
+    adapter: aiProviders.getAdapter('vertex_maas'),
+  };
+}
+
+// Returns { provider, config, adapter, configSource, experimentalOverrideApplied }.
+// configSource is 'experimental_fallback' only when the override above
+// actually applied; otherwise it passes getAiConfig's own
+// 'college_explicit'/'platform_default' straight through, unchanged —
+// this function narrows what CAN override, it never invents a new reason
+// to trust or distrust an already-resolved config.
+async function resolveAiConfig(client, collegeId, { allowExperimentalFallback = false } = {}) {
+  const resolved = await getAiConfig(client, collegeId);
+  if (!allowExperimentalFallback || resolved.configSource === 'college_explicit') {
+    return { ...resolved, experimentalOverrideApplied: false };
+  }
+  const override = experimentalReasoningOverride();
+  if (!override) {
+    return { ...resolved, experimentalOverrideApplied: false };
+  }
+  return {
+    ...override, configSource: 'experimental_fallback', experimentalOverrideApplied: true,
+  };
 }
 
 // api_key is encrypted here, immediately, before ever reaching the
@@ -288,6 +352,7 @@ module.exports = {
   getConfiguration,
   setConfiguration,
   getAiConfig,
+  resolveAiConfig,
   setAiConfig,
   getToolSearchConfig,
 };

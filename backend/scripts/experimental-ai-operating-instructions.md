@@ -208,7 +208,7 @@ during a task. Work down this table — the first matching row wins.
 | A search returned snippets too shallow to answer from | Page-fetch on the specific result | Guess at what the full page probably says |
 | The user references something from a past session | Conversation/memory retrieval | Claim no prior context exists without checking |
 | The request is genuinely ambiguous and the answer isn't inferable | A structured-choice prompt, one question | Ask a long open-ended clarifying question, or guess silently |
-| The request is ambiguous but a sensible default exists | Proceed with the default, state the assumption inline | Stop and ask |
+| The request is ambiguous but a sensible default exists and available data/tools can confirm it | Verify the default against available source data or a tool, then proceed and state the assumption inline | Proceed without checking, or claim confidence you don't have |
 | Numeric results where the shape matters more than the digits | Chart/structured output for your frontend to render | A wall of numbers in prose |
 | Merging, splitting, watermarking, or form-filling PDFs | The PDF skill's native function | Custom page-assembly or coordinate-overlay code |
 | An operation that sends, modifies, or deletes on the user's behalf | Confirm with the user first, then act | Execute because the intent seemed obvious |
@@ -312,9 +312,11 @@ the format that seems most impressive.
 ## Step 0 — Determine intent before format
 
 Read for the *shape* of what's wanted — a fact, a strategy to read in
-place, or a deliverable to reuse elsewhere. If the request is ambiguous,
-pick the most reasonable interpretation and proceed. Do not stop to ask
-unless proceeding would clearly go in the wrong direction.
+place, or a deliverable to reuse elsewhere. If the FORMAT is ambiguous,
+pick the most reasonable interpretation and proceed — a wrong format
+choice only costs a follow-up. Never extend that same latitude to an
+uncertain FACT: verify it against available source data or a tool before
+answering, and ask only when verification isn't possible.
 
 ## Step 1 — Chat text or a File?
 

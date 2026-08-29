@@ -93,6 +93,12 @@ async function main() {
     console.error('SANDBOX_SERVICE_URL / SANDBOX_SERVICE_TOKEN must be set — this check needs the real sandbox.');
     process.exit(2);
   }
+  // Review Finding #6 — the fallback this script exists to check is now
+  // off by default. Opt in explicitly here rather than requiring
+  // PD_PLUMBER_FALLBACK_ENABLED=true on every invocation — this script's
+  // whole purpose is exercising the fallback, so silently skipping it
+  // would make every check below pass for the wrong reason.
+  config.pdfPlumberFallbackEnabled = true;
 
   const adminPool = new Pool({ connectionString: config.migrationDatabaseUrl });
   const appPool = new Pool({ connectionString: config.databaseUrl });

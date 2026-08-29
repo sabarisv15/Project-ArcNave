@@ -24,7 +24,6 @@ const aiActorContext = require('./aiActorContext');
 const aiPolicyAssembly = require('./aiPolicyAssembly');
 const aiContextAssembly = require('./aiContextAssembly');
 const configurationService = require('./configurationService');
-const aiProviders = require('./aiProviders');
 const config = require('../config');
 const documentService = require('./documentService');
 const auditLogRepository = require('../repositories/auditLogRepository');
@@ -2102,17 +2101,20 @@ async function askGeneralChat(client, question, promptQuestion, {
 // for any non-vision provider — images are marked unavailable, no new
 // Gemini-preprocessing handoff is built. A real limitation, disclosed,
 // not invented around.
-function resolveReasoningConfig(defaultAdapter, defaultAiConfig) {
-  if (!config.experimentalReasoningModel) return { adapter: defaultAdapter, aiConfig: defaultAiConfig };
-  return {
-    adapter: aiProviders.getAdapter('vertex_maas'),
-    aiConfig: {
-      projectId: config.gemini.projectId,
-      location: config.gemini.location,
-      model: config.experimentalReasoningModel,
-    },
-  };
-}
+//
+// Review Finding #7 (2026-08-29) — this used to be a local function here
+// that applied the override unconditionally, with no idea whether
+// configurationService.getAiConfig's result came from an explicit
+// college_ai_config row or the platform default. That meant a college
+// with its OWN configured provider/model could be silently rerouted to
+// the experimental model whenever the global flag was on — the whole
+// precedence logic has moved to configurationService.resolveAiConfig,
+// the same file that already owns tenant-vs-default resolution, so this
+// file never re-implements that distinction. Both call sites below now
+// call it directly with { allowExperimentalFallback: true } — the only
+// two places in this codebase that ever want this benchmark; every other
+// configurationService.getAiConfig call site (askAboutTool, etc.) is
+// untouched and structurally cannot be affected by this flag.
 
 async function askAgent(client, question, {
   identityContext, focusContext, projectContext, history, attachmentIds, mode,
@@ -2188,8 +2190,9 @@ async function askAgent(client, question, {
   // behavior.
   if (mode === 'general') {
     const identityBlock = await aiActorContext.describeIdentityContext(client, identityContext);
-    const resolvedGeneral = await configurationService.getAiConfig(client, identityContext.collegeId);
-    const { adapter, aiConfig } = resolveReasoningConfig(resolvedGeneral.adapter, resolvedGeneral.config);
+    const { adapter, config: aiConfig } = await configurationService.resolveAiConfig(
+      client, identityContext.collegeId, { allowExperimentalFallback: true },
+    );
     return askGeneralChat(client, question, promptQuestion, {
       identityContext, identityBlock, adapter, aiConfig, images, hasHistory: historyHint !== '', hasAttachedDocuments: documents.length > 0,
     }, onDelta, onStep);
@@ -2247,8 +2250,9 @@ async function askAgent(client, question, {
   // module's own tightened wording already had to correct for once).
   const toolsWithPlan = tools.length >= 2 ? [...tools, buildPlanMetaTool()] : tools;
   const identityBlock = await aiActorContext.describeIdentityContext(client, identityContext);
-  const resolvedAiConfig = await configurationService.getAiConfig(client, identityContext.collegeId);
-  const { adapter, aiConfig } = resolveReasoningConfig(resolvedAiConfig.adapter, resolvedAiConfig.config);
+  const { adapter, config: aiConfig } = await configurationService.resolveAiConfig(
+    client, identityContext.collegeId, { allowExperimentalFallback: true },
+  );
 
   // Honest degradation (never a blanket ignore-flag): the deterministic
   // capability check happens here, once, and the LLM can never bypass

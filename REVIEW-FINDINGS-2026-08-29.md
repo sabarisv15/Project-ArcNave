@@ -49,7 +49,8 @@ against this file's items when you want a fix verified.
   21,367 chars, an 87.6% reduction on that call. 3 new regression tests added; full
   suite 2439/2439 pass.
 
-- [ ] **3. Full-trust PDF gate checks row count, not column content**
+- [x] **3. Full-trust PDF gate checks row count, not column content** — FIXED 2026-08-29
+  (both halves)
   `backend/src/services/documentTableExtractionService.js:169` `assessCoverage()`
   only verifies every identity marker (DoB) is accounted for once — it never checks
   whether the *other* cell values in each row are attributed to the right row. This
@@ -61,16 +62,61 @@ against this file's items when you want a fix verified.
   row's numeric fields are internally consistent per the document's own printed
   arithmetic, generalized rather than hand-fit) before granting `count`/`sum`/
   `compare` access.
+  **Done (first half, earlier 2026-08-29):** partial-trust tier restored —
+  `documentAnalysisService.js` caps every pdfplumber reconstruction at
+  `unreliable_extraction` / `row_integrity_unverified` regardless of coverage.
+  **Done (second half, this session):** the column-sanity check itself, as a new
+  `documentRowIntegrityService.assessRowIntegrity(records)` — genuinely generalized,
+  not hand-fit: it strips only the substrings already structurally known to be
+  non-value (serialNo, regNo, a DoB-shaped span, a semester marker), then searches
+  increasing fixed-width numeric prefixes for a scaling or summation relation that
+  holds EXACTLY across every record, using the widest prefix still covered by 100%
+  of records. No column name, formula, or rate constant is hardcoded anywhere.
+  Measured first (`backend/scripts/row-arithmetic-consistency-probe.js`, read-only)
+  against the real exam-fees PDF through the real sandbox: a naive
+  "match on the modal number-count" version degenerately passes by only testing the
+  9/23 all-zero rows and never touching the 14 rows that actually carry arrears —
+  exactly the rows a misattribution defect would corrupt. The fixed-width-prefix
+  version instead achieves 23/23 coverage and discovers the same two real relations
+  (fees = arrears × 65, total = fees + 625) the original hand-fit probe found,
+  without being told what either column meant. Wired into
+  `documentAnalysisService.analyzeAttachment`: when verified, the
+  `unreliable_extraction` cap is skipped and `count`/`sum`/`compare` all run
+  normally; an unverifiable document (no discoverable relation, fewer than 5
+  records, or fewer than 2 independent relations) falls through to the existing
+  capped behavior unchanged. 6 new unit tests
+  (`backend/tests/document-row-integrity-service.test.js`) plus 2 new integration
+  tests in `backend/tests/document-analysis-service.test.js`; the two pre-existing
+  Finding #3 tests pinning "never full trust" still pass unmodified (their 3-record
+  fixtures never meet the 5-record floor). Full backend suite **2446/2447** in
+  Docker (the one failure is `ai-service.test.js`'s Tool Search catalogue-text
+  assertion, pre-existing and unrelated — untouched files). Live-verified against
+  the real exam-fees PDF through the real deployed sandbox and a real DB-backed
+  tenant (`backend/scripts/pdfplumber-fallback-live-check.js`): `count` returns
+  `status: ok`, 23/23, and `sum` returns a real total (5013) instead of a refusal.
 
-- [ ] **4. Raw model "thinking" leaks into the user-visible answer**
+- [x] **4. Raw model "thinking" leaks into the user-visible answer** — FIXED 2026-08-29
   `backend/src/services/aiProviders/vertexMaas.js:172` (`completeWithMeta`) and the
   `type:'answer'` fallback in `completeWithTools` (~line 283) never strip
   `<think>...</think>` — only the tool-call-detection path does. Only reachable
   when `experimentalReasoningModel` is set.
   **Fix:** move the `<think>` stripping into a shared step applied to every text
   return path in this adapter, not just `extractToolCallFromContent`.
+  **Done:** new `sanitizeModelOutput()` — strips complete `<think>...</think>`
+  blocks (case-insensitive, multiple/mixed-position), AND an unclosed trailing
+  `<think>` with no closing tag (the gap `extractToolCallFromContent`'s own
+  stripping never covered), leaving any real visible text before it intact.
+  Applied to `completeWithMeta`'s return and `completeWithTools`'s final
+  `type:'answer'` fallback; `extractToolCallFromContent` itself left untouched
+  (still reads raw content, exactly as before) so tool-call detection is
+  unaffected. Content that sanitizes to empty now throws `LlmRequestError`
+  (existing convention) instead of ever returning pure internal reasoning as an
+  answer. 17 new tests (`backend/tests/vertex-maas.test.js`, no prior test file
+  existed for this adapter) — sanitizer edge cases, both return paths, and two
+  tool-call-compatibility tests (think block before/after an embedded tool
+  call, still detected correctly).
 
-- [ ] **5. `experimentalFullInstructionsDocument` actively works against both symptoms**
+- [x] **5. `experimentalFullInstructionsDocument` actively works against both symptoms** — FIXED 2026-08-29
   `backend/src/config.js:302` — when on, injects a ~13k-token generic document into
   **every** LLM call in the turn (multiplied by finding #2's loop), and the
   document's own text says "proceed with the default... do not stop to ask" —
@@ -79,12 +125,25 @@ against this file's items when you want a fix verified.
   direct lever on both complaints. Longer-term, replace it with the already-built,
   narrower `experimentalAttachmentDiscipline` segment instead of the full raw
   document.
+  **Done:** confirmed the code default was already safe (`=== 'true'`, off by
+  default in every checked-in file) — the live "ON" state this finding's own
+  discovery note flagged came from an **untracked local `docker-compose.override.yml`**
+  (never committed, since deleted at the owner's direction after this was
+  found). Fixed the two unsafe sentences in
+  `backend/scripts/experimental-ai-operating-instructions.md` ("proceed with the
+  default... stop and ask" / "do not stop to ask") to verify-before-proceeding
+  wording; `experimentalAttachmentDiscipline`'s own two segments were already
+  safe, untouched. Added a startup warning log when the flag is enabled and
+  strengthened `config.js`'s own comment naming the untracked-override risk
+  directly. 6 new tests in `ai-service.test.js` (default-off, explicit opt-in,
+  attachment-discipline independence, wording regression, normal-path
+  unaffected).
 
 ---
 
 ## High — real risk, narrower trigger conditions
 
-- [ ] **6. PDF fallback is the only new capability with no feature flag**
+- [x] **6. PDF fallback is the only new capability with no feature flag** — FIXED 2026-08-29
   `backend/src/services/documentAnalysisService.js:258` — fires unconditionally;
   every previously-honest "I can't read this reliably" refusal on a PDF now
   silently becomes a full-trust answer, with no opt-out and no user-visible signal
@@ -92,8 +151,23 @@ against this file's items when you want a fix verified.
   **Fix:** gate behind a flag (e.g. `PDF_PLUMBER_FALLBACK_ENABLED`) until finding #3
   is addressed, or surface the `_pdfplumber` strategy suffix to the user-facing
   answer instead of treating it as pure metadata.
+  **Done:** exactly the named flag, `config.pdfPlumberFallbackEnabled`
+  (`=== 'true'` parsing), **default false** — `reconstructViaPdfplumber()` is
+  checked before it's ever called, confirmed by grep to be its one and only
+  call site. Finding #3's `row_integrity_unverified` gate is untouched and
+  still mandatory on every enabled path. Added structured, non-suffix-based
+  provenance to the result (`fallbackUsed`, and when true
+  `fallbackProvider`/`reconstructionType`/`primaryExtractionReliable`/
+  `trustReason`) alongside the existing `strategy` field, kept for backward
+  compatibility — never exposed to the end user (the existing
+  `aiToolRegistry.js` tool description already explained
+  `row_integrity_unverified` safely, without naming pdfplumber, so left
+  untouched). One audit-log entry per relevant turn
+  (`action: 'ai_pdf_table_fallback'`, skipped/completed/failed +
+  resultStatus/reason/durationMs, no document content). 49 tests in
+  `document-analysis-service.test.js` (7 new), 11 in `config.test.js` (4 new).
 
-- [ ] **7. Reasoning-model override has no per-college opt-out**
+- [x] **7. Reasoning-model override has no per-college opt-out** — FIXED 2026-08-29
   `backend/src/services/aiService.js:2078` `resolveReasoningConfig` — once
   `experimentalReasoningModel` is set, it silently overrides **every** college's
   configured provider, bypassing `configurationService.getAiConfig`'s per-tenant
@@ -101,6 +175,22 @@ against this file's items when you want a fix verified.
   **Fix:** thread it through `configurationService` as a real per-college-aware
   resolution path (or at minimum, check `aiConfigRepository` first and only apply
   the override when a college has no explicit config of its own).
+  **Done:** exactly the suggested fix — `configurationService.getAiConfig` now
+  tags its result `configSource: 'college_explicit' | 'platform_default'`, and
+  a new `resolveAiConfig(client, collegeId, { allowExperimentalFallback })`
+  applies the experimental override **only** when `configSource` is
+  `'platform_default'` and the caller opts in. `aiService.js`'s local
+  `resolveReasoningConfig` (the buggy unconditional version) is deleted; its two
+  call sites (`askAgent`'s Curriculum and Research modes — the only two that
+  ever applied this) now call `resolveAiConfig`. Every other `getAiConfig`
+  caller (`askAboutTool`, etc.) is untouched and structurally cannot be
+  affected. An explicit-but-invalid college config (unknown provider) still
+  throws, rather than silently falling through to the experiment. No
+  disabled/opt-out column exists on `college_ai_config` today — documented as a
+  real data-model gap, not fabricated. 7 new tests in
+  `configuration-service.test.js`, 3 existing tests in
+  `ai-bulk-operation-safety.test.js` updated (they mocked `getAiConfig`, which
+  `resolveAiConfig` no longer reads through).
 
 - [ ] **8. Tool Search can't tell "wrong subset" from "no tools fit"**
   `backend/src/services/aiToolSearchService.js:120` only rejects an

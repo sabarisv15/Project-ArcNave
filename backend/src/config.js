@@ -297,8 +297,20 @@ module.exports = {
   // it verbatim anyway to observe real live behavior). When true, this
   // REPLACES experimentalAttachmentDiscipline's condensed segment with
   // the full raw document text, on every turn, not just ones with an
-  // attachment. Off by default (false) — the only value this app ships
-  // with.
+  // attachment, and resends it on every LLM call in the turn (decision,
+  // schema-fetch retries, post-tool continuation) — not just once. Off
+  // by default (false) — the only value this app ships with, and the
+  // only value any checked-in file in this repo sets. `=== 'true'` is
+  // deliberate, not `Boolean(process.env...)`: a non-empty string like
+  // `'false'` or `'0'` must not accidentally enable this.
+  //
+  // Review Finding #5 (2026-08-29): this must NEVER be set in a checked-in
+  // docker-compose.yml, .env.example, or deployment manifest — only in a
+  // gitignored/untracked local override (e.g. docker-compose.override.yml)
+  // for a deliberate, time-boxed live trial, turned back off afterward. If
+  // you are reading this because config.experimentalFullInstructionsDocument
+  // is unexpectedly true, check for exactly that kind of untracked local
+  // override before assuming the code default changed.
   experimentalFullInstructionsDocument: process.env.EXPERIMENTAL_FULL_INSTRUCTIONS_DOCUMENT === 'true',
 
   // Which provider a college with no college_ai_config row of its own
@@ -380,6 +392,23 @@ module.exports = {
   // getIdTokenClient). Unset is a valid, supported state: GoogleAuth
   // then falls back to its own ADC discovery.
   sandboxServiceCredentialsPath: process.env.SANDBOX_SERVICE_CREDENTIALS_PATH || null,
+
+  // Review Finding #6 (2026-08-29) — documentAnalysisService's pdfplumber
+  // PDF-table fallback (ADL-063) shipped with no kill switch: an unreliable
+  // primary PDF extraction always reached for the sandbox reconstruction,
+  // with no way to turn it off short of editing code. `=== 'true'` matches
+  // this file's own established boolean-flag convention (sandboxServiceIamAuth,
+  // config.toolSearch.enabled) — a stray non-empty string can never
+  // accidentally enable it. Default false: this fallback depends on the
+  // separate, not-always-deployed sandbox service above, spends a real
+  // execute_code round trip that a reliable native/flat-text extraction
+  // never needed, and — even when it runs — still only ever earns the
+  // Finding #3 partial-trust result unless documentRowIntegrityService
+  // separately verifies it (see documentAnalysisService.js's own
+  // pdfFallbackApplies/PDFPLUMBER_RECONSTRUCT_SCRIPT comments). None of
+  // that is reversed by this flag — it only controls whether the fallback
+  // is attempted at all.
+  pdfPlumberFallbackEnabled: process.env.PDF_PLUMBER_FALLBACK_ENABLED === 'true',
 
   // ADL-061 — open web search and web fetch. ONE provider: Vertex AI
   // search-grounding + urlContext, on config.gemini's own project and

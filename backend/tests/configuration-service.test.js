@@ -138,6 +138,127 @@ test('getAiConfig: DEFAULT_AI_PROVIDER=claude resolves via its own global Vertex
   assert.equal(result.config.model, 'claude-sonnet-5');
 });
 
+// --- Review Finding #7 (2026-08-29) — resolveAiConfig, the only place
+// config.experimentalReasoningModel is allowed to change what a college
+// gets. Every test here restores globalConfig.experimentalReasoningModel
+// itself (not mock.method — it's a plain config value, not a function).
+
+function withExperimentalReasoningModel(value, fn) {
+  const original = globalConfig.experimentalReasoningModel;
+  globalConfig.experimentalReasoningModel = value;
+  return fn().finally(() => { globalConfig.experimentalReasoningModel = original; });
+}
+
+test('resolveAiConfig (Test 1): a college with explicit config wins even when the experiment is enabled', async (t) => {
+  const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async () => ({
+    provider: 'gemini', api_key: null, model: 'approved-model', embedding_model: null, base_url: null,
+  }));
+  t.after(() => findMock.mock.restore());
+
+  await withExperimentalReasoningModel('experimental-model', async () => {
+    const result = await configurationService.resolveAiConfig({}, 'college-a', { allowExperimentalFallback: true });
+    assert.equal(result.provider, 'gemini');
+    assert.equal(result.config.model, 'approved-model');
+    assert.equal(result.configSource, 'college_explicit');
+    assert.equal(result.experimentalOverrideApplied, false);
+  });
+});
+
+test('resolveAiConfig (Test 2): a college with explicit config is used identically when the experiment is disabled', async (t) => {
+  const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async () => ({
+    provider: 'gemini', api_key: null, model: 'approved-model', embedding_model: null, base_url: null,
+  }));
+  t.after(() => findMock.mock.restore());
+
+  await withExperimentalReasoningModel(null, async () => {
+    const result = await configurationService.resolveAiConfig({}, 'college-a', { allowExperimentalFallback: true });
+    assert.equal(result.provider, 'gemini');
+    assert.equal(result.config.model, 'approved-model');
+    assert.equal(result.configSource, 'college_explicit');
+    assert.equal(result.experimentalOverrideApplied, false);
+  });
+});
+
+test('resolveAiConfig (Test 3): no explicit college config + experiment enabled + caller opts in -> the experimental model applies', async (t) => {
+  const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async () => null);
+  t.after(() => findMock.mock.restore());
+
+  await withExperimentalReasoningModel('experimental-model', async () => {
+    const result = await configurationService.resolveAiConfig({}, 'college-b', { allowExperimentalFallback: true });
+    assert.equal(result.provider, 'vertex_maas');
+    assert.equal(result.config.model, 'experimental-model');
+    assert.equal(result.configSource, 'experimental_fallback');
+    assert.equal(result.experimentalOverrideApplied, true);
+  });
+});
+
+test('resolveAiConfig (Test 4): no explicit college config + experiment disabled -> the existing normal platform default applies, never an experimental provider', async (t) => {
+  const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async () => null);
+  t.after(() => findMock.mock.restore());
+
+  await withExperimentalReasoningModel(null, async () => {
+    const result = await configurationService.resolveAiConfig({}, 'college-b', { allowExperimentalFallback: true });
+    assert.notEqual(result.provider, 'vertex_maas');
+    assert.equal(result.configSource, 'platform_default');
+    assert.equal(result.experimentalOverrideApplied, false);
+  });
+});
+
+// Test 5 (AI disabled/opted-out college) — college_ai_config has no
+// enabled/disabled or opt-out column at all (see schema.sql), so there is
+// no data-model state to fabricate here. The closest real mechanism this
+// codebase actually has is the CALLER's own allowExperimentalFallback
+// opt-in (askAgent's two reasoning-mode call sites pass true; every other
+// configurationService.getAiConfig caller never passes through
+// resolveAiConfig at all) — this test covers that the experiment can
+// never apply when a caller doesn't ask for it, regardless of the global
+// flag or the college's own config shape.
+test('resolveAiConfig (Test 5, documented limitation): a caller that does not opt in never receives the experimental override, whatever the college/global state', async (t) => {
+  const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async () => null);
+  t.after(() => findMock.mock.restore());
+
+  await withExperimentalReasoningModel('experimental-model', async () => {
+    const result = await configurationService.resolveAiConfig({}, 'college-b', { allowExperimentalFallback: false });
+    assert.notEqual(result.provider, 'vertex_maas');
+    assert.equal(result.experimentalOverrideApplied, false);
+  });
+});
+
+test('resolveAiConfig (Test 6): tenant isolation — one college\'s explicit config and another\'s fallback never leak into each other', async (t) => {
+  const rows = {
+    'college-a': {
+      provider: 'gemini', api_key: null, model: 'approved-model', embedding_model: null, base_url: null,
+    },
+  };
+  const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async (client, collegeId) => rows[collegeId] || null);
+  t.after(() => findMock.mock.restore());
+
+  await withExperimentalReasoningModel('experimental-model', async () => {
+    const a = await configurationService.resolveAiConfig({}, 'college-a', { allowExperimentalFallback: true });
+    const b = await configurationService.resolveAiConfig({}, 'college-b', { allowExperimentalFallback: true });
+    assert.equal(a.provider, 'gemini');
+    assert.equal(a.configSource, 'college_explicit');
+    assert.equal(b.provider, 'vertex_maas');
+    assert.equal(b.configSource, 'experimental_fallback');
+    // Neither result carries the other college's model string.
+    assert.notEqual(a.config.model, b.config.model);
+  });
+});
+
+test('resolveAiConfig (Test 7): an explicit but invalid college config (unknown provider) throws — the experiment never becomes an accidental bypass for a broken explicit config', async (t) => {
+  const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async () => ({
+    provider: 'not_a_real_vendor', api_key: null, model: 'whatever', embedding_model: null, base_url: null,
+  }));
+  t.after(() => findMock.mock.restore());
+
+  await withExperimentalReasoningModel('experimental-model', async () => {
+    await assert.rejects(
+      () => configurationService.resolveAiConfig({}, 'college-a', { allowExperimentalFallback: true }),
+      (require('../src/services/aiProviders')).AiProviderUnknownError,
+    );
+  });
+});
+
 test('setAiConfig: rejects an unknown provider before any DB write', async (t) => {
   const upsertMock = t.mock.method(aiConfigRepository, 'upsert', async () => { throw new Error('should not be called'); });
   t.after(() => upsertMock.mock.restore());

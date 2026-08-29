@@ -6,7 +6,30 @@ const assert = require('node:assert/strict');
 const documentService = require('../src/services/documentService');
 const documentTextExtractionService = require('../src/services/documentTextExtractionService');
 const sandboxExecutionService = require('../src/services/sandboxExecutionService');
+const auditLogRepository = require('../src/repositories/auditLogRepository');
+const config = require('../src/config');
 const { analyzeAttachment, DocumentAnalysisValidationError } = require('../src/services/documentAnalysisService');
+
+// Review Finding #6 — every test in this file was written before the
+// pdfplumber fallback had a kill switch, so every one of them assumes the
+// fallback attempts whenever primary extraction is unreliable on a PDF.
+// The new safe default (config.pdfPlumberFallbackEnabled = false) would
+// silently change every one of those tests' meaning to "the flag is off,
+// so of course the fallback never ran" — not what they were written to
+// prove. Defaulting THIS FILE's tests to the flag enabled preserves their
+// original intent unchanged; the flag's own disabled-by-default behavior
+// gets its own explicit tests instead (see the "Finding #6" section below).
+// auditLogRepository.createAuditLogEntry is mocked here too because every
+// test in this file calls analyzeAttachment with a bare `{}` as `client`
+// (documentService.downloadDocument is mocked, so the fake client was
+// never actually used before) — logPdfFallbackEvent's real
+// createAuditLogEntry would call client.query and throw on that fake
+// client otherwise.
+const DEFAULT_PDF_PLUMBER_FALLBACK_ENABLED = config.pdfPlumberFallbackEnabled;
+test.beforeEach(() => {
+  config.pdfPlumberFallbackEnabled = true;
+  mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
+});
 
 // The default PDF mime type in ownedChatAttachment() means every test whose
 // flat-text extraction yields 'none' or an unreliable coverage would, since
@@ -39,7 +62,10 @@ function ownedChatAttachment(overrides = {}) {
   };
 }
 
-test.afterEach(() => mock.restoreAll());
+test.afterEach(() => {
+  mock.restoreAll();
+  config.pdfPlumberFallbackEnabled = DEFAULT_PDF_PLUMBER_FALLBACK_ENABLED;
+});
 
 // Caught live: the model calling analyze_document_table sometimes echoes
 // its own param schema description back as the value instead of a real
@@ -87,7 +113,7 @@ test('analyzeAttachment: a document with no recognizable tabular layout degrades
   mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: 'Just an ordinary letter, no table.', method: 'text_layer' }));
   mockSandboxUnavailable();
   const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
-  assert.deepEqual(result, { status: 'unrecognized_layout' });
+  assert.deepEqual(result, { status: 'unrecognized_layout', fallbackUsed: false });
 });
 
 test('analyzeAttachment: happy path — real result-sheet-shaped text is structured and aggregated end to end', async () => {
@@ -138,7 +164,7 @@ test('analyzeAttachment: a serialRange matching nothing degrades to no_matching_
   const result = await analyzeAttachment({}, {
     attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count', serialRange: { from: 9000, to: 9001 },
   }, IDENTITY);
-  assert.deepEqual(result, { status: 'no_matching_records' });
+  assert.deepEqual(result, { status: 'no_matching_records', fallbackUsed: false });
 });
 
 // A live comparison against a direct Gemini upload of the same real
@@ -171,7 +197,7 @@ test('analyzeAttachment: a sectionPattern matching no real section degrades to n
   const result = await analyzeAttachment({}, {
     attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count', sectionPattern: 'no such cohort',
   }, IDENTITY);
-  assert.deepEqual(result, { status: 'no_matching_records' });
+  assert.deepEqual(result, { status: 'no_matching_records', fallbackUsed: false });
 });
 
 // --- ADL-056: an uncompilable LLM-supplied pattern fails the TOOL, not the
@@ -258,7 +284,7 @@ test('analyzeAttachment: sectionPattern combines with serialRange as an AND, not
     sectionPattern: 'sandwich',
     serialRange: { from: 1, to: 900 },
   }, IDENTITY);
-  assert.deepEqual(result, { status: 'no_matching_records' });
+  assert.deepEqual(result, { status: 'no_matching_records', fallbackUsed: false });
 });
 
 test('analyzeAttachment: operation "breakdown" returns per-semester counts, not just a per-record total', async () => {
@@ -414,7 +440,7 @@ test('analyzeAttachment: compare on a delimited source with no identityPattern r
     operation: 'compare',
     comparison: { operator: 'lt', value: 5000 },
   }, IDENTITY);
-  assert.deepEqual(result, { status: 'identity_required' });
+  assert.deepEqual(result, { status: 'identity_required', fallbackUsed: false });
 });
 
 // A roster already has serialNo/regNo, so it needs no identityPattern —
@@ -445,7 +471,7 @@ test('analyzeAttachment: compare where no row clears the threshold degrades to n
     comparison: { operator: 'lt', value: 10 },
     identityPattern: PARTY,
   }, IDENTITY);
-  assert.deepEqual(result, { status: 'no_matching_records' });
+  assert.deepEqual(result, { status: 'no_matching_records', fallbackUsed: false });
 });
 
 // Same posture ADL-056 established for the other two regexes: a clean
@@ -525,10 +551,16 @@ test('analyzeAttachment: count/sum/breakdown are unaffected by the compare addit
 });
 
 // --- ADL-063: the pdfplumber fallback replaces ADL-058's geometry design.
-// A reconstruction that passes the SAME reliability gate flat text uses
-// gets FULL trust — no new status, every operation available — because it
-// went through documentTableExtractionService.extractRecords a second
-// time, not a bespoke check.
+// Originally, a reconstruction that passed the SAME reliability gate flat
+// text uses got FULL trust on the theory that passing assessCoverage a
+// second time was equivalent to a reliable native extraction. Review
+// Finding #3 (2026-08-29) corrected that: assessCoverage only proves every
+// identity marker (DoB) is accounted for once, never that the OTHER cell
+// values in each row are attached to the right identity — a real risk for
+// a layout-reconstructed table specifically. Until an independent
+// row-integrity check exists, a pdfplumber reconstruction is capped at
+// the same unreliable_extraction tier a flat-text extraction gets when its
+// own coverage fails, regardless of how clean its identity coverage is.
 
 // Shaped exactly like the existing "recognized-but-misread layout" test
 // above (same merged-cell defect: only the first row starts with a real
@@ -569,24 +601,31 @@ test('ADL-063: a non-PDF attachment never invokes the sandbox, even with an unre
   mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: 'Just an ordinary letter, no table.', method: 'text_layer' }));
   const executeCodeMock = mockSandboxReturning('irrelevant');
   const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
-  assert.deepEqual(result, { status: 'unrecognized_layout' });
+  assert.deepEqual(result, { status: 'unrecognized_layout', fallbackUsed: false });
   assert.equal(executeCodeMock.mock.callCount(), 0);
 });
 
-test('ADL-063: a verified pdfplumber reconstruction gets FULL trust — count runs normally, no restricted status', async () => {
+// Test 1 (Review Finding #3) — the defect class: every identity marker is
+// present exactly once, non-identity values (RA) exist, the strategy is a
+// pdfplumber reconstruction, and there is no independent row-integrity
+// check. Identity coverage alone must not upgrade this to full trust.
+test('ADL-063 / Finding #3: a verified-by-coverage pdfplumber reconstruction is still capped at unreliable_extraction, never full trust', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
   mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
   mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
   const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
-  assert.equal(result.status, 'ok');
-  // Metadata suffix for audit/observability only — asserted here so a
-  // future change to it is a deliberate decision, not an accident.
+  assert.equal(result.status, 'unreliable_extraction');
+  assert.equal(result.reason, 'row_integrity_unverified');
+  // The reconstruction strategy is still surfaced (metadata/audit), and
+  // rowsExpected === rowsAccountedFor distinguishes this from a genuine
+  // marker shortfall — coverage passed, row alignment is simply unproven.
   assert.equal(result.strategy, 'sequential_id_pdfplumber');
-  assert.equal(result.total, 3);
-  assert.equal(result.scopedCount, 3);
+  assert.equal(result.rowsExpected, 3);
+  assert.equal(result.rowsAccountedFor, 3);
+  assert.ok(result.total === undefined, 'must not return a total it cannot stand behind');
 });
 
-test('ADL-063: compare reaches the aggregate service normally on a verified reconstruction — no identity_required, a real numeric answer', async () => {
+test('ADL-063 / Finding #3: compare on a verified-by-coverage pdfplumber reconstruction is also capped, never reaches the aggregate service', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
   mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
   mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
@@ -596,11 +635,54 @@ test('ADL-063: compare reaches the aggregate service normally on a verified reco
     operation: 'compare',
     comparison: { operator: 'gte', value: 1 },
   }, IDENTITY);
-  assert.equal(compared.status, 'ok');
-  // Records carry their own serialNo/regNo from extractSequentialIdRecords,
-  // same as any other reliable sequential_id extraction — no identityPattern
-  // needed, and no partial-trust restriction anywhere in this path.
-  assert.equal(compared.matchedCount, 3);
+  assert.equal(compared.status, 'unreliable_extraction');
+  assert.equal(compared.reason, 'row_integrity_unverified');
+  assert.ok(compared.matchedCount === undefined, 'must not return a compare result it cannot stand behind');
+});
+
+// documentRowIntegrityService's own extension point, named directly in
+// documentAnalysisService's Finding #3 comment: a reconstruction that
+// passes coverage AND whose numbers carry two independent, non-hand-fit
+// arithmetic relations (a rate scaling, a running total — the same shape
+// measured against the real exam-fees PDF via
+// backend/scripts/row-arithmetic-consistency-probe.js) earns full trust
+// instead of staying capped forever. Fewer than 5 records or fewer than 2
+// relations must still fall through to the cap unchanged — covered by
+// documentRowIntegrityService's own unit tests, not repeated here.
+const MISREAD_FEES_FLAT_TEXT = [
+  '818 24700301 ANBARASAN V DoB: 23.12.2006 1 65 625 Total: 690',
+  'BHARATH K DoB: 19.06.2006 24700302 0 0 625 Total: 625',
+  'CHANDRU M DoB: 25.06.2002 24700303 2 130 625 Total: 755',
+  'DEEPAK R DoB: 11.11.2001 24700304 0 0 625 Total: 625',
+  'ESWAR S DoB: 09.09.2003 24700305 3 195 625 Total: 820',
+].join('\n');
+
+const PDFPLUMBER_RECONSTRUCTED_FEES_TEXT = [
+  '818 24700301 ANBARASAN V DoB: 23.12.2006 1 65 625 Total: 690',
+  '819 24700302 BHARATH K DoB: 19.06.2006 0 0 625 Total: 625',
+  '820 24700303 CHANDRU M DoB: 25.06.2002 2 130 625 Total: 755',
+  '821 24700304 DEEPAK R DoB: 11.11.2001 0 0 625 Total: 625',
+  '822 24700305 ESWAR S DoB: 09.09.2003 3 195 625 Total: 820',
+].join('\n');
+
+test('ADL-063 / Finding #3 (row integrity extension): a pdfplumber reconstruction whose numbers verify earns full trust, count runs', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FEES_FLAT_TEXT, method: 'text_layer' }));
+  mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_FEES_TEXT);
+  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'DoB' }, operation: 'count' }, IDENTITY);
+  assert.equal(result.status, 'ok');
+  assert.equal(result.strategy, 'sequential_id_pdfplumber');
+  assert.equal(result.scopedCount, 5);
+  assert.equal(result.total, 5);
+});
+
+test('ADL-063 / Finding #3 (row integrity extension): sum also runs on a row-integrity-verified reconstruction, not just count', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FEES_FLAT_TEXT, method: 'text_layer' }));
+  mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_FEES_TEXT);
+  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'Total:\\s*(\\d+)' }, operation: 'sum' }, IDENTITY);
+  assert.equal(result.status, 'ok');
+  assert.equal(result.total, 690 + 625 + 755 + 625 + 820);
 });
 
 test('ADL-063: a pdfplumber reconstruction that is STILL not reliable leaves unreliable_extraction unchanged', async () => {
@@ -614,6 +696,11 @@ test('ADL-063: a pdfplumber reconstruction that is STILL not reliable leaves unr
   assert.equal(result.status, 'unreliable_extraction');
   assert.equal(result.strategy, 'sequential_id');
   assert.ok(result.total === undefined);
+  // Distinct from Finding #3's gate: this is a genuine marker shortfall
+  // (rowsAccountedFor below rowsExpected), not "coverage passed but row
+  // alignment is unproven" — the fallback was never adopted at all, so no
+  // 'row_integrity_unverified' reason is attached.
+  assert.equal(result.reason, undefined);
 });
 
 test('ADL-063: the sandbox being unreachable (SandboxExecutionError) degrades to today\'s status, never a thrown error out of the turn', async () => {
@@ -677,4 +764,139 @@ test('ADL-063: a delimited (day-book-shaped) source never invokes the sandbox', 
   assert.equal(result.status, 'ok');
   assert.equal(result.strategy, 'delimited');
   assert.equal(executeCodeMock.mock.callCount(), 0);
+});
+
+// --- Review Finding #6 (2026-08-29) — the pdfplumber fallback gained a
+// kill switch (config.pdfPlumberFallbackEnabled). This file's own
+// beforeEach defaults it to true so every test above keeps its original
+// meaning ("the fallback always attempts") unchanged; these tests are the
+// explicit disabled/enabled/native/audit-log coverage the flag itself
+// needs, on top of that default.
+
+function auditLogMock() {
+  return mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
+}
+
+test('Finding #6: disabled flag never invokes the sandbox — the primary unreliable result is returned unchanged', async () => {
+  config.pdfPlumberFallbackEnabled = false;
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  const executeCodeMock = mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
+  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  assert.equal(executeCodeMock.mock.callCount(), 0, 'reconstructViaPdfplumber must never run when the flag is off');
+  // Same status/strategy/reason a flat-text-only extraction has always
+  // returned for this exact defect (see "a recognized-but-misread layout
+  // refuses instead of returning a confident total" above) — Finding #6
+  // must not change what an unreliable PRIMARY extraction returns, only
+  // whether pdfplumber is ever reached for.
+  assert.equal(result.status, 'unreliable_extraction');
+  assert.equal(result.strategy, 'sequential_id');
+  assert.equal(result.fallbackUsed, false);
+  assert.equal(result.reason, undefined, 'this is the coverage-shortfall reason, never row_integrity_unverified — that reason only exists once a fallback actually ran');
+});
+
+test('Finding #6: disabled flag still logs the event, as "skipped" — never silently invisible', async () => {
+  config.pdfPlumberFallbackEnabled = false;
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
+  const auditMock = auditLogMock();
+  await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  assert.equal(auditMock.mock.callCount(), 1);
+  const [, fields] = auditMock.mock.calls[0].arguments;
+  assert.equal(fields.action, 'ai_pdf_table_fallback');
+  assert.equal(fields.entity, 'ai_attachments');
+  assert.equal(fields.entityId, ATTACHMENT_ID);
+  assert.equal(fields.metadata.enabled, false);
+  assert.equal(fields.metadata.action, 'skipped');
+  // Never the document's own content, values, or names.
+  assert.ok(!JSON.stringify(fields.metadata).includes('ANBARASAN'));
+});
+
+test('Finding #6: enabled flag invokes the sandbox and the result carries structured fallback provenance, not just the _pdfplumber suffix', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  const executeCodeMock = mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
+  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  assert.equal(executeCodeMock.mock.callCount(), 1);
+  assert.equal(result.strategy, 'sequential_id_pdfplumber', 'the existing suffix is preserved for backward compatibility');
+  assert.equal(result.fallbackUsed, true);
+  assert.equal(result.fallbackProvider, 'pdfplumber');
+  assert.equal(result.reconstructionType, 'layout_based');
+  assert.equal(result.primaryExtractionReliable, false);
+  // This document's coverage passes but row integrity is unverified
+  // (Finding #3, unchanged by this task) — trustReason must say so, and
+  // the top-level `reason` field (existing, backward-compatible) must
+  // agree with it, never contradict it.
+  assert.equal(result.trustReason, 'row_integrity_unverified');
+  assert.equal(result.reason, 'row_integrity_unverified');
+});
+
+test('Finding #6: enabled flag logs "completed" with the fallback\'s own resultStatus/reason, no document content', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
+  const auditMock = auditLogMock();
+  await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  assert.equal(auditMock.mock.callCount(), 1);
+  const [, fields] = auditMock.mock.calls[0].arguments;
+  assert.equal(fields.metadata.enabled, true);
+  assert.equal(fields.metadata.action, 'completed');
+  assert.equal(fields.metadata.resultStatus, 'unreliable_extraction');
+  assert.equal(fields.metadata.reason, 'row_integrity_unverified');
+  assert.equal(typeof fields.metadata.durationMs, 'number');
+  assert.ok(!JSON.stringify(fields.metadata).includes('ANBARASAN'), 'no document content in the audit trail');
+});
+
+test('Finding #6: a sandbox failure while enabled logs "failed" and degrades exactly as before, no fallbackUsed', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mock.method(sandboxExecutionService, 'executeCode', async () => {
+    throw new sandboxExecutionService.SandboxNotConfiguredError('not configured in tests');
+  });
+  const auditMock = auditLogMock();
+  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  assert.equal(result.status, 'unreliable_extraction');
+  assert.equal(result.fallbackUsed, false);
+  const [, fields] = auditMock.mock.calls[0].arguments;
+  assert.equal(fields.metadata.action, 'failed');
+});
+
+test('Finding #6 (Test 3 — Finding #3 remains enforced): even with the flag enabled, a verified-by-coverage-only reconstruction never reaches "ok", and aggregate/compare never run over it', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
+  const [countResult, sumResult, compareResult] = await Promise.all([
+    analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY),
+    analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: '(\\d+)' }, operation: 'sum' }, IDENTITY),
+    analyzeAttachment({}, {
+      attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'compare', comparison: { operator: 'gte', value: 0 },
+    }, IDENTITY),
+  ]);
+  for (const result of [countResult, sumResult, compareResult]) {
+    assert.equal(result.status, 'unreliable_extraction');
+    assert.equal(result.reason, 'row_integrity_unverified');
+    assert.equal(result.total, undefined, 'no aggregate number may be returned over unverified fallback data');
+    assert.equal(result.matchedCount, undefined, 'compare must not run over unverified fallback data either');
+  }
+});
+
+test('Finding #6 (Test 4 — native extraction unaffected): a reliable flat-text extraction never invokes the sandbox, regardless of the flag', async () => {
+  for (const flagValue of [false, true]) {
+    config.pdfPlumberFallbackEnabled = flagValue;
+    mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+    mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+      text: '819 25400122 ANBARASAN V\nDoB: 24.04.2008 2 R2023 RA\n3 R2023 RA',
+      method: 'text_layer',
+    }));
+    const executeCodeMock = mockSandboxReturning('irrelevant');
+    // eslint-disable-next-line no-await-in-loop
+    const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+    assert.equal(executeCodeMock.mock.callCount(), 0, `flag=${flagValue}: native extraction must never reach for the sandbox`);
+    assert.equal(result.status, 'ok');
+    assert.equal(result.fallbackUsed, false);
+    mock.restoreAll();
+    // eslint-disable-next-line no-await-in-loop
+    mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
+  }
 });

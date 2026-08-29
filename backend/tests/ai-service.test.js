@@ -3504,7 +3504,12 @@ test('buildMemoryHint: a remembered general fact appears in the same block, with
 
 test('aiService.askAgent: provider without vision support (self_hosted) -> imageAnalysisUnavailable:true, imageCount:0, and the outbound decision call carries NO image content (never a call pretending to have seen it)', async (t) => {
   t.mock.method(documentService, 'downloadDocument', async () => fakeImageDownload());
-  t.mock.method(configurationService, 'getAiConfig', async () => ({
+  // Finding #7: askAgent's reasoning-mode resolution now calls
+  // configurationService.resolveAiConfig, not getAiConfig directly —
+  // resolveAiConfig calls getAiConfig internally via its own local
+  // function reference (not module.exports), so mocking getAiConfig here
+  // would have no effect on what askAgent actually receives.
+  t.mock.method(configurationService, 'resolveAiConfig', async () => ({
     provider: 'self_hosted', adapter: selfHostedAdapter, config: { baseUrl: 'https://self-hosted.example', model: 'sh-x' },
   }));
   const client = fakeClient();
@@ -3535,7 +3540,8 @@ test('aiService.askAgent: provider without vision support (self_hosted) -> image
 
 test('aiService.askAgent: vision-capable provider -> the image actually reaches the provider as the real content block, and imageCount reflects what was sent', async (t) => {
   t.mock.method(documentService, 'downloadDocument', async () => fakeImageDownload());
-  t.mock.method(configurationService, 'getAiConfig', async () => ({
+  // See the previous test's own comment — resolveAiConfig, not getAiConfig.
+  t.mock.method(configurationService, 'resolveAiConfig', async () => ({
     provider: 'claude', adapter: claudeAdapter, config: { apiKey: 'k', model: 'claude-x' },
   }));
   const client = fakeClient();
@@ -4251,4 +4257,86 @@ test('askAgent: a turn where retrieval pre-loaded the right tool makes the same 
     ],
   });
   assert.equal(bodies.length, 2, 'no extra round-trip when retrieval guessed well');
+});
+
+// --- Review Finding #5 (2026-08-29) — experimentalFullInstructionsDocument
+// injects a ~13k-token generic document into every LLM call in a turn when
+// enabled; must be default-off, opt-in only, and never carry unsafe
+// "proceed/don't ask" wording in its active form. Distinctive markers, not
+// full-prompt snapshots, so these stay robust to unrelated prompt wording
+// changes elsewhere: FULL_DOC_MARKER only appears in the real
+// experimental-ai-operating-instructions.md file (a real heading), and
+// ATTACHMENT_DISCIPLINE_MARKER only appears in the Curriculum-mode
+// attachment-discipline segment's own inline text.
+const FULL_DOC_MARKER = 'Confirmed configuration for this build';
+const ATTACHMENT_DISCIPLINE_MARKER = 'never estimate from a partial read';
+
+function withExperimentalFlags({ fullInstructions, attachmentDiscipline }, fn) {
+  const originalFull = config.experimentalFullInstructionsDocument;
+  const originalDiscipline = config.experimentalAttachmentDiscipline;
+  if (fullInstructions !== undefined) config.experimentalFullInstructionsDocument = fullInstructions;
+  if (attachmentDiscipline !== undefined) config.experimentalAttachmentDiscipline = attachmentDiscipline;
+  return fn().finally(() => {
+    config.experimentalFullInstructionsDocument = originalFull;
+    config.experimentalAttachmentDiscipline = originalDiscipline;
+  });
+}
+
+test('config: experimentalFullInstructionsDocument resolves to false with no explicit env override', () => {
+  assert.equal(config.experimentalFullInstructionsDocument, false);
+});
+
+test('askAgent (Finding #5, default behavior): a document-attached turn never carries the full instructions document by default', async (t) => {
+  const bodies = await captureRequestBodies(t, { attachmentIds: ['att-1'] }, [
+    () => mockAnswerResponse('Some answer.'),
+  ]);
+  assert.ok(!bodyText(bodies[0]).includes(FULL_DOC_MARKER), 'the default decision call must never carry the full experimental document');
+});
+
+test('askAgent (Finding #5, explicit opt-in): setting experimentalFullInstructionsDocument=true is required before the full document is ever injected', async (t) => {
+  const bodies = await withExperimentalFlags({ fullInstructions: true }, () => captureRequestBodies(t, { attachmentIds: ['att-1'] }, [
+    () => mockAnswerResponse('Some answer.'),
+  ]));
+  assert.ok(bodyText(bodies[0]).includes(FULL_DOC_MARKER), 'an explicit opt-in must still make the existing injection behavior work');
+});
+
+test('askAgent (Finding #5, attachment-discipline independence): full instructions off + attachment discipline on injects only the narrower segment', async (t) => {
+  const bodies = await withExperimentalFlags({ fullInstructions: false, attachmentDiscipline: true }, () => captureRequestBodies(t, { attachmentIds: ['att-1'] }, [
+    () => mockAnswerResponse('Some answer.'),
+  ]));
+  assert.ok(!bodyText(bodies[0]).includes(FULL_DOC_MARKER), 'attachment discipline must never implicitly re-enable the full document');
+  assert.ok(bodyText(bodies[0]).includes(ATTACHMENT_DISCIPLINE_MARKER), 'the narrower attachment-discipline segment must still be present');
+});
+
+test('askAgent (Finding #5, unsafe wording regression): the full document, when active, no longer carries "stop and ask"/"proceed with the default" style wording', async (t) => {
+  const bodies = await withExperimentalFlags({ fullInstructions: true }, () => captureRequestBodies(t, { attachmentIds: ['att-1'] }, [
+    () => mockAnswerResponse('Some answer.'),
+  ]));
+  const text = bodyText(bodies[0]);
+  assert.ok(text.includes(FULL_DOC_MARKER), 'sanity check: the full document is actually the thing being inspected here');
+  assert.ok(!text.includes('Stop and ask'), 'the unsafe "stop and ask is the thing to never do" table row must be gone');
+  assert.ok(!text.includes('Do not stop to ask'), 'the unsafe blanket "do not stop to ask" instruction must be gone');
+  assert.ok(text.includes('Verify the default against available source data'), 'the replacement evidence-based wording must be present');
+  // The source .md file hard-wraps this sentence across a line break
+  // ("...latitude to an\nuncertain FACT..."), preserved as-is in the
+  // injected segment content — checked as two separate substrings rather
+  // than one, so this assertion doesn't depend on the file's own line width.
+  assert.ok(text.includes('Never extend that same latitude to an'), 'the replacement fact-vs-format distinction must be present');
+  assert.ok(text.includes('uncertain FACT'), 'the replacement fact-vs-format distinction must be present');
+});
+
+test('askAgent (Finding #5, existing normal paths): an ordinary request with no attachment carries neither experimental segment by default', async (t) => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const bodies = [];
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(async (url, options) => {
+      bodies.push(JSON.parse(options.body));
+      return mockAnswerResponse('Hello.');
+    }, async () => {
+      await aiService.askAgent(client, 'What is the capital of France?', { identityContext });
+    });
+  });
+  assert.ok(!bodyText(bodies[0]).includes(FULL_DOC_MARKER));
+  assert.ok(!bodyText(bodies[0]).includes(ATTACHMENT_DISCIPLINE_MARKER));
 });

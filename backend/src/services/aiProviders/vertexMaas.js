@@ -152,6 +152,45 @@ function extractUsage(usage) {
   return { inputTokens: usage.prompt_tokens, outputTokens: usage.completion_tokens };
 }
 
+// Review Finding #4 (2026-08-29) — some Vertex MaaS models (the same
+// reasoning models extractToolCallFromContent below already accommodates)
+// emit their internal reasoning inline as <think>...</think> rather than
+// through a separate structured field. extractToolCallFromContent already
+// strips COMPLETE think blocks, but only as a means to isolate a tool-call
+// JSON payload — its output is never returned as user-visible text, and it
+// does not handle an UNCLOSED <think> tag at all (a truncated
+// reasoning-model response left mid-thought). Every text value this file
+// hands back as an "answer" must go through this instead, which is the one
+// place responsible for making sure raw internal reasoning never reaches a
+// user. Deliberately narrow — only <think> tags, nothing else — per this
+// finding's own scope.
+const THINK_BLOCK_PATTERN = /<think>[\s\S]*?<\/think>/gi;
+// No matching close tag remains after the pass above — the tag opened but
+// the response was truncated before it closed. Everything from that point
+// on is unfinished internal reasoning, never visible text that happens to
+// follow it, so it is removed to the end of the string rather than left in
+// place.
+const UNCLOSED_OPEN_THINK_PATTERN = /<think>[\s\S]*$/i;
+// A stray closing tag with no opener left in the string (e.g. the opener
+// was already consumed by a complete-block match earlier in the content) —
+// removed on its own rather than left dangling in the visible answer.
+const STRAY_CLOSE_THINK_PATTERN = /<\/think>/gi;
+
+// content: whatever a provider response's message.content actually was.
+// Non-string input (null/undefined/a structured value) is handed back
+// unchanged — this function's only job is stripping think-tag noise from
+// real text, never validating shape; every existing call site already has
+// its own typeof/undefined check for that, before or after sanitizing, and
+// must keep it.
+function sanitizeModelOutput(content) {
+  if (typeof content !== 'string') return content;
+  return content
+    .replace(THINK_BLOCK_PATTERN, '')
+    .replace(UNCLOSED_OPEN_THINK_PATTERN, '')
+    .replace(STRAY_CLOSE_THINK_PATTERN, '')
+    .trim();
+}
+
 async function completeWithMeta(cfg, arcnaveContext) {
   const { systemPrompt, userPrompt } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
@@ -169,9 +208,13 @@ async function completeWithMeta(cfg, arcnaveContext) {
   });
 
   const choice = payload && Array.isArray(payload.choices) ? payload.choices[0] : null;
-  const answer = choice && choice.message ? choice.message.content : undefined;
-  if (typeof answer !== 'string') {
+  const rawAnswer = choice && choice.message ? choice.message.content : undefined;
+  if (typeof rawAnswer !== 'string') {
     throw new LlmRequestError('Vertex AI MaaS response did not contain choices[0].message.content');
+  }
+  const answer = sanitizeModelOutput(rawAnswer);
+  if (!answer) {
+    throw new LlmRequestError('Vertex AI MaaS response contained only internal reasoning, no visible answer text');
   }
 
   return { text: answer, usage: extractUsage(payload && payload.usage) };
@@ -282,7 +325,11 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   if (typeof message.content !== 'string') {
     throw new LlmRequestError('Vertex AI MaaS response contained neither a tool call nor message content');
   }
-  return { type: 'answer', text: message.content, usage };
+  const sanitizedText = sanitizeModelOutput(message.content);
+  if (!sanitizedText) {
+    throw new LlmRequestError('Vertex AI MaaS response contained only internal reasoning, no visible answer text');
+  }
+  return { type: 'answer', text: sanitizedText, usage };
 }
 
 // No embeddings/image-generation endpoint on this MaaS chat-completions
@@ -307,4 +354,8 @@ module.exports = {
   completeWithTools,
   embed,
   generateImage,
+  // Exported for direct unit testing only (same precedent as sse.js's
+  // iterateSseLines) — not part of the adapter-wide provider contract
+  // other files should import.
+  sanitizeModelOutput,
 };

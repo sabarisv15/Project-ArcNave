@@ -6,9 +6,12 @@
 // checkToolPreconditions-level tests — auditLogRepository is stubbed via
 // node:test's built-in mock, same technique ai-tool-registry-uat-wiring.
 // test.js already uses for this seam. The askAgent-level confirmation-
-// pause tests additionally stub configurationService.getAiConfig and
-// aiActorContext.describeIdentityContext so the whole flow stays a pure
-// unit test, no DB, no real LLM call.
+// pause tests additionally stub configurationService.resolveAiConfig
+// (Review Finding #7 moved reasoning-mode provider/config resolution
+// there — mocking getAiConfig no longer has any effect, since
+// resolveAiConfig calls it via its own local function reference, not
+// module.exports) and aiActorContext.describeIdentityContext so the whole
+// flow stays a pure unit test, no DB, no real LLM call.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -172,7 +175,7 @@ test('maxAffectedRows — mark_attendance_nl (proxy estimate: absent_roll_number
 
 test('maxAffectedRows — askAgent reuses the existing confirmation-pause mechanism, never a new one', async (t) => {
   await t.test('below confirmAt: askAgent executes normally, no pendingConfirmation', async () => {
-    const configMock = t.mock.method(configurationService, 'getAiConfig', async () => ({
+    const configMock = t.mock.method(configurationService, 'resolveAiConfig', async () => ({
       adapter: {
         completeWithTools: async () => ({
           type: 'tool_call', toolName: 'departments_create', arguments: { name: 'ECE', course_duration: 4, default_sections: 5 },
@@ -197,7 +200,7 @@ test('maxAffectedRows — askAgent reuses the existing confirmation-pause mechan
   });
 
   await t.test('above confirmAt: askAgent pauses with pendingConfirmation, same shape as the existing L3 flow, and never calls the handler', async () => {
-    const configMock = t.mock.method(configurationService, 'getAiConfig', async () => ({
+    const configMock = t.mock.method(configurationService, 'resolveAiConfig', async () => ({
       adapter: {
         completeWithTools: async () => ({
           type: 'tool_call', toolName: 'departments_create', arguments: { name: 'ECE', course_duration: 10, default_sections: 10 },
@@ -225,7 +228,7 @@ test('maxAffectedRows — askAgent reuses the existing confirmation-pause mechan
   });
 
   await t.test('above the hard ceiling: askAgent surfaces the rejection, never a confirmation question', async () => {
-    const configMock = t.mock.method(configurationService, 'getAiConfig', async () => ({
+    const configMock = t.mock.method(configurationService, 'resolveAiConfig', async () => ({
       adapter: {
         completeWithTools: async () => ({
           type: 'tool_call', toolName: 'departments_create', arguments: { name: 'ECE', course_duration: 20, default_sections: 20 },

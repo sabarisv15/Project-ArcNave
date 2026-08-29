@@ -59,3 +59,46 @@ test('config.maxToolCallsPerTurn: trailing garbage is rejected — parseInt("3ab
 test('config.maxToolCallsPerTurn: above the hard ceiling (6) is rejected — never raisable past 5 via env var alone', () => {
   assert.throws(() => loadConfigWithEnv('6'), /MAX_TOOL_CALLS_PER_TURN must be an integer between 1 and 5/);
 });
+
+// Review Finding #6 — PDF_PLUMBER_FALLBACK_ENABLED's own boolean parsing.
+// Same delete-require.cache-and-reload technique as above, since this is
+// also computed once at module-load time.
+function loadConfigWithPdfPlumberEnv(value) {
+  const original = process.env.PDF_PLUMBER_FALLBACK_ENABLED;
+  if (value === undefined) {
+    delete process.env.PDF_PLUMBER_FALLBACK_ENABLED;
+  } else {
+    process.env.PDF_PLUMBER_FALLBACK_ENABLED = value;
+  }
+  delete require.cache[require.resolve('../src/config')];
+  try {
+    // eslint-disable-next-line global-require, import/no-dynamic-require
+    return require('../src/config');
+  } finally {
+    if (original === undefined) {
+      delete process.env.PDF_PLUMBER_FALLBACK_ENABLED;
+    } else {
+      process.env.PDF_PLUMBER_FALLBACK_ENABLED = original;
+    }
+    delete require.cache[require.resolve('../src/config')];
+  }
+}
+
+test('config.pdfPlumberFallbackEnabled: unset resolves to the safe default (false)', () => {
+  assert.equal(loadConfigWithPdfPlumberEnv(undefined).pdfPlumberFallbackEnabled, false);
+});
+
+test('config.pdfPlumberFallbackEnabled: "true" resolves to true', () => {
+  assert.equal(loadConfigWithPdfPlumberEnv('true').pdfPlumberFallbackEnabled, true);
+});
+
+test('config.pdfPlumberFallbackEnabled: "false" resolves to false', () => {
+  assert.equal(loadConfigWithPdfPlumberEnv('false').pdfPlumberFallbackEnabled, false);
+});
+
+test('config.pdfPlumberFallbackEnabled: an unsafe truthy string never accidentally enables it — only the exact literal "true" does', () => {
+  assert.equal(loadConfigWithPdfPlumberEnv('1').pdfPlumberFallbackEnabled, false);
+  assert.equal(loadConfigWithPdfPlumberEnv('yes').pdfPlumberFallbackEnabled, false);
+  assert.equal(loadConfigWithPdfPlumberEnv('TRUE').pdfPlumberFallbackEnabled, false);
+  assert.equal(loadConfigWithPdfPlumberEnv('').pdfPlumberFallbackEnabled, false);
+});

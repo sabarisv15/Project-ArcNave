@@ -4709,3 +4709,129 @@ opt-in ever happened. Any college that later stores `enabled: false`
 stays off — a real opt-out survives this flip, and a test asserts it.
 
 **Status.** Resolved and implemented, 2026-08-28.
+
+---
+
+## ADL-063
+
+### ADL-058's CORE is replaced — pdfplumber, verified against the document's own deterministic identity marker count, at FULL trust
+
+**Decision.** The fallback [ADL-058](#adl-058) approved (geometric
+y-bucketing, permanent partial trust, `count`/`sum`/`breakdown`/`compare`
+all refused) is not built. In its place: when flat-text extraction fails
+reliability on a PDF, the same buffer is re-extracted via **pdfplumber**
+(`extract_tables()`, default `lines` strategy) in the credential-less
+sandbox ([ADL-059](#adl-059)), each row's cells rejoined with a single
+space — the same load-bearing separator rule ADL-058 Finding 2 already
+established — and the reconstructed text is run back through the
+**existing, unmodified** `documentTableExtractionService.extractRecords`
+/ `assessCoverage` pipeline. If that pipeline now reports the result
+reliable, the records get **exactly the same trust and the same
+operations as any other reliable document** — no new `partial_extraction`
+status, nothing refused. If it is still not reliable, today's
+`unreliable_extraction` / `unrecognized_layout` stands, unchanged.
+
+**Superseded position.** ADL-058's CORE — geometry as fallback, always
+partial trust, identity/count only — is not implemented and must not be.
+Its four origin findings (latency, the separator trap, no regression, and
+"coverage counts rows, not columns") are **not invalidated**; the
+separator finding is directly reused above. What changes is which
+reconstruction method fills the fallback step, and therefore what trust
+level a reliable reconstruction earns.
+
+**Why full trust, not partial.** ADL-058's partial-trust rule existed
+because geometry could recover row identity but not column attribution —
+`coverage.reliable` meant "rows accounted for," not "content attributed,"
+and treating the two as the same thing was ADL-055's exact defect
+recurring one layer up. pdfplumber's `lines` strategy reads the PDF's own
+drawn table borders, which is a structural signal, not a per-document
+heuristic, and it does the column-boundary detection ADL-058 listed as
+FUTURE — done automatically, not by hand. Measured
+([ADL-058 addendum 2](#adl-058-addendum--native-pdf-reading-measured-and-it-beats-geometry-at-the-one-thing-geometry-cannot-do-2026-08-26)):
+23/23 identity rows, 0/23 rows failing their own printed arithmetic, and
+the one hand-verified case (ASHWIN JOHN EDISON S carries `690`, ARAVINDAN
+G does not) correct. On this document, `coverage.reliable` now means what
+it always should have: the columns line up. Refusing operations on a
+record set that has passed the exact same reliability gate every other
+trusted document passes would be inconsistent, not cautious.
+
+**Why the verification is the existing marker check, not a new one.**
+The measured pass/fail case in ADL-058 addendum 2 used this document's
+own business arithmetic (`fees = arrears × 65`, `total = fees + 625`) to
+build confidence during measurement. That check is specific to this one
+fee schedule and cannot ship as the production gate — it would be
+exactly the per-document-hand-fit strategy this project has repeatedly
+rejected. The gate that *does* generalize is already in
+`documentTableExtractionService.assessCoverage`: every real record must
+carry its own identity marker (`RECORD_IDENTITY_MARKER`, currently a DoB
+occurrence — one per person by construction), and the marker count found
+in the raw text must be fully accounted for with no orphans and no
+collapsed records. That check has no per-document constant, runs against
+whatever the document's own marker count is, and already governs every
+non-fallback document. Feeding pdfplumber's reconstruction through the
+identical function means pdfplumber earns trust the same way flat text
+does — never a second, bespoke verification method.
+
+**What this means for `count`/`sum`/`breakdown`/`compare`.** ADL-058's
+narrowing of ADL-055's rule (*"identity and record count only"*) was
+itself downstream of geometry's column-attribution failure. Since a
+pdfplumber-reconstructed record set that passes `assessCoverage` has the
+same attribution guarantee as any other reliable record set, that
+narrowing does not carry over: all four operations run exactly as they do
+today, through `documentAggregateService`, untouched. "Counting and
+aggregation still done deterministically" — this was never in question;
+what changes is that pdfplumber, once verified, is no longer excluded
+from reaching that deterministic layer.
+
+**Cost, stated rather than assumed away.** Unlike geometry, pdfplumber
+does not run in-process — it is an `execute_code` round trip into the
+sandbox. Measured this session
+([sandbox cost, "fourth open item"](../70-checkpoint/CURRENT-STATE.md)):
+~1.0s cold start, ~79ms warm, plus ~422ms for `import pdfplumber`. This
+only runs on the fallback path (flat text already failed), so the working
+document set incurs zero additional cost — the same zero-regression
+argument ADL-058 made for making geometry a fallback rather than a
+default applies unchanged to this replacement.
+
+**One thing this decision does NOT do.** It does not lift the bound on
+document size: `sandboxExecutionService.MAX_FILE_BYTES` (5MB) caps what
+buffer can be sent to the sandbox at all, so a PDF large enough to fail
+flat-text reliability AND exceed 5MB gets today's honest refusal, not a
+silent skip of the fallback. Not measured against a PDF near that size in
+this pass — a real bound to test before this is called done for large
+documents, not before it is called done at all.
+
+**Affected artefacts.**
+[`ai-chat-pdf-geometric-reconstruction-approved-spec.md`](../60-product-reasoning/ai-chat-pdf-geometric-reconstruction-approved-spec.md)
+— CORE section rewritten in place (the original geometry design kept as
+dated history, not deleted); `documentAnalysisService.analyzeAttachment`
+gains the fallback call at its two existing failure-return points
+(`strategy === 'none'` and `coverage.applicable && !coverage.reliable`);
+`documentTableExtractionService.countMarkers` needs exporting (currently
+module-private) for reuse by the fallback's own verification step — no,
+on reflection this is unnecessary: the fallback reuses `extractRecords`
+itself, which already calls `assessCoverage` internally, so no new export
+is needed at all. `pdfjs-dist` declaration (ADL-058 Finding 5) is now
+moot — pdfplumber, not `pdfjs-dist`-based geometry, does the
+reconstruction, so that dependency never needs adding for this slice.
+
+**Status.** Resolved and implemented, 2026-08-29.
+[`ai-chat-pdf-geometric-reconstruction-approved-spec.md`](../60-product-reasoning/ai-chat-pdf-geometric-reconstruction-approved-spec.md)'s
+"## Features (REVISED 2026-08-28)" section is the as-built design.
+`documentAnalysisService.js` gained the fallback at its two existing
+failure-return points, `sandboxExecutionService.executeCode` runs
+pdfplumber's default-strategy `extract_tables()`, and the reconstruction
+is verified by feeding it back through the unmodified
+`documentTableExtractionService.extractRecords`/`assessCoverage` — no new
+export, no new status. Unit-tested (`backend/tests/document-analysis-
+service.test.js`, 10 new cases: full-trust operations, the two error
+paths degrading honestly, the separator and strategy pins, non-PDF and
+already-reliable documents never invoking the sandbox). Full backend
+suite **2418/2418**, zero regressions. **Live-verified against the real
+exam-fees PDF through the real deployed sandbox**
+(`backend/scripts/pdfplumber-fallback-live-check.js`, calls
+`analyzeAttachment` directly, no LLM involved): `status: 'ok'`,
+`strategy: 'sequential_id_pdfplumber'`, **23/23 records**, `count(DoB)`
+returns 23, and `sum` — an operation ADL-058's design would have
+refused outright — returns a real total (5013) over 15 matched rows.
+Full trust, proven live, not just asserted in a mock.

@@ -4,11 +4,26 @@ _Last updated: 2026-08-28._
 
 ---
 
-# ⛔ READ FIRST — TWO DECISIONS WAITING ON THE OWNER
+# ⛔ READ FIRST — Decision 1 is DONE (decided, built, tested, live-verified). Decision 2 (image search) is still open.
 
-**The owner said (2026-08-28): "I will answer these next session."** Both
-are product decisions, not engineering ones — nothing is blocked on code,
-and nothing here needs to be worked out again.
+**DECISION 1 is FULLY SHIPPED, 2026-08-29.** Owner chose (2026-08-28):
+switch to pdfplumber, full trust when verified. Recorded as
+[ADL-063](../30-decisions/ledger.md#adl-063). Built the same session
+(2026-08-29): `documentAnalysisService.js` gained the sandbox fallback at
+its two existing failure-return points; a verified reconstruction is fed
+back through the unmodified `documentTableExtractionService.extractRecords`
+— no new status, no new export. Unit tests **40/40** in
+`backend/tests/document-analysis-service.test.js` (10 new), full backend
+suite **2418/2418**, zero regressions. **Live-verified against the real
+exam-fees PDF through the real deployed sandbox**
+(`backend/scripts/pdfplumber-fallback-live-check.js`): 23/23 records,
+`count` and `sum` both return real answers — `sum` is the operation
+ADL-058's original design would have refused outright. Full detail:
+[ADL-063](../30-decisions/ledger.md#adl-063)'s Status line.
+**Nothing left to do on this thread.** Do not re-open, re-ask, or re-run
+either probe.
+
+Decision 2 (image search) is still genuinely open — see below.
 
 **This section is deliberately self-contained.** Every fact needed to act
 on either answer is written out below, with exact file paths. **Do not run
@@ -22,7 +37,9 @@ not ask about them unprompted — they were parked on purpose.
 
 ---
 
-## DECISION 1 — PDF table reading: keep geometry, or switch to pdfplumber?
+## DECISION 1 — ✅ RESOLVED 2026-08-28: switched to pdfplumber. Kept below as the record of what was measured before the decision — see the resolution banner at the top of this file for what to actually do next.
+
+### (original question, for the record) PDF table reading: keep geometry, or switch to pdfplumber?
 
 **Why this is being asked.** [ADL-058](../30-decisions/ledger.md#adl-058)
 approved a slice built on the premise that correct column attribution was
@@ -204,14 +221,31 @@ call cost 212,822 tokens). Also corrected there: citing this thread's origin
 as evidence against native reading was not sound — the Gemini app's own
 number was never recorded.
 
-**Decided:** build ADL-058 as specified, and give native attribution its
-**own pass** afterwards. ADL-058 is that pass's prerequisite, not its
-competitor — the deterministic 23 are what a native reading gets verified
-*against*, which is the difference between "the model said so" and
-RS-AIG-019's checked claim. The spec's FUTURE table now records both routes
-to lifting partial trust.
+**Decided (2026-08-26):** build ADL-058 as specified, and give native
+attribution its **own pass** afterwards. ADL-058 is that pass's
+prerequisite, not its competitor — the deterministic 23 are what a native
+reading gets verified *against*, which is the difference between "the
+model said so" and RS-AIG-019's checked claim. The spec's FUTURE table now
+records both routes to lifting partial trust.
 
-**Exact next action for this thread: `/build-slice` against that spec.**
+**⚠️ SUPERSEDED 2026-08-28 — see the resolution banner at the very top of
+this file.** ADL-058's own partial-trust premise turned out to be false
+(pdfplumber, already installed, does the x-column-boundary detection this
+paragraph called a future "own pass" and does it automatically today).
+[ADL-063](../30-decisions/ledger.md#adl-063) replaces ADL-058's CORE:
+pdfplumber, verified via the existing `assessCoverage` identity-marker
+check, **full trust** when verified (not partial — `count`/`sum`/
+`breakdown`/`compare` all run normally). The "native attribution, own
+pass" queued item directly below is untouched by this — it is still a
+separate, unstarted pass.
+
+**✅ BUILT, TESTED AND LIVE-VERIFIED, 2026-08-29 — this thread is closed.**
+See the resolution banner at the very top of this file and
+[ADL-063](../30-decisions/ledger.md#adl-063)'s Status line for the full
+record (unit tests, full-suite result, live check against the real
+exam-fees PDF). Nothing further queued on the ADL-058/063 thread itself —
+the still-separate "native attribution, own pass" item below remains
+unstarted, as it always was.
 
 **Then queued, needing its own pass: native-PDF attribution** — verified
 against ADL-058's deterministic identity set, size-bounded, and never used

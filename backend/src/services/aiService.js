@@ -17,13 +17,14 @@
 
 const crypto = require('crypto');
 const aiToolRegistry = require('./aiToolRegistry');
-const aiToolRetrievalService = require('./aiToolRetrievalService');
+const aiToolSearchService = require('./aiToolSearchService');
 const aiContextBuilder = require('./aiContextBuilder');
 const aiPromptSafetyLayer = require('./aiPromptSafetyLayer');
 const aiActorContext = require('./aiActorContext');
 const aiPolicyAssembly = require('./aiPolicyAssembly');
 const aiContextAssembly = require('./aiContextAssembly');
 const configurationService = require('./configurationService');
+const aiProviders = require('./aiProviders');
 const config = require('../config');
 const documentService = require('./documentService');
 const auditLogRepository = require('../repositories/auditLogRepository');
@@ -667,6 +668,33 @@ function buildAttachmentHint(documents, providerName) {
     + 'placeholder or description.';
 }
 
+// Review Finding #2 — the compact counterpart to buildAttachmentHint,
+// used for every completeWithTools call in askAgent's decision loop
+// AFTER the first one (schema-fetch retries, budget-exempt-lookup
+// retries, post-tool continuations): the initial decision call already
+// delivers the full boundary-wrapped text once via buildAttachmentHint
+// above, so resending it unchanged on every later call in the SAME turn
+// was pure waste — a single large attachment could be resent 3-5x per
+// turn for no reason. Keeps only what a continuation call still needs:
+// identity (fileName/attachmentId/mimeType) so analyze_document_table's
+// attachmentId parameter can still be resolved correctly, never the raw
+// content. Same "identity, not content" boundary buildAttachmentHint's
+// own comment already draws for the separate answer-synthesis call
+// (answerPromptQuestion) — applied here one call earlier, inside the
+// same decision loop, instead of only at the final synthesis step.
+function buildAttachmentMetadataHint(documents) {
+  if (!Array.isArray(documents) || documents.length === 0) return '';
+  const lines = documents.map((doc) => {
+    if (doc.text === null) {
+      return `- ${JSON.stringify(doc.fileName)} (attachmentId: ${doc.attachmentId}) — could not be read (${doc.failureReason}).`;
+    }
+    return `- ${JSON.stringify(doc.fileName)} (attachmentId: ${doc.attachmentId}, mimeType: ${doc.mimeType}) — `
+      + 'content already shown earlier in this turn, not repeated here.';
+  });
+  return 'Attachment(s) already shown earlier in this turn (use the exact attachmentId value(s) below when a '
+    + `tool needs one, never a placeholder):\n${lines.join('\n')}`;
+}
+
 // The decision-call system-prompt addendum used when images are
 // attached but the configured provider can't view them (askAgent's own
 // comment on the full honest-degradation reasoning). Deliberately
@@ -999,6 +1027,139 @@ function buildToolCatalogue(roleTools, offeredNames) {
     + 'parameters — you cannot call it before doing so. If nothing here fits the question, say so plainly '
     + 'rather than answering as if you had checked.\n\n'
     + `${lines}\n\nAlready described in full above: ${offeredNames.join(', ')}.`;
+}
+
+// EXPERIMENTAL, off-by-default (config.experimentalCatalogueVariant,
+// unset -> 'current', zero behavior change) — Gemini-native routing
+// experiment, this session's follow-up to the Tool Search NO-GO:
+// instead of a second model, test whether Gemini itself can route from
+// much shorter catalogue text. Every variant below derives its per-tool
+// text MECHANICALLY from the real registry `description` field — never
+// hand-authored per tool, never invented — so the comparison is honest
+// about how the shortening was produced, not presented as expertly
+// tuned routing copy for ~101 tools. Same derivation rules as
+// scripts/catalogue-routing-token-probe.js (copied, not re-derived
+// differently, so the benchmarked text and any real-call text are
+// identical). Never used unless config.experimentalCatalogueVariant is
+// explicitly set — read live below, same "never a load-time snapshot"
+// convention every other experimental/config-gated value in this file
+// already follows.
+const CATALOGUE_VARIANT_B_MAX = 55;
+const CATALOGUE_VARIANT_C_MAX = 32;
+const CATALOGUE_LEADING_VERB_RE = /^(records?|returns?|lists?|shows?|fetches?|gets?|retrieves?|generates?|creates?|updates?|marks?|finds?|resolves?|drafts?)\s+(the\s+|a\s+|an\s+|one\s+)?/i;
+function toWhenToUse(description, maxLen) {
+  const text = String(description || '').trim();
+  const searchWindow = text.slice(0, Math.floor(maxLen * 1.5));
+  const boundary = searchWindow.search(/[,.;—(]/);
+  if (boundary !== -1 && boundary <= maxLen) return text.slice(0, boundary).trim();
+  if (text.length <= maxLen) return text;
+  const cut = text.slice(0, maxLen);
+  const lastSpace = cut.lastIndexOf(' ');
+  return (lastSpace > 10 ? cut.slice(0, lastSpace) : cut).trim();
+}
+function toKeywords(description) {
+  const shortened = toWhenToUse(description, CATALOGUE_VARIANT_C_MAX + 25).replace(CATALOGUE_LEADING_VERB_RE, '');
+  return toWhenToUse(shortened, CATALOGUE_VARIANT_C_MAX);
+}
+const CATALOGUE_CATEGORY_RULES = [
+  [/^attendance_|^mark_attendance_nl$/, 'ATTENDANCE'],
+  [/^students_/, 'STUDENTS'],
+  [/^staff_/, 'STAFF'],
+  [/^academic_|^class_assign_tutor$|^substitute_/, 'ACADEMIC'],
+  [/^assessment_/, 'ASSESSMENT'],
+  [/^finance_/, 'FINANCE'],
+  [/^departments_/, 'DEPARTMENTS'],
+  [/^calendar_|^list_calendar_events$/, 'CALENDAR'],
+  [/^reports_/, 'REPORTS'],
+  [/^draft_notification$|^request_notification_send$|^class_send_alert$/, 'NOTIFICATIONS'],
+  [/^class_log_/, 'CLASS_LOG'],
+  [/document|^search_documents$|^upload_institutional_document$|^resolve_document_destination$|^analyze_document_table$|^manage_project_document$|^update_project_instructions$|^export_artifact|^list_own_artifacts$|^update_artifact_content$|^generate_document$/, 'DOCUMENTS'],
+  [/^ai_memory_|^personal_notes_|^user_preferences_|^conversation_/, 'MEMORY_PREFS'],
+  [/^present_|^decide_output_format$|^decide_image_route$|^describe_diagram_constraints$|^generate_image$|^image_search$/, 'PRESENTATION'],
+  [/^web_|^fetch_trusted_web_page$|^weather_fetch$/, 'WEB_EXTERNAL'],
+];
+function catalogueCategoryOf(name) {
+  const rule = CATALOGUE_CATEGORY_RULES.find(([re]) => re.test(name));
+  return rule ? rule[1] : 'SYSTEM';
+}
+function buildToolCatalogueOneLine(roleTools) {
+  const lines = roleTools.map((t) => `${t.name} — ${toWhenToUse(t.description, CATALOGUE_VARIANT_B_MAX)}`).join('\n');
+  return 'Tool routing guide — name and when to use it. If nothing below fits the question, say so plainly.\n\n'
+    + `${lines}`;
+}
+function buildToolCatalogueKeywords(roleTools) {
+  const lines = roleTools.map((t) => `${t.name} — ${toKeywords(t.description)}`).join('\n');
+  return 'Tool routing keywords. If nothing below fits the question, say so plainly.\n\n' + lines;
+}
+function buildToolCatalogueCategory(roleTools) {
+  const byCategory = new Map();
+  roleTools.forEach((t) => {
+    const cat = catalogueCategoryOf(t.name);
+    if (!byCategory.has(cat)) byCategory.set(cat, []);
+    byCategory.get(cat).push(t);
+  });
+  const sections = [...byCategory.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(
+    ([cat, tools]) => `${cat}\n${tools.map((t) => `- ${t.name} — ${toKeywords(t.description)}`).join('\n')}`,
+  );
+  return 'Tool routing guide, grouped by category. If nothing below fits the question, say so plainly.\n\n' + sections.join('\n\n');
+}
+// 'spec' variant — a hand-authored routing document (scripts/
+// experimental-catalogue-spec.md), NOT mechanically derived like B/C/D
+// above. Verified this session (a real diff against the live registry,
+// not assumed) to cover all 101 Principal-permitted tools by name,
+// including its own `_suffix` shorthand rows (e.g. `staff_self_
+// profile_get` / `_update`) — no fabricated tool names. NOT role-
+// filtered: sent as-is regardless of role. For Principal this is exact
+// (Principal already has ~101/101 tools). For HOD/Tutor/Staff this
+// overstates real cost slightly (a handful of admin-only tools they
+// can't call are still in the text) — a disclosed simplification, not
+// hidden, because the shorthand notation above is genuinely ambiguous
+// to parse into per-tool rows reliably (`_update` sometimes replaces
+// the last word, sometimes appends one — verified inconsistent this
+// session, not a guess).
+let cachedSpecText = null;
+function buildToolCatalogueSpec() {
+  if (cachedSpecText === null) {
+    cachedSpecText = require('fs').readFileSync(`${__dirname}/../../scripts/experimental-catalogue-spec.md`, 'utf8');
+  }
+  return cachedSpecText;
+}
+
+// 'hybrid' variant — a second hand-authored document (scripts/
+// experimental-catalogue-hybrid.md), same verification done (real diff
+// against the live registry: all 101 Principal tools covered, zero
+// fabricated names — the one flagged token, "submit", is a naming-
+// convention reference in the Rules section, not a tool). Same NOT-
+// role-filtered caveat as 'spec' above, same reason.
+let cachedHybridText = null;
+function buildToolCatalogueHybrid() {
+  if (cachedHybridText === null) {
+    cachedHybridText = require('fs').readFileSync(`${__dirname}/../../scripts/experimental-catalogue-hybrid.md`, 'utf8');
+  }
+  return cachedHybridText;
+}
+
+// Testing-phase only (config.experimentalFullInstructionsDocument) —
+// the user-supplied AI_OPERATING_INSTRUCTIONS_1.md wired in verbatim, no
+// condensing, per explicit instruction after being told the real
+// token-cost/content tradeoffs (see config.js's own comment). Same
+// lazy-read-and-cache pattern as buildToolCatalogueHybrid above.
+let cachedFullInstructionsText = null;
+function buildFullInstructionsDocument() {
+  if (cachedFullInstructionsText === null) {
+    cachedFullInstructionsText = require('fs').readFileSync(`${__dirname}/../../scripts/experimental-ai-operating-instructions.md`, 'utf8');
+  }
+  return cachedFullInstructionsText;
+}
+
+function buildToolCatalogueForExperiment(roleTools, offeredNames) {
+  const variant = config.experimentalCatalogueVariant;
+  if (variant === 'oneLine') return buildToolCatalogueOneLine(roleTools);
+  if (variant === 'keywords') return buildToolCatalogueKeywords(roleTools);
+  if (variant === 'category') return buildToolCatalogueCategory(roleTools);
+  if (variant === 'spec') return buildToolCatalogueSpec();
+  if (variant === 'hybrid') return buildToolCatalogueHybrid();
+  return buildToolCatalogue(roleTools, offeredNames);
 }
 
 function buildSchemaMetaTool() {
@@ -1828,7 +1989,7 @@ async function summarizeToolResult(client, identityContext, sanitizedContext, pr
 // adapter.completeWithTools, which exists specifically to let a model
 // pick FROM a tool list that here is deliberately empty.
 async function askGeneralChat(client, question, promptQuestion, {
-  identityContext, identityBlock, adapter, aiConfig, images, hasHistory,
+  identityContext, identityBlock, adapter, aiConfig, images, hasHistory, hasAttachedDocuments,
 }, onDelta, onStep = () => {}) {
   const imagesSupported = images.length > 0 && Boolean(adapter.supportsVision);
   const imageAnalysisUnavailable = images.length > 0 && !imagesSupported;
@@ -1860,6 +2021,35 @@ async function askGeneralChat(client, question, promptQuestion, {
     aiContextAssembly.segment({
       source: 'policy-modules', stability: aiContextAssembly.STABILITY.CONVERSATION, target: 'system', content: policy,
     }),
+    // Priority 3 follow-up (config.experimentalAttachmentDiscipline, off
+    // by default) — live session trial only, per explicit user
+    // instruction, extended here to cover Research mode specifically
+    // because it has NO deterministic tool at all (see this function's
+    // own top comment) and the promptQuestion it receives still carries
+    // the full raw attachmentHint (aiService.js's own comment a few
+    // hundred lines up documents the exact measured failure this
+    // reopens: "the pre-routing answer... claimed 14 students when the
+    // tool computes 77 arrears across 21"). Strict per instruction: this
+    // is the ONLY change to this mode — no tool is added, no other
+    // behavior changes.
+    // Superseded by the full raw document (config.experimentalFullInstructionsDocument,
+    // testing-phase only, per explicit user instruction) when that flag
+    // is on — applies on every turn here too, not just attachment turns.
+    ...(config.experimentalFullInstructionsDocument ? [aiContextAssembly.segment({
+      source: 'full-instructions-document',
+      stability: aiContextAssembly.STABILITY.STATIC,
+      target: 'system',
+      content: buildFullInstructionsDocument(),
+    })] : (config.experimentalAttachmentDiscipline && hasAttachedDocuments) ? [aiContextAssembly.segment({
+      source: 'attachment-discipline',
+      stability: aiContextAssembly.STABILITY.TURN,
+      target: 'system',
+      content: 'This mode has no deterministic computation tool. If asked to count, sum, or compare specific '
+        + 'records from an attached document, do NOT estimate or compute a number from reading it — say plainly '
+        + 'that this mode cannot run a verified computation over the attachment, name the exact figure you would '
+        + 'need to compute, and tell the user to ask again in Curriculum mode instead. Confirm which section, '
+        + 'course, or scope any text you DO quote from the document actually belongs to before quoting it.',
+    })] : []),
     aiContextAssembly.segment({
       source: 'identity', stability: aiContextAssembly.STABILITY.CONVERSATION, target: 'system', content: identityBlock,
     }),
@@ -1887,6 +2077,40 @@ async function askGeneralChat(client, question, promptQuestion, {
     answer,
     usage,
     presentation,
+  };
+}
+
+// Priority 2 — Reasoning model benchmark, EXPERIMENTAL, off-by-default
+// (config.experimentalReasoningModel, unset -> today's exact
+// configurationService.getAiConfig() resolution, zero behavior change).
+// Isolates the reasoning-model variable per this session's benchmark
+// requirement: everything downstream of this call (tool selection,
+// Policy Gate, business services, run_workflow_plan, synthesis) reuses
+// the SAME adapter interface (completeWithTools/complete), so swapping
+// which {adapter, aiConfig} pair askAgent resolves to is the entire
+// change — no other code path in this file is touched. Reuses the
+// already-built vertex_maas adapter (Priority 1's own Tool Search
+// work) and Gemini's own projectId/location/ADC, same "no new
+// credential system" precedent that adapter's own header comment
+// already established.
+//
+// Multimodal: NOT redesigned here, per this session's explicit
+// instruction. vertex_maas.supportsVision is false, so when this
+// override is active, askAgent's own existing "honest degradation"
+// path (imagesSupported/imageAnalysisUnavailable, a few lines below
+// this function's call sites) takes over exactly as it already does
+// for any non-vision provider — images are marked unavailable, no new
+// Gemini-preprocessing handoff is built. A real limitation, disclosed,
+// not invented around.
+function resolveReasoningConfig(defaultAdapter, defaultAiConfig) {
+  if (!config.experimentalReasoningModel) return { adapter: defaultAdapter, aiConfig: defaultAiConfig };
+  return {
+    adapter: aiProviders.getAdapter('vertex_maas'),
+    aiConfig: {
+      projectId: config.gemini.projectId,
+      location: config.gemini.location,
+      model: config.experimentalReasoningModel,
+    },
   };
 }
 
@@ -1918,6 +2142,19 @@ async function askAgent(client, question, {
   const memoryHint = await buildMemoryHint(client, identityContext);
   const hints = [historyHint, projectHint, focusHint, memoryHint, attachmentHint].filter(Boolean).join('\n\n');
   const promptQuestion = hints ? `${hints}\n\nQuestion: ${question}` : question;
+  // Review Finding #2 — same hints as promptQuestion above, minus the raw
+  // attachment text (buildAttachmentMetadataHint instead of
+  // buildAttachmentHint): used below for every completeWithTools call in
+  // the CURRICULUM decision loop after the first one (schema-fetch
+  // retries, budget-exempt-lookup retries, post-tool continuations),
+  // which otherwise resent the full document on every iteration of the
+  // same turn — the initial call already delivers it once, and whatever
+  // the model actually needed from it flows forward through priorTurns'
+  // own tool results instead. Not used for the answer/answerPromptQuestion
+  // path below, which already drops the attachment hint entirely.
+  const attachmentMetadataHint = buildAttachmentMetadataHint(documents);
+  const compactHints = [historyHint, projectHint, focusHint, memoryHint, attachmentMetadataHint].filter(Boolean).join('\n\n');
+  const compactPromptQuestion = compactHints ? `${compactHints}\n\nQuestion: ${question}` : question;
   // The ANSWER-call variant: identical, minus the attachment hint. Once a
   // deterministic tool has run, its bounded result is already present as
   // boundary-wrapped evidence, and leaving the raw document text beside it
@@ -1951,9 +2188,10 @@ async function askAgent(client, question, {
   // behavior.
   if (mode === 'general') {
     const identityBlock = await aiActorContext.describeIdentityContext(client, identityContext);
-    const { adapter, config: aiConfig } = await configurationService.getAiConfig(client, identityContext.collegeId);
+    const resolvedGeneral = await configurationService.getAiConfig(client, identityContext.collegeId);
+    const { adapter, aiConfig } = resolveReasoningConfig(resolvedGeneral.adapter, resolvedGeneral.config);
     return askGeneralChat(client, question, promptQuestion, {
-      identityContext, identityBlock, adapter, aiConfig, images, hasHistory: historyHint !== '',
+      identityContext, identityBlock, adapter, aiConfig, images, hasHistory: historyHint !== '', hasAttachedDocuments: documents.length > 0,
     }, onDelta, onStep);
   }
 
@@ -1971,7 +2209,31 @@ async function askAgent(client, question, {
   // filter above (a broad role like principal keeps ~56 of 69 tools
   // from role filtering alone). Falls back to the old keyword filter
   // only when the shared embedding service is unavailable.
-  const retrievedTools = await aiToolRetrievalService.retrieveRelevantTools(client, { roleTools, question });
+  //
+  // Priority 1 Phase 1 — aiToolSearchService.discoverRelevantTools wraps
+  // this exact call as its own disabled/failure fallback, so this is
+  // the ONE call site: when TOOL_SEARCH_ENABLED is unset/false (the
+  // shipped default), the result is byte-identical to calling
+  // aiToolRetrievalService.retrieveRelevantTools directly, viaToolSearch
+  // is always false, and nothing below this line changes behavior. Only
+  // when a dedicated Tool Search model actually answers is viaToolSearch
+  // true, which is what lets the tool-catalogue segment below be
+  // omitted — the actual point of this architecture (see aiService.js's
+  // buildToolCatalogue's own comment on catalogue token cost).
+  const {
+    tools: retrievedTools, viaToolSearch, usage: toolSearchUsage, provider: toolSearchProvider, model: toolSearchModel,
+  } = await aiToolSearchService.discoverRelevantTools(client, { roleTools, question });
+  // ADR-030 P0/P1 telemetry, same convention every other LLM call in
+  // this turn already gets (see logLlmCall's own comment) — a no-op
+  // when toolSearchUsage is undefined (Tool Search disabled, or no call
+  // was ever attempted), so this line changes nothing on the default
+  // path. When a real Tool Search call did happen, its real cost is
+  // recorded under purpose: 'tool_search' EVEN if this service then
+  // distrusted the response and fell back — a distrusted answer still
+  // cost real tokens (Section 19 of this session's plan).
+  await logLlmCall(client, {
+    identityContext, adapter: { name: toolSearchProvider }, aiConfig: { model: toolSearchModel }, purpose: 'tool_search', usage: toolSearchUsage,
+  });
   const tools = pinDocumentAnalysisTool(retrievedTools, roleTools, documents);
   // The bounded-plan meta-tool (P0.3) is never subject to relevance
   // filtering — it's a structural capability ("you may chain the tools
@@ -1985,7 +2247,8 @@ async function askAgent(client, question, {
   // module's own tightened wording already had to correct for once).
   const toolsWithPlan = tools.length >= 2 ? [...tools, buildPlanMetaTool()] : tools;
   const identityBlock = await aiActorContext.describeIdentityContext(client, identityContext);
-  const { adapter, config: aiConfig } = await configurationService.getAiConfig(client, identityContext.collegeId);
+  const resolvedAiConfig = await configurationService.getAiConfig(client, identityContext.collegeId);
+  const { adapter, aiConfig } = resolveReasoningConfig(resolvedAiConfig.adapter, resolvedAiConfig.config);
 
   // Honest degradation (never a blanket ignore-flag): the deterministic
   // capability check happens here, once, and the LLM can never bypass
@@ -2015,24 +2278,19 @@ async function askAgent(client, question, {
     hasFileTool,
     focusEntityType: focusContext && focusContext.entityType,
   });
-  const decisionUserSegments = [
-    aiContextAssembly.segment({
-      source: 'question', stability: aiContextAssembly.STABILITY.TURN, target: 'user', content: promptQuestion,
-    }),
-  ];
-  if (imageAnalysisUnavailable) {
-    decisionUserSegments.push(aiContextAssembly.segment({
-      source: 'image-unavailable-note', stability: aiContextAssembly.STABILITY.TURN, target: 'user', content: buildImageUnavailableNote(images.length),
-    }));
-  }
-  // Held in a const and REUSED by identity on every rebuild below. ADL-050
-  // measured that re-packaging this governance-bearing system content
-  // weakened a hard rule's live compliance 3/3 -> 2/7, so the constraint is
-  // absolute: across every iteration of a turn the system segments stay
+  // Review Finding #2 — built once and shared, unmodified, by BOTH
+  // decisionSegments (the initial call) and continuationSegments (every
+  // call after it): the two context variants must never differ in their
+  // system content, only in which user 'question' segment they carry
+  // (full text vs. attachment-metadata-only, below). Held in a const and
+  // REUSED by identity on every rebuild below. ADL-050 measured that
+  // re-packaging this governance-bearing system content weakened a hard
+  // rule's live compliance 3/3 -> 2/7, so the constraint is absolute:
+  // across every iteration of a turn the system segments stay
   // byte-identical, and only the `tools` array may grow. Reusing the same
   // segment objects (not equivalent copies) is what makes that guarantee
   // structural rather than a promise.
-  const decisionSegments = [
+  const sharedSystemSegments = [
     aiContextAssembly.segment({
       source: 'mode-prefix', stability: aiContextAssembly.STABILITY.STATIC, target: 'system', content: aiPolicyAssembly.MODE_PREFIX.curriculum,
     }),
@@ -2042,23 +2300,100 @@ async function askAgent(client, question, {
     // Role-scoped, so it can never name a tool this actor may not use; the
     // Policy Gate re-checks on invocation regardless (CLAUDE.md rule 1).
     // CONVERSATION, not STATIC: stable for a role, not across roles.
-    aiContextAssembly.segment({
+    //
+    // Priority 1 Phase 1: omitted entirely when viaToolSearch is true —
+    // sending the full ~101-name catalogue to Gemini after a dedicated
+    // Tool Search model already discovered the relevant subset is
+    // exactly the cost this architecture exists to remove (buildToolCatalogue
+    // measured at ~75-80% of the current decision-call token cost).
+    // Replaced by a short honesty note instead of nothing, so the model
+    // still says so rather than guessing when the discovered set
+    // genuinely doesn't fit — the ADL-055 failure mode this substitution
+    // has to avoid reopening. Decided once, here, before any part of
+    // decisionSegments is built — never re-decided mid-turn, same
+    // ADL-050 "system segments stay byte-identical across the whole
+    // turn" guarantee every other segment in this list already holds.
+    ...(viaToolSearch ? [aiContextAssembly.segment({
+      source: 'tool-catalogue-omitted-note',
+      stability: aiContextAssembly.STABILITY.CONVERSATION,
+      target: 'system',
+      content: 'You were given only the tools judged relevant to this question, not every tool that exists. '
+        + 'If none of them fit, say so plainly rather than answering as if you had checked further.',
+    })] : [aiContextAssembly.segment({
       source: 'tool-catalogue',
       stability: aiContextAssembly.STABILITY.CONVERSATION,
       target: 'system',
-      content: buildToolCatalogue(roleTools, toolsWithPlan.map((t) => t.name)),
-    }),
+      content: buildToolCatalogueForExperiment(roleTools, toolsWithPlan.map((t) => t.name)),
+    })]),
+    // Priority 3 follow-up (config.experimentalAttachmentDiscipline,
+    // off by default) — live session trial only, per explicit user
+    // instruction. Adds nothing when no attachment is present this turn;
+    // does not change which tools exist or how analyze_document_table
+    // itself computes anything. Superseded by the full raw document
+    // (config.experimentalFullInstructionsDocument, testing-phase only,
+    // per explicit user instruction) when that flag is on — that
+    // variant applies on every turn, not just attachment turns.
+    ...(config.experimentalFullInstructionsDocument ? [aiContextAssembly.segment({
+      source: 'full-instructions-document',
+      stability: aiContextAssembly.STABILITY.STATIC,
+      target: 'system',
+      content: buildFullInstructionsDocument(),
+    })] : (config.experimentalAttachmentDiscipline && documents.length > 0) ? [aiContextAssembly.segment({
+      source: 'attachment-discipline',
+      stability: aiContextAssembly.STABILITY.TURN,
+      target: 'system',
+      content: 'Before computing any count/sum/comparison from an attached document, confirm which section, '
+        + 'course, or scope the data actually belongs to (check the document\'s own header/label text near the '
+        + 'rows you are about to use) — never assume a user-supplied range or name is correct without checking '
+        + 'it against the document itself. Use analyze_document_table to extract and compute; never estimate '
+        + 'from a partial read of a large document. If asked to compare or consolidate, state which sections/'
+        + 'ranges you actually used in the answer, so a wrong assumption is visible rather than silent.',
+    })] : []),
     aiContextAssembly.segment({
       source: 'identity', stability: aiContextAssembly.STABILITY.CONVERSATION, target: 'system', content: identityBlock,
     }),
-    ...decisionUserSegments,
   ];
+  // Shared by both variants below — an image-unavailable note is not
+  // attachment-text-sized and carries no per-call cost concern, so it is
+  // not part of what Review Finding #2 trims; the same segment object is
+  // simply reused in both user-segment lists.
+  const imageUnavailableSegment = imageAnalysisUnavailable
+    ? aiContextAssembly.segment({
+      source: 'image-unavailable-note', stability: aiContextAssembly.STABILITY.TURN, target: 'user', content: buildImageUnavailableNote(images.length),
+    })
+    : null;
+  const decisionUserSegments = [
+    aiContextAssembly.segment({
+      source: 'question', stability: aiContextAssembly.STABILITY.TURN, target: 'user', content: promptQuestion,
+    }),
+    ...(imageUnavailableSegment ? [imageUnavailableSegment] : []),
+  ];
+  // Review Finding #2 — the ONLY difference from decisionSegments below
+  // is this list's 'question' segment (compactPromptQuestion instead of
+  // promptQuestion): every system segment above is shared by reference,
+  // so the ADL-050 guarantee (system segments byte-identical across a
+  // turn) holds automatically, by construction, for this variant too.
+  const continuationUserSegments = [
+    aiContextAssembly.segment({
+      source: 'question', stability: aiContextAssembly.STABILITY.TURN, target: 'user', content: compactPromptQuestion,
+    }),
+    ...(imageUnavailableSegment ? [imageUnavailableSegment] : []),
+  ];
+  const decisionSegments = [...sharedSystemSegments, ...decisionUserSegments];
+  const continuationSegments = [...sharedSystemSegments, ...continuationUserSegments];
   const decisionImages = imagesSupported ? images : undefined;
-  // The offered set grows when the model fetches a schema; the segments
-  // above never change. Both the initial call and every continuation read
-  // whatever this currently points at.
+  // decisionContext is used for exactly ONE call — the initial decision
+  // below — and never rebuilt or reused after it: every later
+  // completeWithTools call in the loop (schema-fetch retries,
+  // budget-exempt-lookup retries, post-tool continuations) reads
+  // continuationContext instead, which carries the same tool list but the
+  // compact (no-raw-attachment-text) user segments above. The offered set
+  // still grows the same way when the model fetches a schema — only
+  // continuationContext gets rebuilt for that, since decisionContext's one
+  // consumer has already run by the time the loop can reach that point.
   let offeredTools = [...toolsWithPlan, buildSchemaMetaTool()];
-  let decisionContext = aiContextAssembly.buildContext(decisionSegments, { tools: offeredTools, images: decisionImages });
+  const decisionContext = aiContextAssembly.buildContext(decisionSegments, { tools: offeredTools, images: decisionImages });
+  let continuationContext = aiContextAssembly.buildContext(continuationSegments, { tools: offeredTools, images: decisionImages });
 
   const decisionStartedAt = Date.now();
   // Real progress signal (P1) for the one call in this path that
@@ -2098,15 +2433,18 @@ async function askAgent(client, question, {
   });
   const imageMeta = { imageCount, imageAnalysisUnavailable };
 
-  // ADR-030 P2(c): bounded tool-use loop. `decisionContext` (built once
-  // above) is reused UNCHANGED on every completeWithTools call below —
-  // never rebuilt, never re-flattened differently — which is what
-  // preserves the ADL-050 guarantee (the governance-bearing system
-  // segments are packaged once, identically, every call) at the
-  // orchestration level, and (since decisionContext already carries
-  // {tools: toolsWithPlan} via buildContext's own second argument) also
-  // guarantees every continuation offers the exact same tool list as
-  // iteration 0 — never narrowed — so the model can still pick a
+  // ADR-030 P2(c): bounded tool-use loop. Every completeWithTools call
+  // below reads `continuationContext`, never `decisionContext` (that one
+  // consumer already ran above) — same system segments either way
+  // (sharedSystemSegments is reused by reference in both, so the ADL-050
+  // guarantee — the governance-bearing system segments are packaged once,
+  // identically, every call — holds automatically), only the user
+  // 'question' segment differs (Review Finding #2: compact, no raw
+  // attachment text, once the initial call above has already delivered
+  // it once). continuationContext already carries {tools: offeredTools}
+  // via buildContext's own second argument, so this also still guarantees
+  // every continuation offers the exact same tool list as the previous
+  // iteration (grown, never narrowed) — the model can still pick a
   // different tool on a later iteration.
   const priorTurns = [];
   const mergedEntries = [];
@@ -2153,8 +2491,11 @@ async function askAgent(client, question, {
         if (added.length > 0) {
           offeredTools = [...offeredTools, ...added];
           // Same segment objects, larger tools array — the ADL-050
-          // constraint holds by construction, not by convention.
-          decisionContext = aiContextAssembly.buildContext(decisionSegments, { tools: offeredTools, images: decisionImages });
+          // constraint holds by construction, not by convention. Only
+          // continuationContext needs rebuilding here — decisionContext's
+          // one consumer (the initial completeWithTools call above) has
+          // already run.
+          continuationContext = aiContextAssembly.buildContext(continuationSegments, { tools: offeredTools, images: decisionImages });
         }
         const unknown = requested.filter((n) => !resolvedTools.some((t) => t.name === n));
         resultText = [
@@ -2175,7 +2516,7 @@ async function askAgent(client, question, {
       });
       onStep({ phase: 'deciding' });
       // eslint-disable-next-line no-await-in-loop
-      decision = await adapter.completeWithTools(aiConfig, decisionContext, priorTurns);
+      decision = await adapter.completeWithTools(aiConfig, continuationContext, priorTurns);
       usageTotal = addUsage(usageTotal, decision.usage);
       // eslint-disable-next-line no-continue
       continue;
@@ -2247,7 +2588,7 @@ async function askAgent(client, question, {
       });
       onStep({ phase: 'deciding' });
       // eslint-disable-next-line no-await-in-loop
-      decision = await adapter.completeWithTools(aiConfig, decisionContext, priorTurns);
+      decision = await adapter.completeWithTools(aiConfig, continuationContext, priorTurns);
       usageTotal = addUsage(usageTotal, decision.usage);
       // eslint-disable-next-line no-continue
       continue;
@@ -2351,7 +2692,7 @@ async function askAgent(client, question, {
     // containing a tool-call turn it did not itself generate — a
     // semantic-compatibility problem, not just a caching inefficiency.
     // eslint-disable-next-line no-await-in-loop
-    decision = await adapter.completeWithTools(aiConfig, decisionContext, priorTurns);
+    decision = await adapter.completeWithTools(aiConfig, continuationContext, priorTurns);
     usageTotal = addUsage(usageTotal, decision.usage);
     // eslint-disable-next-line no-await-in-loop
     await logLlmCall(client, {
@@ -2362,7 +2703,7 @@ async function askAgent(client, question, {
       usage: decision.usage,
       latencyMs: Date.now() - continuationStartedAt,
       imageCount,
-      systemPromptChars: aiContextAssembly.flattenToPrompts(decisionContext).systemPrompt.length,
+      systemPromptChars: aiContextAssembly.flattenToPrompts(continuationContext).systemPrompt.length,
       toolCount: tools.length,
     });
   }

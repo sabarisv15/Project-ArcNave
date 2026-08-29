@@ -156,6 +156,38 @@ const GLOBAL_CONFIG_BUILDERS = {
   openai: globalOpenaiConfig,
 };
 
+// Tool Search (Priority 1, Phase 1) — reuses Gemini's own
+// projectId/location (same GCP project, same ADC, no new credential
+// system, per this session's plan) and only supplies the model string
+// that's actually specific to Tool Search (config.toolSearch.model).
+function globalVertexMaasConfig() {
+  return {
+    projectId: globalConfig.gemini.projectId,
+    location: globalConfig.gemini.location,
+    model: globalConfig.toolSearch.model,
+  };
+}
+
+// Tool Search config resolution — deliberately NOT per-college (no
+// aiConfigRepository row for this): a platform-wide feature-flagged
+// capability, not a tenant-facing customization, same "single
+// platform-wide choice" reasoning embeddingProvider above already
+// carries. Not async (no DB read exists for this in Phase 1) — unlike
+// getAiConfig, on purpose. Returns null — never throws — when disabled
+// (config.toolSearch.enabled is false) or unconfigured (no
+// TOOL_SEARCH_MODEL set), so a caller (aiToolSearchService.js) treats
+// "not available" exactly like any other fall-back-to-existing-behavior
+// signal, the same shape gemini.js's own isConfigured()-gated
+// LlmNotConfiguredError path already normalizes to elsewhere in this
+// codebase.
+function getToolSearchConfig() {
+  if (!globalConfig.toolSearch.enabled) return null;
+  const config = globalVertexMaasConfig();
+  const adapter = aiProviders.getAdapter('vertex_maas');
+  if (!adapter.isConfigured(config)) return null;
+  return { provider: 'vertex_maas', config, adapter };
+}
+
 // An unrecognized config.defaultAiProvider (typo, or a provider with
 // no global block) falls back to gemini rather than throwing at request
 // time — same "never a startup failure over an optional value" caution
@@ -257,4 +289,5 @@ module.exports = {
   setConfiguration,
   getAiConfig,
   setAiConfig,
+  getToolSearchConfig,
 };

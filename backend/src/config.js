@@ -235,6 +235,72 @@ module.exports = {
     fastModel: process.env.CLAUDE_FAST_MODEL || null,
   },
 
+  // Tool Search (Priority 1, Phase 1) — a dedicated, cheap Vertex AI
+  // MaaS model (e.g. qwen/qwen3-next-80b-a3b-thinking-maas or
+  // minimax/minimax-m2-maas — model-swappable, never hardcoded) whose
+  // only job is discovering which of a role's permitted tools are
+  // relevant to a question, BEFORE the expensive Gemini reasoning call
+  // sees any tool definitions at all. Reuses Gemini's own
+  // projectId/location/ADC below — same GCP project, deliberately no
+  // new credential system (aiToolSearchService.js/configurationService.js
+  // read gemini.projectId/gemini.location when building this provider's
+  // config, this block only carries the two things genuinely specific
+  // to Tool Search: whether it's on, and which model). Disabled by
+  // default — TOOL_SEARCH_ENABLED must be explicitly set to 'true'
+  // after backend/scripts/tool-search-benchmark.js reports a GO
+  // verdict; this app never flips it on itself.
+  toolSearch: {
+    enabled: process.env.TOOL_SEARCH_ENABLED === 'true',
+    model: process.env.TOOL_SEARCH_MODEL || null,
+  },
+
+  // Gemini-native catalogue routing experiment (Priority 1 follow-up to
+  // the Tool Search NO-GO) — tests whether Gemini itself can route from
+  // much shorter catalogue text ('oneLine' | 'keywords' | 'category'),
+  // or from a hand-authored routing document ('spec', see
+  // scripts/experimental-catalogue-spec.md), no second model involved.
+  // Unset (null) reproduces today's exact buildToolCatalogue text — the
+  // only value this app ships with; aiService.js's
+  // buildToolCatalogueForExperiment() falls back to it for any value
+  // that isn't one of the four recognized ones too.
+  experimentalCatalogueVariant: process.env.EXPERIMENTAL_CATALOGUE_VARIANT || null,
+
+  // Priority 2 — reasoning-model benchmark (GLM-5.2 / Kimi K2 Thinking
+  // vs current Gemini). Unset (null) reproduces today's exact
+  // configurationService.getAiConfig() resolution — the only value this
+  // app ships with. When set, aiService.js's resolveReasoningConfig()
+  // overrides askAgent's {adapter, aiConfig} to the vertex_maas adapter
+  // (already built for Priority 1) + this exact MaaS model string —
+  // e.g. 'zai-org/glm-5.2-maas' or 'moonshotai/kimi-k2-thinking-maas'.
+  // No default model — never invented, same "no hardcoded model"
+  // convention config.toolSearch.model already follows.
+  experimentalReasoningModel: process.env.EXPERIMENTAL_REASONING_MODEL || null,
+
+  // Priority 3 follow-up — live session trial only, per explicit user
+  // instruction not to touch the production default until they've
+  // verified it themselves in the real running app. Reinforces a small,
+  // condensed subset of the user-supplied AI_OPERATING_INSTRUCTIONS_1.md
+  // reference document's Section 3.5 ("analyze a file") discipline —
+  // confirm scope/section before computing, extract via the real tool
+  // rather than estimating, cross-verify before answering — as an
+  // ADDITIONAL system-prompt segment, only when the turn has attachments.
+  // Does not replace or rewrite any existing tool, service, or ownership
+  // rule (DocumentService/ArtifactService/analyze_document_table are
+  // unchanged); it only adds prompt guidance. Off by default (false) —
+  // the only value this app ships with.
+  experimentalAttachmentDiscipline: process.env.EXPERIMENTAL_ATTACHMENT_DISCIPLINE === 'true',
+
+  // Testing-phase only, per explicit user instruction, after being told
+  // the real cost/content tradeoffs (the full user-supplied document is
+  // ~13,000 tokens and includes generic Claude-API tool/skill/safety
+  // content that names nothing ARCNAVE actually has — user chose to wire
+  // it verbatim anyway to observe real live behavior). When true, this
+  // REPLACES experimentalAttachmentDiscipline's condensed segment with
+  // the full raw document text, on every turn, not just ones with an
+  // attachment. Off by default (false) — the only value this app ships
+  // with.
+  experimentalFullInstructionsDocument: process.env.EXPERIMENTAL_FULL_INSTRUCTIONS_DOCUMENT === 'true',
+
   // Which provider a college with no college_ai_config row of its own
   // falls back to (configurationService.getAiConfig). Defaults to
   // 'gemini' — Gemini is this app's global-default chat provider.

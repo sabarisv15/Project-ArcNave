@@ -5,7 +5,23 @@ const { mock } = require('node:test');
 const assert = require('node:assert/strict');
 const documentService = require('../src/services/documentService');
 const documentTextExtractionService = require('../src/services/documentTextExtractionService');
+const sandboxExecutionService = require('../src/services/sandboxExecutionService');
 const { analyzeAttachment, DocumentAnalysisValidationError } = require('../src/services/documentAnalysisService');
+
+// The default PDF mime type in ownedChatAttachment() means every test whose
+// flat-text extraction yields 'none' or an unreliable coverage would, since
+// ADL-063, reach for the pdfplumber sandbox fallback — a REAL network call
+// if this is not mocked, regardless of whether this environment happens to
+// have SANDBOX_SERVICE_URL/TOKEN set (docker-compose's app service does).
+// Explicit and deterministic beats "happens to work because the test env
+// is unconfigured" — every pre-ADL-063 test that reaches the fallback
+// trigger mocks the sandbox as unavailable, which is also itself the
+// regression pin for "sandbox unavailable degrades to today's behaviour".
+function mockSandboxUnavailable() {
+  return mock.method(sandboxExecutionService, 'executeCode', async () => {
+    throw new sandboxExecutionService.SandboxNotConfiguredError('not configured in tests');
+  });
+}
 
 const IDENTITY = { userId: 'u1', collegeId: 'college-a', role: 'principal' };
 const ATTACHMENT_ID = '7768852f-e9e6-4a18-a6ea-e9c9137a89fe';
@@ -69,6 +85,7 @@ test('analyzeAttachment: extraction failure (corrupt/password-protected) degrade
 test('analyzeAttachment: a document with no recognizable tabular layout degrades to unrecognized_layout, not a guessed answer', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
   mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: 'Just an ordinary letter, no table.', method: 'text_layer' }));
+  mockSandboxUnavailable();
   const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
   assert.deepEqual(result, { status: 'unrecognized_layout' });
 });
@@ -290,6 +307,7 @@ test('analyzeAttachment: a recognized-but-misread layout refuses instead of retu
     ].join('\n'),
     method: 'text_layer',
   }));
+  mockSandboxUnavailable();
   const result = await analyzeAttachment(
     {}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY,
   );
@@ -304,6 +322,7 @@ test('analyzeAttachment: a recognized-but-misread layout refuses instead of retu
 test('analyzeAttachment: unreliable_extraction is distinct from unrecognized_layout', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
   mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: 'An ordinary letter.', method: 'text_layer' }));
+  mockSandboxUnavailable();
   const result = await analyzeAttachment(
     {}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY,
   );
@@ -503,4 +522,159 @@ test('analyzeAttachment: count/sum/breakdown are unaffected by the compare addit
   assert.equal(counted.status, 'ok');
   assert.equal(counted.total, 2);
   assert.equal(counted.sample[0].identity, undefined);
+});
+
+// --- ADL-063: the pdfplumber fallback replaces ADL-058's geometry design.
+// A reconstruction that passes the SAME reliability gate flat text uses
+// gets FULL trust — no new status, every operation available — because it
+// went through documentTableExtractionService.extractRecords a second
+// time, not a bespoke check.
+
+// Shaped exactly like the existing "recognized-but-misread layout" test
+// above (same merged-cell defect: only the first row starts with a real
+// serial+regNo pair), but this time pdfplumber's reconstruction — what the
+// sandbox would actually return — recovers all three rows correctly.
+const MISREAD_FLAT_TEXT = [
+  '818 24700301 ANBARASAN V DoB: 23.12.2006 RA',
+  'BHARATH K DoB: 19.06.2006 24700302 RA',
+  'CHANDRU M DoB: 25.06.2002 24700303 RA',
+].join('\n');
+
+const PDFPLUMBER_RECONSTRUCTED_TEXT = [
+  '818 24700301 ANBARASAN V DoB: 23.12.2006 RA',
+  '819 24700302 BHARATH K DoB: 19.06.2006 RA',
+  '820 24700303 CHANDRU M DoB: 25.06.2002 RA',
+].join('\n');
+
+function mockSandboxReturning(stdout) {
+  return mock.method(sandboxExecutionService, 'executeCode', async () => ({
+    stdout, stderr: '', exitCode: 0, files: [], verification: null,
+  }));
+}
+
+test('ADL-063: a reliable flat-text extraction never invokes the sandbox', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: '819 25400122 ANBARASAN V\nDoB: 24.04.2008 2 R2023 RA\n3 R2023 RA',
+    method: 'text_layer',
+  }));
+  const executeCodeMock = mockSandboxReturning('irrelevant');
+  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  assert.equal(result.status, 'ok');
+  assert.equal(executeCodeMock.mock.callCount(), 0);
+});
+
+test('ADL-063: a non-PDF attachment never invokes the sandbox, even with an unrecognized layout', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment({ mime_type: 'text/csv' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: 'Just an ordinary letter, no table.', method: 'text_layer' }));
+  const executeCodeMock = mockSandboxReturning('irrelevant');
+  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  assert.deepEqual(result, { status: 'unrecognized_layout' });
+  assert.equal(executeCodeMock.mock.callCount(), 0);
+});
+
+test('ADL-063: a verified pdfplumber reconstruction gets FULL trust — count runs normally, no restricted status', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
+  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  assert.equal(result.status, 'ok');
+  // Metadata suffix for audit/observability only — asserted here so a
+  // future change to it is a deliberate decision, not an accident.
+  assert.equal(result.strategy, 'sequential_id_pdfplumber');
+  assert.equal(result.total, 3);
+  assert.equal(result.scopedCount, 3);
+});
+
+test('ADL-063: compare reaches the aggregate service normally on a verified reconstruction — no identity_required, a real numeric answer', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
+  const compared = await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID,
+    filter: { pattern: 'DoB: \\d{2}\\.(\\d{2})' },
+    operation: 'compare',
+    comparison: { operator: 'gte', value: 1 },
+  }, IDENTITY);
+  assert.equal(compared.status, 'ok');
+  // Records carry their own serialNo/regNo from extractSequentialIdRecords,
+  // same as any other reliable sequential_id extraction — no identityPattern
+  // needed, and no partial-trust restriction anywhere in this path.
+  assert.equal(compared.matchedCount, 3);
+});
+
+test('ADL-063: a pdfplumber reconstruction that is STILL not reliable leaves unreliable_extraction unchanged', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  // The sandbox ran, but its own reconstruction is just as misattributed
+  // as the original — e.g. a scanned/garbled page pdfplumber cannot help
+  // with either.
+  mockSandboxReturning(MISREAD_FLAT_TEXT);
+  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  assert.equal(result.status, 'unreliable_extraction');
+  assert.equal(result.strategy, 'sequential_id');
+  assert.ok(result.total === undefined);
+});
+
+test('ADL-063: the sandbox being unreachable (SandboxExecutionError) degrades to today\'s status, never a thrown error out of the turn', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mock.method(sandboxExecutionService, 'executeCode', async () => {
+    throw new sandboxExecutionService.SandboxExecutionError('sandbox returned 503');
+  });
+  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  assert.equal(result.status, 'unreliable_extraction');
+});
+
+test('ADL-063: a PDF exceeding the sandbox size limit (SandboxValidationError) degrades to today\'s status, not a thrown error', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mock.method(sandboxExecutionService, 'executeCode', async () => {
+    throw new sandboxExecutionService.SandboxValidationError('file exceeds the 5MB limit');
+  });
+  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  assert.equal(result.status, 'unreliable_extraction');
+});
+
+// ADL-058's own separator finding, reused unchanged: joining pdfplumber's
+// row cells with anything but a single space silently switches the
+// reconstruction onto the anonymous 'delimited' strategy and turns
+// coverage checking off. This pins the SCRIPT sent to the sandbox, not
+// just its output — a future "helpful" edit to the join character would
+// otherwise pass every other test here undetected.
+test('ADL-063: the sandbox script joins row cells with a single space, never a pipe or tab', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  const executeCodeMock = mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
+  await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  const sentCode = executeCodeMock.mock.calls[0].arguments[0].code;
+  assert.match(sentCode, /' '\.join\(cells\)/);
+  assert.doesNotMatch(sentCode, /\| '\.join/);
+  assert.doesNotMatch(sentCode, /\\t/);
+});
+
+// ADL-058 addendum 2's own explicit warning: the 'text'/'text' strategy
+// reproduces the exact original defect. Pinned so it can never be
+// reintroduced as a "tuning" change.
+test('ADL-063: the sandbox script never overrides pdfplumber\'s default table_settings', async () => {
+  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  const executeCodeMock = mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
+  await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  const sentCode = executeCodeMock.mock.calls[0].arguments[0].code;
+  assert.doesNotMatch(sentCode, /vertical_strategy/);
+  assert.doesNotMatch(sentCode, /table_settings/);
+});
+
+// The reference document (day book, delimited strategy, coverage always
+// null) must never reach the sandbox — it already succeeds on flat text.
+test('ADL-063: a delimited (day-book-shaped) source never invokes the sandbox', async () => {
+  daybookAttachment();
+  const executeCodeMock = mockSandboxReturning('irrelevant');
+  const result = await analyzeAttachment({}, {
+    attachmentId: ATTACHMENT_ID, filter: { pattern: AMOUNT }, operation: 'count',
+  }, IDENTITY);
+  assert.equal(result.status, 'ok');
+  assert.equal(result.strategy, 'delimited');
+  assert.equal(executeCodeMock.mock.callCount(), 0);
 });

@@ -1204,6 +1204,69 @@ test('aiService.askAgent: a successful tool_call\'s follow-up answer call is ins
   assert.match(answerSystemMessage.content, /get_college_profile/);
 });
 
+// --- Priority 1 Phase 1: Tool Search wiring (aiToolSearchService) ---
+// The service's own logic (validation, capping, fallback) has its
+// dedicated unit coverage in ai-tool-search-service.test.js — these two
+// tests are specifically about aiService.js's OWN wiring: that the
+// tool-catalogue segment is included/omitted correctly depending on
+// whether aiToolSearchService.discoverRelevantTools actually succeeded
+// this turn, which is the one thing only an aiService.js-level test can
+// prove (ai-tool-search-service.test.js never sees the catalogue text
+// at all).
+
+function withStub(obj, key, impl, fn) {
+  const original = obj[key];
+  obj[key] = impl;
+  return fn().finally(() => { obj[key] = original; });
+}
+
+test('aiService.askAgent: Tool Search disabled (default, TOOL_SEARCH_ENABLED unset) — the decision call still carries the full tool catalogue, byte-for-byte unchanged', async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const capturedBodies = [];
+
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(async (url, options) => {
+      capturedBodies.push(JSON.parse(options.body));
+      return capturedBodies.length === 1
+        ? mockToolCallResponse('get_college_profile', {})
+        : mockAnswerResponse('This is the college profile.');
+    }, async () => {
+      await aiService.askAgent(client, 'What college is this?', { identityContext });
+    });
+  });
+
+  const decisionSystemMessage = capturedBodies[0].messages.find((m) => m.role === 'system');
+  assert.match(decisionSystemMessage.content, /EVERY tool available to you, by name/);
+});
+
+test('aiService.askAgent: Tool Search enabled and successful — the decision call omits the full catalogue and sends the honesty note instead', async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const capturedBodies = [];
+
+  await withStub(configurationService, 'getToolSearchConfig', () => ({
+    provider: 'vertex_maas',
+    config: {},
+    adapter: {
+      completeWithTools: async () => ({
+        type: 'tool_call', toolName: 'select_relevant_tools', arguments: { names: ['get_college_profile'] },
+      }),
+    },
+  }), () => withOpenAiConfig('test-openai-key', () => withMockFetch(async (url, options) => {
+    capturedBodies.push(JSON.parse(options.body));
+    return capturedBodies.length === 1
+      ? mockToolCallResponse('get_college_profile', {})
+      : mockAnswerResponse('This is the college profile.');
+  }, async () => {
+    await aiService.askAgent(client, 'What college is this?', { identityContext });
+  })));
+
+  const decisionSystemMessage = capturedBodies[0].messages.find((m) => m.role === 'system');
+  assert.doesNotMatch(decisionSystemMessage.content, /EVERY tool available to you, by name/);
+  assert.match(decisionSystemMessage.content, /You were given only the tools judged relevant/);
+});
+
 test('aiService.askAgent: the LLM picks no tool -> returns its direct answer, still wrapped in the Prompt Safety Layer\'s envelope', async () => {
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
@@ -3748,6 +3811,51 @@ test('askAgent: the ANSWER call omits the attached document text, while the DECI
   assert.equal(bodies.length, 2);
   assert.ok(bodyText(bodies[0]).includes(ATTACHMENT_TEXT_MARKER), 'decision call must still carry the document');
   assert.ok(!bodyText(bodies[1]).includes(ATTACHMENT_TEXT_MARKER), 'answer call must NOT carry the raw document');
+});
+
+// --- Review Finding #2 — the decision LOOP's own continuation calls no
+// longer resend the raw attachment either, not just the separate answer
+// call above. Before this fix, a schema-fetch retry or a post-tool
+// continuation (both still completeWithTools calls INSIDE askAgent's own
+// bounded loop, sharing decisionContext) resent the full document on every
+// iteration — up to 5 times in one turn between schema-fetch retries and
+// tool-call continuations. These pin that each such call keeps the
+// attachment's identity (needed to resolve analyze_document_table's own
+// attachmentId parameter) while dropping the raw text.
+
+test('askAgent: a schema-fetch retry within the decision loop omits the raw attachment text, unlike the initial decision call', async (t) => {
+  const bodies = await captureRequestBodies(t, { attachmentIds: ['att-1'] }, [
+    () => mockToolCallResponse('describe_tools', { names: ['get_college_profile'] }),
+    () => mockToolCallResponse('get_college_profile', {}),
+    () => mockAnswerResponse('Here is the college profile.'),
+  ]);
+  assert.equal(bodies.length, 3);
+  assert.ok(bodyText(bodies[0]).includes(ATTACHMENT_TEXT_MARKER), 'the initial decision call must still carry the full document');
+  assert.ok(!bodyText(bodies[1]).includes(ATTACHMENT_TEXT_MARKER), 'a schema-fetch retry must not resend the raw document');
+  assert.ok(bodyText(bodies[1]).includes('att-1'), 'attachment identity/metadata must still reach a continuation call');
+});
+
+test('askAgent: a post-tool continuation call within the decision loop omits the raw attachment text once the initial call has already delivered it', async (t) => {
+  const bodies = await withMaxToolCallsPerTurn(2, () => captureRequestBodies(t, { attachmentIds: ['att-1'] }, [
+    () => mockToolCallResponse('get_college_profile', {}),
+    () => mockToolCallResponse('get_college_profile', {}),
+    () => mockAnswerResponse('Here is what I found.'),
+  ]));
+  assert.equal(bodies.length, 3);
+  assert.ok(bodyText(bodies[0]).includes(ATTACHMENT_TEXT_MARKER), 'the initial decision call must still carry the full document');
+  assert.ok(!bodyText(bodies[1]).includes(ATTACHMENT_TEXT_MARKER), 'a post-tool continuation call must not resend the raw document');
+  assert.ok(bodyText(bodies[1]).includes('att-1'), 'attachment identity/metadata must still reach a continuation call');
+  assert.match(bodyText(bodies[1]), /get_college_profile/, 'the first tool\'s result must still reach the continuation call');
+});
+
+test('askAgent: the schema-fetch/continuation system prompt is byte-identical to the initial call\'s — only the user segment drops the raw attachment', async (t) => {
+  const bodies = await captureRequestBodies(t, { attachmentIds: ['att-1'] }, [
+    () => mockToolCallResponse('describe_tools', { names: ['get_college_profile'] }),
+    () => mockToolCallResponse('get_college_profile', {}),
+    () => mockAnswerResponse('Here is the college profile.'),
+  ]);
+  const systemOf = (body) => (body.messages.find((m) => m.role === 'system') || {}).content;
+  assert.equal(systemOf(bodies[0]), systemOf(bodies[1]), 'ADL-050: system segments must stay byte-identical, even with the compact user segment');
 });
 
 test('askAgent: the answer call still carries the deterministic tool result it must answer from', async (t) => {

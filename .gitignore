@@ -6,6 +6,7 @@ dist/
 backend/storage/
 backend/storage-backups/
 backend/.gcp/
+backend/scripts/.out/
 __pycache__/
 *.pyc
 .sandbox-local-secret

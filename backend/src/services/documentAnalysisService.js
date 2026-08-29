@@ -16,8 +16,72 @@ const documentService = require('./documentService');
 const documentTextExtractionService = require('./documentTextExtractionService');
 const documentTableExtractionService = require('./documentTableExtractionService');
 const documentAggregateService = require('./documentAggregateService');
+const sandboxExecutionService = require('./sandboxExecutionService');
 
 class DocumentAnalysisValidationError extends Error {}
+
+// ADL-063 — the pdfplumber fallback, credential-less (ADL-059), invoked
+// only for application/pdf attachments and only after flat text has
+// already failed reliability (see the two call sites in analyzeAttachment
+// below). extract_tables() with NO table_settings override — the
+// library's default 'lines' strategy. Passing
+// {'vertical_strategy': 'text', 'horizontal_strategy': 'text'} must never
+// happen here: ADL-058 addendum 2 measured it reproducing the exact
+// original defect (floats the numeric block above the wrong student).
+// Each row's cells are rejoined with a SINGLE SPACE, never '|' and never
+// a tab — the same load-bearing separator rule ADL-058 Finding 2
+// established for geometry, reused unchanged: joining with '|' would
+// silently move the reconstruction onto the 'delimited' strategy and
+// switch coverage checking off entirely.
+const PDFPLUMBER_RECONSTRUCT_SCRIPT = `
+import pdfplumber
+
+with pdfplumber.open("attachment.pdf") as pdf:
+    lines = []
+    for page in pdf.pages:
+        for table in page.extract_tables():
+            for row in table:
+                cells = [str(cell).strip() for cell in row if cell is not None and str(cell).strip() != '']
+                if cells:
+                    lines.append(' '.join(cells))
+print('\\n'.join(lines))
+`.trim();
+
+// Returns the reconstructed text, or null if the sandbox itself is
+// unavailable, misconfigured, or the buffer exceeds its size limit.
+// Deliberately swallows exactly those three cases rather than letting
+// them throw out of analyzeAttachment: a capability being unavailable and
+// a document being unreadable are different facts (ADL-056's own
+// discipline), and the caller below falls through to today's existing
+// per-document status on null rather than ending the turn as an HTTP 500.
+// Any OTHER error (a real bug in this code, a malformed script) is not
+// swallowed — it should surface loudly, not be silently treated as "no
+// fallback available".
+async function reconstructViaPdfplumber(buffer) {
+  try {
+    const result = await sandboxExecutionService.executeCode({
+      code: PDFPLUMBER_RECONSTRUCT_SCRIPT,
+      files: [{ name: 'attachment.pdf', contentBase64: buffer.toString('base64') }],
+    });
+    return result.stdout;
+  } catch (err) {
+    if (err instanceof sandboxExecutionService.SandboxNotConfiguredError
+      || err instanceof sandboxExecutionService.SandboxExecutionError
+      || err instanceof sandboxExecutionService.SandboxValidationError) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+// True exactly when flat text already failed reliability on a PDF — the
+// only condition under which the fallback runs at all. Not extracted
+// beyond this one call site because it reads directly against the same
+// strategy/coverage values analyzeAttachment already has in scope.
+function pdfFallbackApplies(mimeType, strategy, coverage) {
+  return mimeType === 'application/pdf'
+    && (strategy === 'none' || (coverage && coverage.applicable && !coverage.reliable));
+}
 
 // Same ownership chain as aiService.resolveChatAttachments — repeated
 // rather than imported to avoid a circular require (aiService depends on
@@ -176,9 +240,37 @@ async function analyzeAttachment(client, {
     return { status: 'extraction_failed', reason: extraction.failureReason };
   }
 
-  const {
+  let {
     strategy, records, sections, coverage,
   } = documentTableExtractionService.extractRecords(extraction.text);
+
+  // ADL-063 — only reached when flat text already failed reliability on a
+  // PDF. Re-extracts via pdfplumber in the sandbox and runs the result
+  // back through the SAME extractRecords/assessCoverage pipeline flat text
+  // just went through. If that reconstruction is now reliable, it
+  // replaces strategy/records/sections/coverage wholesale and the rest of
+  // this function proceeds exactly as it would for any other reliable
+  // document — full trust, not a new restricted status, because it passed
+  // the identical gate every trusted document passes. If the sandbox is
+  // unavailable or the reconstruction is still not reliable, these stay
+  // exactly as flat text left them and the two checks below fire as they
+  // do today.
+  if (pdfFallbackApplies(document.mime_type, strategy, coverage)) {
+    const reconstructed = await reconstructViaPdfplumber(buffer);
+    if (reconstructed) {
+      const fallback = documentTableExtractionService.extractRecords(reconstructed);
+      const fallbackReliable = fallback.strategy !== 'none'
+        && (!fallback.coverage || !fallback.coverage.applicable || fallback.coverage.reliable);
+      if (fallbackReliable) {
+        // Metadata only, for audit/observability — callers must not branch
+        // on this suffix; every operation below treats these records
+        // exactly like any other reliable extraction.
+        strategy = `${fallback.strategy}_pdfplumber`;
+        ({ records, sections, coverage } = fallback);
+      }
+    }
+  }
+
   if (strategy === 'none') {
     return { status: 'unrecognized_layout' };
   }

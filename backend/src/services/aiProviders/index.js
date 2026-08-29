@@ -14,6 +14,7 @@ const gemini = require('./gemini');
 const claude = require('./claude');
 const selfHosted = require('./selfHosted');
 const openai = require('./openai');
+const vertexMaas = require('./vertexMaas');
 const errors = require('./errors');
 
 const ADAPTERS = {
@@ -21,6 +22,7 @@ const ADAPTERS = {
   claude,
   self_hosted: selfHosted,
   openai,
+  vertex_maas: vertexMaas,
 };
 
 function getAdapter(provider) {

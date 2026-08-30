@@ -56,7 +56,13 @@ test('skillService.getSkill', async (t) => {
 
   await t.test('the file-reading skill is honest about what the sandbox cannot do', () => {
     const skill = skillService.getSkill('file-reading');
-    assert.match(skill.content, /not currently supported/);
+    // python-docx/python-pptx/reportlab/pypdf are installed (ADL-065's
+    // execute_code description update), so reading/creating a .docx/
+    // .pptx/.pdf in-sandbox is no longer blanket-unsupported — but
+    // handing a NEWLY GENERATED one back to the user still is, since
+    // only .xlsx has a verification gate. That is the honesty claim
+    // that must still hold.
+    assert.match(skill.content, /cannot be attached and returned this way/);
   });
 });
 

@@ -1,5 +1,9 @@
 # Consumer assistant tool/skill inventory — ARCNAVE classification
 
+> **Superseded by ADL-065 — `analyze_document_table` retired.** Any
+> row below classifying that tool against the consumer assistant's
+> inventory is dated history, not a live entry in ARCNAVE's registry.
+
 _Written 2026-08-26. Closes the gap flagged in
 [`CURRENT-STATE.md`](../70-checkpoint/CURRENT-STATE.md) "Active Task 2":
 the 46-tool classification previously existed only in a chat transcript._

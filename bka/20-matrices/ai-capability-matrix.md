@@ -250,11 +250,21 @@ same-college scoped. Never a freeform or inferred fact about anyone.
 | Model routing (`fast_model`) | [RS-AIG-022](../10-specification/RS-AIG-ai-governance.md#rs-aig-022) | Only ever downgrades the synthesis/description call for an already-authorized, already-fetched low-risk result; the tool-selection/decision call is never eligible |
 | General/Curriculum scope mode | [RS-AIG-023](../10-specification/RS-AIG-ai-governance.md#rs-aig-023) | General mode structurally builds no tool list at all (not a softer prompt); Curriculum mode is the unchanged pre-existing tool-scoped path; default is Curriculum everywhere |
 
-### 4.10 Document analysis (registered L1)
+### 4.10 Document analysis (RETIRED — dated history, kept for the record)
+
+**Retired 2026-08-30 by [ADL-065](../30-decisions/ledger.md#adl-065).**
+`analyze_document_table` is no longer registered in `aiToolRegistry.js` —
+the model cannot call it. `documentAnalysisService.js`/
+`documentAggregateService.js`/`documentTableExtractionService.js`/
+`documentRowIntegrityService.js` are unchanged and still exist for
+reuse if this decision is revisited, but nothing in the current
+registry invokes them. Document counting/summing over an attachment
+now routes through the generic `execute_code` sandbox tool instead
+(§4.15).
 
 | Tool | Classification | Roles | Notes |
 |---|---|---|---|
-| `analyze_document_table` | Internal | principal, hod, staff, class_tutor | Deterministic in-backend table extraction (ADL-055→058); y-bucketing recovers identity columns but does not yet reliably attribute numeric columns — see F3, still open |
+| ~~`analyze_document_table`~~ | Internal | principal, hod, staff, class_tutor | RETIRED (ADL-065) — was deterministic in-backend table extraction (ADL-055→058); y-bucketing recovered identity columns but did not reliably attribute numeric columns (F3) |
 
 ### 4.11 AI memory (registered L1, same-actor scoped, consent-gated)
 

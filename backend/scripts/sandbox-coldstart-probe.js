@@ -36,6 +36,8 @@
 //
 // Usage: node backend/scripts/sandbox-coldstart-probe.js
 
+const { SANDBOX_PACKAGES } = require('../src/constants/sandboxPackages');
+
 const SANDBOX_URL = process.env.SANDBOX_SERVICE_URL;
 const SANDBOX_TOKEN = process.env.SANDBOX_SERVICE_TOKEN;
 
@@ -54,13 +56,16 @@ print('OK')
 
 // The libraries the 6 skills reach for. Imported one at a time and timed
 // individually, because "imports are slow" is not an actionable finding —
-// "this one import is 80% of it" is.
+// "this one import is 80% of it" is. The name list itself comes from
+// SANDBOX_PACKAGES (src/constants/sandboxPackages.js) — the same source
+// aiToolRegistry.js's execute_code description reads — so this probe can
+// never silently drift from what the tool tells the model is available.
+const IMPORT_NAMES_PY = SANDBOX_PACKAGES.map((p) => `'${p.importName}'`).join(', ');
 const IMPORT_COST = `
 import time, sys
 with open('/proc/uptime') as f:
     print('UPTIME', f.read().split()[0])
-for name in ['pdfplumber', 'openpyxl', 'pandas', 'reportlab.pdfgen',
-             'pypdf', 'docx', 'pptx', 'pdf2image', 'pytesseract']:
+for name in [${IMPORT_NAMES_PY}]:
     t = time.perf_counter()
     try:
         __import__(name)

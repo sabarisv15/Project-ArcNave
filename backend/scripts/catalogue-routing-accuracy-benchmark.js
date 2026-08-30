@@ -10,6 +10,15 @@
 // experiment. Real (billable, already-authorized-this-session) Gemini
 // calls against the real seeded 'demo' college / CSE-A data.
 //
+// ADL-064 (2026-08-30): resolved. 'keywords' and 'hybrid' were the two
+// live-measured finalists; the original full-description default plus
+// 'oneLine'/'category'/'spec' are retired and aiService.js can no longer
+// select any of them (buildToolCatalogueForExperiment only recognizes
+// 'hybrid' as an opt-in, everything else resolves to 'keywords', the new
+// shipped default). VARIANTS below is narrowed to match — rerunning this
+// script against the old 4-variant list would silently measure 'keywords'
+// text four times over, since aiService.js no longer has those code paths.
+//
 // Token/latency numbers come from real ai_llm_call audit rows (same
 // mechanism as scripts/tool-search-benchmark.js — Vertex's own reported
 // usage, not a re-derived estimate).
@@ -27,11 +36,7 @@ const COLLEGE_ID = 'demo';
 const REPETITIONS = 7;
 
 const VARIANTS = [
-  { key: 'current', configValue: null },
-  { key: 'oneLine', configValue: 'oneLine' },
   { key: 'keywords', configValue: 'keywords' },
-  { key: 'category', configValue: 'category' },
-  { key: 'spec', configValue: 'spec' },
   { key: 'hybrid', configValue: 'hybrid' },
 ];
 
@@ -267,25 +272,26 @@ async function main() {
       );
     });
 
-    console.log('\n========== per-variant vs current, per test ==========');
-    // Known-good 'current' baseline from this session's earlier full
-    // run (all 3 reps succeeded, 0 throws) — reused here rather than
-    // re-spending real API calls to re-measure an unchanged baseline.
-    const KNOWN_CURRENT_BASELINE = {
-      'Test A': { grandTotalTokens: 7402, fullCoverageRate: 1, planUsageRate: 0 },
-      'Test B': { grandTotalTokens: 7540, fullCoverageRate: 1, planUsageRate: 1 },
-      'Test C': { grandTotalTokens: 7594, fullCoverageRate: 1, planUsageRate: 1 },
-    };
+    console.log('\n========== per-test: keywords vs hybrid ==========');
+    // ADL-064 resolved this down to a straight two-variant comparison —
+    // there is no longer a 'current' variant to diff against (it was
+    // retired along with 'oneLine'/'category'/'spec'; see the file header
+    // comment). Diffing 'hybrid' directly against 'keywords' (the shipped
+    // default) is the only comparison still meaningful for every TEST,
+    // including D/E, unlike the old current-only baseline map above which
+    // never had entries for D/E and would crash on them if reused here.
+    const baselineVariant = VARIANTS[0];
     TESTS.forEach((test) => {
-      const baseline = allSummaries.find((s) => s.test === test.label && s.variant === 'current') || KNOWN_CURRENT_BASELINE[test.label];
-      VARIANTS.filter((v) => v.key !== 'current').forEach((v) => {
+      const baseline = allSummaries.find((s) => s.test === test.label && s.variant === baselineVariant.key);
+      VARIANTS.filter((v) => v.key !== baselineVariant.key).forEach((v) => {
         const s = allSummaries.find((x) => x.test === test.label && x.variant === v.key);
         const delta = s.grandTotalTokens - baseline.grandTotalTokens;
-        const pct = ((delta / baseline.grandTotalTokens) * 100).toFixed(1);
+        const pct = baseline.grandTotalTokens ? ((delta / baseline.grandTotalTokens) * 100).toFixed(1) : 'n/a';
         console.log(
-          `${test.label} ${v.key}: current=${baseline.grandTotalTokens.toFixed(0)} tok, ${v.key}=${s.grandTotalTokens.toFixed(0)} tok, `
-          + `delta=${delta.toFixed(0)} (${pct}%) | coverage current=${(baseline.fullCoverageRate * 100).toFixed(0)}% ${v.key}=${(s.fullCoverageRate * 100).toFixed(0)}% `
-          + `| planUse current=${(baseline.planUsageRate * 100).toFixed(0)}% ${v.key}=${(s.planUsageRate * 100).toFixed(0)}%`,
+          `${test.label} ${v.key} vs ${baselineVariant.key}: ${baselineVariant.key}=${baseline.grandTotalTokens.toFixed(0)} tok, `
+          + `${v.key}=${s.grandTotalTokens.toFixed(0)} tok, delta=${delta.toFixed(0)} (${pct}%) `
+          + `| coverage ${baselineVariant.key}=${(baseline.fullCoverageRate * 100).toFixed(0)}% ${v.key}=${(s.fullCoverageRate * 100).toFixed(0)}% `
+          + `| planUse ${baselineVariant.key}=${(baseline.planUsageRate * 100).toFixed(0)}% ${v.key}=${(s.planUsageRate * 100).toFixed(0)}%`,
         );
       });
     });

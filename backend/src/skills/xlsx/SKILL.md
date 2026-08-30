@@ -16,11 +16,10 @@ and recalculated by a real spreadsheet application has **no cached
 value at all**, and you will get `None`. If that happens, say so rather
 than treating `None` as zero.
 
-For an xlsx whose columns are merged or otherwise misaligned,
-`analyze_document_table` (a non-sandbox tool) may already report
-`unreliable_extraction` — `pdfplumber` is for PDFs, not for this;
-`openpyxl` reading a genuinely malformed sheet still needs manual
-column-boundary reasoning, same as any other tool.
+For an xlsx whose columns are merged or otherwise misaligned, say so —
+`pdfplumber` is for PDFs, not for this; `openpyxl` reading a genuinely
+malformed sheet still needs manual column-boundary reasoning, same as
+any other tool.
 
 ## Building a NEW workbook to hand back to the user
 

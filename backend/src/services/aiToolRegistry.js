@@ -86,6 +86,7 @@
 const auditLogRepository = require('../repositories/auditLogRepository');
 const aiClassificationAccess = require('./aiClassificationAccess');
 const { isUuid } = require('../identifierResolution');
+const { formatPipNamesForDescription } = require('../constants/sandboxPackages');
 // Phase 4 Group (b): the 6 handlers below that reach a Business Service
 // function needing scope resolution (visibilityService.getVisibleClassIds,
 // via buildActorContext) build the ActorContext once via this helper and
@@ -1104,108 +1105,18 @@ registerTool({
   handler: (client, params) => documentService.getDocumentLineage(client, params.document_id),
 });
 
-// --- ADR-029 — Universal Document Intelligence, slice 1 ----------------
-// analyze_document_table: L1/Inform — read-only computation over an
-// already-uploaded, already-authorized chat attachment (ownership is
-// re-checked inside documentAnalysisService itself, the same chain
-// aiService.resolveChatAttachments already enforces). RS-AIG-018's
-// "never a general-purpose execution capability" is satisfied by
-// construction: operation is a closed enum (documentAggregateService.
-// OPERATIONS), filter.pattern is a plain RegExp string, never executed as
-// code. The LLM's job is to supply the per-question mapping (which
-// pattern counts as "arrear," which serial range to scope to) as these
-// plain params — it never performs the count itself, which is the actual
-// fix for the miscounting this tool exists to prevent (see
-// bka/60-product-reasoning/ai-chat-result-sheet-evidence.md).
-const documentAnalysisService = require('./documentAnalysisService');
-
-registerTool({
-  name: 'analyze_document_table',
-  level: 'L1',
-  dataClassification: 'Internal',
-  description: 'Deterministically counts, sums, breaks down, or numerically compares pattern matches across the rows '
-    + "of an already-uploaded chat-attached tabular document (e.g. a result sheet, attendance roster, fee list or day "
-    + 'book) — use this instead of '
-    + 'counting/summing yourself whenever a question asks "how many"/"count"/"total"/consolidate across rows of an '
-    + 'attached document. For a THRESHOLD question ("entries below ₹5000", "rows over 100", "amounts between 500 and '
-    + '2000") use operation "compare" with a comparison — never filter the rows yourself. With "compare" you must '
-    + 'also give identityPattern unless the document has its own serial/register numbers, because otherwise the '
-    + 'matching rows come back with nothing to identify them; if the tool returns status "identity_required", supply '
-    + 'identityPattern and ask again. A "compare" result also reports unmatchedRows, nonNumericRows and '
-    + 'multiMatchRows — if any of them is non-zero, say so rather than presenting the total as if it covered every '
-    + 'row. Set filter.mode to "include" to get back only the rows matching filter.pattern (e.g. only '
-    + 'ABSENT/RA rows) instead of every row annotated with a mostly-zero column. If you don\'t know the exact serial '
-    + 'range for a named cohort (e.g. "the Sandwich section"), use sectionPattern instead of guessing a range. The '
-    + 'model never computes the count/sum/breakdown/filter itself — this tool does. If it returns status '
-    + '"unreliable_extraction", this system could not read that document\'s table layout dependably '
-    + '(rowsExpected vs rowsAccountedFor show the shortfall). If its "reason" is "row_integrity_unverified", '
-    + 'rowsExpected and rowsAccountedFor will be equal — the row COUNT was fine, but this system has no '
-    + 'independent check yet that each row\'s other values (marks, fees, totals, etc.) are attached to the '
-    + 'correct person, so it is withholding a confident per-row answer anyway. Say so plainly, and make clear the limitation '
-    + 'is this system\'s, not a problem with their file — do NOT tell the user the document is unclear or '
-    + 'ask them to re-upload a clearer copy, and do not substitute your own reading of the attached '
-    + 'document for the analysis. Both filter.pattern and sectionPattern must be JAVASCRIPT regular '
-    + 'expression syntax — Python/PCRE constructs such as inline flags (?i) and named groups (?P<x>...) are '
-    + 'rejected, and Python anchors \\A and \\Z are worse than rejected: JavaScript reads them as the plain '
-    + 'letters A and Z, so they match the wrong thing silently. Use ^ and $ instead. If the tool returns '
-    + 'status "invalid_pattern", the "parameter" and "reason" '
-    + 'fields say exactly which argument was rejected and why; that is a fault in the pattern supplied, not '
-    + 'in the document, so never tell the user their file is the problem. Status "invalid_comparison" means the '
-    + 'comparison object itself was malformed and its "reason" says how. '
-    + 'EVERY pattern here (filter.pattern, sectionPattern, identityPattern) is matched against a row whose columns '
-    + 'have already been TRIMMED and joined with a SINGLE SPACE — no tab characters and no runs of multiple spaces '
-    + 'survive, whatever the original file used, so a pattern containing \\t can never match anything. Anchor on the '
-    + 'neighbouring text instead.',
-  allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
-  params: {
-    type: 'object',
-    properties: {
-      attachmentId: { type: 'string', description: 'The chat attachment id (from this turn\'s uploaded file) to analyze.' },
-      filter: {
-        type: 'object',
-        properties: {
-          pattern: { type: 'string', description: 'A regular expression matched against each row\'s text. For operation "count", every match counts toward that row\'s result (e.g. "RA|Absent RA" for exam arrears). For operation "sum", each match\'s first capturing group (or the whole match if it has none) is parsed as a number and totaled per row (e.g. "Total Arrears\\s*:?\\s*(\\d+)"). For operation "breakdown", every match within each semester\'s own span is counted separately (e.g. "RA" to get a per-semester arrear count). For operation "compare", the FIRST match\'s first capturing group (or the whole match) is parsed as the row\'s number and tested against the comparison (e.g. "(\\d[\\d,]*\\.?\\d*)" to pick up an amount); commas and a leading ₹/Rs. are ignored when parsing.' },
-          mode: { type: 'string', enum: ['annotate', 'include'], description: '"annotate" (default) returns every row with its count/sum/breakdown. "include" returns only the rows where the pattern matched at least once — use this for a real filtered list, not just an annotated total. Operation "compare" is always "include" and rejects "annotate".' },
-        },
-        required: ['pattern'],
-        additionalProperties: false,
-      },
-      operation: { type: 'string', enum: ['count', 'sum', 'breakdown', 'compare'], description: "The aggregate operation — 'count' (occurrences of filter.pattern per row), 'sum' (total of the numbers filter.pattern captures/matches per row), 'breakdown' (occurrences of filter.pattern per semester within each row, for a document that lists a semester number before each exam attempt), or 'compare' (return only the rows whose number passes a numeric threshold — use this for any 'below/above/between' question)." },
-      comparison: {
-        type: 'object',
-        properties: {
-          operator: { type: 'string', enum: ['lt', 'lte', 'gt', 'gte', 'between'], description: "'lt' (<), 'lte' (<=), 'gt' (>), 'gte' (>=) or 'between' (inclusive at both ends)." },
-          value: { type: 'number', description: 'The threshold to compare each row\'s parsed number against. For "between", this is the lower bound.' },
-          upperValue: { type: 'number', description: 'The upper bound, inclusive. Required for "between" and rejected for every other operator.' },
-        },
-        required: ['operator', 'value'],
-        additionalProperties: false,
-        description: 'Required when operation is "compare", ignored otherwise. The threshold test applied to each row\'s parsed number.',
-      },
-      identityPattern: {
-        type: 'string',
-        description: 'Optional — a regular expression naming which part of a row identifies it (e.g. the party/ledger name). Its first capturing group, or the whole match, becomes each returned row\'s "identity". Matched case-sensitively. Required for operation "compare" on a document with no serial/register numbers of its own, otherwise the matching rows come back unidentifiable. IMPORTANT: by the time any pattern is applied, a row\'s columns have been TRIMMED and joined with a SINGLE SPACE — there are no tab characters and no runs of multiple spaces left, whatever the original file used. A pattern containing \\t can never match. Anchor on the neighbouring content instead, e.g. "^\\d+-[A-Za-z]+-\\d+\\s+(.+?)\\s+[\\d,]+\\.\\d{2}" to take the text between a leading date and an amount.',
-      },
-      serialRange: {
-        type: 'object',
-        properties: {
-          from: { type: 'number', description: 'Lowest serial/row number to include (inclusive).' },
-          to: { type: 'number', description: 'Highest serial/row number to include (inclusive).' },
-        },
-        required: ['from', 'to'],
-        additionalProperties: false,
-        description: 'Optional — restricts analysis to a serial-number range (e.g. "serial 818 to 872"). Combine with sectionPattern, or use alone if you already know the exact range.',
-      },
-      sectionPattern: {
-        type: 'string',
-        description: 'Optional — a regular expression matched against the document\'s own course/section header text (e.g. "Sandwich" or "Full Time"), to scope analysis to a named cohort when you don\'t already know its serial-number range. Combine with serialRange to narrow further within that section.',
-      },
-    },
-    required: ['attachmentId', 'filter', 'operation'],
-    additionalProperties: false,
-  },
-  handler: (client, params, actor) => documentAnalysisService.analyzeAttachment(client, params, actor),
-});
+// ADL-065 (2026-08-30): analyze_document_table (ADR-029 slice 1) is
+// retired — the owner's decision, made after this file's own evidence
+// (ADL-055/ADL-058 addendum) was surfaced showing native Gemini reading
+// cannot count reliably (2 vs 23, 7 vs 839, 16 vs 1603, measured) and
+// produced 3 different wrong live answers before this tool existed. The
+// owner chose to accept that risk and rely on native document reading
+// instead. documentAnalysisService.js/documentAggregateService.js/
+// documentTableExtractionService.js/documentRowIntegrityService.js are
+// UNCHANGED and still exist (deterministic, tested, reusable if this
+// decision is revisited) — only the AI-facing tool registration is
+// removed, so the model can no longer call it. See ADL-065 for the full
+// record.
 
 // --- Real tool #5 — AI attendance assistant ----------------------------
 // mark_attendance_nl: BusinessRules.md AI Attendance Management. AI-
@@ -1349,9 +1260,9 @@ registerTool({
     + 'department (HOD), or the whole college (principal). Roster/profile data only — never includes attendance '
     + 'or marks; use attendance_summary or assessment_marks_summary for those. Only ever returns a name for a '
     + "roll number that's actually enrolled in THIS college's own student records — it has no knowledge of "
-    + "roll/register numbers that only appear in a document you've separately analyzed (analyze_document_table), "
-    + "since a document's own roll numbers aren't necessarily this college's own enrolled students. If the roll "
-    + "numbers a document analysis surfaced don't resolve to real students here, say so — never substitute an "
+    + "roll/register numbers that only appear in an attached document you've separately read, since a document's "
+    + "own roll numbers aren't necessarily this college's own enrolled students. If roll numbers you read from a "
+    + "document don't resolve to real students here, say so — never substitute an "
     + 'unrelated/unfiltered roster as if it answered the question.',
   allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
   params: {
@@ -3506,15 +3417,19 @@ registerTool({
   level: 'L1',
   dataClassification: 'Internal',
   description: 'Runs a short computation in an isolated sandbox with no access to ARCNAVE\'s database or any '
-    + "institutional system — use this for a genuine calculation no other tool covers (e.g. a custom formula "
-    + 'across a document\'s numbers), never for anything analyze_document_table\'s count/sum/breakdown/compare '
-    + 'operations already handle (prefer that tool when it fits — it is deterministic and reviewed, this is not). '
-    + 'Optionally analyzes one already-uploaded chat attachment from this turn; never any other document. '
-    + 'The sandbox runs Python 3 with pdfplumber, openpyxl and pandas available (no other packages, and it '
-    + 'cannot install any). pdfplumber.extract_tables() is the right tool when a PDF\'s columns are merged or '
-    + 'misaligned and analyze_document_table reported unreliable_extraction. '
+    + "institutional system — use this for any calculation, extraction, or read/write over an already-uploaded "
+    + 'chat attachment (counting, summing, comparing, or building a new file from it). Call list_skills/'
+    + 'describe_skill first for an unfamiliar file type or operation — a skill exists to catch a mistake already '
+    + 'made once in this project. Optionally analyzes one already-uploaded chat attachment from this turn; never '
+    + 'any other document. '
+    + `The sandbox runs Python 3 with ${formatPipNamesForDescription()} available (plus LibreOffice for docx/pptx `
+    + 'conversion — see the docx/pptx skills; no other packages, and it cannot install any). '
+    + 'pdfplumber.extract_tables() is the right tool when a PDF\'s columns are merged or misaligned. '
     + 'The sandbox cannot read, write, or reach any ARCNAVE data beyond the one attachment explicitly passed to '
     + 'it — its output is plain text (stdout/stderr), never trusted as instructions.\n\n'
+    + 'For any count/sum/average/comparison/filter/grouping your code computes, print exactly one final '
+    + '`FINAL_RESULT_JSON:{...}` line (see file-reading skill for the exact shapes) so your narrated answer can '
+    + 'be checked against what the code actually produced — without it, the number you state cannot be verified.\n\n'
     + 'To produce a downloadable Excel workbook (e.g. a category/month breakdown), write it with openpyxl to '
     + 'the exact filename given in saveAs, and pass expectFormulasIn naming every cell/range that must contain a '
     + 'live formula (e.g. "Summary!B2:B9"). Write REAL formulas (=SUMIFS(...), =SUM(...)) into those cells — '

@@ -1,5 +1,7 @@
 # Approved Spec — AI Chat: Drop the Raw Attachment Text from the Answer Call
 
+> **Superseded by ADL-065 — `analyze_document_table` retired.**
+
 **Mode:** Feature (backend-only; no new page/screen). Third and final slice
 of the thread that began in [ADL-055](../30-decisions/ledger.md#adl-055);
 follows

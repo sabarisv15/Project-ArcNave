@@ -1,5 +1,10 @@
 # What actually happens when an attachment is given to ARCNAVE's AI
 
+> **Superseded by ADL-065 — `analyze_document_table` retired.** This
+> trace was taken 2026-08-28, before that tool was removed from the
+> registry; any step below naming it is dated history, not current
+> behavior.
+
 Traced from source on 2026-08-28, not from design intent. Every box below
 names the real file and the real symbol that does it. Where a status
 string appears in quotes, that is the literal value a tool returns.

@@ -1035,3 +1035,49 @@ mechanism is introduced for this capability.
 | **Implementation** | `aiToolRegistry.js`'s `generate_image` tool; `aiProviders/openai.js`/`aiProviders/gemini.js`'s `generateImage`; `configurationService` category `image_generation` |
 | **Conformance** | Conformant |
 | **Decisions** | [ADL-046](../30-decisions/ledger.md#adl-046) |
+
+## RS-AIG-026
+
+**A mechanism that must remain deterministically available across a
+multi-turn interaction is pinned by explicit, structural conversation
+state — never by semantic retrieval or similarity-based recall alone.**
+
+Semantic/embedding-based tool retrieval (RS-AIG round 32's shortlisting
+layer) is a recall mechanism, not a guarantee: a tool whose description
+vocabulary doesn't overlap the question's natural phrasing can be
+excluded from the offered set even when it is exactly what the turn
+needs. When some other, already-known fact about the turn — not the
+question's wording — settles that a tool (or instruction, or workflow
+step) must be available, that fact should be read directly off
+structural state (e.g. "a document is attached to this turn," "this is
+step 3 of an approved plan") and used to guarantee inclusion, the same
+way the bounded-plan meta-tool is exempted from relevance filtering
+entirely rather than trusted to retrieve well on its own.
+
+This pattern was first built and verified live as `pinDocumentAnalysisTool`
+(ADL-055), which fixed a real, measured failure:
+`analyze_document_table` was never offered for a naturally-phrased
+counting question because "arrears" embeds closer to finance
+vocabulary than to a tool description that never uses the word — the
+model was never given the chance to decline the tool; it was silently
+never offered one. The pin was deleted along with the tool itself when
+`analyze_document_table` was retired (ADL-065), which was a decision
+about that one tool's own risk/benefit, not about this pattern —
+recorded here so it is not lost to git history and can be reused
+without re-deriving it if a future tool reproduces the same
+discoverability failure.
+
+| | |
+|---|---|
+| **Owner** | AI Tool Registry |
+| **Authority** | Design guidance (not an enforced invariant — no current tool depends on it) |
+| **Depends on** | — |
+| **Governs** | Any future tool/instruction whose availability must not depend on retrieval quality |
+| **Lifecycle** | — |
+| **Workflow** | — |
+| **AI** | N/A — a retrieval/availability pattern, not an authority-level rule |
+| **Modules** | 9 |
+| **Data effect** | None |
+| **Implementation** | None currently live — historical reference implementation was `aiService.js`'s `pinDocumentAnalysisTool`, removed by ADL-065 |
+| **Conformance** | N/A |
+| **Decisions** | [ADL-055](../30-decisions/ledger.md#adl-055), [ADL-065](../30-decisions/ledger.md#adl-065) |

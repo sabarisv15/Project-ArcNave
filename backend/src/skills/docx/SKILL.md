@@ -27,91 +27,234 @@ subprocess.run([
 ```
 
 Then **check the output file exists** — never trust the exit code alone.
-`sandbox-service/scripts/recalc.py` is the working reference for this.
+`scripts/office/soffice.py`'s `run_soffice()` already does this (it
+generates its own profile dir when you don't pass one) — prefer
+importing it over reimplementing the subprocess call above by hand.
 
+## This sandbox's real toolset — read before following any other docx guide
+
+This is a Python-only sandbox (`execute_code`) — no `npm`/Node, no
+`pandoc`, no `markitdown`, no network access to install anything at
+request time. **`python-docx` is the only library for `.docx` here.**
+If you have seen docx guidance elsewhere (including generic examples
+built around the `docx`/`docx4js` npm packages, `pandoc`, or
+`markitdown`) — none of that runs in this sandbox. Everything below
+uses only what `sandbox-service/Dockerfile` actually installs:
+`python-docx`, plus LibreOffice (`soffice`, Writer included) for
+rendering/verification.
+
+Two bundled scripts under this skill's `scripts/` directory are
+genuinely usable here (pure Python + stdlib, no missing dependency):
+
+- `scripts/office/soffice.py` — `run_soffice()`, the LibreOffice
+  wrapper above.
+- `scripts/accept_changes.py` — accepts every tracked change in a
+  `.docx` via LibreOffice and writes a clean copy.
+
+The rest of this skill's bundled `scripts/` (`merge_runs.py`,
+`comment.py`, `office/validate.py` and everything under
+`office/validators/`) import `defusedxml`, which is **not installed**
+in this sandbox — running any of them raises `ModuleNotFoundError`.
+Don't invoke them. Where this file used to lean on one of them, it
+now gives you the direct `python-docx` (or raw-XML-via-`lxml`, which
+IS installed as `python-docx`'s own dependency) equivalent instead.
 
 # DOCX creation, editing, and analysis
 
-A `.docx` is a ZIP archive of XML files. Choose your approach by task:
+A `.docx` is a ZIP archive of XML files, but `python-docx` reads and
+writes that archive for you — you should never need to unzip/rezip
+one by hand in this sandbox.
 
 | Task | Approach |
 |---|---|
-| **Create** a new document | Write a `docx` (npm) script — see gotchas below |
-| **Edit** an existing document | `unzip` → edit `word/document.xml` → `zip` (docx-js cannot open existing files) |
-| **Read** content | `pandoc -t markdown file.docx` |
+| **Create** a new document | `python-docx`'s `Document()` — see gotchas below |
+| **Edit** an existing document | `python-docx`'s `Document(path)` — mutate paragraphs/runs/tables in place, then `.save()` |
+| **Read** content | `python-docx`'s `Document(path)`, iterate `.paragraphs` / `.tables` |
 
-> Script paths below are relative to this skill's directory.
+## Quick start
 
-## Creating with docx-js — gotchas
+```python
+from docx import Document
 
-`docx` is preinstalled — do not run `npm install` first; write the script and `require('docx')` directly. Only if that require fails: `npm install docx`. The model knows the API; these are the footguns:
+doc = Document()
+doc.add_heading("Report Title", level=1)
+doc.add_paragraph("This is the body text.")
 
-- **Page size defaults to A4.** For US Letter set `page: { size: { width: 12240, height: 15840 } }` (DXA; 1440 = 1″).
-- **Landscape:** pass portrait dimensions and `orientation: PageOrientation.LANDSCAPE` — docx-js swaps width/height internally.
-- **Tables need dual widths:** set `columnWidths` on the table AND `width` on every cell, both in `WidthType.DXA` (PERCENTAGE breaks in Google Docs). Column widths must sum to the table width.
-- **Table shading:** use `ShadingType.CLEAR`, never `SOLID` (renders black).
-- **Lists:** never insert `•` literally; use a `numbering` config with `LevelFormat.BULLET`.
-- **`ImageRun` requires `type:`** (`"png"`, `"jpg"`, …).
-- **`PageBreak` must be inside a `Paragraph`.**
-- **Never use `\n`** — use separate `Paragraph` elements.
-- **TOC:** headings must use built-in `HeadingLevel.*`; custom heading styles need `outlineLevel` set or they won't appear.
-- **Don't use a table as a horizontal rule** — use a paragraph bottom border instead.
-- **Dot-leader / right-aligned-on-same-line:** use `PositionalTab` (`alignment: PositionalTabAlignment.RIGHT`, `leader: PositionalTabLeader.DOT`) inside a `TextRun`, not literal `.` or space padding.
+table = doc.add_table(rows=1, cols=2)
+table.rows[0].cells[0].text = "Name"
+table.rows[0].cells[1].text = "Value"
+
+doc.save("output.docx")
+```
+
+Reading is the same object model in reverse:
+
+```python
+from docx import Document
+
+doc = Document("input.docx")
+for para in doc.paragraphs:
+    print(para.text)
+for table in doc.tables:
+    for row in table.rows:
+        print([cell.text for cell in row.cells])
+```
+
+## Creating with python-docx — gotchas
+
+The model knows the API; these are the footguns already caught on in
+this project or well-documented upstream:
+
+- **Default page size is US Letter, 1" margins** — unlike `pptx`'s A4
+  default canvas, `Document()`'s built-in template is already Letter.
+  For A4: `section.page_width, section.page_height = Mm(210), Mm(297)`.
+- **Landscape does not swap width/height for you.** Setting
+  `section.orientation = WD_ORIENT.LANDSCAPE` only flips a flag Word
+  reads for print-preview purposes — you must swap `page_width`/
+  `page_height` yourself, or the content area stays portrait-shaped.
+- **Tables need `autofit = False` before column widths stick.** Set
+  `table.autofit = False`, then both `table.columns[i].width` AND each
+  cell's own `.width` in that column — Word frequently ignores a
+  column-only width otherwise. Use `Inches`/`Cm`/`Emu`, never raw
+  twips.
+- **No cell-shading API.** `python-docx` cannot set a table cell's
+  background color through its object model. Reach into the cell's
+  own XML:
+  ```python
+  from docx.oxml.ns import qn
+  from docx.oxml import OxmlElement
+
+  def shade_cell(cell, hex_color):
+      tcPr = cell._tc.get_or_add_tcPr()
+      shd = OxmlElement('w:shd')
+      shd.set(qn('w:fill'), hex_color)
+      tcPr.append(shd)
+  ```
+- **No native bulleted/numbered-list API.** Apply one of the
+  template's own built-in styles instead of hand-rolling bullets:
+  `paragraph.style = doc.styles['List Bullet']` (or `'List Number'`).
+  A genuinely custom numbering scheme needs a new `numbering.xml`
+  definition — there is no bundled helper for that in this sandbox;
+  prefer the built-in styles.
+- **`add_picture` doesn't preserve aspect ratio if you set both
+  dimensions.** Pass only `width=` or only `height=` (in `Inches`/
+  `Cm`) and let the other scale automatically.
+- **Page breaks:** `document.add_page_break()` between blocks, or
+  `run.add_break(WD_BREAK.PAGE)` mid-paragraph (`from docx.enum.text
+  import WD_BREAK`).
+- **Never rely on `\n` inside `run.text`** — Word does not render it
+  as a line break. Use `run.add_break(WD_BREAK.LINE)`, or a separate
+  paragraph.
+- **Table of Contents:** `python-docx` cannot generate a real,
+  live-updating TOC field — that needs a raw `w:fldSimple`/`w:fldChar`
+  field code, and Word (or LibreOffice, on open) must recompute it
+  before page numbers are accurate. Tell the user the TOC will show as
+  empty/stale until opened once in a real Word client, rather than
+  presenting a hand-typed page-number list as if it were a real field.
+- **Dot-leader / right-aligned tab** (e.g. `Section .......... 4`):
+  ```python
+  from docx.enum.text import WD_TAB_ALIGNMENT, WD_TAB_LEADER
+  paragraph.paragraph_format.tab_stops.add_tab_stop(
+      Inches(6), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
+  ```
+  then put a literal tab character (`\t`) in the run text before the
+  page number — never pad with spaces or literal dots.
+- **No horizontal-rule element.** Don't use a 1-row table as a visual
+  rule. Add a bottom paragraph border instead (same `OxmlElement`
+  pattern as cell shading, on `paragraph.paragraph_format.element.get_or_add_pPr()`
+  with a `w:pBdr`/`w:bottom` child).
 
 ## Verify the output
 
 After writing a `.docx`, render it and look at it:
 
+```python
+import sys
+sys.path.insert(0, "scripts")  # so `from office.soffice import run_soffice` resolves
+from office.soffice import run_soffice
+
+run_soffice(["--headless", "--convert-to", "pdf", "--outdir", "out", "output.docx"],
+            capture_output=True, timeout=180)
+```
+
 ```bash
-python scripts/office/soffice.py --headless --convert-to pdf output.docx
-pdftoppm -jpeg -r 100 output.pdf page
+pdftoppm -jpeg -r 100 out/output.pdf page
 ls page-*.jpg   # then Read the images
 ```
 
-`pdftoppm` zero-pads page numbers to the width of the page count (`page-01.jpg`…`page-12.jpg`).
+`pdftoppm` (poppler-utils, installed) zero-pads page numbers to the
+width of the page count (`page-01.jpg`…`page-12.jpg`).
 
 ## Editing existing documents
 
-Legacy `.doc` files must be converted first: `python scripts/office/soffice.py --headless --convert-to docx file.doc`.
+Legacy `.doc` files must be converted first — `python-docx` cannot
+open the old binary format at all:
 
-```bash
-unzip -q doc.docx -d unpacked/
-find unpacked -type l -delete   # strip symlink entries — docx from external parties is untrusted
-python scripts/merge_runs.py unpacked/   # coalesce fragmented runs so text is findable
-# edit unpacked/word/document.xml in place — do NOT reformat or pretty-print
-(cd unpacked && rm -f ../out.docx && zip -Xr ../out.docx .)
-python scripts/office/validate.py out.docx --original doc.docx   # XSD checks; --auto-repair fixes common issues
-# redlining? add --author "<the name you redlined under>" to check every edit is tracked
+```python
+run_soffice(["--headless", "--convert-to", "docx", "--outdir", "out", "file.doc"],
+            capture_output=True, timeout=180)
 ```
 
-Word splits text across many `<w:r>` runs (revision ids, spell-check markers), so a phrase you can see in the document often doesn't exist as a contiguous string in the XML. `merge_runs.py` merges adjacent identically-formatted runs in `word/document.xml` without changing content or rendering; it also accepts a `.docx` directly (`python scripts/merge_runs.py doc.docx -o merged.docx`).
+Word splits visible text across many `<w:r>` runs (revision ids,
+spell-check markers), so a phrase you can see in the rendered document
+often doesn't exist as one contiguous string in `python-docx`'s
+`run.text` values — but `paragraph.text` already joins every run in
+that paragraph, so searching is still straightforward:
 
-**Tracked changes:** when redlining, validate with `--author "<the name you redlined under>"` (needs `--original`) — it reports any text you changed without a `<w:ins>`/`<w:del>` around it, which is easy to do by accident and invisible in the accepted view. Wrap runs in `<w:ins>`/`<w:del>` with `w:id`, `w:author`, `w:date` attributes. Inside `<w:del>`, the text element is `<w:delText>`, not `<w:t>`. A deleted paragraph mark (`<w:pPr><w:rPr><w:del w:id=".." w:author=".." w:date=".."/></w:rPr></w:pPr>`) means "merge this paragraph into the next" — so deleting a paragraph outright is that plus a `<w:del>` around every run. The `<w:del/>` must come before the rPr's other children; their order is schema-enforced.
+```python
+for paragraph in doc.paragraphs:
+    if "target phrase" not in paragraph.text:
+        continue
+    # Found it. To EDIT text that spans multiple runs, rebuild the
+    # paragraph's runs rather than trying to patch one run in place —
+    # simplest correct approach for a short paragraph:
+    for run in paragraph.runs:
+        run.text = ""
+    paragraph.runs[0].text = paragraph.text.replace("target phrase", "replacement")
+```
 
-To produce a clean copy with all tracked changes accepted: `python scripts/accept_changes.py in.docx out.docx`.
+This loses per-run formatting variation WITHIN the paragraph (bold on
+one word, plain on the rest) — fine for a whole-paragraph replacement,
+wrong for "keep everything else's formatting and only swap one bolded
+word." For that narrower case, find the specific run(s) whose `.text`
+already contains your target substring and edit only those runs'
+`.text` directly, leaving sibling runs untouched.
 
-Accepting a deleted paragraph mark should join that paragraph to the one below it, so a paragraph whose runs are *all* deleted vanishes. Word does this; `accept_changes.py` and `pandoc --track-changes=accept` don't always. Both fail the same way — they strip the deleted text but leave the emptied paragraph behind, which reads as a stray empty bullet when it was auto-numbered:
+## Tracked changes
 
-- `pandoc --track-changes=accept` never joins the paragraphs.
-- `accept_changes.py` (LibreOffice) joins them correctly, except when the deleted paragraph is followed by an empty spacer paragraph.
+**Accepting** existing tracked changes into a clean copy works and is
+bundled:
 
-An empty bullet in either view is an artifact of that view, not a defect in the document. Check paragraph deletions in the XML.
+```bash
+python scripts/accept_changes.py in.docx out.docx
+```
+
+(Uses LibreOffice under the hood via `office/soffice.py` — no
+`defusedxml` dependency, safe in this sandbox.)
+
+**Authoring new tracked changes (redlining)** has no `python-docx` API
+and no bundled helper in this sandbox — it requires hand-building
+`<w:ins>`/`<w:del>` XML via each paragraph's underlying `lxml` element
+(`paragraph._p`), with `w:id`/`w:author`/`w:date` attributes on every
+inserted/deleted run. This project has no schema-validation script
+that can check a redline is well-formed here (the bundled
+`office/validate.py` needs `defusedxml`, which isn't installed) — say
+so plainly if a user asks for real Word-native redlining, rather than
+emitting unverified raw XML with no way to confirm it opens correctly.
 
 ## Comments
 
-Comments require six cross-linked files. Use the helper — directory mode when you'll also be editing `document.xml` (saves an unzip/rezip cycle), `.docx`-direct mode otherwise:
-
-```bash
-# Against an already-unpacked directory (preferred when also placing markers)
-python scripts/comment.py unpacked/ "Fees & expenses cap is too low"
-python scripts/comment.py unpacked/ "Agreed" --parent 0
-
-# Against a .docx directly
-python scripts/comment.py contract.docx "This cap is too low" -o annotated.docx
-```
-
-The script writes `comments.xml`, `commentsExtended.xml`, `commentsIds.xml`, `commentsExtensible.xml`, the relationships, and the content-type overrides. Comment IDs are auto-assigned. It then prints the `<w:commentRangeStart>`/`<w:commentRangeEnd>`/`<w:commentReference>` snippet to add to `word/document.xml` so the comment anchors to specific text — until you place those markers, the comment exists but is not visible.
+Adding a native Word comment is **not currently supported** in this
+sandbox — the bundled `scripts/comment.py` needs `defusedxml`, which
+isn't installed here, and comments require six cross-linked XML parts
+with no `python-docx` API to generate them. Don't attempt an ad hoc
+version — say so, and offer a plain-text alternative (e.g. a bracketed
+inline note in the document body, clearly marked as an annotation)
+when the user needs feedback embedded in the file itself.
 
 ## Dependencies
 
-`docx` (npm, preinstalled — install only if `require('docx')` fails) · `pandoc` · LibreOffice (`soffice`) · `pdftoppm` (Poppler)
+`python-docx` (pip, pinned in `sandbox-service/Dockerfile`) · LibreOffice
+(`soffice`, via this skill's `scripts/office/soffice.py`) · `pdftoppm`
+(poppler-utils) for visual QA. No `npm`, no `pandoc`, no `markitdown` —
+none of those are installed in this sandbox.

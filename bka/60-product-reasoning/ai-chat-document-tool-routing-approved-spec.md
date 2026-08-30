@@ -1,5 +1,7 @@
 # Approved Spec — AI Chat Document Questions: Deterministic Tool Availability
 
+> **Superseded by ADL-065 — `analyze_document_table` retired.**
+
 **Mode:** Feature (backend-only; no new page/screen). Narrow follow-up to
 [`ai-chat-document-analysis-payload-bounds-approved-spec.md`](ai-chat-document-analysis-payload-bounds-approved-spec.md),
 which is shipped.

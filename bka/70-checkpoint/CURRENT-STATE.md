@@ -1,12 +1,94 @@
 # Current State
 
-_Last updated: 2026-08-28._
+_Last updated: 2026-08-30._
 
 ---
 
-# ⛔ READ FIRST — Decision 1 is DONE (decided, built, tested, live-verified). Decision 2 (image search) is still open.
+# ⛔ READ FIRST — ADL-064/065 shipped and review-fixed, 2026-08-30. Decision 2 (image search) is still the only open item.
 
-**DECISION 1 is FULLY SHIPPED, 2026-08-29.** Owner chose (2026-08-28):
+**ADL-064 (catalogue-routing-variant experiment resolved) and ADL-065
+(`analyze_document_table` retired) are FULLY SHIPPED, 2026-08-30.** Both
+landed as one working-tree diff, then went through a full code review (8
+finder angles, 10 findings) with every finding fixed in the same session —
+nothing left open on this thread:
+
+1. **execute_code's computed answers now have a real verification path** —
+   before this fix, a count/sum computed via `execute_code` (the tool that
+   replaced `analyze_document_table`) had NO ground truth to verify
+   against, so `verifyNumericClaims` silently returned
+   `INSUFFICIENT_EVIDENCE` regardless of whether the model's stated number
+   was right. Fixed with a `FINAL_RESULT_JSON:` sandbox output contract
+   (documented in `backend/src/skills/file-reading/SKILL.md`) plus
+   `extractFinalSandboxResult`/`sandboxEvidenceSource` in
+   `backend/src/services/aiService.js` (~line 1256/1282), wired into
+   `extractDeterministicSummary`/`buildEvidence`. 9 new tests in
+   `backend/tests/ai-service.test.js`.
+2. Dead `analyze_document_table` references removed from the still-live
+   `'hybrid'` catalogue variant (`backend/scripts/experimental-catalogue-hybrid.md`).
+3. `backend/scripts/catalogue-routing-accuracy-benchmark.js`'s dead
+   "vs current" comparison (crashed on Test D/E after `'current'` was
+   retired) replaced with a keywords-vs-hybrid comparison that works for
+   every test.
+4. `backend/src/skills/file-reading/SKILL.md` corrected (stopped claiming
+   `python-docx`/`python-pptx`/`reportlab`/`pypdf` are unavailable — they
+   are). While fixing this, discovered a deeper pre-existing gap: the
+   `docx`/`pptx` skills' bundled scripts (`merge_runs.py`, `comment.py`,
+   `office/validate.py`, `clean.py`, `thumbnail.py`) import `defusedxml`/
+   `Pillow`, neither installed by `sandbox-service/Dockerfile` — both
+   `backend/src/skills/docx/SKILL.md` and `backend/src/skills/pptx/SKILL.md`
+   were rewritten to use real `python-docx`/`python-pptx` guidance and
+   flag those specific scripts as non-functional here (only
+   `office/soffice.py`, `accept_changes.py`, and `add_slide.py` are
+   genuinely safe — verified import-by-import, not assumed). While in
+   there, `backend/src/skills/pdf/SKILL.md`'s `qpdf`/`pdftk` sections were
+   also removed (neither installed either) — `pypdf` already covers the
+   same operations, shown earlier in the same file.
+5. `bka/20-matrices/ai-capability-matrix.md` §4.10 and two
+   `bka/20-matrices/FEATURE-MATRIX.md` sections marked retired (ADL-065),
+   kept as history.
+6. 12 Approved Specs (`bka/60-product-reasoning/*-approved-spec.md`,
+   10 files) plus `bka/90-appendix/ai-attachment-execution-flow.md` and
+   `bka/90-appendix/consumer-tool-inventory-classification.md` now carry
+   a `> **Superseded by ADL-065**` banner — none deleted.
+7. `buildToolCatalogueKeywords` is now cached per role
+   (`cachedKeywordsByRole` Map in `aiService.js`) — it was rebuilt from
+   scratch on every single chat turn before this.
+8. New regression tests pin that `'hybrid'` is the ONLY catalogue variant
+   exempt from role-filtering, and that the new per-role cache never
+   leaks one role's tool list into another's.
+9. The sandbox's Python package list (9 packages) was hand-duplicated in
+   3 places; deduplicated into `backend/src/constants/sandboxPackages.js`,
+   consumed by both `aiToolRegistry.js`'s `execute_code` description and
+   `backend/scripts/sandbox-coldstart-probe.js`.
+10. `RS-AIG-026` (`bka/10-specification/RS-AIG-ai-governance.md`, new,
+    appended after RS-AIG-025) records the "pin by structural turn state,
+    not semantic retrieval" pattern `pinDocumentAnalysisTool` established
+    (ADL-055) — that code was deleted along with `analyze_document_table`
+    itself, so the reusable pattern is recorded here instead of only
+    living in deleted code/git history.
+
+**Full backend suite: 2564/2564 passing**, confirmed via
+`docker compose exec app npm test`. Run 4 times back-to-back in the same
+container during verification: 2564/0, 2560/4, 2563/1, 2564/0 — the
+failure count varied between identical runs with no code changes in
+between, and `grep -n "not ok"` against the captured TAP output found
+zero matches even on the runs reporting nonzero fails (buffering/capture
+artifact, not a confirmed real failure name) — see Standing notes below.
+Not investigated further; if this matters for the next task, rerun and
+capture with `2>&1 | tee` rather than a shell redirect.
+
+**The "Active Task" and "Exact next action" sections below (dated
+2026-08-25/26) are now CLOSED and should not be acted on** — they queue
+MORE `analyze_document_table` capability (PDF geometric reconstruction,
+operation vocabulary, tool-call cap, granularity audit), and that tool no
+longer exists. See ADL-065 for the retirement record and this banner for
+what actually shipped instead. Closure markers are also inline at each
+section's own heading.
+
+---
+
+**DECISION 1 is FULLY SHIPPED, 2026-08-29** (kept for context; already
+closed before this session started). Owner chose (2026-08-28):
 switch to pdfplumber, full trust when verified. Recorded as
 [ADL-063](../30-decisions/ledger.md#adl-063). Built the same session
 (2026-08-29): `documentAnalysisService.js` gained the sandbox fallback at
@@ -163,6 +245,13 @@ implementation narrative already recorded in the Decision Ledger — it
 only links to it.
 
 ## Active Task
+
+**⛔ CLOSED 2026-08-30 — see the resolution banner at the very top of
+this file.** Everything below is dated history of how
+`analyze_document_table` was built (2026-08-25/26). The tool itself was
+retired by [ADL-065](../30-decisions/ledger.md#adl-065) on 2026-08-30 —
+do not resume, extend, or re-plan any of the queued items below; they
+are all additional capability for a tool that no longer exists.
 
 **ADL-056's slice is implemented and verified (2026-08-25).** An
 uncompilable LLM-supplied pattern now returns
@@ -417,6 +506,22 @@ under Standing notes. Anything else is a real regression.
 
 ## Exact next action
 
+**⛔ Everything below this point is CLOSED (2026-08-30) — dated history
+of the `analyze_document_table` thread, retired by
+[ADL-065](../30-decisions/ledger.md#adl-065). Do not act on it.**
+
+**The real next action, as of 2026-08-30:** there is no unblocked
+engineering task queued. Either (a) wait for the owner's answer on
+**Decision 2 — image search** (top of this file — direction, plus a
+privacy/consent call if reverse lookup is chosen), or (b) pick one item
+from **"Available next work"** below and run it through its own fresh
+planning pass first — none of those are pre-approved to build directly.
+If picking up mid-conversation-compaction with no other instruction,
+ask the user which of these two before writing any code.
+
+<details>
+<summary>Closed history below (analyze_document_table thread, 2026-08-25/26) — expand only if you need the reasoning behind a decision this thread already made</summary>
+
 **~~Run `/build-slice` against [`ai-chat-invalid-tool-pattern-approved-spec.md`](../60-product-reasoning/ai-chat-invalid-tool-pattern-approved-spec.md)~~
 — DONE 2026-08-25**, see Active Task above. Complete, including the
 full-turn live check through Gemini.
@@ -501,6 +606,8 @@ cd backend && set -a && . ./.env.local.sh && set +a && node scripts/extraction-c
 
 (also `extraction-detail-probe.js` and `pdf-geometry-probe.js`; none call an
 LLM or touch the database.)
+
+</details>
 
 ## Previously completed this session
 
@@ -1479,10 +1586,22 @@ re-attempt the same impersonation approach without reading F2d first.
   `fetch_trusted_web_page: registered as L1...`) are unrelated to every
   task recorded in this file's history — do not investigate them as a
   side effect of unrelated work; they are a known, standing, out-of-scope
-  gap.
+  gap. **Update 2026-08-30:** not reproduced in 4 full-suite runs this
+  session (`docker compose exec app npm test`, 2 of the 4 were
+  2564/2564 clean) — may already be fixed by an intervening commit, or
+  may just not have triggered this time; not confirmed fixed, don't
+  assume it either way.
 - `backend/.env.local.sh` no longer has a `NIM_API_KEY` line (removed
   2026-08-24, user's own request) — this file is gitignored, the change
   is local-only, nothing to reconcile in git.
+- **New 2026-08-30:** full-suite pass/fail count is flaky under
+  back-to-back runs in the same container — 4 consecutive
+  `docker compose exec app npm test` runs (no code changes between them)
+  scored 2564/2564, 2560/2564, 2563/2564, 2564/2564. The specific
+  failing test name(s) could not be isolated from the captured output
+  (`grep -n "not ok"` found zero matches even on the runs reporting
+  nonzero fails) — not investigated further. If you hit a failure on a
+  full-suite run, rerun once before treating it as a real regression.
 
 ## Twelfth pass, 2026-08-28 — the flag list is GONE; the build package is the workflow now
 

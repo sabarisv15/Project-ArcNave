@@ -1,5 +1,7 @@
 # Approved Spec — AI Chat: Structural Refusal When a Turn's Documents Are Not All Covered
 
+> **Superseded by ADL-065 — `analyze_document_table` retired.**
+
 **Mode:** Feature (backend-only; no new page/screen).
 
 **Analyzed:** 2026-08-25. Trigger: a live run recorded in

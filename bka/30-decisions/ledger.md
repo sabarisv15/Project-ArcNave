@@ -4935,3 +4935,183 @@ the real deployed sandbox and a real DB-backed tenant**
 (`backend/scripts/pdfplumber-fallback-live-check.js`): `count` returns
 `status: 'ok'`, 23/23, and `sum` returns a real total (5013) instead of a
 refusal.
+
+---
+
+## ADL-064
+
+### Gemini-native catalogue routing experiment resolved — 'keywords' ships as the default, 'hybrid' stays opt-in, four variants retired
+
+**Decision (owner, 2026-08-30).** Of the six catalogue-text variants
+`aiService.js`'s `buildToolCatalogueForExperiment` could select (the
+original mechanically-derived full-description default, `oneLine`,
+`keywords`, `category`, two hand-authored documents `spec`/`hybrid`),
+live comparison narrowed the real contenders to two: **`keywords`** and
+**`hybrid`**. `backend/scripts/pdf-tool-confusion-live-test.js`'s own
+`VARIANTS` list was already narrowed to exactly `['keywords', 'hybrid']`
+before this decision — the corroborating evidence found in-repo, not
+just the owner's statement. `full-e2e-validation.js` and several
+`ece-sw-arrear-*` live-check scripts had likewise already settled on
+`hybrid` as their working baseline for role-agnostic (Principal) live
+testing. No committed benchmark output exists giving exact recall/
+precision/token numbers for `keywords` vs `hybrid` head-to-head — the
+owner's decision is recorded here as given, not re-derived from a
+number this session doesn't have.
+
+**Which one ships as the default, and why not the other.** `hybrid`
+(`scripts/experimental-catalogue-hybrid.md`) is a hand-authored document
+sent as-is, **not role-filtered** — a Staff/HOD/Tutor turn would show
+Principal-only tool *names* in the catalogue text, even though the
+Policy Gate still blocks calling them (CLAUDE.md rule 1, unchanged).
+`keywords` (`buildToolCatalogueKeywords`) derives its text mechanically
+from `roleTools`, the same role-filtered list the retired default always
+used — so [`ai-tool-catalogue-approved-spec.md`](../60-product-reasoning/ai-tool-catalogue-approved-spec.md)'s
+"the catalogue never names a tool the actor's role cannot use" guarantee
+(pinned by `ai-service.test.js`) holds unconditionally for the shipped
+default. The owner was asked directly whether the `hybrid` role-
+visibility gap was acceptable to ship as the default; the answer was to
+make `keywords` the default instead and keep `hybrid` selectable — not
+to accept the gap or to engineer a role filter for `hybrid`'s free-text
+document (out of scope here; the document isn't structured per-tool, so
+filtering it by role would mean rewriting it, not wrapping it).
+
+**What changed in code.** `config.experimentalCatalogueVariant`: unset or
+any unrecognized value (including the four retired keys) now resolves to
+`keywords`; `'hybrid'` remains the one recognized opt-in for the
+still-open keywords-vs-hybrid comparison. `aiService.js` no longer has
+code paths for the retired variants (`buildToolCatalogue`,
+`buildToolCatalogueOneLine`, `buildToolCatalogueCategory`,
+`buildToolCatalogueSpec`, `firstSentence`, `catalogueCategoryOf`,
+`CATALOGUE_CATEGORY_RULES`, `CATALOGUE_VARIANT_B_MAX`, and `cachedSpecText`
+are all deleted — nothing left partially wired, per Review Finding #17's
+own retirement rule that a removed variant must have no remaining
+reference anywhere in the codebase). `catalogue-routing-accuracy-benchmark.js`'s
+own `VARIANTS` list is narrowed to match, so rerunning it can't silently
+measure a variant that no longer exists as a distinct code path.
+`experimentalAttachmentDiscipline`/`experimentalFullInstructionsDocument`
+(the OTHER half of Review Finding #17 — duplicated attachment-discipline
+ternary logic) are untouched by this decision: no benchmark result exists
+for either yet, so that duplication stays exactly as it was, deferred.
+
+**Verification.** Full backend suite run in Docker after the change (see
+Review Findings tracking for the exact pass count); the two tests that
+asserted the retired default's literal preamble text
+(`ai-service.test.js`, the Tool Search on/off pair) were updated to
+assert the new default's (`keywords`) preamble instead — a text-fixture
+update, not a behavior-guarantee change. The role-scoping test suite
+(`askAgent: the catalogue never names a tool the actor's role cannot
+use`, and its siblings) needed no change: `keywords` produces the same
+per-tool `name — text` line shape the retired default did, so those
+assertions continue to hold unmodified against the new default.
+
+---
+
+## ADL-065
+
+### analyze_document_table retired — owner accepted native-reading's measured miscounting risk in exchange for removing the deterministic document tool
+
+**Decision (owner, 2026-08-30, explicit and repeated).** `analyze_document_table`
+(ADR-029 slice 1, the deterministic count/sum/breakdown/compare tool over
+an attached tabular document) is unregistered from `aiToolRegistry.js`.
+The model can no longer call it; document-attached counting/summing
+questions now rely on the model's own (native) reading of the attached
+text, the same path this project's own evidence already showed is
+unreliable for exactly that operation.
+
+**Evidence presented before the decision, for the record.** Native
+Gemini reading of the same exam-fees PDF (ADL-058 addendum,
+2026-08-26): 5/5 self-consistent, correct on identity/attribution, but
+**cannot count** — 2 vs the real 23, 7 vs 839, 16 vs 1603, measured
+across three different documents — and **does not scale**: a 400-page
+sheet failed outright after 300s, and a count-only call on it cost
+212,822 tokens. Separately, before `analyze_document_table` existed, a
+real live user session got three different wrong totals from native
+reading on the same question, in the same conversation, including once
+after an unrelated fix — the concrete failure ADR-029/ADL-055 were built
+to close. This evidence was surfaced to the owner directly (not buried
+in a probe script) before any code changed, and the owner's decision was
+unchanged after seeing it: accept the risk, remove the tool.
+
+**What was NOT removed.** `documentAnalysisService.js`,
+`documentAggregateService.js`, `documentTableExtractionService.js`, and
+`documentRowIntegrityService.js` (the deterministic extraction/
+aggregation/row-integrity logic ADL-055/ADL-057/ADL-058/ADL-063 built
+and verified) are **untouched, still present, still fully tested** via
+`document-analysis-service.test.js` and their own dedicated test files —
+only the AI-facing tool registration (`aiToolRegistry.js`'s
+`registerTool({ name: 'analyze_document_table', ... })` block) is gone.
+Re-registering the tool later, if this decision is revisited, does not
+require rebuilding any of the underlying deterministic logic.
+
+**Collateral fixes made because they were now-broken, not because they
+were asked for.** `execute_code`'s own description named
+`analyze_document_table` as the preferred alternative — corrected, and
+its stale "sandbox has only pdfplumber/openpyxl/pandas" claim was
+corrected in the same edit to name the real 9-package set + LibreOffice
+(a pre-existing, unrelated staleness noticed while already editing this
+exact text — see `sandbox-service/Dockerfile`'s own 2026-08-28 comment
+for when those packages were actually added). Three SKILL.md files
+(`file-reading`, `pdf-reading`, `xlsx`) that told the model to try the
+now-gone tool first were reworded to "read the attachment directly
+first." Two prompt-text sentences that instructed the model to call
+`analyze_document_table` by name (`buildAttachmentHint`,
+`buildHistoryHint`'s attachment explainer) were reworded to name
+`execute_code` (the one remaining tool that takes an `attachmentId`)
+instead of a dangling reference to a tool that no longer exists —
+leaving either sentence unchanged would have had the model attempt a
+tool call guaranteed to fail with "no such tool."
+
+**Dead code removed alongside the tool, per the owner's own stated
+"don't over-engineer" reasoning.** `pinDocumentAnalysisTool` (forced this
+tool into the offered set whenever a document was attached) and
+`DOCUMENT_ANALYSIS_TOOL_NAME` are deleted — both were unreachable once
+the tool they existed for was gone. `FILE_TOOL_NAMES` no longer lists it.
+
+**Test coverage lost, disclosed rather than hidden.** Four tests pinning
+per-row `fieldValues` verification (an envelope-shaped tool result,
+`{status, total, sample: [...]}`, catching a per-record mismatch that a
+plain row-COUNT check would miss — the actual ADL-055 finding) are
+deleted outright: no other currently-registered tool returns that
+envelope shape, so there is no vehicle left to exercise that code path
+in `verifyNumericClaims`/`buildEvidence`, even though the code path
+itself is generic and still exists. Two more tool-specific tests
+(schema-fetch-then-invoke-and-read-the-real-document,
+result-shape-reaches-the-answer-call) are deleted as redundant with
+already-existing generic coverage once their only vehicle was gone. The
+pinning-behavior test block (6 tests) is deleted outright — it tested a
+mechanism that no longer exists. The "document coverage refusal" test
+group (ADL-055, two-documents-one-analysed → deterministic refusal) is
+**retargeted, not deleted** — `execute_code` is the only remaining
+registered tool taking an `attachmentId`, so it becomes the new vehicle;
+its own `aiToolRegistry.js` wrapper requires a UUID-shaped `attachmentId`
+(`EXECUTE_CODE_UUID_PATTERN`), unlike the removed tool, so that group's
+own local fixtures use real UUID strings instead of this file's usual
+`'att-1'` shorthand — scoped to that group's own helpers, no other
+test's fixtures were touched. One assertion in that group
+(`evidence[0].recordCount === 21`) could not be preserved as-is:
+`execute_code`'s result has no array/countable shape, so it was
+narrowed to "the evidence entry itself survives" (`toolName` present),
+which is what that test can still honestly prove with this vehicle.
+
+**Verification.** Full backend suite in Docker: **2553/2553 passing**
+(down from 2565 before this change — 12 net fewer, all accounted for by
+name above: 4 fieldValues tests + 2 redundant tests + 6 pinning tests
+deleted, 0 new tests added since the retargeted coverage-refusal group
+kept its original test count). No other test file references the
+removed tool as a live dependency (`document-analysis-service.test.js`
+has one comment mentioning it, testing the service directly, unaffected).
+
+**Known loose ends, not cleaned up in this pass.** A dozen or so
+one-off, non-CI `backend/scripts/*.js` live-verification/probe scripts
+(`ece-sw-arrear-*`, `catalogue-routing-*`, `identity-pattern-live-turn.js`,
+etc.) still reference `analyze_document_table` — these are historical,
+manually-run artifacts from earlier sessions, not loaded by the app or
+the test suite; they would simply fail if re-run against the tool name,
+harmlessly. Left alone rather than rewritten, since none of them run
+automatically and rewriting a dozen historical probes was judged out of
+scope for this change. A handful of pure code comments in `aiService.js`
+(narrative "why this exists" text, e.g. around `buildEvidence`'s
+envelope-detection comment) still name the tool as the historical
+example that motivated a still-generic mechanism — left as-is; they are
+accurate about the past, not about current live behavior, and do not
+mislead the model (they are never sent in any prompt).

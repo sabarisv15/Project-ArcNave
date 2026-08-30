@@ -1,5 +1,7 @@
 # Approved Spec — Document Extraction: Trust Boundary + csv/tsv/docx Coverage
 
+> **Superseded by ADL-065 — `analyze_document_table` retired.**
+
 **Mode:** Feature (backend-only; no new page/screen).
 
 **Analyzed:** 2026-08-25. Item 1 of the six queued in

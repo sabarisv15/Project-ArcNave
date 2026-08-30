@@ -1,18 +1,20 @@
 ---
 name: pdf-reading
-description: "When and how to reach for pdfplumber inside execute_code for a PDF attachment — specifically the case where the non-sandbox document tools already failed (unreliable_extraction) because a merged or misaligned table needs real column-boundary detection."
+description: "When and how to reach for pdfplumber inside execute_code for a PDF attachment — specifically when a merged or misaligned table needs real column-boundary detection that reading the attachment directly cannot reliably give you."
 ---
 
 # Reading PDFs — when the sandbox is actually needed
 
-## Try the deterministic path first
+## Read the attachment directly first
 
-`analyze_document_table` and the other document-analysis tools already
-handle flat, well-aligned PDF text without spending a sandbox call — and
-their output is reviewed, deterministic code, not a script an LLM wrote
-fresh each time. Reach for `execute_code` + `pdfplumber` only when one of
-those has already reported `unreliable_extraction`, `none`, or a
-suspiciously low record count for what the document should contain.
+For a flat, well-aligned PDF, reading the attached document directly
+(no tool call) is the fastest path and usually correct for describing
+or attributing content. Reach for `execute_code` + `pdfplumber` when a
+table's structure is genuinely ambiguous for a direct read — a merged
+header cell, misaligned columns, or a suspiciously low apparent record
+count for what the document should contain — or for any exact count/
+sum/comparison across many rows, since counting reliably across a long
+table is exactly what a direct read is weakest at.
 
 ## Why pdfplumber specifically
 

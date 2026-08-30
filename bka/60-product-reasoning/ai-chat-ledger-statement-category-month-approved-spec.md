@@ -1,5 +1,7 @@
 # Approved Spec — AI Chat: Date-Led Ledger Statement Extraction + Category×Month Aggregation
 
+> **Superseded by ADL-065 — `analyze_document_table` retired.**
+
 **Mode:** Feature (backend-only; no new page/screen).
 
 **Analyzed:** 2026-08-26. Trigger: a live user session attached a real

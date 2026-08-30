@@ -1,5 +1,7 @@
 # Approved Spec — An Invalid LLM-Supplied Pattern Fails the Tool, Not the Turn
 
+> **Superseded by ADL-065 — `analyze_document_table` retired.**
+
 **Mode:** Feature (backend-only; no new page/screen).
 
 **Analyzed:** 2026-08-25. Trigger: a live run during item 1 slice 1's

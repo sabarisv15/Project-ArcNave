@@ -1,5 +1,7 @@
 # Approved Spec — AI Chat: Numeric Comparison in the Document Operation Vocabulary
 
+> **Superseded by ADL-065 — `analyze_document_table` retired.**
+
 **Mode:** Feature (backend-only; no new page/screen).
 
 **Analyzed:** 2026-08-25. Trigger: queued Product Reasoning item 2

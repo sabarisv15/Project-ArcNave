@@ -1,5 +1,7 @@
 # Approved Spec — AI Chat Document Analysis: Bounded Prompt Payload and Deterministic Totals
 
+> **Superseded by ADL-065 — `analyze_document_table` retired.**
+
 **Mode:** Feature (backend-only; no new page/screen). Scoped extension of
 the already-approved [`ai-chat-result-sheet-evidence.md`](ai-chat-result-sheet-evidence.md),
 whose CORE feature is shipped.

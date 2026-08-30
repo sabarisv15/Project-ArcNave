@@ -255,14 +255,16 @@ module.exports = {
   },
 
   // Gemini-native catalogue routing experiment (Priority 1 follow-up to
-  // the Tool Search NO-GO) — tests whether Gemini itself can route from
-  // much shorter catalogue text ('oneLine' | 'keywords' | 'category'),
-  // or from a hand-authored routing document ('spec', see
-  // scripts/experimental-catalogue-spec.md), no second model involved.
-  // Unset (null) reproduces today's exact buildToolCatalogue text — the
-  // only value this app ships with; aiService.js's
-  // buildToolCatalogueForExperiment() falls back to it for any value
-  // that isn't one of the four recognized ones too.
+  // the Tool Search NO-GO) — ADL-064 (2026-08-30): resolved down to two
+  // finalists after live comparison against the original full-description
+  // default and 3 other mechanically-derived/hand-authored variants (all
+  // now retired — this app can no longer select any of them). Unset
+  // (null) or any unrecognized value now means 'keywords' — the new
+  // shipped default, role-filtered same as the retired default was.
+  // 'hybrid' (see scripts/experimental-catalogue-hybrid.md) is the one
+  // remaining opt-in, kept for the still-open keywords-vs-hybrid
+  // comparison; aiService.js's buildToolCatalogueForExperiment() is the
+  // one place that reads this value.
   experimentalCatalogueVariant: process.env.EXPERIMENTAL_CATALOGUE_VARIANT || null,
 
   // Priority 2 — reasoning-model benchmark (GLM-5.2 / Kimi K2 Thinking
@@ -285,8 +287,8 @@ module.exports = {
   // rather than estimating, cross-verify before answering — as an
   // ADDITIONAL system-prompt segment, only when the turn has attachments.
   // Does not replace or rewrite any existing tool, service, or ownership
-  // rule (DocumentService/ArtifactService/analyze_document_table are
-  // unchanged); it only adds prompt guidance. Off by default (false) —
+  // rule (DocumentService/ArtifactService are unchanged); it only adds
+  // prompt guidance. Off by default (false) —
   // the only value this app ships with.
   experimentalAttachmentDiscipline: process.env.EXPERIMENTAL_ATTACHMENT_DISCIPLINE === 'true',
 

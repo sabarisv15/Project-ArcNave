@@ -1,5 +1,7 @@
 # Approved Spec — AI Chat: PDF Table Fallback as a Verified, Fully-Trusted Path
 
+> **Superseded by ADL-065 — `analyze_document_table` retired.**
+
 **Mode:** Feature (backend-only; no new page/screen).
 
 **Analyzed:** 2026-08-26. Trigger: queued item 1 slice 2 from

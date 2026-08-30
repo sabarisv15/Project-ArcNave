@@ -35,7 +35,7 @@ const collegeProfileService = require('../src/services/collegeProfileService');
 const documentService = require('../src/services/documentService');
 const artifactService = require('../src/services/artifactService');
 const documentTextExtractionService = require('../src/services/documentTextExtractionService');
-const documentAnalysisService = require('../src/services/documentAnalysisService');
+const sandboxExecutionService = require('../src/services/sandboxExecutionService');
 const configurationService = require('../src/services/configurationService');
 const aiToolSearchService = require('../src/services/aiToolSearchService');
 const claudeAdapter = require('../src/services/aiProviders/claude');
@@ -652,10 +652,6 @@ const CLASS_TUTOR_GRANTED_TOOLS = [
   // (`image_search` is registered but has no provider and throws.)
   'fetch_trusted_web_page', 'web_search', 'web_search_fast', 'web_fetch',
   'image_search', 'weather_fetch', 'execute_code',
-
-  // (e) Acts only on a file the user attached to this turn — the
-  // attachment is already in the actor's hands before the tool runs.
-  'analyze_document_table',
 ];
 
 // RS-FIN-006 (D5, Stage 4): classificationOverrideRoles is a named,
@@ -1221,7 +1217,7 @@ function withStub(obj, key, impl, fn) {
   return fn().finally(() => { obj[key] = original; });
 }
 
-test('aiService.askAgent: Tool Search disabled (default, TOOL_SEARCH_ENABLED unset) — the decision call still carries the full tool catalogue, byte-for-byte unchanged', async () => {
+test('aiService.askAgent: Tool Search disabled (default, TOOL_SEARCH_ENABLED unset) — the decision call still carries the full tool catalogue (ADL-064 default: keywords variant), byte-for-byte unchanged', async () => {
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
   const capturedBodies = [];
@@ -1238,7 +1234,7 @@ test('aiService.askAgent: Tool Search disabled (default, TOOL_SEARCH_ENABLED uns
   });
 
   const decisionSystemMessage = capturedBodies[0].messages.find((m) => m.role === 'system');
-  assert.match(decisionSystemMessage.content, /EVERY tool available to you, by name/);
+  assert.match(decisionSystemMessage.content, /Tool routing keywords/);
 });
 
 test('aiService.askAgent: Tool Search enabled and successful — the decision call omits the full catalogue and sends the honesty note instead', async () => {
@@ -1264,7 +1260,7 @@ test('aiService.askAgent: Tool Search enabled and successful — the decision ca
   })));
 
   const decisionSystemMessage = capturedBodies[0].messages.find((m) => m.role === 'system');
-  assert.doesNotMatch(decisionSystemMessage.content, /EVERY tool available to you, by name/);
+  assert.doesNotMatch(decisionSystemMessage.content, /Tool routing keywords/);
   assert.match(decisionSystemMessage.content, /You were given only the tools judged relevant/);
 });
 
@@ -2307,141 +2303,16 @@ test('aiService.askAgent: a number that is not in count-noun context (a year, a 
   });
 });
 
-// --- ADR-029 — Universal Document Intelligence: per-row value
-// verification, not just row-count verification -------------------------
-// The real bug this ADR exists to catch: an AI-narrated per-student
-// arrear count (e.g. "13 arrears") that disagrees with the deterministic
-// tool's own computed value for that student, even though the RIGHT
-// NUMBER OF STUDENTS came back (recordCount alone would miss this —
-// fieldValues is what catches it).
-test('aiService.askAgent: analyze_document_table path — a per-student count the model narrates that matches the tool\'s own computed value -> PASS', async (t) => {
-  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
-    status: 'ok',
-    strategy: 'sequential_id',
-    // documentAggregateService.summarize's shape: the deterministic answer
-    // plus a bounded sample. The per-student check below still works
-    // because the sample's own values are collected — see
-    // extractDeterministicSummary in aiService.js.
-    total: 20,
-    matchedCount: 2,
-    scopedCount: 2,
-    sample: [
-      { key: '1156:25700148', serialNo: '1156', regNo: '25700148', count: 7 },
-      { key: '1157:25700154', serialNo: '1157', regNo: '25700154', count: 13 },
-    ],
-    sampleShown: 2,
-    sampleOmitted: 0,
-  }));
-  const client = fakeClient();
-  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
-
-  await withOpenAiConfig('test-openai-key', async () => {
-    await withMockFetch(sequentialMockFetch([
-      mockToolCallResponse('analyze_document_table', { attachmentId: 'a1', filter: { pattern: 'RA' }, operation: 'count' }),
-      mockAnswerResponse('MUHAMMED ASHIK P A (serial 1157) has 13 arrears.'),
-    ]), async () => {
-      const result = await aiService.askAgent(client, 'How many arrears does serial 1157 have?', { identityContext });
-      assert.deepEqual(result.verification, { status: 'PASS' });
-    });
-  });
-});
-
-test('aiService.askAgent: analyze_document_table path — a per-student count the model narrates that does NOT match the tool\'s own computed value -> CONFLICT, even though the row count is otherwise correct', async (t) => {
-  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
-    status: 'ok',
-    strategy: 'sequential_id',
-    // documentAggregateService.summarize's shape: the deterministic answer
-    // plus a bounded sample. The per-student check below still works
-    // because the sample's own values are collected — see
-    // extractDeterministicSummary in aiService.js.
-    total: 20,
-    matchedCount: 2,
-    scopedCount: 2,
-    sample: [
-      { key: '1156:25700148', serialNo: '1156', regNo: '25700148', count: 7 },
-      { key: '1157:25700154', serialNo: '1157', regNo: '25700154', count: 13 },
-    ],
-    sampleShown: 2,
-    sampleOmitted: 0,
-  }));
-  const client = fakeClient();
-  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
-
-  await withOpenAiConfig('test-openai-key', async () => {
-    await withMockFetch(sequentialMockFetch([
-      mockToolCallResponse('analyze_document_table', { attachmentId: 'a1', filter: { pattern: 'RA' }, operation: 'count' }),
-      // The real-world bug: the model free-narrates 12 instead of the
-      // tool's actual computed 13.
-      mockAnswerResponse('MUHAMMED ASHIK P A (serial 1157) has 12 arrears.'),
-    ]), async () => {
-      const result = await aiService.askAgent(client, 'How many arrears does serial 1157 have?', { identityContext });
-      assert.equal(result.verification.status, 'CONFLICT');
-      assert.deepEqual(result.verification.claimedNumbers, [12]);
-    });
-  });
-});
-
-// ADL-055 / ai-chat-document-analysis-payload-bounds-approved-spec.md.
-// Before the bounded-payload change this same scenario produced a false
-// PASS: collectFieldValues put every numeric field of all 3,000 rows into
-// knownCounts (~6,000 values), so a wrong total was overwhelmingly likely
-// to collide with SOME row's serial number or count and verify as correct.
-// Verification now checks against the deterministic figures plus only the
-// rows the model was actually shown.
-test('aiService.askAgent: analyze_document_table path — a wrong CROSS-RECORD total is a CONFLICT, not a coincidental match against thousands of row values', async (t) => {
-  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
-    status: 'ok',
-    strategy: 'sequential_id',
-    total: 1842,
-    matchedCount: 1842,
-    scopedCount: 3000,
-    sample: Array.from({ length: 100 }, (_, i) => ({
-      key: `${i + 1}`, serialNo: `${i + 1}`, regNo: `${i + 1}`, count: 1,
-    })),
-    sampleShown: 100,
-    sampleOmitted: 1742,
-  }));
-  const client = fakeClient();
-  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
-
-  await withOpenAiConfig('test-openai-key', async () => {
-    await withMockFetch(sequentialMockFetch([
-      mockToolCallResponse('analyze_document_table', { attachmentId: 'a1', filter: { pattern: 'RA' }, operation: 'count' }),
-      mockAnswerResponse('1500 students have arrears.'),
-    ]), async () => {
-      const result = await aiService.askAgent(client, 'How many students have arrears?', { identityContext });
-      assert.equal(result.verification.status, 'CONFLICT');
-      assert.deepEqual(result.verification.claimedNumbers, [1500]);
-    });
-  });
-});
-
-test('aiService.askAgent: analyze_document_table path — the correct deterministic total verifies PASS', async (t) => {
-  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
-    status: 'ok',
-    strategy: 'sequential_id',
-    total: 1842,
-    matchedCount: 1842,
-    scopedCount: 3000,
-    sample: Array.from({ length: 100 }, (_, i) => ({
-      key: `${i + 1}`, serialNo: `${i + 1}`, regNo: `${i + 1}`, count: 1,
-    })),
-    sampleShown: 100,
-    sampleOmitted: 1742,
-  }));
-  const client = fakeClient();
-  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
-
-  await withOpenAiConfig('test-openai-key', async () => {
-    await withMockFetch(sequentialMockFetch([
-      mockToolCallResponse('analyze_document_table', { attachmentId: 'a1', filter: { pattern: 'RA' }, operation: 'count' }),
-      mockAnswerResponse('1842 students have arrears. Showing 100 matching records; 1742 omitted.'),
-    ]), async () => {
-      const result = await aiService.askAgent(client, 'How many students have arrears?', { identityContext });
-      assert.deepEqual(result.verification, { status: 'PASS' });
-    });
-  });
-});
+// ADL-065 (2026-08-30): the four "analyze_document_table path" per-row
+// fieldValues verification tests that lived here (envelope-key array
+// detection — a tool result shaped {status, total, sample: [...]} rather
+// than a plain top-level array) are removed along with the tool that was
+// their only vehicle. The GENERIC verification mechanism (PASS/CONFLICT/
+// INSUFFICIENT_EVIDENCE against a plain array result) keeps its own
+// coverage above, unaffected. No other currently-registered tool returns
+// this envelope shape, so this specific fieldValues-in-an-envelope code
+// path has no test coverage until/unless a real tool exercises it again —
+// a genuine, disclosed coverage loss from this decision, not an oversight.
 
 test('aiService.executeWorkflowPlan: verification checks the claim against the RIGHT step\'s count when a plan has multiple array-returning steps', async (t) => {
   t.mock.method(collegeProfileService, 'getProfile', async () => ({ name: 'Test College' }));
@@ -3678,8 +3549,8 @@ test('buildAttachmentHint: no providerName given (unknown/unconfigured) also fal
 
 // Bug fix, this round: a document uploaded on turn 1 became unreachable
 // on turn 2+ because history only ever replayed role/content, never the
-// attachmentId — the model had nothing to hand analyze_document_table on
-// a follow-up and had to ask the user to re-upload/restate instead.
+// attachmentId — the model had nothing to hand a tool call on a
+// follow-up and had to ask the user to re-upload/restate instead.
 test('buildHistoryHint: a prior turn\'s attachment surfaces its filename and attachmentId so a later turn can reuse it', () => {
   const history = [
     {
@@ -3692,7 +3563,7 @@ test('buildHistoryHint: a prior turn\'s attachment surfaces its filename and att
   const hint = aiService.buildHistoryHint(history);
   assert.ok(hint.includes('roster.pdf'));
   assert.ok(hint.includes('attachmentId: att-123'));
-  assert.ok(hint.includes('analyze_document_table'));
+  assert.ok(hint.includes('execute_code'));
 });
 
 test('buildHistoryHint: a turn with no attachments gets no "[attached: ...]" note', () => {
@@ -3961,110 +3832,13 @@ test("aiService.askAgent: mode 'curriculum' (and no mode at all) is byte-for-byt
   });
 });
 
-// --- Deterministic document-analysis tool availability -------------------
-// ai-chat-document-tool-routing-approved-spec.md / ADL-055. Whether a
-// document is attached is structural turn state, so it is exempted from
-// semantic shortlisting the same way the bounded-plan meta-tool already is.
-// Each test forces retrieval to return a set that EXCLUDES
-// analyze_document_table, which is exactly what happened live for "How many
-// arrears are there in the ECE Sandwich section?".
-
-function toolNamesFrom(body) {
-  return body.tools.map((t) => t.function.name);
-}
-
-async function captureOfferedTools(t, { askOptions, download }) {
-  if (download) t.mock.method(documentService, 'downloadDocument', async () => download());
-  t.mock.method(aiToolRegistry, 'filterToolsByRelevance', (tools) => tools
-    .filter((tool) => tool.name !== 'analyze_document_table').slice(0, 2));
-  const client = fakeClient();
-  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
-  let capturedBody;
-  await withOpenAiConfig('test-openai-key', async () => {
-    await withMockFetch(async (url, options) => {
-      capturedBody = JSON.parse(options.body);
-      return mockAnswerResponse('Answered.');
-    }, async () => {
-      await aiService.askAgent(client, 'How many arrears are in the ECE Sandwich section?', {
-        identityContext, ...askOptions,
-      });
-    });
-  });
-  return toolNamesFrom(capturedBody);
-}
-
-test('askAgent: a document attached to the turn puts analyze_document_table in the offered set even when retrieval excluded it', async (t) => {
-  const names = await captureOfferedTools(t, {
-    askOptions: { attachmentIds: ['att-1'] },
-    download: fakeDocumentDownload,
-  });
-  assert.ok(names.includes('analyze_document_table'), `expected the tool to be pinned, got: ${names.join(', ')}`);
-});
-
-test('askAgent: pinning APPENDS — it never displaces a tool retrieval actually returned', async (t) => {
-  const names = await captureOfferedTools(t, {
-    askOptions: { attachmentIds: ['att-1'] },
-    download: fakeDocumentDownload,
-  });
-  // 2 retrieved + the plan meta-tool + describe_tools + the pinned tool.
-  assert.equal(names.filter((n) => !['analyze_document_table', 'run_workflow_plan', 'describe_tools'].includes(n)).length, 2);
-});
-
-test('askAgent: an IMAGE-only attachment does not pin the tool — it cannot operate on an image', async (t) => {
-  const names = await captureOfferedTools(t, {
-    askOptions: { attachmentIds: ['att-1'] },
-    download: fakeImageDownload,
-  });
-  assert.ok(!names.includes('analyze_document_table'), `expected no pin for an image, got: ${names.join(', ')}`);
-});
-
-test('askAgent: no attachment at all leaves the offered set exactly as retrieval returned it', async (t) => {
-  const names = await captureOfferedTools(t, { askOptions: {} });
-  assert.ok(!names.includes('analyze_document_table'), `expected no pin without an attachment, got: ${names.join(', ')}`);
-});
-
-test('askAgent: a role not permitted analyze_document_table is never offered it, attachment or not', async (t) => {
-  t.mock.method(documentService, 'downloadDocument', async () => fakeDocumentDownload());
-  t.mock.method(aiToolRegistry, 'filterToolsByRelevance', (tools) => tools
-    .filter((tool) => tool.name !== 'analyze_document_table').slice(0, 2));
-  const client = fakeClient();
-  // 'student' is outside the tool's own allowedRoles (principal/hod/staff/
-  // class_tutor), so it never reaches roleTools and cannot be pinned from it.
-  const identityContext = { userId: 'u1', role: 'student', collegeId: 'college-a' };
-  let capturedBody;
-  await withOpenAiConfig('test-openai-key', async () => {
-    await withMockFetch(async (url, options) => {
-      capturedBody = JSON.parse(options.body);
-      return mockAnswerResponse('Answered.');
-    }, async () => {
-      await aiService.askAgent(client, 'How many arrears are in the ECE Sandwich section?', {
-        identityContext, attachmentIds: ['att-1'],
-      });
-    });
-  });
-  assert.ok(!toolNamesFrom(capturedBody).includes('analyze_document_table'));
-});
-
-test('askAgent: the tool is offered exactly once when retrieval already returned it', async (t) => {
-  t.mock.method(documentService, 'downloadDocument', async () => fakeDocumentDownload());
-  t.mock.method(aiToolRegistry, 'filterToolsByRelevance', (tools) => [
-    tools.find((tool) => tool.name === 'analyze_document_table'),
-    tools.find((tool) => tool.name !== 'analyze_document_table'),
-  ].filter(Boolean));
-  const client = fakeClient();
-  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
-  let capturedBody;
-  await withOpenAiConfig('test-openai-key', async () => {
-    await withMockFetch(async (url, options) => {
-      capturedBody = JSON.parse(options.body);
-      return mockAnswerResponse('Answered.');
-    }, async () => {
-      await aiService.askAgent(client, 'How many arrears?', { identityContext, attachmentIds: ['att-1'] });
-    });
-  });
-  const names = toolNamesFrom(capturedBody);
-  assert.equal(names.filter((n) => n === 'analyze_document_table').length, 1);
-});
+// ADL-065 (2026-08-30): the "Deterministic document-analysis tool
+// availability" (pinning) test block that lived here — pinDocumentAnalysisTool
+// no longer exists in aiService.js (removed with the tool it pinned), so
+// its dedicated tests (pin-on-attach, append-not-displace, no-pin-for-image,
+// no-pin-without-attachment, role-gated pin, offered-exactly-once) are
+// removed with it, along with the toolNamesFrom/captureOfferedTools helpers
+// that existed only to support them.
 
 // --- The answer call carries the tool result, not the raw document -------
 // ai-chat-attachment-hint-answer-call-approved-spec.md. Correctness first:
@@ -4100,13 +3874,8 @@ async function captureRequestBodies(t, askOptions, responses) {
 const bodyText = (body) => JSON.stringify(body.messages);
 
 test('askAgent: the ANSWER call omits the attached document text, while the DECISION call still carries it', async (t) => {
-  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
-    status: 'ok', strategy: 'sequential_id', total: 77, matchedCount: 21, scopedCount: 41,
-    sample: [{ key: '819:25400122', serialNo: '819', regNo: '25400122', count: 4 }],
-    sampleShown: 1, sampleOmitted: 20,
-  }));
   const bodies = await captureRequestBodies(t, { attachmentIds: ['att-1'] }, [
-    () => mockToolCallResponse('analyze_document_table', { attachmentId: 'att-1', filter: { pattern: 'RA' }, operation: 'count' }),
+    () => mockToolCallResponse('get_college_profile', {}),
     () => mockAnswerResponse('There are 77 arrears across 21 students.'),
   ]);
   assert.equal(bodies.length, 2);
@@ -4121,8 +3890,8 @@ test('askAgent: the ANSWER call omits the attached document text, while the DECI
 // bounded loop, sharing decisionContext) resent the full document on every
 // iteration — up to 5 times in one turn between schema-fetch retries and
 // tool-call continuations. These pin that each such call keeps the
-// attachment's identity (needed to resolve analyze_document_table's own
-// attachmentId parameter) while dropping the raw text.
+// attachment's identity (needed to resolve a tool call's own attachmentId
+// parameter) while dropping the raw text.
 
 test('askAgent: a schema-fetch retry within the decision loop omits the raw attachment text, unlike the initial decision call', async (t) => {
   const bodies = await captureRequestBodies(t, { attachmentIds: ['att-1'] }, [
@@ -4175,7 +3944,7 @@ test('askAgent: the schema-fetch/continuation system prompt is byte-identical to
 test('askAgent: EVERY schema-fetch retry (not just the first) up to MAX_SCHEMA_FETCHES omits the raw attachment text', async (t) => {
   const bodies = await captureRequestBodies(t, { attachmentIds: ['att-1'] }, [
     () => mockToolCallResponse('describe_tools', { names: ['get_college_profile'] }),
-    () => mockToolCallResponse('describe_tools', { names: ['analyze_document_table'] }),
+    () => mockToolCallResponse('describe_tools', { names: ['attendance_summary'] }),
     () => mockToolCallResponse('describe_tools', { names: ['finance_status_summary'] }),
     () => mockToolCallResponse('get_college_profile', {}),
     () => mockAnswerResponse('Here is the college profile.'),
@@ -4249,51 +4018,19 @@ test('askAgent: exceeding MAX_SCHEMA_FETCHES with a document attached still neve
   });
 });
 
-test('askAgent: a tool that needs a schema fetch first (analyze_document_table) still resolves and can still read the real document once invoked', async (t) => {
-  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
-    status: 'ok', strategy: 'sequential_id', total: 77, matchedCount: 21, scopedCount: 41,
-    sample: [{ key: '819:25400122', serialNo: '819', regNo: '25400122', count: 4 }],
-    sampleShown: 1, sampleOmitted: 20,
-  }));
-  const bodies = await captureRequestBodies(t, { attachmentIds: ['att-1'] }, [
-    () => mockToolCallResponse('describe_tools', { names: ['analyze_document_table'] }),
-    () => mockToolCallResponse('analyze_document_table', { attachmentId: 'att-1', filter: { pattern: 'RA' }, operation: 'count' }),
-    () => mockAnswerResponse('There are 77 arrears across 21 students.'),
-  ]);
-  assert.equal(bodies.length, 3);
-  // The schema-fetch retry itself excludes the raw text...
-  assert.ok(!bodyText(bodies[1]).includes(ATTACHMENT_TEXT_MARKER));
-  // ...but the tool the schema fetch unlocked still ran against the REAL
-  // document (via its own attachmentId-based retrieval, not the trimmed
-  // context) — the trimming never disabled the actual document read.
-  assert.ok(bodyText(bodies[2]).includes('77'), 'the deterministic total computed from the real document must still reach the answer call');
-});
-
-test('askAgent: the answer call still carries the deterministic tool result it must answer from', async (t) => {
-  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
-    status: 'ok', strategy: 'sequential_id', total: 77, matchedCount: 21, scopedCount: 41,
-    sample: [{ key: '819:25400122', serialNo: '819', regNo: '25400122', count: 4 }],
-    sampleShown: 1, sampleOmitted: 20,
-  }));
-  const bodies = await captureRequestBodies(t, { attachmentIds: ['att-1'] }, [
-    () => mockToolCallResponse('analyze_document_table', { attachmentId: 'att-1', filter: { pattern: 'RA' }, operation: 'count' }),
-    () => mockAnswerResponse('There are 77 arrears across 21 students.'),
-  ]);
-  const answerBody = bodyText(bodies[1]);
-  assert.ok(answerBody.includes('77'), 'the deterministic total must reach the answer call');
-  assert.ok(answerBody.includes('matchedCount'), 'the tool result shape must reach the answer call');
-});
+// ADL-065 (2026-08-30): the two analyze_document_table-specific tests that
+// lived here ("a tool that needs a schema fetch first" and "the answer
+// call still carries the deterministic tool result") tested that tool's
+// own schema-fetch/result-shape nuances specifically and are removed with
+// it — the underlying schema-fetch and result-forwarding mechanisms keep
+// their own generic coverage above (e.g. "EVERY schema-fetch retry...").
 
 test('askAgent: non-attachment hints (history) survive in the answer call — only the attachment hint is dropped', async (t) => {
-  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
-    status: 'ok', strategy: 'sequential_id', total: 77, matchedCount: 21, scopedCount: 41,
-    sample: [], sampleShown: 0, sampleOmitted: 0,
-  }));
   const bodies = await captureRequestBodies(t, {
     attachmentIds: ['att-1'],
     history: [{ role: 'user', content: 'earlier-turn-marker' }, { role: 'assistant', content: 'ok' }],
   }, [
-    () => mockToolCallResponse('analyze_document_table', { attachmentId: 'att-1', filter: { pattern: 'RA' }, operation: 'count' }),
+    () => mockToolCallResponse('get_college_profile', {}),
     () => mockAnswerResponse('There are 77 arrears.'),
   ]);
   assert.ok(bodyText(bodies[1]).includes('earlier-turn-marker'), 'history hint must survive in the answer call');
@@ -4309,11 +4046,7 @@ test('askAgent: a turn where NO tool runs is unchanged — the direct answer sti
 });
 
 test('askAgent: evidence/verification/toolsUsed are unchanged by dropping the hint from the answer call', async (t) => {
-  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
-    status: 'ok', strategy: 'sequential_id', total: 77, matchedCount: 21, scopedCount: 41,
-    sample: [{ key: '819:25400122', serialNo: '819', regNo: '25400122', count: 4 }],
-    sampleShown: 1, sampleOmitted: 20,
-  }));
+  t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }, { id: 't2' }, { id: 't3' }]));
   t.mock.method(documentService, 'downloadDocument', async () => fakeDocumentDownload());
   t.mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
     text: `RESULT SHEET ${ATTACHMENT_TEXT_MARKER}`, method: 'text_layer',
@@ -4322,15 +4055,131 @@ test('askAgent: evidence/verification/toolsUsed are unchanged by dropping the hi
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
   await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(sequentialMockFetch([
-      mockToolCallResponse('analyze_document_table', { attachmentId: 'att-1', filter: { pattern: 'RA' }, operation: 'count' }),
-      mockAnswerResponse('There are 77 arrears across 21 students.'),
+      mockToolCallResponse('academic_class_timetable', {}),
+      mockAnswerResponse('There are 3 periods scheduled.'),
     ]), async () => {
-      const result = await aiService.askAgent(client, 'How many arrears?', { identityContext, attachmentIds: ['att-1'] });
-      assert.deepEqual(result.toolsUsed, ['analyze_document_table']);
+      const result = await aiService.askAgent(client, 'How many periods?', { identityContext, attachmentIds: ['att-1'] });
+      assert.deepEqual(result.toolsUsed, ['academic_class_timetable']);
       assert.equal(result.verification.status, 'PASS');
-      assert.equal(result.evidence[0].recordCount, 21);
+      assert.equal(result.evidence[0].recordCount, 3);
     });
   });
+});
+
+// --- Sandbox output contract (execute_code's FINAL_RESULT_JSON: line) ---
+// The gap this closes: execute_code's own JSON envelope ({stdout, stderr,
+// exitCode, files, verification}) never carried a countable answer, so a
+// model-computed count/sum/average done via execute_code had NO ground
+// truth to verify against — verifyNumericClaims always short-circuited to
+// INSUFFICIENT_EVIDENCE regardless of whether the stated number was right,
+// and the UI renders that identically to a verified PASS. These tests pin
+// that a `FINAL_RESULT_JSON:` line in stdout (see file-reading/SKILL.md)
+// is recovered and actually checked.
+
+async function runExecuteCodeTurn(t, { stdout, answerText, code = 'print("ok")' }) {
+  t.mock.method(sandboxExecutionService, 'executeCode', async () => ({
+    stdout, stderr: '', exitCode: 0, files: [], verification: null,
+  }));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  let result;
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(sequentialMockFetch([
+      mockToolCallResponse('execute_code', { code }),
+      mockAnswerResponse(answerText),
+    ]), async () => {
+      result = await aiService.askAgent(client, 'How many students have arrears?', { identityContext });
+    });
+  });
+  return result;
+}
+
+test('askAgent: execute_code FINAL_RESULT_JSON deterministic_summary — a matching narrated count -> PASS', async (t) => {
+  const result = await runExecuteCodeTurn(t, {
+    stdout: 'reading file...\nchecked 40 rows\nFINAL_RESULT_JSON:{"result_type":"deterministic_summary","metric":"arrears","value":29,"unit":"students"}',
+    answerText: '29 students have arrears.',
+  });
+  assert.deepEqual(result.verification, { status: 'PASS' });
+  assert.equal(result.evidence[0].fieldValues.includes(29), true);
+});
+
+test('askAgent: execute_code FINAL_RESULT_JSON deterministic_summary — a wrong narrated count -> CONFLICT', async (t) => {
+  const result = await runExecuteCodeTurn(t, {
+    stdout: 'FINAL_RESULT_JSON:{"result_type":"deterministic_summary","metric":"arrears","value":29,"unit":"students"}',
+    // The real bug this closes: the model narrates a different number than
+    // its own code computed. Before this fix, this was INSUFFICIENT_EVIDENCE
+    // (no ground truth at all), never CONFLICT.
+    answerText: '22 students have arrears.',
+  });
+  assert.equal(result.verification.status, 'CONFLICT');
+  assert.deepEqual(result.verification.claimedNumbers, [22]);
+});
+
+test('askAgent: execute_code FINAL_RESULT_JSON deterministic_summary — a breakdown entry\'s own value is also checked', async (t) => {
+  const result = await runExecuteCodeTurn(t, {
+    stdout: 'FINAL_RESULT_JSON:{"result_type":"deterministic_summary","metric":"arrears_by_semester","value":77,'
+      + '"unit":"arrears","breakdown":[{"label":"Semester 3","value":41},{"label":"Semester 5","value":36}]}',
+    answerText: 'Semester 3 has 41 arrears.',
+  });
+  assert.deepEqual(result.verification, { status: 'PASS' });
+});
+
+test('askAgent: execute_code FINAL_RESULT_JSON list result — recordCount comes from the items array', async (t) => {
+  const result = await runExecuteCodeTurn(t, {
+    stdout: 'FINAL_RESULT_JSON:{"result_type":"list","items":[{"rollNo":"819"},{"rollNo":"820"},{"rollNo":"821"}]}',
+    answerText: 'There are 3 students in that range.',
+  });
+  assert.equal(result.evidence[0].recordCount, 3);
+  assert.deepEqual(result.verification, { status: 'PASS' });
+});
+
+test('askAgent: execute_code FINAL_RESULT_JSON — ordinary print()/progress output before the final line does not interfere', async (t) => {
+  const result = await runExecuteCodeTurn(t, {
+    stdout: 'loading attendance.xlsx\nparsed 812 rows\nfiltering below threshold\n'
+      + 'FINAL_RESULT_JSON:{"result_type":"deterministic_summary","metric":"below_75","value":29,"unit":"students"}',
+    answerText: '29 students are below 75% attendance.',
+  });
+  assert.deepEqual(result.verification, { status: 'PASS' });
+});
+
+test('askAgent: execute_code FINAL_RESULT_JSON — only the LAST of multiple result lines is used', async (t) => {
+  const result = await runExecuteCodeTurn(t, {
+    stdout: 'FINAL_RESULT_JSON:{"result_type":"deterministic_summary","metric":"draft","value":12,"unit":"students"}\n'
+      + 'recomputing after fixing a filter bug\n'
+      + 'FINAL_RESULT_JSON:{"result_type":"deterministic_summary","metric":"final","value":29,"unit":"students"}',
+    // Claims the FIRST (superseded) value — must not verify against it.
+    answerText: '12 students have arrears.',
+  });
+  assert.equal(result.verification.status, 'CONFLICT');
+  assert.deepEqual(result.verification.claimedNumbers, [12]);
+});
+
+test('askAgent: execute_code — no FINAL_RESULT_JSON line at all -> safe unstructured fallback, never falsely verified', async (t) => {
+  const result = await runExecuteCodeTurn(t, {
+    stdout: 'attendance.xlsx has 812 rows\n29 students are below 75%',
+    answerText: '29 students are below 75%.',
+  });
+  assert.deepEqual(result.verification, { status: 'INSUFFICIENT_EVIDENCE' });
+  assert.equal(result.evidence[0].recordCount, undefined);
+  assert.equal(result.evidence[0].fieldValues, undefined);
+});
+
+test('askAgent: execute_code — a malformed FINAL_RESULT_JSON line -> safe fallback, not a crash', async (t) => {
+  const result = await runExecuteCodeTurn(t, {
+    stdout: 'FINAL_RESULT_JSON:{not valid json',
+    answerText: '29 students are below 75%.',
+  });
+  assert.deepEqual(result.verification, { status: 'INSUFFICIENT_EVIDENCE' });
+});
+
+test('askAgent: execute_code — a structured error result is never treated as successful evidence', async (t) => {
+  const result = await runExecuteCodeTurn(t, {
+    stdout: 'FINAL_RESULT_JSON:{"result_type":"error","code":"INPUT_FILE_NOT_FOUND","message":"attendance.xlsx was not available"}',
+    answerText: 'I could not find the attendance file, so I cannot answer.',
+  });
+  assert.deepEqual(result.verification, { status: 'INSUFFICIENT_EVIDENCE' });
+  assert.equal(result.evidence[0].recordCount, undefined);
+  assert.equal(result.evidence[0].fieldValues, undefined);
 });
 
 // --- Document coverage refusal ------------------------------------------
@@ -4339,25 +4188,36 @@ test('askAgent: evidence/verification/toolsUsed are unchanged by dropping the hi
 // cross-document reconciliation with a subgroup breakdown invented to sum
 // to the known total. The check is structural (which attachmentIds the
 // tools were actually invoked with), never intent-based.
+//
+// ADL-065 (2026-08-30): retargeted from analyze_document_table (removed)
+// to execute_code — the only remaining registered tool taking an
+// attachmentId param. execute_code's own aiToolRegistry wrapper requires
+// attachmentId to be UUID-shaped (loadOwnedAttachmentForExecution), unlike
+// the removed tool, so the fixture ids below are real UUID strings rather
+// than this file's usual 'att-1' shorthand — scoped to this test group's
+// own helpers only, no other test's fixtures are affected. execute_code's
+// result has no array/countable shape, so the "evidence keeps the real
+// computed figures" test below now proves only that the evidence entry
+// itself survives (toolName present), not a specific recordCount — a
+// disclosed narrowing of what that one test can prove with this vehicle.
 
-const ANALYSIS_RESULT = {
-  status: 'ok', strategy: 'sequential_id', total: 77, matchedCount: 21, scopedCount: 41,
-  sample: [{ key: '1133:24700311', serialNo: '1133', regNo: '24700311', count: 1 }],
-  sampleShown: 1, sampleOmitted: 20,
-};
+const DOC1_ID = '11111111-1111-1111-1111-111111111111';
+const DOC2_ID = '22222222-2222-2222-2222-222222222222';
 
 function twoDocDownloads() {
   const byId = {
-    'att-1': fakeDocumentDownload({ file_name: 'EXAM FEES ece(sw).pdf' }),
-    'att-2': fakeDocumentDownload({ file_name: '111_cons_result_apr2026.pdf' }),
+    [DOC1_ID]: fakeDocumentDownload({ file_name: 'EXAM FEES ece(sw).pdf' }),
+    [DOC2_ID]: fakeDocumentDownload({ file_name: '111_cons_result_apr2026.pdf' }),
   };
-  return async (client, id) => byId[id] || byId['att-1'];
+  return async (client, id) => byId[id] || byId[DOC1_ID];
 }
 
-async function runTurn(t, { attachmentIds, toolArgs, responses, extractText = 'RESULT SHEET 819 RA' }) {
+async function runTurn(t, { attachmentIds, responses, extractText = 'RESULT SHEET 819 RA' }) {
   t.mock.method(documentService, 'downloadDocument', twoDocDownloads());
   t.mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: extractText, method: 'text_layer' }));
-  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ANALYSIS_RESULT);
+  t.mock.method(sandboxExecutionService, 'executeCode', async () => ({
+    stdout: 'ok', stderr: '', exitCode: 0, files: [], verification: null,
+  }));
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
   let result;
@@ -4376,9 +4236,9 @@ async function runTurn(t, { attachmentIds, toolArgs, responses, extractText = 'R
 
 test('askAgent: two documents attached but only one analysed -> deterministic refusal, and the answer call is never made', async (t) => {
   const { result, llmCalls } = await runTurn(t, {
-    attachmentIds: ['att-1', 'att-2'],
-    responses: [() => mockToolCallResponse('analyze_document_table', {
-      attachmentId: 'att-2', filter: { pattern: 'RA' }, operation: 'count',
+    attachmentIds: [DOC1_ID, DOC2_ID],
+    responses: [() => mockToolCallResponse('execute_code', {
+      code: 'print("ok")', attachmentId: DOC2_ID,
     })],
   });
   assert.equal(result.documentCoverageIncomplete, true);
@@ -4389,24 +4249,25 @@ test('askAgent: two documents attached but only one analysed -> deterministic re
   assert.match(result.answer, /won't guess/);
 });
 
-test('askAgent: the refusal keeps the real computed figures in evidence — nothing measured is thrown away', async (t) => {
+test('askAgent: the refusal keeps the tool\'s evidence entry — nothing measured is thrown away', async (t) => {
   const { result } = await runTurn(t, {
-    attachmentIds: ['att-1', 'att-2'],
-    responses: [() => mockToolCallResponse('analyze_document_table', {
-      attachmentId: 'att-2', filter: { pattern: 'RA' }, operation: 'count',
+    attachmentIds: [DOC1_ID, DOC2_ID],
+    responses: [() => mockToolCallResponse('execute_code', {
+      code: 'print("ok")', attachmentId: DOC2_ID,
     })],
   });
-  assert.equal(result.evidence[0].recordCount, 21);
-  assert.deepEqual(result.toolsUsed, ['analyze_document_table']);
+  assert.equal(result.evidence.length, 1);
+  assert.equal(result.evidence[0].toolName, 'execute_code');
+  assert.deepEqual(result.toolsUsed, ['execute_code']);
   // No model-authored numeric claim exists to verify against.
   assert.deepEqual(result.verification, { status: 'INSUFFICIENT_EVIDENCE' });
 });
 
 test('askAgent: a SINGLE attached document is never refused — the overwhelmingly common case is unchanged', async (t) => {
   const { result, llmCalls } = await runTurn(t, {
-    attachmentIds: ['att-2'],
+    attachmentIds: [DOC2_ID],
     responses: [
-      () => mockToolCallResponse('analyze_document_table', { attachmentId: 'att-2', filter: { pattern: 'RA' }, operation: 'count' }),
+      () => mockToolCallResponse('execute_code', { code: 'print("ok")', attachmentId: DOC2_ID }),
       () => mockAnswerResponse('There are 77 arrears across 21 students.'),
     ],
   });
@@ -4417,7 +4278,7 @@ test('askAgent: a SINGLE attached document is never refused — the overwhelming
 
 test('askAgent: no tool ran -> unchanged, the model answered from the hint which carries every document', async (t) => {
   const { result } = await runTurn(t, {
-    attachmentIds: ['att-1', 'att-2'],
+    attachmentIds: [DOC1_ID, DOC2_ID],
     responses: [() => mockAnswerResponse('Both documents list ECE Sandwich students.')],
   });
   assert.equal(result.documentCoverageIncomplete, undefined);
@@ -4427,7 +4288,7 @@ test('askAgent: no tool ran -> unchanged, the model answered from the hint which
 test('askAgent: a tool taking no attachmentId does not count as covering a document', async (t) => {
   t.mock.method(academicService, 'getClassTimetableForActor', async () => ([{ id: 't1' }]));
   const { result } = await runTurn(t, {
-    attachmentIds: ['att-1', 'att-2'],
+    attachmentIds: [DOC1_ID, DOC2_ID],
     responses: [
       () => mockToolCallResponse('academic_class_timetable', {}),
       () => mockAnswerResponse('Here is the timetable.'),
@@ -4442,16 +4303,18 @@ test('askAgent: images do not count toward the document total', async (t) => {
     ? fakeImageDownload()
     : fakeDocumentDownload({ file_name: '111_cons_result_apr2026.pdf' })));
   t.mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: 'RESULT SHEET 819 RA', method: 'text_layer' }));
-  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ANALYSIS_RESULT);
+  t.mock.method(sandboxExecutionService, 'executeCode', async () => ({
+    stdout: 'ok', stderr: '', exitCode: 0, files: [], verification: null,
+  }));
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
   let result;
   await withOpenAiConfig('test-openai-key', async () => {
     await withMockFetch(sequentialMockFetch([
-      mockToolCallResponse('analyze_document_table', { attachmentId: 'att-2', filter: { pattern: 'RA' }, operation: 'count' }),
+      mockToolCallResponse('execute_code', { code: 'print("ok")', attachmentId: DOC2_ID }),
       mockAnswerResponse('There are 77 arrears.'),
     ]), async () => {
-      result = await aiService.askAgent(client, 'How many arrears?', { identityContext, attachmentIds: ['img-1', 'att-2'] });
+      result = await aiService.askAgent(client, 'How many arrears?', { identityContext, attachmentIds: ['img-1', DOC2_ID] });
     });
   });
   assert.equal(result.documentCoverageIncomplete, undefined, 'one document + one image is not an under-covered turn');
@@ -4512,6 +4375,59 @@ test('askAgent: the catalogue never names a tool the actor\'s role cannot use', 
   for (const t2 of principalOnly) {
     assert.ok(!system.includes(`\n${t2.name} — `), `catalogue must not name ${t2.name} for staff`);
   }
+});
+
+// ADL-064's 'hybrid' opt-in is documented (buildToolCatalogueHybrid's own
+// comment, aiService.js) as the ONE exception to the role-filtering
+// guarantee the test above pins for the shipped 'keywords' default —
+// sent unfiltered "for the duration of the still-open keywords-vs-hybrid
+// comparison." These two tests make that architectural boundary a real,
+// enforced guarantee instead of only a comment: any future variant that
+// forgets to role-filter would fail the first test above, and if 'hybrid'
+// itself is ever accidentally role-filtered, this test catches that too
+// (it would then fail to find the expected leak).
+test('askAgent: the hybrid catalogue variant is the documented, sole exception to role filtering', async (t) => {
+  const originalVariant = config.experimentalCatalogueVariant;
+  config.experimentalCatalogueVariant = 'hybrid';
+  try {
+    const { bodies } = await captureCatalogueTurn(t, {
+      retrieval: (tools) => tools.slice(0, 2),
+      responses: [() => mockAnswerResponse('ok')],
+      role: 'staff',
+    });
+    const system = systemTextOf(bodies[0]);
+    const staffTools = new Set(aiToolRegistry.listTools({ excludeHumanOnly: true, role: 'staff' }).map((x) => x.name));
+    const principalOnly = aiToolRegistry.listTools({ excludeHumanOnly: true, role: 'principal' })
+      .filter((x) => !staffTools.has(x.name));
+    assert.ok(principalOnly.length > 0, 'fixture sanity: principal must have tools staff does not');
+    const leaked = principalOnly.filter((t2) => system.includes(t2.name));
+    assert.ok(
+      leaked.length > 0,
+      'hybrid is documented as NOT role-filtered — expected at least one principal-only tool name to still appear for staff',
+    );
+  } finally {
+    config.experimentalCatalogueVariant = originalVariant;
+  }
+});
+
+test('askAgent: the per-role keywords catalogue cache never leaks one role\'s tool list into another', async (t) => {
+  const staffTurn = await captureCatalogueTurn(t, {
+    retrieval: (tools) => tools.slice(0, 2),
+    responses: [() => mockAnswerResponse('ok')],
+    role: 'staff',
+  });
+  const principalTurn = await captureCatalogueTurn(t, {
+    retrieval: (tools) => tools.slice(0, 2),
+    responses: [() => mockAnswerResponse('ok')],
+    role: 'principal',
+  });
+  const staffSystem = systemTextOf(staffTurn.bodies[0]);
+  const principalSystem = systemTextOf(principalTurn.bodies[0]);
+  assert.ok(!staffSystem.includes('departments_create'), 'staff catalogue must never name a principal-only tool');
+  assert.ok(
+    principalSystem.includes('departments_create'),
+    "principal catalogue must still name its own tools after staff's call populated the per-role cache first",
+  );
 });
 
 test('askAgent: describe_tools makes an excluded tool callable in the SAME turn, and does not consume maxToolCallsPerTurn', async (t) => {

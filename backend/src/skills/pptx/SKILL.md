@@ -27,82 +27,239 @@ subprocess.run([
 ```
 
 Then **check the output file exists** — never trust the exit code alone.
-`sandbox-service/scripts/recalc.py` is the working reference for this.
+`scripts/office/soffice.py`'s `run_soffice()` already does this (it
+generates its own profile dir when you don't pass one) — prefer
+importing it over reimplementing the subprocess call above by hand.
 
+## This sandbox's real toolset — read before following any other pptx guide
+
+This is a Python-only sandbox (`execute_code`) — no `npm`/Node, no
+`pandoc`, no `markitdown`, no network access to install anything at
+request time. **`python-pptx` is the only library for `.pptx` here.**
+If you have seen pptx guidance elsewhere (including generic examples
+built around the `pptxgenjs` npm package, `pandoc`, or `markitdown`) —
+none of that runs in this sandbox. Everything below uses only what
+`sandbox-service/Dockerfile` actually installs: `python-pptx`, plus
+LibreOffice (`soffice`, Impress included) for rendering/verification.
+
+Of this skill's bundled `scripts/`, only two are genuinely usable here
+(pure Python + stdlib, no missing dependency):
+
+- `scripts/office/soffice.py` — `run_soffice()`, the LibreOffice
+  wrapper above.
+- `scripts/add_slide.py` — duplicates a slide (or a `slideLayoutN.xml`)
+  with full package bookkeeping. Genuinely needed: `python-pptx`'s own
+  API has no slide-duplication entry point at all (see Limitations
+  below), so this is the only way to do it.
+
+`scripts/clean.py`, `scripts/thumbnail.py`, and `office/validate.py`
+(plus everything under `office/validators/`) import `defusedxml`,
+which is **not installed** in this sandbox — running any of them
+raises `ModuleNotFoundError`. `thumbnail.py` additionally imports
+`PIL` (Pillow), also not installed. Don't invoke any of the three.
+Where this file used to lean on one of them, it now gives you the
+direct `python-pptx` (or plain-rendering) equivalent instead.
 
 # PPTX creation, editing, and analysis
 
-A `.pptx` is a ZIP archive of XML files. Choose your approach by task:
+A `.pptx` is a ZIP archive of XML files, but `python-pptx` reads and
+writes that archive for you — you should never need to unzip/rezip
+one by hand in this sandbox, except via `add_slide.py` for the one
+case it exists to cover.
 
 | Task | Approach |
 |---|---|
-| **Create** a new deck | Write a `pptxgenjs` script — see gotchas below |
-| **Edit** an existing deck, or build from a template | unzip → edit `ppt/slides/slideN.xml` → zip |
-| **Read** content | `markitdown deck.pptx` (one block per slide under `<!-- Slide number: N -->` markers); visual grid: `python scripts/thumbnail.py deck.pptx` |
+| **Create** a new deck | `python-pptx`'s `Presentation()` — see gotchas below |
+| **Edit** an existing deck, or build from a template | `python-pptx`'s `Presentation(path)` — mutate shapes/text frames in place; `scripts/add_slide.py` for duplicating a slide |
+| **Read** content | `python-pptx`'s `Presentation(path)`, iterate `.slides`/`.shapes`; visual look: render via `soffice` + `pdftoppm` (see Converting to Images) |
 
 ## Scripts
 
-Paths are relative to this skill's directory. Everything else is plain Python, `node`, or shell.
+Paths are relative to this skill's directory.
 
-| Script | What it does |
-|---|---|
-| `scripts/thumbnail.py deck.pptx [prefix]` | Labeled grid of every slide, for picking template layouts. `.pptx` only. Pass `prefix` — it defaults to `thumbnails`, which overwrites the grids of any other deck done in the same directory |
-| `scripts/add_slide.py unpacked/ slide2.xml [--after slideN.xml]` | Duplicate a slide (or a `slideLayoutN.xml`) with all the package bookkeeping. Also takes a `.pptx` directly with `-o out.pptx` |
-| `scripts/clean.py unpacked/` | Delete slides, media, and rels no longer referenced. Run **after** `<p:sldIdLst>` is final |
-| `scripts/office/validate.py deck.pptx [--original src.pptx]` | Schema, relationship, content-type, chart and slide checks; each failure names its fix. Pass `--original` for any template-derived deck — it baselines the schema checks against the template, so the template's own XSD errors don't read as yours |
-| `scripts/office/soffice.py --headless --convert-to pdf deck.pptx` | LibreOffice wrapper — bare `soffice` hangs in this sandbox |
+| Script | What it does | Safe here? |
+|---|---|---|
+| `scripts/office/soffice.py` | LibreOffice wrapper (auto-generates a writable profile dir) | Yes |
+| `scripts/add_slide.py unpacked/ slide2.xml [--after slideN.xml]` | Duplicate a slide (or a `slideLayoutN.xml`) with all the package bookkeeping. Also takes a `.pptx` directly with `-o out.pptx` | Yes |
+| `scripts/clean.py` | Delete orphaned slides/media/rels | **No** — imports `defusedxml`, not installed |
+| `scripts/office/validate.py` | Schema/relationship/content-type/chart checks | **No** — imports `defusedxml`, not installed |
+| `scripts/thumbnail.py` | Labeled grid of every slide | **No** — imports `defusedxml` AND `PIL` (Pillow), neither installed |
 
-## Creating with pptxgenjs — gotchas
+For the three that don't run here:
 
-`pptxgenjs` is preinstalled — do not run `npm install` first; write the script and `require('pptxgenjs')` directly. Only if that require fails: `npm install pptxgenjs`. The model knows the API; these are the footguns:
+- **Instead of `clean.py`** (orphaned parts after deleting slides): this
+  sandbox has no automated cleanup. An orphaned media/rels part makes
+  the file slightly larger but both PowerPoint and LibreOffice open it
+  fine — accept the small bloat rather than hand-editing `[Content_Types].xml`.
+- **Instead of `office/validate.py`** (schema/structural validation):
+  there is no schema validator available here. Use two weaker but real
+  checks instead — (1) `Presentation(out_path)` must reopen without
+  raising right after you save, and (2) `soffice --convert-to pdf` must
+  exit 0 and produce a non-empty PDF. Neither catches everything
+  `validate.py` would, so lean harder on Visual QA (below) than you
+  otherwise would.
+- **Instead of `thumbnail.py`** (a labeled grid image): render normally
+  via `soffice --convert-to pdf` + `pdftoppm` (see Converting to
+  Images) and look at the individual numbered slide images — slower to
+  scan than one grid, but the same information.
 
-- **Set `pres.layout` before adding slides.** The default canvas is `LAYOUT_16x9` = **10" × 5.625"**, not 13.3" wide. Coordinates past the edge are written, not clamped — the shape just isn't on the slide. (`LAYOUT_WIDE` is 13.3" × 7.5".)
-- **Hex colors: never `#`, never 8 digits.** `color: "FF0000"`. Both `"#FF0000"` and alpha baked into the hex (`"00000020"`) **corrupt the file**. For translucency: `transparency: 0-100` on fills and images, `opacity: 0.0-1.0` on shadows — each is silently ignored on the other.
-- **pptxgenjs mutates option objects in place** (converts values to EMU on first use). Never share one `shadow`/options object across two `add*` calls — build a fresh object each time.
-- **Shadow `offset` must be ≥ 0** — a negative offset corrupts the file. To cast a shadow upward, use `angle: 270` with a positive offset.
-- **`letterSpacing` is silently ignored** — the real option is `charSpacing`.
-- **Lists:** `bullet: true` on each item, never a literal `•` (renders double bullets). Set `breakLine: true` on every array item except the last. Space bulleted paragraphs with `paraSpaceAfter`, not `lineSpacing` (huge gaps).
-- **One `new pptxgen()` per output file** — never reuse an instance.
-- **`rectRadius` only works on `ROUNDED_RECTANGLE`**, not `RECTANGLE`.
-- **Gradient fills aren't supported** — use a gradient image as the background instead.
-- **Every `addText` call needs `isTextBox: true`** — without it the shape lacks `txBox="1"`, so screen readers announce the text as a "graphic" instead of a text box. No visual change.
-- **Text boxes have built-in internal padding** — set `margin: 0` whenever text must align with a shape, line, or icon at the same x.
-- **Speaker notes go in `slide.addNotes("...")`** (plain text, once per slide), never in a text box on the slide.
-- **Keep charts native.** Use `addChart()` for everything PowerPoint can chart (pass an array of `{type, data, options}` for combos). For PowerPoint-native features the library doesn't expose (trendlines, error bars), compute the extra series yourself or post-process the generated OOXML — do not fall back to a rendered image. Only chart types PowerPoint has no native form for (Sankey, network, chord) go in as images.
-- **Default charts render bare** — no title, no data labels, dated palette. Set `showTitle` + `title`, `showValue: true` + `dataLabelPosition`, `chartColors: [...]` from your palette, and quiet the frame (`catAxisLabelColor`/`valAxisLabelColor`, `valGridLine: { color, size }`, `catGridLine: { style: "none" }`, `showLegend: false` for a single series).
-- **On a stacked bar or column chart, `dataLabelPosition` must be `ctr`, `inEnd`, or `inBase`.** `outEnd` **corrupts the file**.
-- **A combo series using `secondaryValAxis`/`secondaryCatAxis` needs both `valAxes` and `catAxes` on the chart options, two entries each.** Without them pptxgenjs writes axis *ids* it never declares, and PowerPoint **discards that chart** and reports the file as corrupt. Supplying only `valAxes` is not enough.
-- **After `writeFile()`, run `python scripts/office/validate.py deck.pptx`.** It reports the two chart faults above and the slide-XML defects PowerPoint refuses, and names the fix for each. Fix them in your generator, not by hand-editing the packed XML.
-- **Never reorder the children of `<p:presentation>`.** pptxgenjs writes `<p:notesMasterIdLst>` right after `<p:sldIdLst>` and points both masters at one theme part. PowerPoint reads that happily — move the element and the same deck becomes unopenable.
-- **Icons:** render `react-icons` to SVG (`ReactDOMServer.renderToStaticMarkup`), rasterize with `sharp` at ≥256px, and insert via `addImage({ data: "image/png;base64," + buf.toString("base64") })` — the `image/png;base64,` prefix is required (`react-icons`, `react`, `react-dom`, and `sharp` are preinstalled — `npm install react-icons react react-dom sharp` only if a require fails).
+## Creating with python-pptx — gotchas
+
+The model knows the API; these are the footguns already caught on in
+this project or well-documented upstream:
+
+- **Default slide size is 4:3 (10" × 7.5"), not 16:9.** Set both before
+  adding slides: `prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)`
+  for 16:9. Coordinates past the edge are written, not clamped — the
+  shape just isn't on the slide.
+- **Colors:** `RGBColor(0xFF, 0x00, 0x00)` or `RGBColor.from_string("FF0000")`
+  — never `#`, and there is no alpha/transparency channel on a solid
+  fill at all through the object model (unlike some JS libraries' hex+alpha
+  shortcuts). True transparency needs a raw `<a:alpha>` element under
+  the fill's `<a:srgbClr>` — most decks don't need it; say so rather
+  than faking it with a lighter shade.
+- **`shape.text_frame.text = "..."` collapses to ONE run** and drops
+  any formatting you wanted to vary within the text. For anything
+  beyond a single uniform run, build it through
+  `text_frame.paragraphs[i].add_run()` (add a paragraph with
+  `text_frame.add_paragraph()` first if you need a new line).
+- **No bullet API.** A text frame's bullet comes from the slide
+  layout's placeholder by default. To force or remove one, add raw
+  `<a:buChar>`/`<a:buAutoNum>`/`<a:buNone>` under the paragraph's
+  `pPr` via the paragraph's own `._pPr`/`.get_or_add_pPr()` — same
+  limitation as PowerPoint's own object model has always had.
+- **Shadows are effectively read-only** through the high-level API in
+  most `python-pptx` versions (they inherit from the theme). Don't
+  promise a specific custom shadow (offset/angle/blur) unless you've
+  verified your installed version actually exposes a settable shadow
+  API — when in doubt, treat shadow styling as a raw-XML
+  (`<a:effectLst><a:outerShdw>`) task, not a one-line property set.
+- **One `Presentation()` (or `Presentation(template_path)`) per output
+  file** — reusing one object across decks carries its slides/masters
+  into the next file.
+- **`add_textbox(left, top, width, height)`** needs all four dimensions
+  explicit (EMU via `Inches`/`Cm`) — there's no separate "is this a
+  text box" flag to remember to set (every `python-pptx` textbox shape
+  already is one structurally). Set `shape.name` to something
+  descriptive for accessibility, since nothing does that automatically.
+- **Margins:** `text_frame.margin_left/right/top/bottom` (EMU) — set to
+  `Emu(0)` when text must align flush with a shape/line/icon edge.
+- **Speaker notes:** `slide.notes_slide.notes_text_frame.text = "..."`
+  (accessing `.notes_slide` the first time creates the notes part) —
+  never a text box on the slide itself.
+- **Charts are native:** `slide.shapes.add_chart(chart_type, x, y, cx, cy, chart_data)`
+  with `chart_data` built from `pptx.chart.data.CategoryChartData`, and
+  `chart_type` from `pptx.enum.chart.XL_CHART_TYPE` — covers bar/line/
+  pie/combo natively. There is no trendline/error-bar API — those need
+  raw chart-part XML; don't fall back to a rendered image for a chart
+  type `XL_CHART_TYPE` genuinely supports.
+- **Default charts render bare** — set a title
+  (`chart.has_title = True; chart.chart_title.text_frame.text = "..."`),
+  data labels (`plot.has_data_labels = True`), and legend visibility
+  (`chart.has_legend`) explicitly; nothing is opinionated by default.
+- **After `save()`, round-trip it:** re-open with
+  `Presentation(out_path)` (must not raise) and run a real
+  `soffice --convert-to pdf` (must exit 0, non-empty PDF) — this
+  sandbox has no schema validator, so these two checks plus Visual QA
+  are the only signal you have that the file isn't corrupt.
+- **Never hand-reorder `<p:presentation>`'s children** if you drop to
+  raw XML for anything above. `python-pptx` writes `<p:sldIdLst>` and
+  `<p:notesMasterIdLst>` in a specific relative order PowerPoint
+  depends on — only ever `.append()` a new child, never rebuild the
+  parent element.
 
 ## Editing existing decks and templates
 
-Pick layouts first: `python scripts/thumbnail.py template.pptx template-thumbs` writes a labeled grid of every slide and prints the file(s) it created — `template-thumbs.jpg`, split into `template-thumbs-N.jpg` past 12 slides. **Always pass that second argument, named after the deck.** It defaults to `thumbnails`, so two decks thumbnailed in one directory silently overwrite each other's grids — the first deck's are simply gone (template analysis only — visual QA needs the full-resolution renders from [Converting to Images](#converting-to-images); it only accepts `.pptx`, so copy a `.potx` to a `.pptx` name first). Use it with `markitdown` to map each content section onto a template slide, and vary the layouts — don't put every section on the same title-and-bullets slide.
+Pick layouts first — since `thumbnail.py` doesn't run here, list them
+directly and render the template for a visual look:
 
-```bash
-python3 -c "import sys,zipfile; zipfile.ZipFile(sys.argv[1]).extractall('unpacked')" deck.pptx
-python scripts/add_slide.py unpacked/ slide2.xml --after slide2.xml   # duplicate a slide (or slideLayoutN.xml); prints the new slide's path
-# reorder / delete slides = edit <p:sldIdLst> in ppt/presentation.xml
-python scripts/clean.py unpacked/                                     # after deletions: removes orphaned slides, media, rels
-# edit slide content in ppt/slides/slideN.xml
-(cd unpacked && rm -f ../out.pptx && zip -Xr ../out.pptx .)           # zip from INSIDE the dir; rm first or deleted parts survive
-python scripts/office/validate.py out.pptx --original deck.pptx
+```python
+from pptx import Presentation
+
+prs = Presentation("template.pptx")
+for i, layout in enumerate(prs.slide_layouts):
+    print(i, layout.name)
 ```
 
-- **Do all structural work — add, delete, reorder — before editing any slide's content.** `add_slide.py` copies a slide file verbatim, so duplicating after you edit clones the edited content; and `clean.py` deletes any slide missing from `<p:sldIdLst>`, including one you just wrote.
-- **Never copy a slide file by hand** — `add_slide.py` does every registration a new slide needs and reports what it made (`Created ppt/slides/slide17.xml from slide2.xml`). It also works directly on a file: `add_slide.py deck.pptx slide2.xml -o out.pptx` — **pass `-o`, or it rewrites the input deck in place.** A duplicated slide still *references* its source's chart/SmartArt/embedded-object parts rather than cloning them, so editing one slide's chart changes the other's.
-- **If you use `python-pptx`**, three things it won't do: duplicate a slide (its only entry point is `add_slide(layout)`), preserve formatting through `text_frame.text = "..."` (that collapses the paragraph to a single unstyled run — assign `run.text` instead), or read the SVG/EMF most template art uses (`add_picture` raises `UnidentifiedImageError`).
-- Legacy `.ppt` must be converted first: `python scripts/office/soffice.py --headless --convert-to pptx file.ppt`. `.potx` templates unpack and pack identically — keep the `.potx` extension on the output.
-- To reuse a template icon or image, duplicate a slide or layout that already contains it.
+```bash
+python scripts/office/soffice.py --headless --convert-to pdf template.pptx
+pdftoppm -jpeg -r 150 template.pdf template-page
+```
+
+(template analysis only — it only accepts `.pptx`, so copy a `.potx`
+to a `.pptx` name first). Use the slide/shape text you read via
+`python-pptx` to map each content section onto a template slide, and
+vary the layouts — don't put every section on the same
+title-and-bullets slide.
+
+```bash
+python scripts/add_slide.py unpacked/ slide2.xml --after slide2.xml   # duplicate a slide (or slideLayoutN.xml); prints the new slide's path
+```
+
+Reordering or deleting slides has no `python-pptx` method — edit the
+slide-id list directly:
+
+```python
+def delete_slide(prs, index):
+    xml_slides = prs.slides._sldIdLst
+    slides = list(xml_slides)
+    xml_slides.remove(slides[index])
+```
+
+This leaves that slide's own media/rels parts orphaned in the package
+— harmless (both PowerPoint and LibreOffice tolerate it), just not
+cleaned up, since `clean.py` doesn't run here (see above).
+
+- **Do all structural work — add, delete, reorder — before editing any
+  slide's content.** `add_slide.py` copies a slide file verbatim, so
+  duplicating after you edit clones the edited content.
+- **Never copy a slide file by hand** — `add_slide.py` does every
+  registration a new slide needs and reports what it made (`Created
+  ppt/slides/slide17.xml from slide2.xml`). It also works directly on
+  a file: `add_slide.py deck.pptx slide2.xml -o out.pptx` — **pass
+  `-o`, or it rewrites the input deck in place.** A duplicated slide
+  still *references* its source's chart/SmartArt/embedded-object parts
+  rather than cloning them, so editing one slide's chart changes the
+  other's.
+- **`python-pptx` won't do three things**: duplicate a slide (its only
+  entry point is `add_slide(layout)`, which creates a blank one from a
+  layout, not a copy of an existing slide — use `add_slide.py`),
+  preserve formatting through `text_frame.text = "..."` (assign
+  `run.text` instead, see the gotcha above), or read the SVG/EMF most
+  template art uses (`add_picture` raises `UnidentifiedImageError`).
+- Legacy `.ppt` must be converted first:
+  `python scripts/office/soffice.py --headless --convert-to pptx file.ppt`.
+  `.potx` templates unpack and pack identically — keep the `.potx`
+  extension on the output.
+- To reuse a template icon or image, duplicate a slide or layout that
+  already contains it (`add_slide.py`), then delete what you don't
+  need from the copy.
 
 When filling in a template:
 
-- If you script an XML transform, parse with `defusedxml.minidom` — round-tripping OOXML through `xml.etree.ElementTree` rewrites namespace prefixes and corrupts the deck.
-- **Template slots ≠ source items.** If the template shows 4 team members and you have 3, delete the 4th member's entire group (image + text boxes), not just its text — then check for orphaned visuals in QA.
-- One `<a:p>` per list item — never concatenate items into a single paragraph. Copy the sibling `<a:pPr>` to preserve spacing, and put `b="1"` on the `<a:rPr>` of titles, section headers, and inline labels (`Status:`, `Owner:`).
-- Let bullets inherit from the layout; only add `<a:buChar>`, `<a:buAutoNum>` (numbered), or `<a:buNone>` to override — never a literal `•` in the text.
-- Text with leading or trailing spaces needs `xml:space="preserve"` on its `<a:t>`.
+- Prefer `python-pptx`'s object model end-to-end
+  (`shape.text_frame`, `shape.fill`, `shape.line`, …). Only drop to raw
+  XML via the shape's own `shape._element` (an `lxml` element —
+  `lxml` IS installed, as `python-pptx`'s own dependency) for the
+  handful of things listed as gotchas above that the object model has
+  no coverage for. There is no `defusedxml`-based transform script in
+  this sandbox to reach for instead.
+- **Template slots ≠ source items.** If the template shows 4 team
+  members and you have 3, delete the 4th member's entire shape group
+  (image + text boxes) — `group_shape.shapes` iterates a group's
+  members — not just its text, then check for orphaned visuals in QA.
+- **One `text_frame.add_paragraph()` per list item** — never
+  concatenate items into a single paragraph's text. Copy formatting
+  from a sibling paragraph's `.font`/`.alignment` to keep spacing
+  consistent, and set `run.font.bold = True` on titles, section
+  headers, and inline labels (`Status:`, `Owner:`).
+- Let bullets inherit from the layout; only touch raw
+  `<a:buChar>`/`<a:buAutoNum>`/`<a:buNone>` to override (see gotcha
+  above) — never a literal `•` character in run text.
+- Leading/trailing spaces in a run need the same care Word/PowerPoint
+  XML always needs: if you build a run's text via raw XML instead of
+  `run.text = ...`, the element needs `xml:space="preserve"` or
+  surrounding whitespace collapses.
 
 ## Design Ideas
 
@@ -183,7 +340,7 @@ Choose colors that match your topic — don't default to generic blue. Use these
 - **Don't mix spacing randomly** — choose 0.3" or 0.5" gaps and use consistently
 - **Don't style one slide and leave the rest plain** — commit fully or keep it simple throughout
 - **Don't create text-only slides** — add images, icons, charts, or visual elements; avoid plain title + bullets
-- **Don't forget text box padding** — when aligning lines or shapes with text edges, set `margin: 0` on the text box or offset the shape to account for padding
+- **Don't forget text box padding** — when aligning lines or shapes with text edges, set `margin_left`/etc. to `Emu(0)` on the text frame or offset the shape to account for padding
 - **Don't use low-contrast elements** — icons AND text need strong contrast against the background; avoid light text on light backgrounds or dark text on dark backgrounds
 - **NEVER use accent lines under titles** — these are a hallmark of AI-generated slides; use whitespace or background color instead
 - **NEVER add decorative color bars or accent stripes** — this includes: header/footer bars spanning the slide width, vertical sidebar stripes down one edge of the slide, thin accent stripes along one edge of a card or content block, and "single-side borders" on rectangles. These read as AI-generated filler. If you want to set a card apart, use a subtle background tint, a drop shadow, or an icon — not an edge stripe.
@@ -196,37 +353,48 @@ Your first render usually has a few real issues — overlaps, overflow, misalign
 
 ### Content QA
 
-```bash
-markitdown output.pptx
+`markitdown` isn't installed in this sandbox — dump text through `python-pptx` directly:
+
+```python
+from pptx import Presentation
+
+prs = Presentation("output.pptx")
+for i, slide in enumerate(prs.slides, 1):
+    print(f"--- Slide {i} ---")
+    for shape in slide.shapes:
+        if shape.has_text_frame:
+            print(shape.text_frame.text)
 ```
 
 Check for missing content, typos, wrong order.
 
-**When using templates, check for leftover placeholder text:**
+**When using templates, check for leftover placeholder text** — run
+the dump above, then search its output the same way you would grep
+`markitdown`'s (a plain `re.search` over the collected text, or pipe
+the script's stdout to `grep` from your own `subprocess.run` call):
 
-```bash
-markitdown output.pptx | grep -iE "\bx{3,}\b|lorem|ipsum|\bTODO|\[insert|this.*(page|slide).*layout"
+```
+\bx{3,}\b|lorem|ipsum|\bTODO|\[insert|this.*(page|slide).*layout
 ```
 
-If grep returns results, fix them before declaring success.
+Fix any match before declaring success.
 
-### File QA (required)
+### File QA (best available — no schema validator here)
 
-```bash
-python scripts/office/validate.py output.pptx                      # built from scratch
-python scripts/office/validate.py output.pptx --original src.pptx  # built from a template
+```python
+from pptx import Presentation
+Presentation("output.pptx")  # must not raise
 ```
 
-**If the deck came from a template, always pass `--original`.** A template may itself
-contain parts the XSD rejects, so a bare run can report failures you never caused — and
-a genuine regression can hide among them. `--original` baselines
-the schema and slide checks against the template, suppressing errors it already had.
-The structural checks — relationships, content types, charts — ignore `--original` and
-report template-inherited problems either way, so read those on their own merits.
+```bash
+python scripts/office/soffice.py --headless --convert-to pdf output.pptx
+```
 
-pptxgenjs emits chart XML PowerPoint refuses to open, and every other tool
-accepts: python-pptx opens those decks, LibreOffice renders them, the XSD
-passes them. Every failure names its fix. Fix it in the generator and rebuild.
+Must exit 0 and produce a non-empty PDF. This sandbox has no
+`office/validate.py`-equivalent schema/relationship/chart checker (it
+needs `defusedxml`, not installed) — these two checks plus Visual QA
+below are what you have; lean harder on Visual QA than you would with
+a real validator available.
 
 ### Visual QA
 
@@ -258,8 +426,11 @@ ls -1 "$PWD"/slide-*.jpg
 
 **Pass the absolute paths printed above directly to the view tool.** The `rm` clears stale images from prior runs. `pdftoppm` zero-pads based on page count: `slide-1.jpg` for decks under 10 pages, `slide-01.jpg` for 10-99, `slide-001.jpg` for 100+.
 
-**After fixes, rerun all four commands above** — the PDF must be regenerated from the edited `.pptx` before `pdftoppm` can reflect your changes.
+**After fixes, rerun all commands above** — the PDF must be regenerated from the edited `.pptx` before `pdftoppm` can reflect your changes.
 
 ## Dependencies
 
-`pptxgenjs` (npm, preinstalled — install only if `require('pptxgenjs')` fails) · `markitdown[pptx]`, `Pillow`, `defusedxml`, `lxml` (pip — text dump, thumbnail, clean, validate) · LibreOffice (`soffice`, auto-configured for sandboxed environments via `scripts/office/soffice.py`) · `pdftoppm` (Poppler)
+`python-pptx` (pip, pinned in `sandbox-service/Dockerfile`) · LibreOffice
+(`soffice`, via this skill's `scripts/office/soffice.py`) · `pdftoppm`
+(poppler-utils) for visual QA. No `npm`, no `pandoc`, no `markitdown`,
+no `Pillow` — none of those are installed in this sandbox.

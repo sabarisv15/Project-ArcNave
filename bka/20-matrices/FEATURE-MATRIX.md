@@ -214,7 +214,15 @@ Spec's own "Origin finding" section for the investigation this came from,
 and ADR-029 for the full target architecture this slice implements piece
 one of.
 
-## AI Assistant chat — Document analysis payload bounds and deterministic totals
+## AI Assistant chat — Document analysis payload bounds and deterministic totals (RETIRED — dated history, kept for the record)
+
+**Retired 2026-08-30 by [ADL-065](../30-decisions/ledger.md#adl-065).**
+`analyze_document_table` is no longer registered — the model cannot
+call it, and this bounded-payload mechanism (scoped to that tool only)
+no longer runs. Document counting/summing over an attachment now
+routes through the generic `execute_code` sandbox tool instead. The
+rows below are historical record of the shipped design, not current
+behavior.
 
 Source: [`ai-chat-document-analysis-payload-bounds-approved-spec.md`](../60-product-reasoning/ai-chat-document-analysis-payload-bounds-approved-spec.md),
 analyzed 2026-08-25. Backend-only, no new page/screen. Scoped extension of
@@ -238,7 +246,14 @@ had multiple valid product behaviours that no existing rule settled). User
 chose: total + bounded sample; explicit "showing N of M" disclosure, never
 silent truncation; cap scoped to `analyze_document_table` only.
 
-## AI Assistant chat — Deterministic tool availability for attached-document questions
+## AI Assistant chat — Deterministic tool availability for attached-document questions (RETIRED — dated history, kept for the record)
+
+**Retired 2026-08-30 by [ADL-065](../30-decisions/ledger.md#adl-065).**
+`analyze_document_table` (and the `pinDocumentAnalysisTool` pinning
+mechanism this section describes) no longer exist — the model cannot
+call the tool, so there is nothing left to pin into the offered set.
+The rows below are historical record of the shipped design, not
+current behavior.
 
 Source: [`ai-chat-document-tool-routing-approved-spec.md`](../60-product-reasoning/ai-chat-document-tool-routing-approved-spec.md),
 analyzed 2026-08-25. Backend-only, no new page/screen. Triggered by the

@@ -1,5 +1,7 @@
 # Approved Spec — AI Tool Catalogue: the Model Always Knows What Exists
 
+> **Superseded by ADL-065 — `analyze_document_table` retired.**
+
 **Mode:** Feature (backend-only; no new page/screen).
 
 **Analyzed:** 2026-08-25. Item 6 of the six queued in

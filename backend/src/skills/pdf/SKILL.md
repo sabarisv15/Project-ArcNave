@@ -200,33 +200,10 @@ pdftotext -layout input.pdf output.txt
 pdftotext -f 1 -l 5 input.pdf output.txt  # Pages 1-5
 ```
 
-### qpdf
-```bash
-# Merge PDFs
-qpdf --empty --pages file1.pdf file2.pdf -- merged.pdf
-
-# Split pages
-qpdf input.pdf --pages . 1-5 -- pages1-5.pdf
-qpdf input.pdf --pages . 6-10 -- pages6-10.pdf
-
-# Rotate pages
-qpdf input.pdf output.pdf --rotate=+90:1  # Rotate page 1 by 90 degrees
-
-# Remove password
-qpdf --password=mypassword --decrypt encrypted.pdf decrypted.pdf
-```
-
-### pdftk (if available)
-```bash
-# Merge
-pdftk file1.pdf file2.pdf cat output merged.pdf
-
-# Split
-pdftk input.pdf burst
-
-# Rotate
-pdftk input.pdf rotate 1east output rotated.pdf
-```
+Neither `qpdf` nor `pdftk` is installed in this sandbox — merge,
+split, rotate, and decrypt all have a `pypdf` equivalent already shown
+above (Merge PDFs, Split PDF, Rotate Pages, Password Protection); use
+those instead of reaching for a command-line tool that isn't there.
 
 ## Common Tasks
 
@@ -302,7 +279,7 @@ with open("encrypted.pdf", "wb") as output:
 | Extract text | pdfplumber | `page.extract_text()` |
 | Extract tables | pdfplumber | `page.extract_tables()` |
 | Create PDFs | reportlab | Canvas or Platypus |
-| Command line merge | qpdf | `qpdf --empty --pages ...` |
+| Extract text (poppler) | pdftotext | `pdftotext -layout in.pdf out.txt` |
 | OCR scanned PDFs | pytesseract | Convert to image first |
 | Fill PDF forms | pdf-lib or pypdf (see FORMS.md) | See FORMS.md |
 

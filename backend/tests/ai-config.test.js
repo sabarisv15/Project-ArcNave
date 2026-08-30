@@ -222,4 +222,88 @@ test('ai-config API', async (t) => {
     assert.equal(auditRows.rows.length, 1);
     assert.ok(!JSON.stringify(auditRows.rows[0].metadata).includes('sk-super-secret-real-key-value'));
   });
+
+  // Phase 8 — GET /ai-config/capabilities. collegeA is on a college-
+  // explicit 'gemini' row (set above) with no projectId — per
+  // configurationService.getAiConfig's own documented behavior, that
+  // makes gemini.isConfigured() false (ADC is a server-level credential,
+  // never a per-college secret this table stores), so this must degrade
+  // to available:false rather than a guessed capability set or a crash.
+  await t.test('GET /ai-config/capabilities: a college-explicit gemini row with no projectId reports unavailable, not a guessed capability set', async () => {
+    const token = await login(collegeA, 'principaluser');
+    const resp = await get(baseUrl, '/api/v1/ai-config/capabilities', headersFor(collegeA, token));
+    assert.equal(resp.status, 200);
+    assert.equal(resp.body.provider, 'gemini');
+    assert.equal(resp.body.available, false);
+  });
+
+  await t.test('GET /ai-config/capabilities: a real platform-default Vertex config returns the curated capability profile, never the api_key/projectId', async () => {
+    const originalProjectId = globalConfig.gemini.projectId;
+    const originalLocation = globalConfig.gemini.location;
+    const originalModel = globalConfig.gemini.model;
+    const originalProvider = globalConfig.defaultAiProvider;
+    globalConfig.gemini.projectId = 'test-vertex-project';
+    globalConfig.gemini.location = 'global';
+    // Pinned to the registry's own curated key regardless of any real
+    // GEMINI_MODEL this test environment might already have set (e.g.
+    // via backend/.env.local.sh) — this test proves the capability
+    // endpoint's shape, not which model a real deployment happens to run.
+    globalConfig.gemini.model = 'gemini-3.7-flash';
+    globalConfig.defaultAiProvider = 'gemini';
+    try {
+      const token = await login(collegeB, 'principaluser');
+      const resp = await get(baseUrl, '/api/v1/ai-config/capabilities', headersFor(collegeB, token));
+      assert.equal(resp.status, 200);
+      assert.equal(resp.body.provider, 'gemini');
+      assert.equal(resp.body.available, true);
+      assert.equal(resp.body.capability.provider, 'vertex_ai');
+      assert.equal(resp.body.capability.capabilities.multimodal_audio, true);
+      assert.equal(resp.body.capability.capabilities.batch_prediction, false);
+      assert.ok(!('projectId' in resp.body.capability), 'raw projectId must never reach the frontend');
+      assert.ok(!resp.rawText.includes('test-vertex-project'));
+    } finally {
+      globalConfig.gemini.projectId = originalProjectId;
+      globalConfig.gemini.location = originalLocation;
+      globalConfig.gemini.model = originalModel;
+      globalConfig.defaultAiProvider = originalProvider;
+    }
+  });
+
+  await t.test('unauthenticated/staff GET /ai-config/capabilities is rejected the same as GET /ai-config', async () => {
+    const unauth = await get(baseUrl, '/api/v1/ai-config/capabilities', headersFor(collegeA));
+    assert.equal(unauth.status, 401);
+    const staffToken = await login(collegeA, 'staffuser');
+    const staffResp = await get(baseUrl, '/api/v1/ai-config/capabilities', headersFor(collegeA, staffToken));
+    assert.equal(staffResp.status, 403);
+  });
+
+  // CEO Vertex/Gemini audit #40/#41/#42/C20/C21 (2026-08-30) — GET
+  // /ai-config/ops-status. collegeA has made zero real AI calls in this
+  // test's own fresh tenant, so this proves the honest "nothing observed
+  // yet" shape, not a guessed default dressed up as real data.
+  await t.test('GET /ai-config/ops-status: a fresh tenant with zero AI usage reports withinBudget/withinLimit true, no fallback configured, no model version observed yet', async () => {
+    const token = await login(collegeA, 'principaluser');
+    const resp = await get(baseUrl, '/api/v1/ai-config/ops-status', headersFor(collegeA, token));
+    assert.equal(resp.status, 200);
+    assert.equal(resp.body.provider, 'gemini');
+    assert.equal(resp.body.fallback.configured, false);
+    assert.equal(resp.body.fallback.provider, null);
+    assert.equal(resp.body.modelVersion.lastObserved, undefined);
+    assert.equal(resp.body.quota.tokensUsed, 0);
+    assert.equal(resp.body.quota.withinBudget, true);
+    assert.equal(resp.body.rateLimit.callsInWindow, 0);
+    assert.equal(resp.body.rateLimit.withinLimit, true);
+    // Never a raw credential/project id, same discipline every other
+    // route in this file already enforces.
+    assert.ok(!('apiKey' in resp.body));
+    assert.ok(!('projectId' in resp.body));
+  });
+
+  await t.test('unauthenticated/staff GET /ai-config/ops-status is rejected the same as GET /ai-config', async () => {
+    const unauth = await get(baseUrl, '/api/v1/ai-config/ops-status', headersFor(collegeA));
+    assert.equal(unauth.status, 401);
+    const staffToken = await login(collegeA, 'staffuser');
+    const staffResp = await get(baseUrl, '/api/v1/ai-config/ops-status', headersFor(collegeA, staffToken));
+    assert.equal(staffResp.status, 403);
+  });
 });

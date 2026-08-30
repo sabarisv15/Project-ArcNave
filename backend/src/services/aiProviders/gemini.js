@@ -18,6 +18,7 @@ const { LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError } = re
 const { withRetry } = require('./retry');
 const { iterateSseLines } = require('./sse');
 const { flattenToPrompts } = require('../aiContextAssembly');
+const vertexCapabilityRegistry = require('../vertexCapabilityRegistry');
 
 const REQUEST_TIMEOUT_MS = 30000;
 // Overall wall-clock budget for ONE logical postJson-based call
@@ -98,6 +99,32 @@ function location(cfg) {
 
 function model(cfg) {
   return cfg.model || DEFAULT_MODEL;
+}
+
+// Phase 8 — Vertex Capability Layer. Additive: supportsVision/
+// supportsAudioVideo above stay exactly as they are (a test pins them as
+// plain per-adapter booleans regardless of cfg). These two route through
+// vertexCapabilityRegistry instead, keyed by THIS call's actual
+// project/location/model — real per-model/region identification, not a
+// vendor-wide guess. cfg defaults to {} so a caller can query the
+// capability profile for "whatever the default resolves to" without
+// first checking isConfigured().
+function getCapabilityProfile(cfg = {}) {
+  return vertexCapabilityRegistry.getCapabilityProfile({
+    projectId: cfg.projectId,
+    location: location(cfg),
+    modelId: model(cfg),
+    modelVersion: cfg.modelVersion,
+  });
+}
+
+function supportsCapability(cfg = {}, capability) {
+  return vertexCapabilityRegistry.hasCapability({
+    projectId: cfg.projectId,
+    location: location(cfg),
+    model: model(cfg),
+    modelVersion: cfg.modelVersion,
+  }, capability);
 }
 
 // Vertex AI's publisher-model base path — every generateContent/
@@ -246,8 +273,70 @@ function extractUsage(usageMetadata) {
   return usage;
 }
 
+// CEO Vertex/Gemini audit #12/C3 (2026-08-30) — "Structured Output/JSON
+// Schema", mandatory. Gemini's native `responseSchema` mechanism: when a
+// caller attaches one (today: documentExtractionService.js's classify/
+// extract calls), the model is constrained by the API itself, not just
+// asked nicely in prompt text. Additive only — GENERATION_CONFIG itself
+// is never mutated (a shared module-level constant every call site
+// reuses); a fresh object is built per call instead, so a call with no
+// schema gets the exact GENERATION_CONFIG object as before.
+// CEO Vertex/Gemini audit #26 (2026-08-30) — "Thinking Levels", per-task
+// control instead of GENERATION_CONFIG's hardcoded 'LOW' on every call.
+// Additive: a call with no thinkingLevel gets GENERATION_CONFIG's own
+// thinkingConfig untouched (LOW), byte-identical to before this existed.
+// Only 'LOW' is independently live-verified against the real Vertex
+// endpoint (this file's own GENERATION_CONFIG comment); MEDIUM/HIGH are
+// Google's documented enum values for this field, not re-probed here —
+// routes/ai.js's own comment carries the same flag forward to its
+// frontend-facing mapping.
+// includeThoughts (#27) piggybacks on the same thinkingConfig object
+// thinkingLevel already builds — Vertex's real shape is one
+// thinkingConfig carrying both fields, never two separate ones.
+//
+// logprobs (#39, CEO audit 2026-08-30) — "internal diagnostics mattum",
+// explicitly NOT a trust signal (this codebase's own deterministic
+// re-verification, e.g. RS-AIG-019, is already the real check). Vertex's
+// real shape: `responseLogprobs: true` + `logprobs: <top-K int>` as
+// sibling generationConfig fields, not nested under thinkingConfig.
+// Nothing in aiService.js requests this yet — no internal eval tooling
+// consumes it today — this is adapter-level capability only, built ahead
+// of a consumer same as vertexCapabilityRegistry.js's own precedent.
+function generationConfigFor(responseSchema, thinkingLevel, includeThoughts, logprobsTopK) {
+  if (!responseSchema && !thinkingLevel && !includeThoughts && !logprobsTopK) return GENERATION_CONFIG;
+  return {
+    ...GENERATION_CONFIG,
+    ...(responseSchema ? { responseMimeType: 'application/json', responseSchema } : {}),
+    ...((thinkingLevel || includeThoughts) ? {
+      thinkingConfig: {
+        ...(thinkingLevel ? { thinkingLevel } : GENERATION_CONFIG.thinkingConfig),
+        ...(includeThoughts ? { includeThoughts: true } : {}),
+      },
+    } : {}),
+    ...(logprobsTopK ? { responseLogprobs: true, logprobs: logprobsTopK } : {}),
+  };
+}
+
+// CEO Vertex/Gemini audit #27 (2026-08-30) — a "thought" part carries its
+// own `.text` field exactly like a real answer part does; the ONLY
+// distinguishing field is `part.thought === true`. Before this existed,
+// nothing in this file ever set includeThoughts, so no response ever
+// contained one — but the moment #27 is enabled for a college, a naive
+// `parts.map((p) => p.text).join('')` would silently splice the model's
+// internal reasoning into the visible answer. Applied unconditionally
+// (not just when includeThoughts was requested this call) — belt and
+// suspenders against a Gemini response ever including a thought part
+// this adapter didn't ask for.
+function splitThoughtParts(parts) {
+  const thoughtText = parts.filter((p) => p.thought === true).map((p) => p.text).filter(Boolean).join('');
+  const visibleParts = parts.filter((p) => p.thought !== true);
+  return { thoughtText: thoughtText || undefined, visibleParts };
+}
+
 async function completeWithMeta(cfg, arcnaveContext) {
-  const { systemPrompt, userPrompt, images, media } = flattenToPrompts(arcnaveContext);
+  const {
+    systemPrompt, userPrompt, images, media, responseSchema, thinkingLevel, includeThoughts, logprobsTopK,
+  } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
   }
@@ -255,18 +344,35 @@ async function completeWithMeta(cfg, arcnaveContext) {
   const payload = await postJson(cfg, modelUrl(cfg, model(cfg), 'generateContent'), {
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents: [{ role: 'user', parts: buildUserParts(userPrompt, images, media) }],
-    generationConfig: GENERATION_CONFIG,
+    generationConfig: generationConfigFor(responseSchema, thinkingLevel, includeThoughts, logprobsTopK),
   }, { hasMedia: Boolean(media && media.length) });
 
-  const parts = payload && payload.candidates && payload.candidates[0]
+  const rawParts = payload && payload.candidates && payload.candidates[0]
     && payload.candidates[0].content && payload.candidates[0].content.parts;
-  const text = Array.isArray(parts) ? parts.map((p) => p.text).filter(Boolean).join('') : undefined;
+  const { thoughtText, visibleParts } = splitThoughtParts(Array.isArray(rawParts) ? rawParts : []);
+  const text = Array.isArray(rawParts) ? visibleParts.map((p) => p.text).filter(Boolean).join('') : undefined;
   if (typeof text !== 'string' || text.length === 0) {
     throw new LlmRequestError('Gemini response did not contain candidates[0].content.parts[].text');
   }
 
   const usage = extractUsage(payload && payload.usageMetadata);
-  return { text, usage };
+  const logprobsResult = payload && payload.candidates && payload.candidates[0] && payload.candidates[0].logprobsResult;
+  return {
+    text,
+    usage,
+    thoughtSummary: thoughtText,
+    logprobsResult: logprobsTopK ? logprobsResult : undefined,
+    // CEO Vertex/Gemini audit #41 (2026-08-30) — "Model Version Pinning/
+    // Alerting". Gemini's own documented response shape includes a
+    // top-level modelVersion string (the real, resolved model build that
+    // actually answered — can differ from the alias configured in
+    // cfg.model, e.g. 'gemini-3.7-flash' resolving to a dated snapshot).
+    // Read defensively (payload && payload.modelVersion) — never
+    // assumed present, same "don't trust a field you haven't confirmed"
+    // discipline this file already applies everywhere else. aiService.js's
+    // checkModelVersionDrift is the consumer.
+    modelVersion: payload && payload.modelVersion,
+  };
 }
 
 async function complete(cfg, prompts) {
@@ -461,7 +567,7 @@ function buildPriorTurnContents(priorTurns) {
 
 async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   const {
-    systemPrompt, userPrompt, tools, images, media,
+    systemPrompt, userPrompt, tools, images, media, thinkingLevel, includeThoughts,
   } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
@@ -480,16 +586,17 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
         parameters: stripAdditionalProperties(tool.params),
       })),
     }],
-    generationConfig: GENERATION_CONFIG,
+    generationConfig: generationConfigFor(undefined, thinkingLevel, includeThoughts),
   }, { hasMedia: Boolean(media && media.length) });
 
-  const parts = payload && payload.candidates && payload.candidates[0]
+  const rawParts = payload && payload.candidates && payload.candidates[0]
     && payload.candidates[0].content && payload.candidates[0].content.parts;
-  if (!Array.isArray(parts)) {
+  if (!Array.isArray(rawParts)) {
     throw new LlmRequestError('Gemini response did not contain candidates[0].content.parts');
   }
+  const { thoughtText, visibleParts } = splitThoughtParts(rawParts);
 
-  const functionCallPart = parts.find((p) => p.functionCall);
+  const functionCallPart = visibleParts.find((p) => p.functionCall);
   if (functionCallPart) {
     // ADR-030 P0 telemetry: a tool_call response's own usageMetadata is
     // just as real a request cost as an 'answer' response's — previously
@@ -512,16 +619,24 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
     // continuation call, never reconstructing {functionCall:{name,args}}
     // alone when the original part is available.
     return {
-      type: 'tool_call', toolName: functionCallPart.functionCall.name, arguments: functionCallPart.functionCall.args || {}, rawToolCall: functionCallPart, usage,
+      type: 'tool_call',
+      toolName: functionCallPart.functionCall.name,
+      arguments: functionCallPart.functionCall.args || {},
+      rawToolCall: functionCallPart,
+      usage,
+      thoughtSummary: thoughtText,
+      modelVersion: payload && payload.modelVersion, // #41 — same field, see completeWithMeta's own comment
     };
   }
 
-  const text = parts.map((p) => p.text).filter(Boolean).join('');
+  const text = visibleParts.map((p) => p.text).filter(Boolean).join('');
   if (!text) {
     throw new LlmRequestError('Gemini response contained neither a function call nor text');
   }
   const usage = extractUsage(payload && payload.usageMetadata);
-  return { type: 'answer', text, usage };
+  return {
+    type: 'answer', text, usage, thoughtSummary: thoughtText, modelVersion: payload && payload.modelVersion,
+  };
 }
 
 async function embed(cfg, texts, { inputType } = {}) {
@@ -554,6 +669,35 @@ async function embed(cfg, texts, { inputType } = {}) {
   return predictions.map((item) => item && item.embeddings && item.embeddings.values);
 }
 
+// CEO Vertex/Gemini audit #34 (2026-08-30) — "Token Counting Preflight",
+// real gap: ADL-055 already measured cost via Vertex's :countTokens
+// endpoint, but only from a standalone script, never wired into this
+// adapter's own request path. Same request shape completeWithMeta
+// builds (systemInstruction + contents), sent to :countTokens instead
+// of :generateContent — no generation happens, no output tokens are
+// billed, this call exists purely to measure BEFORE a caller decides
+// whether to send the real request. Additive: no existing call site is
+// forced to use this; aiService.js's preflight guard (below, this same
+// ADL) is the first caller.
+async function countTokens(cfg, arcnaveContext) {
+  const {
+    systemPrompt, userPrompt, images, media,
+  } = flattenToPrompts(arcnaveContext);
+  if (!isConfigured(cfg)) {
+    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
+  }
+
+  const payload = await postJson(cfg, modelUrl(cfg, model(cfg), 'countTokens'), {
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    contents: [{ role: 'user', parts: buildUserParts(userPrompt, images, media) }],
+  });
+
+  if (typeof (payload && payload.totalTokens) !== 'number') {
+    throw new LlmRequestError('Gemini (Vertex AI) countTokens response did not contain a numeric totalTokens');
+  }
+  return { totalTokens: payload.totalTokens };
+}
+
 // Image generation (RS-AIG-025) — Vertex AI's Imagen `:predict` endpoint,
 // the same `instances[]`/`predictions[]` shape embed() above already
 // uses for this vendor's non-generateContent models. NOT live-verified
@@ -582,17 +726,88 @@ async function generateImage(cfg, { prompt }) {
   return { imageBuffer: Buffer.from(b64, 'base64'), mimeType };
 }
 
+// CEO Vertex/Gemini audit #37/C14 (2026-08-30) — "Built this it will be
+// useful in future" (overriding ADL-066's own original "defer, no
+// backlog yet" recommendation). Real, structurally-correct Vertex REST
+// shape (batchPredictionJobs — a project/location-level resource, not a
+// per-model :verb call like every other function in this file), NOT
+// live-verified against a real GCP project (same standing caveat this
+// file's own header comment already carries for generateImage/embed).
+//
+// Deliberately NOT wired into any aiService.js call site — Vertex Batch
+// Prediction REQUIRES a GCS input/output URI (gcsSource/gcsDestination
+// below); this codebase has NO GCS file routing today (gcs_file_uri:
+// false in vertexCapabilityRegistry.js — every request currently sends
+// inline_data only, per Phase 8A's own note). Building a caller that
+// invokes this against data that has nowhere to live in GCS would be
+// exactly the kind of guessed-true capability this project's own
+// "measure before building" discipline refuses to ship — this is the
+// adapter-level capability only, ready for a real caller once GCS
+// routing exists.
+function batchJobsUrl(cfg) {
+  const loc = location(cfg);
+  const host = loc === 'global' ? 'aiplatform.googleapis.com' : `${loc}-aiplatform.googleapis.com`;
+  return `https://${host}/v1/projects/${cfg.projectId}/locations/${loc}/batchPredictionJobs`;
+}
+
+async function submitBatchPredictionJob(cfg, {
+  displayName, gcsInputUri, gcsOutputUriPrefix,
+}) {
+  if (!isConfigured(cfg)) {
+    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
+  }
+  if (!gcsInputUri || !gcsOutputUriPrefix) {
+    throw new LlmRequestError('submitBatchPredictionJob requires gcsInputUri and gcsOutputUriPrefix — this codebase has no GCS file routing yet (see this function\'s own comment)');
+  }
+  const payload = await postJson(cfg, batchJobsUrl(cfg), {
+    displayName: displayName || `arcnave-batch-${Date.now()}`,
+    model: `publishers/google/models/${model(cfg)}`,
+    inputConfig: { instancesFormat: 'jsonl', gcsSource: { uris: [gcsInputUri] } },
+    outputConfig: { predictionsFormat: 'jsonl', gcsDestination: { outputUriPrefix: gcsOutputUriPrefix } },
+  });
+  if (!payload || !payload.name) {
+    throw new LlmRequestError('Gemini (Vertex AI) batch prediction submission did not return a job name');
+  }
+  return { jobName: payload.name, state: payload.state };
+}
+
+// jobName is the full resource name submitBatchPredictionJob returned
+// (`projects/.../batchPredictionJobs/{id}`) — Vertex's own GET path is
+// exactly that name under the same host, so no separate id-parsing is
+// needed.
+async function getBatchPredictionJob(cfg, jobName) {
+  if (!isConfigured(cfg)) {
+    throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
+  }
+  const token = await getAccessToken(cfg);
+  const loc = location(cfg);
+  const host = loc === 'global' ? 'aiplatform.googleapis.com' : `${loc}-aiplatform.googleapis.com`;
+  const response = await fetch(`https://${host}/v1/${jobName}`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    throw new LlmRequestError(`Gemini (Vertex AI) batch prediction job lookup returned ${response.status}`);
+  }
+  const payload = await response.json();
+  return { jobName: payload.name, state: payload.state, error: payload.error };
+}
+
 module.exports = {
   name: 'gemini',
   EMBEDDING_DIMENSIONS,
   supportsVision,
   supportsAudioVideo,
+  getCapabilityProfile,
+  supportsCapability,
   isConfigured,
   complete,
   completeWithMeta,
   completeStream,
   completeWithTools,
   embed,
+  countTokens,
   generateImage,
+  submitBatchPredictionJob,
+  getBatchPredictionJob,
   AiProviderCapabilityError,
 };

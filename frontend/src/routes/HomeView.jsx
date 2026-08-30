@@ -19,7 +19,9 @@ export function HomeView() {
   const composer = useComposer(composerScope.home());
 
   const send = async () => {
-    const id = await sendMessage({ scope: 'chat', text: composer.text, attachments: composer.attachments, mode: composer.mode });
+    const id = await sendMessage({
+      scope: 'chat', text: composer.text, attachments: composer.attachments, mode: composer.mode, thinkingLevel: composer.thinkingLevel,
+    });
     if (!id) return;
     composer.reset(); // sent — clears Home's scope and nothing else
     navigate(`/chat/${id}`);
@@ -43,6 +45,8 @@ export function HomeView() {
               onSend={send}
               mode={composer.mode}
               onMode={composer.setMode}
+              thinkingLevel={composer.thinkingLevel}
+              onThinkingLevel={composer.setThinkingLevel}
               variant="start"
               placeholder="Ask ArcNave anything about your campus…"
             />

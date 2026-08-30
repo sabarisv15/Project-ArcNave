@@ -1061,18 +1061,24 @@ test('aiService.askAgent: unconfigured LLM provider throws LlmNotConfiguredError
       openaiAdapter.LlmNotConfiguredError,
     );
   });
-  // Four queries ran before the LLM call itself failed: buildMemoryHint's
-  // own ai_scoped_memory + ai_general_memory lookups (run first, in
-  // parallel via Promise.all — ai_scoped_memory's own query is issued
-  // first since it's first in that array, before any hint is even
-  // assembled), the Identity Context block's own college-name lookup
-  // (Phase 3 Group (c)), then getAiConfig's own college_ai_config lookup —
-  // no tool ever ran, so no Business Service call and no audit row either.
-  assert.equal(client.queries.length, 4);
-  assert.match(client.queries[0].text, /FROM ai_scoped_memory/);
-  assert.match(client.queries[1].text, /FROM ai_general_memory/);
-  assert.match(client.queries[2].text, /FROM colleges/);
-  assert.match(client.queries[3].text, /FROM college_ai_config/);
+  // Six queries ran before the LLM call itself failed: askAgent's own
+  // usage-limits preflight (CEO Vertex/Gemini audit #42/C20/C21) runs
+  // FIRST, before anything else — aiCostControlService.checkUsageLimits's
+  // own 'ai_quota' configurations lookup, then its combined audit_log
+  // usage-window query — then buildMemoryHint's own ai_scoped_memory +
+  // ai_general_memory lookups (run in parallel via Promise.all —
+  // ai_scoped_memory's own query is issued first since it's first in
+  // that array), the Identity Context block's own college-name lookup
+  // (Phase 3 Group (c)), then getAiConfig's own college_ai_config
+  // lookup — no tool ever ran, so no Business Service call and no audit
+  // row either.
+  assert.equal(client.queries.length, 6);
+  assert.match(client.queries[0].text, /FROM configurations/);
+  assert.match(client.queries[1].text, /FROM audit_log/);
+  assert.match(client.queries[2].text, /FROM ai_scoped_memory/);
+  assert.match(client.queries[3].text, /FROM ai_general_memory/);
+  assert.match(client.queries[4].text, /FROM colleges/);
+  assert.match(client.queries[5].text, /FROM college_ai_config/);
 });
 
 test('aiService.askAgent: the LLM picks the registered tool -> the same Policy Gate re-validates it -> the tool actually runs', async () => {
@@ -1132,18 +1138,22 @@ test('aiService.askAgent: the LLM picks an unknown/hallucinated tool name -> a c
 
   // No tool ran, so no ai_tool_invoked/ai_tool_denied row either — the
   // hallucinated name never named a real tool for the Policy Gate to
-  // have an opinion about at all. Five queries ran: buildMemoryHint's own
+  // have an opinion about at all. Seven queries ran: askAgent's own
+  // usage-limits preflight (2 — see the "unconfigured LLM provider"
+  // test above for the full breakdown), buildMemoryHint's own
   // ai_scoped_memory + ai_general_memory lookups, the Identity Context
   // block's own college-name lookup (Phase 3 Group (c)), getAiConfig's
   // own college_ai_config lookup — all before the LLM call — and one
   // ai_llm_call row for the tool-select decision call itself (ADR-030 P0
   // telemetry: written for context-size/toolCount even when the decision
   // resolved to a name the registry then rejected).
-  assert.equal(client.queries.length, 5);
-  assert.match(client.queries[0].text, /FROM ai_scoped_memory/);
-  assert.match(client.queries[1].text, /FROM ai_general_memory/);
-  assert.match(client.queries[2].text, /FROM colleges/);
-  assert.match(client.queries[3].text, /FROM college_ai_config/);
+  assert.equal(client.queries.length, 7);
+  assert.match(client.queries[0].text, /FROM configurations/);
+  assert.match(client.queries[1].text, /FROM audit_log/);
+  assert.match(client.queries[2].text, /FROM ai_scoped_memory/);
+  assert.match(client.queries[3].text, /FROM ai_general_memory/);
+  assert.match(client.queries[4].text, /FROM colleges/);
+  assert.match(client.queries[5].text, /FROM college_ai_config/);
   const llmCallRow = client.queries.find((q) => q.text.includes('INSERT INTO audit_log') && q.params[2] === 'ai_llm_call');
   assert.ok(llmCallRow);
   const metadata = JSON.parse(llmCallRow.params[5]);
@@ -1573,18 +1583,22 @@ test('aiService.askAgent: the LLM picks no tool -> returns its direct answer, st
     });
   });
 
-  // No tool ran — no Business Service call, no ai_tool_invoked row. Five
-  // queries ran: buildMemoryHint's own ai_scoped_memory + ai_general_memory
-  // lookups, the Identity Context block's own college-name lookup (Phase 3
+  // No tool ran — no Business Service call, no ai_tool_invoked row. Seven
+  // queries ran: askAgent's own usage-limits preflight (2 — see the
+  // "unconfigured LLM provider" test above for the full breakdown),
+  // buildMemoryHint's own ai_scoped_memory + ai_general_memory lookups,
+  // the Identity Context block's own college-name lookup (Phase 3
   // Group (c)), getAiConfig's own college_ai_config lookup, and one
   // ai_llm_call row for the tool-select decision call (ADR-030 P0
   // telemetry — written for context-size telemetry even when no usage
   // block came back and no tool was picked).
-  assert.equal(client.queries.length, 5);
-  assert.match(client.queries[0].text, /FROM ai_scoped_memory/);
-  assert.match(client.queries[1].text, /FROM ai_general_memory/);
-  assert.match(client.queries[2].text, /FROM colleges/);
-  assert.match(client.queries[3].text, /FROM college_ai_config/);
+  assert.equal(client.queries.length, 7);
+  assert.match(client.queries[0].text, /FROM configurations/);
+  assert.match(client.queries[1].text, /FROM audit_log/);
+  assert.match(client.queries[2].text, /FROM ai_scoped_memory/);
+  assert.match(client.queries[3].text, /FROM ai_general_memory/);
+  assert.match(client.queries[4].text, /FROM colleges/);
+  assert.match(client.queries[5].text, /FROM college_ai_config/);
 });
 
 // --- Token/cost telemetry (P1.1) ---

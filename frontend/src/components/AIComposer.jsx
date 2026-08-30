@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowUp, ChevronDown, ChevronUp, Mic, Paperclip } from 'lucide-react';
 import { ScopeToggle } from './ScopeToggle';
+import { ThinkingLevelToggle } from './ThinkingLevelToggle';
 import { ComposerAttachmentStrip } from './ComposerAttachmentStrip';
 import { IconButton } from './ui/IconButton';
 import { useComposerAttachments } from '../hooks/useComposerAttachments';
@@ -42,7 +43,7 @@ const HEIGHTS = {
 const LINE_HEIGHT = 22;
 
 export const AIComposer = forwardRef(function AIComposer(
-  { value, onChange, onSend, mode, onMode, placeholder, variant = 'start', minHeight, className, bare = false, composer },
+  { value, onChange, onSend, mode, onMode, thinkingLevel, onThinkingLevel, placeholder, variant = 'start', minHeight, className, bare = false, composer },
   ref
 ) {
   const textareaRef = useRef(null);
@@ -285,6 +286,7 @@ export const AIComposer = forwardRef(function AIComposer(
           </IconButton>
 
           <ScopeToggle mode={mode} onMode={onMode} />
+          {onThinkingLevel && <ThinkingLevelToggle level={thinkingLevel} onLevel={onThinkingLevel} />}
 
           <div className="flex-1" />
 

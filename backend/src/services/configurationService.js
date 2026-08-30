@@ -25,6 +25,7 @@ const configurationRepository = require('../repositories/configurationRepository
 const aiConfigRepository = require('../repositories/aiConfigRepository');
 const auditLogRepository = require('../repositories/auditLogRepository');
 const aiProviders = require('./aiProviders');
+const aiProviderFallbackService = require('./aiProviderFallbackService');
 const cryptoUtil = require('../cryptoUtil');
 const globalConfig = require('../config');
 
@@ -213,13 +214,41 @@ function resolveDefaultProvider() {
 // are different questions once an experimental override is in the
 // picture. Purely additive to every existing caller (askAboutTool and
 // others just destructure {adapter, config} and never look at this key).
+// CEO Vertex/Gemini audit #40 (2026-08-30) — applied at the end of
+// EVERY getAiConfig return path (both branches below), so every caller
+// of getAiConfig/resolveAiConfig gets fallback protection automatically
+// with zero call-site changes — see aiProviderFallbackService.js's own
+// header comment for the full design. Returns the adapter UNCHANGED
+// (no wrapping at all) when: no aiFallbackProvider is configured, it's
+// the SAME provider as the primary (falling back to yourself protects
+// nothing), or GLOBAL_CONFIG_BUILDERS has no builder for it (an unknown/
+// mistyped env value — fails safe to "no fallback," never a crash).
+// fallbackState is a mutable record the caller can inspect AFTER a call
+// to learn whether this specific config's adapter ever actually fell
+// back — undefined when no fallback exists at all, so a caller can
+// `if (fallbackState)` rather than checking a triggered flag that's
+// always false.
+function applyProviderFallback(provider, adapter) {
+  const fallbackProvider = globalConfig.aiFallbackProvider;
+  if (!fallbackProvider || fallbackProvider === provider || !GLOBAL_CONFIG_BUILDERS[fallbackProvider]) {
+    return { adapter, fallbackProvider: null, fallbackState: undefined };
+  }
+  const fallbackAdapter = aiProviders.getAdapter(fallbackProvider);
+  const fallbackConfig = GLOBAL_CONFIG_BUILDERS[fallbackProvider]();
+  const { state, onFallback } = aiProviderFallbackService.buildFallbackTracker();
+  const resilientAdapter = aiProviderFallbackService.buildResilientAdapter(adapter, fallbackAdapter, fallbackConfig, { onFallback });
+  return { adapter: resilientAdapter, fallbackProvider, fallbackState: state };
+}
+
 async function getAiConfig(client, collegeId) {
   const row = await aiConfigRepository.findByCollegeId(client, collegeId);
 
   if (row === null) {
     const provider = resolveDefaultProvider();
+    const primaryAdapter = aiProviders.getAdapter(provider);
+    const { adapter, fallbackProvider, fallbackState } = applyProviderFallback(provider, primaryAdapter);
     return {
-      provider, config: GLOBAL_CONFIG_BUILDERS[provider](), adapter: aiProviders.getAdapter(provider), configSource: 'platform_default',
+      provider, config: GLOBAL_CONFIG_BUILDERS[provider](), adapter, configSource: 'platform_default', fallbackProvider, fallbackState,
     };
   }
 
@@ -237,8 +266,10 @@ async function getAiConfig(client, collegeId) {
     embeddingModel: row.embedding_model,
     fastModel: row.fast_model,
   };
+  const primaryAdapter = aiProviders.getAdapter(row.provider);
+  const { adapter, fallbackProvider, fallbackState } = applyProviderFallback(row.provider, primaryAdapter);
   return {
-    provider: row.provider, config, adapter: aiProviders.getAdapter(row.provider), configSource: 'college_explicit',
+    provider: row.provider, config, adapter, configSource: 'college_explicit', fallbackProvider, fallbackState,
   };
 }
 

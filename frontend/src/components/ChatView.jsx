@@ -89,7 +89,7 @@ export function ChatView({ chatId, title, meta, messages, placeholder, onSend, b
                 onEdit={
                   chatId
                     ? (id, text) => editMessage({
-                      scope: 'chat', convId: chatId, messageId: id, text, mode: composer.mode,
+                      scope: 'chat', convId: chatId, messageId: id, text, mode: composer.mode, thinkingLevel: composer.thinkingLevel,
                     })
                     : undefined
                 }
@@ -103,10 +103,12 @@ export function ChatView({ chatId, title, meta, messages, placeholder, onSend, b
               value={composer.text}
               onChange={composer.setText}
               onSend={() => {
-                if (onSend(composer.text, composer.attachments, composer.mode) !== false) composer.reset();
+                if (onSend(composer.text, composer.attachments, composer.mode, composer.thinkingLevel) !== false) composer.reset();
               }}
               mode={composer.mode}
               onMode={composer.setMode}
+              thinkingLevel={composer.thinkingLevel}
+              onThinkingLevel={composer.setThinkingLevel}
               placeholder={placeholder}
             />
           </ChatComposerDock>

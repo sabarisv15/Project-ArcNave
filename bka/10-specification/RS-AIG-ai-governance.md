@@ -1081,3 +1081,111 @@ discoverability failure.
 | **Implementation** | None currently live — historical reference implementation was `aiService.js`'s `pinDocumentAnalysisTool`, removed by ADL-065 |
 | **Conformance** | N/A |
 | **Decisions** | [ADL-055](../30-decisions/ledger.md#adl-055), [ADL-065](../30-decisions/ledger.md#adl-065) |
+
+---
+
+## RS-AIG-027
+
+**A provider adapter never asserts a model capability as a flat,
+vendor-wide constant when the real vendor exposes it per project/region/
+model/version — that data lives in one central, curated registry, never
+scattered as ad hoc conditions across call sites, and no capability may
+ever be sourced from a frontend-supplied value.**
+
+This extends [RS-AIG-008](#rs-aig-008)'s "the provider is configurable,
+never architecturally load-bearing" principle one level deeper: for a
+Vertex-backed adapter, *which model/region/project* is configured is
+itself a further axis a flat per-adapter boolean cannot represent
+correctly — a capability true for one configured model can be false for
+another sharing the same adapter file. A capability entry with no
+curated data is treated as unsupported, never guessed true; an
+unrecognized model lookup is logged, not silent.
+
+| | |
+|---|---|
+| **Owner** | LLM provider adapter |
+| **Authority** | System invariant |
+| **Depends on** | [RS-AIG-008](#rs-aig-008) |
+| **Governs** | — |
+| **Lifecycle** | — |
+| **Workflow** | — |
+| **AI** | Definitional |
+| **Modules** | 9 |
+| **Data effect** | — |
+| **Implementation** | `vertexCapabilityRegistry.js` (`getCapabilityProfile`/`hasCapability`, cached, keyed by project/location/model/version); `gemini.js`/`vertexMaas.js`'s own `getCapabilityProfile`/`supportsCapability` exports route through it. Only `gemini-3.7-flash` is curated today — every other model/adapter combination correctly reports no capabilities until measured and added. |
+| **Conformance** | Conformant (registry itself and its two current consumers). Phases 8B-8L (thinking controls, grounding, structured outputs, caching, function-calling parallelism, code execution, batch prediction, fine-tuning, cost telemetry, admin UI) do not yet read this registry — not a conformance gap, since none of those features exist yet either. |
+| **Decisions** | [ADL-066](../30-decisions/ledger.md#adl-066) |
+
+---
+
+## RS-AIG-028
+
+**A tool that asks a model for structured (JSON) output must both request
+it via the provider's own native schema-enforcement mechanism (when the
+configured provider supports one) AND independently validate the parsed
+result's shape before using it. Neither one alone is sufficient, and
+validation runs regardless of whether the provider honored the schema.**
+
+Prompt text alone ("respond with strict JSON") is not enforcement — a
+provider can wrap valid JSON in prose, omit a field, or return a
+plausible-but-wrong-typed value, and a bare `JSON.parse` cannot tell a
+malformed shape from a well-formed one. Native enforcement (Gemini/Vertex
+`responseSchema`, OpenAI `response_format: json_schema`) narrows how a
+compliant provider can fail; it does not exist for every provider
+(RS-AIG-008 provider-swappable — Claude/self-hosted/Vertex MaaS today have
+no native mechanism wired), so the deterministic post-generation check is
+the only guarantee that holds across every configured provider. A field
+target absent from the parsed result is not itself a violation (a model
+legitimately saying "not found" for one field must not invalidate the
+fields it did find); only a *present* field with the wrong shape fails
+validation.
+
+| | |
+|---|---|
+| **Owner** | LLM provider adapter + calling business service |
+| **Authority** | System invariant |
+| **Depends on** | [RS-AIG-008](#rs-aig-008), [RS-AIG-012](#rs-aig-012) |
+| **Governs** | — |
+| **Lifecycle** | — |
+| **Workflow** | — |
+| **AI** | Definitional |
+| **Modules** | 6, 9 |
+| **Data effect** | — |
+| **Implementation** | `aiContextAssembly.js`'s optional `responseSchema` field (additive, passthrough); `gemini.js`'s `generationConfigFor`/`openai.js`'s `responseFormatFor` map it to each provider's native mechanism, `claude.js`/`vertexMaas.js`/`selfHosted.js` ignore it harmlessly (no native mechanism, no code change). `documentExtractionService.js`'s `isValidClassificationShape`/`isValidFieldExtractionShape` are the mandatory post-generation check for its two call sites (`classifyDocument`, `extractFields`) — a shape violation is logged and discarded to the same null/0 a parse failure already produced. |
+| **Conformance** | Conformant for `documentExtractionService.js`'s two call sites (the only prompt-only-JSON tool found in the backend). Every other extraction-shaped tool call already goes through `aiToolRegistry.js`'s function-calling schema, enforced by the provider's tool-call API directly, not this mechanism. |
+| **Decisions** | [ADL-067](../30-decisions/ledger.md#adl-067) |
+
+---
+
+## RS-AIG-029
+
+**A provider outage never takes AI availability down with it. Every
+tenant's AI path must have a configured or configurable fallback
+provider, resolved transparently by the same abstraction layer that
+resolves the primary provider — no individual call site may implement
+its own retry-to-a-different-vendor logic.**
+
+Extends RS-AIG-008 (provider swappable) and RS-AIG-027 (sits behind an
+ArcNave abstraction layer) one level further: a provider being
+swappable in configuration is not the same guarantee as a provider
+being swapped automatically WHEN the configured one fails. Only a
+transient failure (a reachable-but-erroring or misconfigured provider)
+is eligible for fallback; a provider correctly reporting it cannot do
+something (a genuine capability limitation) must never be silently
+retried against a different vendor as if the request itself were the
+problem.
+
+| | |
+|---|---|
+| **Owner** | ConfigurationService |
+| **Authority** | System invariant |
+| **Depends on** | [RS-AIG-008](#rs-aig-008), [RS-AIG-027](#rs-aig-027) |
+| **Governs** | — |
+| **Lifecycle** | — |
+| **Workflow** | — |
+| **AI** | Definitional |
+| **Modules** | 9 |
+| **Data effect** | — |
+| **Implementation** | `aiProviderFallbackService.js` (`buildResilientAdapter`, `isFallbackEligible` — `LlmRequestError`/`LlmNotConfiguredError` eligible, `AiProviderCapabilityError` never); `configurationService.getAiConfig`'s `applyProviderFallback` wraps the resolved adapter transparently for both its `platform_default` and `college_explicit` return paths, driven by `config.aiFallbackProvider` (platform-wide, `AI_FALLBACK_PROVIDER` env var). |
+| **Conformance** | Conformant for every caller of `getAiConfig`/`resolveAiConfig` (askAgent, askGeneralChat, documentExtractionService.js, embeddings). No fallback is configured in this dev environment (`aiFallbackProvider` unset) — the mechanism is real and tested, not yet exercised against a live secondary vendor. |
+| **Decisions** | [ADL-068](../30-decisions/ledger.md#adl-068) |

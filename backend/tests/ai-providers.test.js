@@ -11,6 +11,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const aiProviders = require('../src/services/aiProviders');
 const { contextFromFlatPrompts } = require('../src/services/aiContextAssembly');
+const vertexCapabilityRegistry = require('../src/services/vertexCapabilityRegistry');
 
 const REQUIRED_METHODS = ['isConfigured', 'complete', 'completeWithTools', 'embed', 'generateImage'];
 
@@ -42,6 +43,32 @@ test('aiProviders.getAdapter: an unknown provider name throws AiProviderUnknownE
     () => aiProviders.getAdapter('some_vendor_nobody_built'),
     aiProviders.AiProviderUnknownError,
   );
+});
+
+test('Phase 8: gemini/vertex_maas adapters expose getCapabilityProfile/supportsCapability, routed through the shared registry', () => {
+  vertexCapabilityRegistry._resetCacheForTests();
+  const gemini = aiProviders.getAdapter('gemini');
+  assert.equal(typeof gemini.getCapabilityProfile, 'function');
+  assert.equal(typeof gemini.supportsCapability, 'function');
+  const profile = gemini.getCapabilityProfile({ projectId: 'p', location: 'global', model: 'gemini-3.7-flash' });
+  assert.equal(profile.modelId, 'gemini-3.7-flash');
+  assert.equal(gemini.supportsCapability({ projectId: 'p', location: 'global', model: 'gemini-3.7-flash' }, 'multimodal_audio'), true);
+  assert.equal(gemini.supportsCapability({ projectId: 'p', location: 'global', model: 'gemini-3.7-flash' }, 'batch_prediction'), false);
+
+  const vertexMaas = aiProviders.getAdapter('vertex_maas');
+  assert.equal(typeof vertexMaas.getCapabilityProfile, 'function');
+  assert.equal(typeof vertexMaas.supportsCapability, 'function');
+  // No curated entry exists for any MaaS model — must fall back to
+  // "nothing asserted", consistent with this adapter's own static
+  // supportsVision=false/supportsAudioVideo=false, never contradicting it.
+  assert.equal(vertexMaas.supportsCapability({ projectId: 'p', location: 'global', model: 'qwen/qwen3-next-80b-a3b-thinking-maas' }, 'multimodal_image'), false);
+});
+
+test('Phase 8: non-Vertex adapters (claude/openai/self_hosted) do not claim to export a capability registry function', () => {
+  for (const providerName of ['claude', 'openai', 'self_hosted']) {
+    const adapter = aiProviders.getAdapter(providerName);
+    assert.equal(adapter.getCapabilityProfile, undefined, `${providerName} must not fake a Vertex capability profile`);
+  }
 });
 
 test('gemini/selfHosted/openai adapters: isConfigured is false with an empty config', () => {
@@ -468,6 +495,256 @@ test('openai adapter.complete: with no images, content stays a plain string (unc
     contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
   ).catch(() => {}));
   assert.equal(body.messages[1].content, 'u');
+});
+
+// CEO Vertex/Gemini audit #12/C3 (2026-08-30) — structured-output
+// enforcement. gemini.js/openai.js map an attached responseSchema to
+// their own native mechanism; a call with none must produce the exact
+// same request shape as before (no generationConfig/response_format
+// regression for every existing caller that never sets it).
+test('gemini adapter.completeWithMeta: no responseSchema means no responseMimeType/responseSchema on the wire (unchanged shape)', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const body = await capturedRequestBody(() => gemini.completeWithMeta(
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+  ).catch(() => {}));
+  assert.equal('responseMimeType' in body.generationConfig, false);
+  assert.equal('responseSchema' in body.generationConfig, false);
+});
+
+test('gemini adapter.completeWithMeta: an attached responseSchema sets responseMimeType/responseSchema without disturbing maxOutputTokens/thinkingConfig', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] };
+  const body = await capturedRequestBody(() => gemini.completeWithMeta(
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
+  ).catch(() => {}));
+  assert.equal(body.generationConfig.responseMimeType, 'application/json');
+  assert.deepEqual(body.generationConfig.responseSchema, schema);
+  assert.equal(body.generationConfig.maxOutputTokens, 65_536);
+  assert.equal(body.generationConfig.thinkingConfig.thinkingLevel, 'LOW');
+});
+
+test('openai adapter.completeWithMeta: no responseSchema means no response_format on the wire (unchanged shape)', async () => {
+  const openai = aiProviders.getAdapter('openai');
+  const body = await capturedRequestBody(() => openai.completeWithMeta(
+    { apiKey: 'k', model: 'gpt-x' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+  ).catch(() => {}));
+  assert.equal('response_format' in body, false);
+});
+
+test('openai adapter.completeWithMeta: an attached responseSchema maps to response_format: json_schema, strict', async () => {
+  const openai = aiProviders.getAdapter('openai');
+  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] };
+  const body = await capturedRequestBody(() => openai.completeWithMeta(
+    { apiKey: 'k', model: 'gpt-x' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
+  ).catch(() => {}));
+  assert.equal(body.response_format.type, 'json_schema');
+  assert.equal(body.response_format.json_schema.strict, true);
+  assert.deepEqual(body.response_format.json_schema.schema, schema);
+});
+
+test('claude/self_hosted adapters ignore an attached responseSchema harmlessly (no native support, no crash, unchanged request shape)', async () => {
+  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] };
+  const claudeBody = await capturedRequestBody(() => aiProviders.getAdapter('claude').completeWithMeta(
+    { apiKey: 'k', model: 'claude-x' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
+  ).catch(() => {}));
+  assert.equal(claudeBody.messages[0].content, 'u');
+
+  const selfHostedBody = await capturedRequestBody(() => aiProviders.getAdapter('self_hosted').completeWithMeta(
+    { baseUrl: 'http://x', model: 'm' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
+  ).catch(() => {}));
+  assert.equal(selfHostedBody.messages[1].content, 'u');
+});
+
+// Mocks fetch and returns BOTH the request body sent and the real
+// resolved value the caller's function returned — capturedRequestBody/
+// capturedRequestBodyWithResponse above only ever return the request
+// body, which is enough for shape-of-the-outgoing-request tests but not
+// for asserting what completeWithMeta/completeWithTools's own RETURN
+// value contains (thoughtSummary, logprobsResult, totalTokens, ...).
+async function capturedRequestAndResult(fn, responsePayload) {
+  const originalFetch = global.fetch;
+  let capturedBody;
+  global.fetch = async (url, options) => {
+    capturedBody = JSON.parse(options.body);
+    return { ok: true, json: async () => responsePayload };
+  };
+  let result;
+  try {
+    result = await fn();
+  } finally {
+    global.fetch = originalFetch;
+  }
+  return { body: capturedBody, result };
+}
+
+// CEO Vertex/Gemini audit #26 (2026-08-30) — Thinking Levels.
+test('gemini adapter.completeWithMeta: thinkingLevel overrides GENERATION_CONFIG.thinkingConfig.thinkingLevel on the wire', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const { body } = await capturedRequestAndResult(() => gemini.completeWithMeta(
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', thinkingLevel: 'HIGH' }),
+  ).catch(() => {}), {});
+  assert.equal(body.generationConfig.thinkingConfig.thinkingLevel, 'HIGH');
+});
+
+test('gemini adapter.completeWithTools: thinkingLevel reaches the decision call too, not just plain complete()', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const { body } = await capturedRequestAndResult(() => gemini.completeWithTools(
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+    contextFromFlatPrompts({
+      systemPrompt: 's', userPrompt: 'u', tools: [{ name: 'tool_a', description: 'A', params: {} }], thinkingLevel: 'MEDIUM',
+    }),
+  ).catch(() => {}), {});
+  assert.equal(body.generationConfig.thinkingConfig.thinkingLevel, 'MEDIUM');
+});
+
+// CEO Vertex/Gemini audit #27 (2026-08-30) — Thinking Trace Visibility.
+// The real regression this ADL caught: a thought part carries its own
+// `.text` exactly like a real answer part, distinguished only by
+// `part.thought === true` — a naive join would splice it into the
+// visible answer.
+test('gemini adapter.completeWithMeta: a thought part is split out of the visible text and returned separately as thoughtSummary', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const { body, result } = await capturedRequestAndResult(() => gemini.completeWithMeta(
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', includeThoughts: true }),
+  ), {
+    candidates: [{
+      content: {
+        parts: [
+          { text: 'reasoning about the question...', thought: true },
+          { text: 'the real answer' },
+        ],
+      },
+    }],
+  });
+  assert.equal(body.generationConfig.thinkingConfig.includeThoughts, true);
+  assert.equal(result.text, 'the real answer');
+  assert.equal(result.thoughtSummary, 'reasoning about the question...');
+});
+
+test('gemini adapter.completeWithMeta: no thought parts in the response means thoughtSummary is undefined, never an empty string', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const { result } = await capturedRequestAndResult(() => gemini.completeWithMeta(
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+  ), {
+    candidates: [{ content: { parts: [{ text: 'the real answer' }] } }],
+  });
+  assert.equal(result.text, 'the real answer');
+  assert.equal(result.thoughtSummary, undefined);
+});
+
+test('gemini adapter.completeWithTools: a thought part alongside a function call is split out and never becomes part of toolName/arguments', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const { result } = await capturedRequestAndResult(() => gemini.completeWithTools(
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+    contextFromFlatPrompts({
+      systemPrompt: 's', userPrompt: 'u', tools: [{ name: 'tool_a', description: 'A', params: {} }], includeThoughts: true,
+    }),
+  ), {
+    candidates: [{
+      content: {
+        parts: [
+          { text: 'thinking...', thought: true },
+          { functionCall: { name: 'tool_a', args: { x: 1 } } },
+        ],
+      },
+    }],
+  });
+  assert.equal(result.type, 'tool_call');
+  assert.equal(result.toolName, 'tool_a');
+  assert.equal(result.thoughtSummary, 'thinking...');
+});
+
+// CEO Vertex/Gemini audit #39 (2026-08-30) — Logprobs, internal
+// diagnostics only.
+test('gemini adapter.completeWithMeta: logprobsTopK sets responseLogprobs/logprobs on the wire and surfaces logprobsResult on the return value', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const { body, result } = await capturedRequestAndResult(() => gemini.completeWithMeta(
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', logprobsTopK: 3 }),
+  ), {
+    candidates: [{ content: { parts: [{ text: 'answer' }] }, logprobsResult: { chosenCandidates: [] } }],
+  });
+  assert.equal(body.generationConfig.responseLogprobs, true);
+  assert.equal(body.generationConfig.logprobs, 3);
+  assert.deepEqual(result.logprobsResult, { chosenCandidates: [] });
+});
+
+test('gemini adapter.completeWithMeta: no logprobsTopK means no responseLogprobs/logprobs on the wire and no logprobsResult on the return value', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const { body, result } = await capturedRequestAndResult(() => gemini.completeWithMeta(
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+  ), {
+    candidates: [{ content: { parts: [{ text: 'answer' }] }, logprobsResult: { chosenCandidates: [] } }],
+  });
+  assert.equal('responseLogprobs' in body.generationConfig, false);
+  assert.equal('logprobs' in body.generationConfig, false);
+  assert.equal(result.logprobsResult, undefined);
+});
+
+// CEO Vertex/Gemini audit #34 (2026-08-30) — Token Counting Preflight.
+test('gemini adapter.countTokens: posts to the real :countTokens endpoint and returns totalTokens', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const { body, result } = await capturedRequestAndResult(() => gemini.countTokens(
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+  ), { totalTokens: 12345 });
+  assert.equal(body.contents[0].parts[0].text, 'u');
+  assert.equal('generationConfig' in body, false, 'countTokens must never send a generationConfig — it is not a generation call');
+  assert.equal(result.totalTokens, 12345);
+});
+
+test('gemini adapter.countTokens: a non-numeric totalTokens throws rather than returning a bad count', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({ ok: true, json: async () => ({}) }); // no totalTokens at all
+  try {
+    await assert.rejects(() => gemini.countTokens(
+      { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+      contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+    ), aiProviders.LlmRequestError);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('gemini adapter.countTokens: unconfigured -> LlmNotConfiguredError, no fetch attempted', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  await assert.rejects(
+    () => gemini.countTokens({}, contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' })),
+    aiProviders.LlmNotConfiguredError,
+  );
+});
+
+// CEO Vertex/Gemini audit #37/C14 (2026-08-30) — Batch Prediction.
+test('gemini adapter.submitBatchPredictionJob: posts to the real batchPredictionJobs endpoint with gcsSource/gcsDestination', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const { body, result } = await capturedRequestAndResult(() => gemini.submitBatchPredictionJob(
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+    { displayName: 'my-job', gcsInputUri: 'gs://bucket/in.jsonl', gcsOutputUriPrefix: 'gs://bucket/out/' },
+  ), { name: 'projects/p/locations/global/batchPredictionJobs/123', state: 'JOB_STATE_PENDING' });
+  assert.equal(body.inputConfig.gcsSource.uris[0], 'gs://bucket/in.jsonl');
+  assert.equal(body.outputConfig.gcsDestination.outputUriPrefix, 'gs://bucket/out/');
+  assert.equal(body.model, 'publishers/google/models/gemini-x');
+  assert.equal(result.jobName, 'projects/p/locations/global/batchPredictionJobs/123');
+  assert.equal(result.state, 'JOB_STATE_PENDING');
+});
+
+test('gemini adapter.submitBatchPredictionJob: refuses without gcsInputUri/gcsOutputUriPrefix — this codebase has no GCS routing to supply them from', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  await assert.rejects(() => gemini.submitBatchPredictionJob(
+    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+    { displayName: 'my-job' },
+  ), aiProviders.LlmRequestError);
 });
 
 // Round 10 P2/P3 finding: the round-8 output-token-bound fix (each

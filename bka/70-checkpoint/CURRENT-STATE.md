@@ -4,7 +4,185 @@ _Last updated: 2026-08-30._
 
 ---
 
-# ⛔ READ FIRST — File Intelligence Router (audio/video/archive attachment support) built and verified, 2026-08-30. Read this banner before the ADL-064/065 one below — it is now the most recent session.
+# ⛔ READ FIRST — CEO Vertex/Gemini audit fully actioned, including "the big one," except two comparison-only items, 2026-08-30. Read this banner before the Vertex Capability Registry one below — it is now the most recent session.
+
+**Third pass, same session — "the big one" (#40/#41/#42/C16/C19/C20/C21)
+built, per explicit owner instruction to skip the Product Reasoning pass
+CLAUDE.md would otherwise require for a frontend+backend feature.** Full
+record: [ADL-068](../30-decisions/ledger.md#adl-068).
+- **#40 Cross-Provider Fallback** — `aiProviderFallbackService.js` (new),
+  wired transparently into `configurationService.getAiConfig` so every
+  existing caller gets it for free, zero call-site changes elsewhere.
+  Platform-wide (`AI_FALLBACK_PROVIDER` env var), not per-college — unset
+  in this dev environment, so the mechanism is real and tested but not
+  yet exercised against a live secondary vendor. New [RS-AIG-029](../10-specification/RS-AIG-ai-governance.md#rs-aig-029).
+- **#41 Model Version Pinning/Alerting** — `aiModelVersionService.js`
+  (new), a drift DETECTOR only (in-memory, resets on restart — stated as
+  a real limitation, not hidden). `gemini.js` now captures the real
+  `modelVersion` Gemini's own response reports.
+- **#42/C20/C21 Per-Tenant Cost/Quota + Rate Limits** — `aiCostControlService.js`
+  (new), reuses the EXISTING `ai_llm_call` audit rows (no new ledger
+  table) via one combined query (`auditLogRepository.getAiUsageWindow`).
+  Enforced at the very top of `askAgent`, before any other work — a
+  real, deliberate new query cost every real turn now pays, unlike the
+  #27 regression in ADL-067's own addendum. `routes/ai.js` maps both new
+  error classes to HTTP 429.
+- **Frontend** — no new page: `InstitutionAiSettingsView.jsx`
+  (`/institution/ai-settings`, previously scoped only to web-retrieval)
+  gained a new `OpsStatusSection` reading the new `GET /ai-config/ops-status`
+  route. Read-only — no write UI for quota/fallback config yet (still
+  goes through the existing generic `PUT /configurations/:category`).
+  Sidebar label renamed "AI Browsing" → "AI Settings".
+
+**Verification, third pass:** 3 new unit-test files (29 tests total:
+`ai-provider-fallback-service`, `ai-cost-control-service`,
+`ai-model-version-service`), `ai-config.test.js` +2 integration tests,
+`ai-service.test.js`'s 3 query-count assertions updated for the new
+enforcement queries (a real, intentional cost, not a bug) — all clean.
+Frontend `npm run build` clean; full `vitest run` still exactly
+410 passed/106 failed, byte-identical to the established pre-existing
+baseline. **Full backend suite in Docker: 2686/2686, clean, zero
+`not ok` lines** (real `not ok` output confirmed present-when-expected
+earlier this same session — see the #27 regression note above — so this
+clean run is a genuine pass, not the buffering artifact under
+"Standing notes").
+
+**Exact next action, if resuming this thread:** the ONLY genuinely
+unstarted items from the full CEO audit are now #18/#19 (Vertex AI
+Search Grounding vs. ArcNave-owned RAG) and #24/#25 (Vertex/Gemini code
+execution vs. ArcNave's own sandbox) — both explicitly comparison-passes
+per the owner's own instruction, not builds. Read ADL-067's own digest
+for the exact comparison scope each needs before starting either.
+
+**The full CEO audit spreadsheet came back with decisions on all 47
+capabilities/23 multimodal types/26 parameters.** Full digest, two real
+sheet-conflicts resolved (audio/voice OFF; build order = ascending ID,
+not re-ranked urgency), and everything queued vs. built:
+[ADL-067](../30-decisions/ledger.md#adl-067) + its addendum. Do not
+re-read the two source files (`ARCNAVE-VERTEX-GEMINI-CEO-AUDIT-2026-08-30.md`/`.xlsx`,
+repo root) into a fresh session — ADL-067 is the authoritative digest.
+
+**Owner's own instruction, second pass, same session:** *"do all item in
+one pass except comparision and the big one"* — built: #12/C3
+(structured output), #21 (spatial grounding), #26 (thinking levels + AI
+Composer UI), #27 (thinking trace, flag-gated), #34 (token counting
+preflight), #37/C14 (batch prediction, adapter-only), #39 (logprobs,
+adapter-only). Confirmed already-satisfied, zero code needed: #9/#11
+(audio/speech-to-text already off-by-default), #28/#29 (system
+instructions/safety settings already correct), #43 (regional/residency
+already configurable via `GEMINI_LOCATION`), #46 (multilingual already
+native, no code path to add). **Explicitly excluded, per instruction:**
+#18/#19 and #24/#25 (both comparison-passes, not builds — still
+genuinely unstarted) and the #40/#41/#42/C16/C19-C21 cluster ("the big
+one" — cross-provider fallback, model-version alerting, per-tenant cost/
+quota, monitoring, rate limits; frontend-facing, needs its own Product
+Reasoning pass).
+
+**Two real bugs were caught and fixed DURING this pass, before either
+shipped** (full detail in the ADL-067 addendum): (1) an `Edit` call's
+substring match stranded the word `async` next to a newly-inserted
+comment block, silently dropping `async` from `askGeneralChat` and
+producing a hard `SyntaxError` the next time `aiService.js` was
+`require`d — caught by the very next test run, not by inspection. (2)
+`#27`'s first implementation read a per-college DB `configuration` row
+(`isAudioVideoEnabled`'s own shape) on EVERY `askAgent` call, adding one
+query per turn for every college that would never use it — broke 3
+exact-query-count tests in `ai-service.test.js`. Fixed by switching to
+`config.experimentalThinkingTraceVisibility`
+(`EXPERIMENTAL_THINKING_TRACE_VISIBILITY` env var), the same
+zero-cost-per-call pattern `experimentalAttachmentDiscipline`/
+`experimentalFullInstructionsDocument` already established for exactly
+this "developer/ops real-time trial" category of flag.
+
+**Verification.** `ai-providers.test.js` 59/59, `document-extraction-service.test.js`
+65/65, new `ai-service-token-preflight.test.js` 6/6, `ai-service.test.js`
+219/219 (the 3 broken by bug (2) above, now fixed) — all clean in Docker.
+Full backend suite in Docker, run three times across this session as
+fixes landed: 2628/2628 (before this second pass), a 3-real-failure run
+(bug (2) above, `not ok` lines matched exactly, not the buffering
+artifact), then clean again after the fix — see the ADL-067 addendum for
+the exact final count. Frontend: full `vitest run` 410 passed/106
+failed, **byte-identical to the `git stash`-verified pre-existing
+baseline** (re-confirmed this session) — every failure is the same
+pre-existing `useAuth must be used within AuthProvider` test-harness
+issue, unrelated to anything built here; composer-specific suites
+(`AIComposer.test.jsx`, `composerPaste.test.jsx`) both clean.
+
+**Exact next action, if resuming this thread:** by owner's own "go by
+excel numbers" rule, the next unstarted, non-excluded item is **#18/#19
+(Vertex AI Search Grounding vs. ArcNave-owned RAG — comparison pass, a
+decision not a build)**, then **#24/#25** (code-execution comparison),
+then the excluded **#40/#41/#42/C16/C19-C21 cluster** (needs its own
+Product Reasoning pass first — frontend-facing). Every remaining item
+needs its own scoping pass before code, per this project's established
+one-slice-at-a-time pattern — do not build any of them straight off this
+banner.
+
+---
+
+# ⛔ Previous banner — Vertex Capability Registry (Phase 8, first slice of a 12-part spec) built and verified, 2026-08-30.
+
+**A large "Phase 8 — Vertex AI Capability Layer" spec was handed over**
+(sub-phases 8, 8A-8L: capability registry, native multimodal, thinking
+controls, spatial/temporal grounding, structured outputs, context
+caching, function calling, code execution, batch prediction, fine-tuning
+governance, cost telemetry, admin UI, acceptance tests). 8A was already
+done (the File Intelligence Router below). **This session scoped itself
+to Phase 8's own foundational deliverable — the capability registry
+itself** — since every later sub-phase is written against it; the other
+eleven sub-phases are genuinely unstarted, each needing its own scoping
+pass before code, per this project's own established one-slice-at-a-time
+pattern. Full detail: [ADL-066](../30-decisions/ledger.md#adl-066).
+
+**Shipped and verified this session:**
+- `backend/src/services/vertexCapabilityRegistry.js` (new) — curated,
+  model-keyed capability table (24 capabilities from Phase 8's own
+  suggested `VertexCapability` union), cached in-memory
+  (`projectId::location::modelId::modelVersion`, 15-min TTL), a
+  conservative all-unsupported fallback for any uncurated model (logged,
+  never a guessed `true`). Only `gemini-3.7-flash` is populated today —
+  every field either cites an already-live-verified fact from this
+  project's own history or is explicitly marked unmeasured/not-built.
+- `gemini.js`/`vertexMaas.js` gained `getCapabilityProfile(cfg)`/
+  `supportsCapability(cfg, capability)`, additive only — the existing
+  flat `supportsVision`/`supportsAudioVideo` exports are unchanged
+  (pinned by an existing test).
+- `aiService.js`'s two duplicated media-capability checks consolidated
+  into one exported `resolveMediaSupport` helper — checks images vs.
+  audio/video as two separate registry lookups now, same `true`/`true`
+  result as before for the one model actually in use today, so no
+  behavior change, just no longer a flat combined flag.
+- `GET /api/v1/ai-config/capabilities` (new route) — safe, read-only,
+  `ai_config.read`-gated capability summary; never returns `projectId` or
+  any credential. A real key-collision bug (the profile's own
+  `provider: 'vertex_ai'` field silently clobbering the outer
+  `provider: 'gemini'` field when spread instead of nested) was caught by
+  this session's own new test and fixed before it ever shipped.
+- **Full backend suite: 2619/2619 passing** (18 net new tests, zero
+  regressions), `docker compose exec app npm test`.
+
+**Deliberately NOT built this session — real GCP APIs unreachable from
+this dev environment (see ADL-066 for the full list):** IAM permission
+checks, quota checks, live Model Garden/GA-vs-preview lookups,
+data-governance policy checks. Also not built: any of Phase 8B-8L's own
+actual features (thinking-profile mapping, grounding, structured-output
+validation, context caching, function-calling parallelism gating, code
+execution, batch prediction, fine-tuning governance, the cost/telemetry
+layer, the admin UI, the full acceptance-test matrix) — the registry's
+own table already marks every one of these capabilities `false` today,
+which is the honest current state, not a placeholder.
+
+**Exact next action, if resuming this thread:** 8B (policy-driven
+thinking profiles — fast/balanced/deep/auto) is the natural next slice —
+`thinking_level`/`thinking_budget` are already modeled in the capability
+table, just not yet read by `gemini.js`'s `GENERATION_CONFIG`
+construction. Give it its own scoping pass first, per this project's
+established pattern — do not build 8B straight off this banner without
+one, and do not attempt multiple remaining sub-phases in one sitting.
+
+---
+
+# ⛔ Previous banner — File Intelligence Router (audio/video/archive attachment support) built and verified, 2026-08-30.
 
 **New feature, not one of the six queued document-analysis items and not
 Decision 2** — a separate, user-directed request to generalize chat

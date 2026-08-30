@@ -126,7 +126,7 @@ const PRINCIPAL_CURRICULUM_NAV = [
   { to: '/institution/students', label: 'Students', Icon: GraduationCap },
   { to: '/institution/approvals', label: 'Approvals', Icon: ClipboardCheck },
   { to: '/institution/timetable', label: 'Timetable', Icon: CalendarClock },
-  { to: '/institution/ai-settings', label: 'AI Browsing', Icon: Globe },
+  { to: '/institution/ai-settings', label: 'AI Settings', Icon: Globe },
   { to: '/curriculum/documents', label: 'Documents', Icon: Files },
   { to: '/curriculum/calendar', label: 'Calendar', Icon: CalendarDays },
 ];

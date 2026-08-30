@@ -242,7 +242,7 @@ export function ArtifactEditor() {
                     onEdit={
                       convId
                         ? (id, text) => editMessage({
-                          scope: 'artifact', convId, artifactId, messageId: id, text, mode: composer.mode,
+                          scope: 'artifact', convId, artifactId, messageId: id, text, mode: composer.mode, thinkingLevel: composer.thinkingLevel,
                         })
                         : undefined
                     }
@@ -258,7 +258,9 @@ export function ArtifactEditor() {
               artifactType={artifact.type}
               composer={composer}
               onSend={async () => {
-                const id = await sendMessage({ scope: 'artifact', convId, artifactId, text: composer.text, attachments: composer.attachments, mode: composer.mode });
+                const id = await sendMessage({
+                  scope: 'artifact', convId, artifactId, text: composer.text, attachments: composer.attachments, mode: composer.mode, thinkingLevel: composer.thinkingLevel,
+                });
                 if (id) composer.reset(); // clears this artifact's scope only
               }}
             />

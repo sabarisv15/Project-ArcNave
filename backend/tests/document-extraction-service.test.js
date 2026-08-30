@@ -165,6 +165,41 @@ test('documentExtractionService.extractFields', async (t) => {
     const result = await documentExtractionService.extractFields({}, { collegeId: 'c1', docType: 'community_cert', text: 'x' });
     assert.deepEqual(result.fields.communityCertNumber, { value: '22-03-2007', confidence: 90 });
   });
+
+  // CEO Vertex/Gemini audit #12/C3 (2026-08-30) — structured-output
+  // enforcement, mandatory for every extraction tool.
+  await t.test('passes a real JSON-Schema (one property per field target) through to the adapter as responseSchema', async () => {
+    const registryMock = t.mock.method(documentTypeRegistryRepository, 'findByKey', async () => ({
+      key: 'marksheet_10th', ocr_enabled: true, extraction_field_targets: ['mark10th', 'schoolName'],
+    }));
+    let capturedSchema;
+    mockAiConfig(t, async (cfg, arcnaveContext) => {
+      capturedSchema = flattenToPrompts(arcnaveContext).responseSchema;
+      return JSON.stringify({
+        mark10th: { value: '450/500', confidence: 90 },
+        schoolName: { value: 'ABC School', confidence: 85 },
+      });
+    });
+    t.after(() => registryMock.mock.restore());
+
+    await documentExtractionService.extractFields({}, { collegeId: 'c1', docType: 'marksheet_10th', text: 'x' });
+    assert.deepEqual(capturedSchema, documentExtractionService.buildFieldExtractionSchema(['mark10th', 'schoolName']));
+  });
+
+  await t.test('valid JSON that does not match the required shape (e.g. confidence as a string) is discarded entirely as null/0, never partially trusted', async () => {
+    const registryMock = t.mock.method(documentTypeRegistryRepository, 'findByKey', async () => ({
+      key: 'marksheet_10th', ocr_enabled: true, extraction_field_targets: ['mark10th', 'schoolName'],
+    }));
+    mockAiConfig(t, async () => JSON.stringify({
+      mark10th: { value: '450/500', confidence: '90' }, // confidence as a string — wrong shape
+      schoolName: { value: 'ABC School', confidence: 85 },
+    }));
+    t.after(() => registryMock.mock.restore());
+
+    const result = await documentExtractionService.extractFields({}, { collegeId: 'c1', docType: 'marksheet_10th', text: 'x' });
+    assert.deepEqual(result.fields.mark10th, { value: null, confidence: 0 });
+    assert.deepEqual(result.fields.schoolName, { value: null, confidence: 0 });
+  });
 });
 
 test('documentExtractionService.normalizeExtractedDate', async (t) => {
@@ -338,6 +373,45 @@ test('documentExtractionService.classifyDocument', async (t) => {
     assert.equal(result.detectedDocType, null);
     assert.equal(result.confidence, 0);
     assert.equal(result.rawModelOutput, 'this is not JSON at all');
+  });
+
+  // CEO Vertex/Gemini audit #12/C3 (2026-08-30) — structured-output
+  // enforcement, mandatory for every extraction tool.
+  await t.test('passes CLASSIFICATION_SCHEMA through to the adapter as responseSchema', async () => {
+    const registryMock = t.mock.method(documentTypeRegistryRepository, 'findByModule', async () => [{ key: 'marksheet_10th' }]);
+    mockOcrLangConfig(t);
+    const ocrMock = t.mock.method(tesseractOcr, 'extractTextFromImage', async () => ({ text: 'x', confidence: 90 }));
+    let capturedSchema;
+    mockAiConfig(t, async (cfg, arcnaveContext) => {
+      capturedSchema = flattenToPrompts(arcnaveContext).responseSchema;
+      return JSON.stringify({ detectedDocType: 'marksheet_10th', confidence: 97 });
+    });
+    t.after(() => {
+      registryMock.mock.restore();
+      ocrMock.mock.restore();
+    });
+
+    await documentExtractionService.classifyDocument({}, {
+      collegeId: 'c1', fileBuffer: Buffer.from('img'), mimeType: 'image/png',
+    });
+    assert.deepEqual(capturedSchema, documentExtractionService.CLASSIFICATION_SCHEMA);
+  });
+
+  await t.test('valid JSON with the wrong shape (confidence as a string) is discarded entirely, same as a parse failure', async () => {
+    const registryMock = t.mock.method(documentTypeRegistryRepository, 'findByModule', async () => [{ key: 'marksheet_10th' }]);
+    mockOcrLangConfig(t);
+    const ocrMock = t.mock.method(tesseractOcr, 'extractTextFromImage', async () => ({ text: 'x', confidence: 90 }));
+    mockAiConfig(t, async () => JSON.stringify({ detectedDocType: 'marksheet_10th', confidence: '97' }));
+    t.after(() => {
+      registryMock.mock.restore();
+      ocrMock.mock.restore();
+    });
+
+    const result = await documentExtractionService.classifyDocument({}, {
+      collegeId: 'c1', fileBuffer: Buffer.from('img'), mimeType: 'image/png',
+    });
+    assert.equal(result.detectedDocType, null);
+    assert.equal(result.confidence, 0);
   });
 });
 
@@ -522,4 +596,148 @@ test('documentExtractionService.buildReviewChecklist', async (t) => {
     });
     assert.equal(checklist.some((i) => i.type === 'format'), false);
   });
+});
+
+// CEO Vertex/Gemini audit #21 (2026-08-30) — Spatial Grounding.
+function mockAiConfigWithVision(t, completeImpl) {
+  const m = t.mock.method(configurationService, 'getAiConfig', async () => ({
+    provider: 'gemini',
+    config: { model: 'test-model-v1' },
+    adapter: { complete: completeImpl, supportsVision: true },
+  }));
+  t.after(() => m.mock.restore());
+  return m;
+}
+
+test('documentExtractionService.extractFieldsWithSpatialGrounding', async (t) => {
+  await t.test('rejects when the configured provider/model has no vision capability', async () => {
+    const registryMock = t.mock.method(documentTypeRegistryRepository, 'findByKey', async () => ({
+      key: 'transfer_cert', ocr_enabled: true, extraction_field_targets: ['fullName'],
+    }));
+    const aiMock = mockAiConfig(t, async () => { throw new Error('must not be called'); }); // no supportsVision -> capability gate fails first
+    t.after(() => registryMock.mock.restore());
+
+    await assert.rejects(
+      () => documentExtractionService.extractFieldsWithSpatialGrounding({}, {
+        collegeId: 'c1', docType: 'transfer_cert', imageBuffer: Buffer.from('img'), mimeType: 'image/png',
+      }),
+      documentExtractionService.DocumentExtractionSpatialGroundingUnsupportedError,
+    );
+    assert.equal(aiMock.mock.callCount(), 1); // getAiConfig itself IS called — the gate reads its adapter, just never calls .complete
+  });
+
+  await t.test('aadhaar is blocked before any vision call, same as extractFields', async () => {
+    await assert.rejects(
+      () => documentExtractionService.extractFieldsWithSpatialGrounding({}, {
+        collegeId: 'c1', docType: 'aadhaar', imageBuffer: Buffer.from('img'), mimeType: 'image/png',
+      }),
+      documentExtractionService.DocumentExtractionAadhaarBlockedError,
+    );
+  });
+
+  await t.test('rejects a non-image mimeType (PDF spatial grounding is explicitly out of scope for this slice)', async () => {
+    await assert.rejects(
+      () => documentExtractionService.extractFieldsWithSpatialGrounding({}, {
+        collegeId: 'c1', docType: 'transfer_cert', imageBuffer: Buffer.from('img'), mimeType: 'application/pdf',
+      }),
+      documentExtractionService.DocumentExtractionValidationError,
+    );
+  });
+
+  await t.test('sends the image (not OCR text) and a real boundingBox-shaped responseSchema, returns value/confidence/boundingBox per field', async () => {
+    const registryMock = t.mock.method(documentTypeRegistryRepository, 'findByKey', async () => ({
+      key: 'transfer_cert', ocr_enabled: true, extraction_field_targets: ['fullName'],
+    }));
+    let capturedImages;
+    let capturedSchema;
+    mockAiConfigWithVision(t, async (cfg, arcnaveContext) => {
+      const flat = flattenToPrompts(arcnaveContext);
+      capturedImages = flat.images;
+      capturedSchema = flat.responseSchema;
+      return JSON.stringify({
+        fullName: {
+          value: 'Priya D', confidence: 92, boundingBox: {
+            x: 100, y: 50, width: 300, height: 40,
+          },
+        },
+      });
+    });
+    t.after(() => registryMock.mock.restore());
+
+    const result = await documentExtractionService.extractFieldsWithSpatialGrounding({}, {
+      collegeId: 'c1', docType: 'transfer_cert', imageBuffer: Buffer.from('img-bytes'), mimeType: 'image/png',
+    });
+    assert.equal(capturedImages[0].mimeType, 'image/png');
+    assert.equal(capturedImages[0].base64, Buffer.from('img-bytes').toString('base64'));
+    assert.deepEqual(capturedSchema, documentExtractionService.buildSpatialFieldExtractionSchema(['fullName']));
+    assert.equal(result.fields.fullName.value, 'Priya D');
+    assert.equal(result.fields.fullName.confidence, 92);
+    assert.deepEqual(result.fields.fullName.boundingBox, {
+      x: 100, y: 50, width: 300, height: 40,
+    });
+  });
+
+  await t.test('a field with no boundingBox (not visible on the page) keeps its value/confidence with boundingBox: null', async () => {
+    const registryMock = t.mock.method(documentTypeRegistryRepository, 'findByKey', async () => ({
+      key: 'transfer_cert', ocr_enabled: true, extraction_field_targets: ['fullName'],
+    }));
+    mockAiConfigWithVision(t, async () => JSON.stringify({ fullName: { value: 'Priya D', confidence: 92 } }));
+    t.after(() => registryMock.mock.restore());
+
+    const result = await documentExtractionService.extractFieldsWithSpatialGrounding({}, {
+      collegeId: 'c1', docType: 'transfer_cert', imageBuffer: Buffer.from('img'), mimeType: 'image/png',
+    });
+    assert.equal(result.fields.fullName.value, 'Priya D');
+    assert.equal(result.fields.fullName.boundingBox, null);
+  });
+
+  await t.test('an invalid boundingBox (negative coordinate) discards the WHOLE response as a shape violation, same as any other malformed schema-constrained reply', async () => {
+    const registryMock = t.mock.method(documentTypeRegistryRepository, 'findByKey', async () => ({
+      key: 'transfer_cert', ocr_enabled: true, extraction_field_targets: ['fullName'],
+    }));
+    mockAiConfigWithVision(t, async () => JSON.stringify({
+      fullName: {
+        value: 'Priya D', confidence: 92, boundingBox: {
+          x: -5, y: 50, width: 300, height: 40,
+        },
+      },
+    }));
+    t.after(() => registryMock.mock.restore());
+
+    const result = await documentExtractionService.extractFieldsWithSpatialGrounding({}, {
+      collegeId: 'c1', docType: 'transfer_cert', imageBuffer: Buffer.from('img'), mimeType: 'image/png',
+    });
+    assert.deepEqual(result.fields.fullName, { value: null, confidence: 0, boundingBox: null });
+  });
+
+  await t.test('a non-dob, non-image-target docType with ocr_enabled false short-circuits with no AI call, same as extractFields', async () => {
+    const registryMock = t.mock.method(documentTypeRegistryRepository, 'findByKey', async () => ({
+      key: 'fee_receipt', ocr_enabled: false, extraction_field_targets: [],
+    }));
+    const aiMock = mockAiConfig(t, async () => { throw new Error('must not be called'); });
+    t.after(() => registryMock.mock.restore());
+
+    const result = await documentExtractionService.extractFieldsWithSpatialGrounding({}, {
+      collegeId: 'c1', docType: 'fee_receipt', imageBuffer: Buffer.from('img'), mimeType: 'image/png',
+    });
+    assert.deepEqual(result.fields, {});
+    assert.equal(aiMock.mock.callCount(), 0);
+  });
+});
+
+test('documentExtractionService.isValidBoundingBox', () => {
+  assert.equal(documentExtractionService.isValidBoundingBox(null), true);
+  assert.equal(documentExtractionService.isValidBoundingBox(undefined), true);
+  assert.equal(documentExtractionService.isValidBoundingBox({
+    x: 0, y: 0, width: 10, height: 10,
+  }), true);
+  assert.equal(documentExtractionService.isValidBoundingBox({
+    x: -1, y: 0, width: 10, height: 10,
+  }), false);
+  assert.equal(documentExtractionService.isValidBoundingBox({
+    x: 0, y: 0, width: 0, height: 10,
+  }), false, 'zero width is not a real box');
+  assert.equal(documentExtractionService.isValidBoundingBox({
+    x: 0.5, y: 0, width: 10, height: 10,
+  }), false, 'non-integer coordinates are rejected — Gemini\'s own 0-1000 convention is integer');
 });

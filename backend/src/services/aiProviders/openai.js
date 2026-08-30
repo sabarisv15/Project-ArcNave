@@ -89,12 +89,28 @@ function buildUserContent(userPrompt, images) {
 // token counts without any adapter needing a second request shape.
 // Same OpenAI-compatible `usage` block (prompt_tokens/completion_tokens)
 // selfHosted.js also reads, since it targets the same vendor convention.
+// CEO Vertex/Gemini audit #12/C3 (2026-08-30) — same responseSchema
+// contract gemini.js's generationConfigFor honors, mapped to OpenAI's
+// own documented `response_format: {type: 'json_schema', ...}` shape.
+// `strict: true` asks OpenAI to enforce the schema itself, not just
+// validate after the fact. Not live-verified against a real OpenAI key
+// (same caveat this whole file already carries) — the shape matches
+// OpenAI's published Structured Outputs convention, not fabricated.
+function responseFormatFor(responseSchema) {
+  if (!responseSchema) return undefined;
+  return {
+    type: 'json_schema',
+    json_schema: { name: 'arcnave_extraction', schema: responseSchema, strict: true },
+  };
+}
+
 async function completeWithMeta(cfg, arcnaveContext) {
-  const { systemPrompt, userPrompt, images } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, images, responseSchema } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
 
+  const responseFormat = responseFormatFor(responseSchema);
   const payload = await postJson(cfg, '/chat/completions', {
     model: cfg.model,
     messages: [
@@ -103,6 +119,7 @@ async function completeWithMeta(cfg, arcnaveContext) {
     ],
     max_tokens: MAX_TOKENS,
     temperature: 0.2,
+    ...(responseFormat ? { response_format: responseFormat } : {}),
   });
 
   const choice = payload && Array.isArray(payload.choices) ? payload.choices[0] : null;

@@ -33,6 +33,9 @@ const fileIntelligenceRouter = require('./fileIntelligenceRouter');
 const sandboxExecutionService = require('./sandboxExecutionService');
 const aiMemoryService = require('./aiMemoryService');
 const artifactService = require('./artifactService');
+const aiCostControlService = require('./aiCostControlService');
+const aiModelVersionService = require('./aiModelVersionService');
+const { logWarn } = require('../logging/logger');
 // AI Experience Layer (AIX) — presentation only, added after the real
 // pipeline above has already produced its final, authorized result.
 // Every field this file already returns (entries, preamble, question,
@@ -507,6 +510,16 @@ function describeExtractionFailureReason(failureReason) {
 async function isAudioVideoEnabled(client, collegeId) {
   const row = await configurationService.getConfiguration(client, { collegeId, category: 'audio_video_attachments' });
   return Boolean(row && row.configuration && row.configuration.enabled);
+}
+
+// Audit-only, never returned to any caller or included in an API
+// response — RS-AIG-027 ("never expose as evidence") still governs the
+// SUMMARY's use even though #27 opts into requesting it. A thought
+// summary is only ever this thin: logged, for a human to read in the
+// logs while deciding whether the rollout is worth keeping.
+function logThoughtSummaryIfPresent(identityContext, thoughtSummary) {
+  if (!thoughtSummary) return;
+  logWarn('ai_thinking_trace_captured', { collegeId: identityContext.collegeId, thoughtSummary });
 }
 
 // The closed set ai-chat-file-intelligence-router-approved-spec.md
@@ -2148,7 +2161,7 @@ async function askAboutTool(client, toolName, params, question, { identityContex
 // record even when every other signal is empty.
 async function logLlmCall(client, {
   identityContext, adapter, aiConfig, purpose, usage, latencyMs, imageCount, systemPromptChars, toolCount,
-  attempted, completed, fallbackTriggered,
+  attempted, completed, fallbackTriggered, providerFallbackTriggered, providerFallbackReason,
 }) {
   if (!usage && !imageCount && systemPromptChars === undefined && toolCount === undefined && !attempted) return;
   await auditLogRepository.createAuditLogEntry(client, {
@@ -2182,6 +2195,14 @@ async function logLlmCall(client, {
       attempted,
       completed,
       fallbackTriggered,
+      // CEO Vertex/Gemini audit #40 (2026-08-30) — deliberately a
+      // DIFFERENT field from `fallbackTriggered` above, which already
+      // means "Tool Search fell back to keyword routing" (an unrelated
+      // concept that happens to share the word "fallback"). This one
+      // means "this specific call's cross-provider fallback fired" —
+      // aiProviderFallbackService's own onFallback callback.
+      providerFallbackTriggered,
+      providerFallbackReason,
     },
   });
 }
@@ -2374,16 +2395,76 @@ async function summarizeToolResult(client, identityContext, sanitizedContext, pr
 // synthesis call already goes through) instead of
 // adapter.completeWithTools, which exists specifically to let a model
 // pick FROM a tool list that here is deliberately empty.
+// Phase 8 — Vertex Capability Layer. The two call sites below both need
+// the same "can this adapter actually accept what's attached" check.
+// When the resolved adapter is one of the Vertex-backed ones (gemini,
+// vertex_maas — both now export supportsCapability(cfg, capability), see
+// each adapter's own comment), the check is a real per-project/region/
+// model lookup through vertexCapabilityRegistry instead of a flat,
+// vendor-wide guess; every other adapter (claude/openai/self_hosted)
+// keeps its existing static supportsVision/supportsAudioVideo behavior
+// unchanged — this is additive, never a behavior change for a college
+// not on a Vertex-backed provider. images/media capability are checked
+// separately (never OR'd together) so an unverified modality — e.g. this
+// registry's own multimodal_video note — cannot silently ride on a
+// verified one's `true`.
+function resolveMediaSupport(adapter, aiConfig, images, media) {
+  const supportsImage = typeof adapter.supportsCapability === 'function'
+    ? adapter.supportsCapability(aiConfig, 'multimodal_image')
+    : Boolean(adapter.supportsVision);
+  const supportsAudioOrVideo = typeof adapter.supportsCapability === 'function'
+    ? (adapter.supportsCapability(aiConfig, 'multimodal_audio') || adapter.supportsCapability(aiConfig, 'multimodal_video'))
+    : Boolean(adapter.supportsAudioVideo);
+  const imagesSupported = images.length > 0 && supportsImage;
+  const mediaSupported = media.length > 0 && supportsAudioOrVideo;
+  return {
+    imagesSupported,
+    imageAnalysisUnavailable: images.length > 0 && !imagesSupported,
+    mediaSupported,
+    mediaAnalysisUnavailable: media.length > 0 && !mediaSupported,
+  };
+}
+
+// CEO Vertex/Gemini audit #34 (2026-08-30) — "Token Counting Preflight",
+// a real gap ADL-055 had only ever measured from a standalone script,
+// never wired into a live request path. Purely advisory telemetry, never
+// a gate: a measurement failure (unsupported provider, network error)
+// is caught and logged, never allowed to affect the real turn. Only
+// gemini/vertex_maas export countTokens today (Phase 8) — every other
+// provider silently skips this, same "additive, no behavior change for
+// a provider with no native support" posture #12/RS-AIG-028 already
+// established. Not tuned against a real measured cost ceiling yet —
+// first real threshold, adjust once production data exists.
+const TOKEN_PREFLIGHT_WARN_THRESHOLD = 100_000;
+
+function logAttachmentTokenPreflight({
+  adapter, aiConfig, identityContext, attachmentHint, images, media,
+}) {
+  if (typeof adapter.countTokens !== 'function') return;
+  if (!attachmentHint && images.length === 0 && media.length === 0) return;
+
+  adapter.countTokens(aiConfig, aiContextAssembly.contextFromFlatPrompts({
+    systemPrompt: 'token preflight — attachment-derived content only, not the real turn\'s full context',
+    userPrompt: attachmentHint || '(attachment only, no text hint)',
+    images,
+    media,
+  })).then(({ totalTokens }) => {
+    if (totalTokens >= TOKEN_PREFLIGHT_WARN_THRESHOLD) {
+      logWarn('ai_attachment_token_preflight_large', {
+        collegeId: identityContext.collegeId, totalTokens, threshold: TOKEN_PREFLIGHT_WARN_THRESHOLD,
+      });
+    }
+  }).catch((err) => {
+    logWarn('ai_attachment_token_preflight_failed', { collegeId: identityContext.collegeId, error: err.message });
+  });
+}
+
 async function askGeneralChat(client, question, promptQuestion, {
-  identityContext, identityBlock, adapter, aiConfig, images, media, hasHistory, hasAttachedDocuments,
+  identityContext, identityBlock, adapter, aiConfig, images, media, hasHistory, hasAttachedDocuments, thinkingLevel,
 }, onDelta, onStep = () => {}) {
-  const imagesSupported = images.length > 0 && Boolean(adapter.supportsVision);
-  const imageAnalysisUnavailable = images.length > 0 && !imagesSupported;
-  // Same honest-degradation shape as images above — see
-  // buildMediaUnavailableNote's own comment for why "no adapter
-  // support" and "college hasn't opted in" collapse to one note.
-  const mediaSupported = media.length > 0 && Boolean(adapter.supportsAudioVideo);
-  const mediaAnalysisUnavailable = media.length > 0 && !mediaSupported;
+  const {
+    imagesSupported, imageAnalysisUnavailable, mediaSupported, mediaAnalysisUnavailable,
+  } = resolveMediaSupport(adapter, aiConfig, images, media);
   // ADR-030 P2(a): builds an ARCNAVE Context instead of a flat
   // systemPrompt/userPrompt pair — representation change only, byte-
   // identical output via aiContextAssembly.flattenToPrompts. identityBlock
@@ -2450,7 +2531,9 @@ async function askGeneralChat(client, question, promptQuestion, {
       source: 'identity', stability: aiContextAssembly.STABILITY.CONVERSATION, target: 'system', content: identityBlock,
     }),
     ...userSegments,
-  ], { images: imagesSupported ? images : undefined, media: mediaSupported ? media : undefined });
+  ], {
+    images: imagesSupported ? images : undefined, media: mediaSupported ? media : undefined, thinkingLevel,
+  });
 
   // Research mode has no tool call to report progress on, but it was
   // previously the one askAgent path that never fired a single onStep
@@ -2531,11 +2614,23 @@ async function askGeneralChat(client, question, promptQuestion, {
 // untouched and structurally cannot be affected by this flag.
 
 async function askAgent(client, question, {
-  identityContext, focusContext, projectContext, history, attachmentIds, mode,
+  identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel,
 } = {}, onDelta, onStep = () => {}) {
   if (!question || typeof question !== 'string') {
     throw new AiServiceValidationError('question is required and must be a non-empty string');
   }
+
+  // CEO Vertex/Gemini audit #42/C20/C21 (2026-08-30) — Per-Tenant Cost/
+  // Quota Control and Rate Limits, both real, "urgent" gaps ADL-066
+  // found with zero mitigation today. Checked first, before any other
+  // work (attachment resolution, memory hints, config resolution) — an
+  // over-quota/rate-limited college is refused as cheaply as possible,
+  // never after already paying for the rest of this function's own
+  // setup. Covers BOTH modes (askGeneralChat is only ever reached
+  // through this function, see its own call site below) with one check,
+  // not two. AiQuotaExceededError/AiRateLimitExceededError propagate
+  // unchanged to routes/ai.js, which maps both to a clean HTTP 429.
+  await aiCostControlService.checkUsageLimits(client, identityContext.collegeId);
 
   // Chat attachments (resolveChatAttachments' own comment for the full
   // authorization chain) — resolved up front so the attachment hint can
@@ -2607,8 +2702,11 @@ async function askAgent(client, question, {
     const { adapter, config: aiConfig } = await configurationService.resolveAiConfig(
       client, identityContext.collegeId, { allowExperimentalFallback: true },
     );
+    logAttachmentTokenPreflight({
+      adapter, aiConfig, identityContext, attachmentHint, images, media,
+    });
     return askGeneralChat(client, question, promptQuestion, {
-      identityContext, identityBlock, adapter, aiConfig, images, media, hasHistory: historyHint !== '', hasAttachedDocuments: documents.length > 0,
+      identityContext, identityBlock, adapter, aiConfig, images, media, hasHistory: historyHint !== '', hasAttachedDocuments: documents.length > 0, thinkingLevel,
     }, onDelta, onStep);
   }
 
@@ -2706,26 +2804,29 @@ async function askAgent(client, question, {
   // module's own tightened wording already had to correct for once).
   const toolsWithPlan = tools.length >= 2 ? [...tools, buildPlanMetaTool()] : tools;
   const identityBlock = await identityBlockPromise;
-  const { adapter, config: aiConfig } = await aiConfigPromise;
+  const { adapter, config: aiConfig, fallbackState } = await aiConfigPromise;
 
   // Honest degradation (never a blanket ignore-flag): the deterministic
   // capability check happens here, once, and the LLM can never bypass
-  // it — images are only ever included in the outbound request when
-  // adapter.supportsVision is true. When it's false, the SAME decision
-  // call still runs (no second/classifier call), but with an explicit
-  // note telling the model plainly that it cannot see the attached
-  // image(s) — so its own answer naturally reads as a normal
-  // continuation when the image was irrelevant to the question, and as
-  // an honest "I can't see it" when it wasn't, rather than ever
-  // guessing. imageAnalysisUnavailable is also surfaced as a
+  // it — images/media are only ever included in the outbound request
+  // when the resolved adapter/model actually supports that modality
+  // (resolveMediaSupport above — a real per-project/region/model
+  // registry lookup for Vertex-backed adapters, Phase 8). When
+  // unsupported, the SAME decision call still runs (no second/classifier
+  // call), but with an explicit note telling the model plainly that it
+  // cannot see the attachment(s) — so its own answer naturally reads as
+  // a normal continuation when the attachment was irrelevant to the
+  // question, and as an honest "I can't see it" when it wasn't, rather
+  // than ever guessing. *AnalysisUnavailable is also surfaced as a
   // deterministic field on every return path below regardless of what
   // the model's text says — a safe backstop, not reliant on the model
   // remembering the instruction.
-  const imagesSupported = images.length > 0 && Boolean(adapter.supportsVision);
-  const imageAnalysisUnavailable = images.length > 0 && !imagesSupported;
-  // Same honest-degradation shape as images above, for audio/video.
-  const mediaSupported = media.length > 0 && Boolean(adapter.supportsAudioVideo);
-  const mediaAnalysisUnavailable = media.length > 0 && !mediaSupported;
+  const {
+    imagesSupported, imageAnalysisUnavailable, mediaSupported, mediaAnalysisUnavailable,
+  } = resolveMediaSupport(adapter, aiConfig, images, media);
+  logAttachmentTokenPreflight({
+    adapter, aiConfig, identityContext, attachmentHint, images, media,
+  });
   // ADR-030 P2(a): builds an ARCNAVE Context instead of flat strings —
   // representation change only, byte-identical output. identityBlock
   // stays last — ADR-030 P0 (see executeWorkflowPlan's own comment). No
@@ -2865,8 +2966,18 @@ async function askAgent(client, question, {
   // continuationContext gets rebuilt for that, since decisionContext's one
   // consumer has already run by the time the loop can reach that point.
   let offeredTools = [...toolsWithPlan, buildSchemaMetaTool()];
-  const decisionContext = aiContextAssembly.buildContext(decisionSegments, { tools: offeredTools, images: decisionImages, media: decisionMedia });
-  let continuationContext = aiContextAssembly.buildContext(continuationSegments, { tools: offeredTools, images: decisionImages, media: decisionMedia });
+  // CEO Vertex/Gemini audit #27 (2026-08-30) — config.experimentalThinkingTraceVisibility's
+  // own comment explains why this is a process-level flag, not a
+  // per-college DB read: a DB-backed version of this exact line broke 3
+  // exact-query-count tests by adding a query to every single askAgent
+  // call, caught during this same session's own second pass.
+  const includeThoughts = config.experimentalThinkingTraceVisibility;
+  const decisionContext = aiContextAssembly.buildContext(decisionSegments, {
+    tools: offeredTools, images: decisionImages, media: decisionMedia, thinkingLevel, includeThoughts,
+  });
+  let continuationContext = aiContextAssembly.buildContext(continuationSegments, {
+    tools: offeredTools, images: decisionImages, media: decisionMedia, thinkingLevel, includeThoughts,
+  });
 
   const decisionStartedAt = Date.now();
   // Real progress signal (P1) for the one call in this path that
@@ -2875,6 +2986,14 @@ async function askAgent(client, question, {
   // telling the user ArcNave was actually working on it.
   onStep({ phase: 'deciding' });
   let decision = await adapter.completeWithTools(aiConfig, decisionContext);
+  logThoughtSummaryIfPresent(identityContext, decision.thoughtSummary);
+  // CEO Vertex/Gemini audit #41 (2026-08-30) — see aiModelVersionService.js's
+  // own header for why this is a drift DETECTOR, not a pin. `provider`
+  // is only defined once configurationService.resolveAiConfig's own
+  // destructure runs — read from `adapter.name` here instead, since
+  // that's already the real resolved provider name regardless of which
+  // branch (fallback-wrapped or not) produced this adapter.
+  aiModelVersionService.recordObservedVersion(identityContext.collegeId, adapter.name, aiConfig.model, decision.modelVersion);
   // imageCount reflects images actually included in the request sent
   // to the provider — never the raw attachmentIds count — so a
   // rejected/unauthorized/unsupported-mime attachment (already thrown
@@ -2903,6 +3022,8 @@ async function askAgent(client, question, {
     imageCount,
     systemPromptChars: aiContextAssembly.flattenToPrompts(decisionContext).systemPrompt.length,
     toolCount: tools.length,
+    providerFallbackTriggered: fallbackState ? fallbackState.triggered : undefined,
+    providerFallbackReason: fallbackState && fallbackState.triggered ? fallbackState.reason : undefined,
   });
   const imageMeta = { imageCount, imageAnalysisUnavailable };
 
@@ -2968,7 +3089,9 @@ async function askAgent(client, question, {
           // continuationContext needs rebuilding here — decisionContext's
           // one consumer (the initial completeWithTools call above) has
           // already run.
-          continuationContext = aiContextAssembly.buildContext(continuationSegments, { tools: offeredTools, images: decisionImages, media: decisionMedia });
+          continuationContext = aiContextAssembly.buildContext(continuationSegments, {
+            tools: offeredTools, images: decisionImages, media: decisionMedia, thinkingLevel,
+          });
         }
         const unknown = requested.filter((n) => !resolvedTools.some((t) => t.name === n));
         resultText = [
@@ -3343,4 +3466,11 @@ module.exports = {
   // above (narrow internals this file already exports for that reason).
   verifyResearchNumericClaims,
   RESEARCH_VERIFICATION_STATUS,
+  // Phase 8 — exported for direct unit testing only, same precedent as
+  // verifyResearchNumericClaims above.
+  resolveMediaSupport,
+  // CEO Vertex/Gemini audit #34 (2026-08-30) — exported for direct unit
+  // testing only, same precedent as resolveMediaSupport above.
+  logAttachmentTokenPreflight,
+  TOKEN_PREFLIGHT_WARN_THRESHOLD,
 };

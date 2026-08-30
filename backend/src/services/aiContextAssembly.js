@@ -66,9 +66,58 @@ function computeFingerprint(segments) {
 // generalized to cover every modality, so every existing `images`
 // caller/test keeps its exact original shape untouched; only aiService's
 // new audio/video path populates `media`.
-function buildContext(segments, { tools, images, media } = {}) {
+//
+// `responseSchema` (CEO Vertex/Gemini audit #12/C3, 2026-08-30) — an
+// optional plain JSON-Schema object a caller can attach when it needs
+// the model's reply forced into a specific shape, e.g.
+// documentExtractionService.js's classify/extract calls (today: prompt
+// text asking for "strict JSON", nothing enforcing it). Deliberately a
+// passthrough field, not consumed here: only gemini.js/openai.js map it
+// to their own native structured-output mechanism today (see those
+// files); an adapter that doesn't destructure it (claude.js,
+// vertexMaas.js, selfHosted.js) is completely unaffected — additive,
+// zero behavior change for every caller that never sets it. Every
+// caller that DOES set it must still validate the parsed result itself
+// (RS-AIG-012/C3 "post-generation validation mandatory") — native
+// enforcement narrows how a model can fail, it does not replace the
+// check, and providers with no native support have no enforcement at
+// all beyond that check.
+// `thinkingLevel` (CEO Vertex/Gemini audit #26, 2026-08-30) — an
+// optional 'LOW'/'MEDIUM'/'HIGH' override for gemini.js's own
+// GENERATION_CONFIG.thinkingConfig.thinkingLevel default. Same
+// passthrough-only posture as responseSchema above: only gemini.js
+// reads it (Vertex's own real parameter); every other adapter ignores
+// it harmlessly. routes/ai.js's THINKING_LEVEL_BY_LABEL is the only
+// place a frontend-facing label ('fast'/'balanced'/'deep') is ever
+// translated to this value — nothing below this layer ever sees the
+// label.
+// `includeThoughts` (CEO Vertex/Gemini audit #27, 2026-08-30) — "enable
+// it, test in real time, then decide" (overriding the audit's own
+// default "never expose as evidence" for THIS narrow, opt-in,
+// internal-only rollout). Requests Gemini's thought-summary parts
+// alongside the answer; gemini.js splits them out of the visible text
+// unconditionally regardless of this flag (a real latent bug this ADL
+// found and fixed while wiring it: thought parts also carry `.text` and
+// would otherwise silently ride inside the answer the moment thoughts
+// were ever requested). Never forwarded to a frontend response —
+// aiService.js's own call site logs it (audit-only) when a college has
+// opted in, same `configuration` category gate `audio_video_attachments`
+// already established. RS-AIG-027 ("never user-facing as evidence")
+// still governs the SUMMARY's use — this field only controls whether
+// Gemini is ASKED for one.
+// `logprobsTopK` (CEO Vertex/Gemini audit #39, 2026-08-30) — an optional
+// integer requesting Gemini's per-token log-probabilities, "internal
+// diagnostics mattum" per the audit's own decision — explicitly never a
+// trust signal (RS-AIG-019's deterministic re-verification already fills
+// that role). Adapter-level capability only; no caller in this codebase
+// sets it yet (no internal eval tooling consumes it today), same
+// "built ahead of a consumer" precedent vertexCapabilityRegistry.js
+// itself already set.
+function buildContext(segments, {
+  tools, images, media, responseSchema, thinkingLevel, includeThoughts, logprobsTopK,
+} = {}) {
   return {
-    segments, tools, images, media, fingerprint: computeFingerprint(segments),
+    segments, tools, images, media, responseSchema, thinkingLevel, includeThoughts, logprobsTopK, fingerprint: computeFingerprint(segments),
   };
 }
 
@@ -91,18 +140,27 @@ function flattenToPrompts(context) {
     .map((s) => s.content)
     .join('\n\n');
   return {
-    systemPrompt, userPrompt, tools: context.tools, images: context.images, media: context.media,
+    systemPrompt,
+    userPrompt,
+    tools: context.tools,
+    images: context.images,
+    media: context.media,
+    responseSchema: context.responseSchema,
+    thinkingLevel: context.thinkingLevel,
+    includeThoughts: context.includeThoughts,
+    logprobsTopK: context.logprobsTopK,
   };
 }
 
 // Test/back-compat helper: wraps a flat {systemPrompt, userPrompt, tools,
-// images, media} object (today's shape, now with `media` additive) into
-// a minimal two-segment Context, so existing test call sites and the two
-// documentExtractionService.js call sites (which have no real segment
-// structure to preserve — a single static instruction + a single
-// turn-scoped OCR text blob) don't need to hand-build a segment list.
+// images, media, responseSchema} object (today's shape, now with `media`/
+// `responseSchema` additive) into a minimal two-segment Context, so
+// existing test call sites and the two documentExtractionService.js call
+// sites (which have no real segment structure to preserve — a single
+// static instruction + a single turn-scoped OCR text blob) don't need to
+// hand-build a segment list.
 function contextFromFlatPrompts({
-  systemPrompt, userPrompt, tools, images, media,
+  systemPrompt, userPrompt, tools, images, media, responseSchema, thinkingLevel, includeThoughts, logprobsTopK,
 } = {}) {
   const segments = [];
   if (systemPrompt) {
@@ -115,7 +173,9 @@ function contextFromFlatPrompts({
       source: 'flat-user', stability: STABILITY.TURN, target: 'user', content: userPrompt,
     }));
   }
-  return buildContext(segments, { tools, images, media });
+  return buildContext(segments, {
+    tools, images, media, responseSchema, thinkingLevel, includeThoughts, logprobsTopK,
+  });
 }
 
 module.exports = {

@@ -21,7 +21,28 @@ const attendanceService = require('../services/attendanceService');
 const projectService = require('../services/projectService');
 const artifactService = require('../services/artifactService');
 const documentService = require('../services/documentService');
+const aiCostControlService = require('../services/aiCostControlService');
 const { IdentifierResolutionError } = require('../identifierResolution');
+
+// CEO Vertex/Gemini audit #26 (2026-08-30) — "in AI Composer enable
+// level switching let user decide". Frontend-facing labels
+// (ThinkingLevelToggle.jsx) are deliberately decoupled from Gemini's own
+// enum, same "label only, wire-level value is this codebase's own"
+// precedent ScopeToggle.jsx already established for mode/'general'. An
+// unrecognized/missing value falls through to DEFAULT_THINKING_LEVEL
+// ('fast' -> LOW) — gemini.js's own existing GENERATION_CONFIG default,
+// so a caller that never sends this field keeps today's exact behavior.
+// MEDIUM/HIGH are NOT independently live-verified against the real
+// Vertex endpoint — only LOW has been (gemini.js's own GENERATION_CONFIG
+// comment) — this mapping is Google's documented enum shape, not a
+// guess, but flagged here so a future reader doesn't assume it was
+// re-probed.
+const THINKING_LEVEL_BY_LABEL = { fast: 'LOW', balanced: 'MEDIUM', deep: 'HIGH' };
+const DEFAULT_THINKING_LEVEL = 'fast';
+
+function resolveThinkingLevel(label) {
+  return THINKING_LEVEL_BY_LABEL[label] || THINKING_LEVEL_BY_LABEL[DEFAULT_THINKING_LEVEL];
+}
 
 // Short-session conversation memory (P0.1) — the outer ceiling on how
 // many of the most recent messages are even fetched from the DB before
@@ -175,6 +196,16 @@ function mapAiToolError(err, res) {
   // limitation, not this server's bug and not the caller's mistake.
   if (err instanceof aiProviders.AiProviderCapabilityError) {
     res.status(503).json({ detail: err.message });
+    return true;
+  }
+  // CEO Vertex/Gemini audit #42/C20/C21 (2026-08-30) — 429, the standard
+  // HTTP code for both "you've used your allowance" and "slow down,"
+  // never a 400 (the request itself is well-formed) or a 500 (this
+  // isn't a bug). Both thrown by aiCostControlService.checkUsageLimits,
+  // called once at the very top of askAgent, before any provider is
+  // ever reached.
+  if (err instanceof aiCostControlService.AiQuotaExceededError || err instanceof aiCostControlService.AiRateLimitExceededError) {
+    res.status(429).json({ detail: err.message });
     return true;
   }
   // draft_notification/request_notification_send wrap notificationService
@@ -420,7 +451,7 @@ function createAiRouter() {
     const identityContext = buildAiIdentityContext(req);
     const {
       question, focusContext, project_id: projectId, conversation_id: conversationId,
-      attachment_ids: attachmentIds, mode,
+      attachment_ids: attachmentIds, mode, thinkingLevel,
     } = req.body || {};
     let projectContext;
     if (projectId) {
@@ -457,17 +488,18 @@ function createAiRouter() {
     }
     return {
       question, identityContext, focusContext, projectContext, history, attachmentIds, mode,
+      thinkingLevel: resolveThinkingLevel(thinkingLevel),
     };
   }
 
   router.post('/ai/ask', requireAuth, asyncHandler(async (req, res) => {
     if (!requireResolvedTenant(req, res)) return;
     const {
-      question, identityContext, focusContext, projectContext, history, attachmentIds, mode,
+      question, identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel,
     } = await resolveAskContext(req);
     try {
       const result = await aiService.askAgent(req.dbClient, question, {
-        identityContext, focusContext, projectContext, history, attachmentIds, mode,
+        identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel,
       });
       res.json(result);
     } catch (err) {
@@ -493,7 +525,7 @@ function createAiRouter() {
   router.post('/ai/ask/stream', requireAuth, asyncHandler(async (req, res) => {
     if (!requireResolvedTenant(req, res)) return;
     const {
-      question, identityContext, focusContext, projectContext, history, attachmentIds, mode,
+      question, identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel,
     } = await resolveAskContext(req);
 
     res.writeHead(200, {
@@ -507,7 +539,7 @@ function createAiRouter() {
 
     try {
       const result = await aiService.askAgent(req.dbClient, question, {
-        identityContext, focusContext, projectContext, history, attachmentIds, mode,
+        identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel,
       }, (delta) => writeEvent('delta', { delta }), (step) => writeEvent('step', step));
       writeEvent('done', result);
     } catch (err) {

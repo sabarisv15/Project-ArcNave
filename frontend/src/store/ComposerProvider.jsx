@@ -37,6 +37,14 @@ export const EMPTY_COMPOSER = Object.freeze({
   // it starts on the cheaper, tool-free path. Switching to Curriculum is
   // one ScopeToggle click away the moment a college-data question needs it.
   mode: 'general',
+  // CEO Vertex/Gemini audit #26 (2026-08-30) — "in AI Composer enable
+  // level switching let user decide". 'fast' maps to gemini.js's own
+  // existing GENERATION_CONFIG.thinkingConfig.thinkingLevel default
+  // ('LOW') — a composer nobody has touched sends the exact same request
+  // shape as before this field existed. Same per-scope-draft precedent
+  // as `mode` above — a level chosen in one chat/project/artifact
+  // composer never leaks into another.
+  thinkingLevel: 'fast',
   attachments: [],
   contextChips: [],
   mention: null,
@@ -204,6 +212,7 @@ export function useComposer(scopeKey, { canRestore = true, defaultMode = EMPTY_C
 
   const setText = useCallback((text) => patch({ text }), [patch]);
   const setMode = useCallback((mode) => patch({ mode }), [patch]);
+  const setThinkingLevel = useCallback((thinkingLevel) => patch({ thinkingLevel }), [patch]);
   /**
    * Accepts a value or an updater. The updater form matters: several
    * attachment uploads report progress on their own timers, and two of them
@@ -237,10 +246,12 @@ export function useComposer(scopeKey, { canRestore = true, defaultMode = EMPTY_C
     draft,
     text: draft.text,
     mode: draft.mode,
+    thinkingLevel: draft.thinkingLevel ?? EMPTY_COMPOSER.thinkingLevel,
     attachments: draft.attachments,
     contextChips: draft.contextChips,
     setText,
     setMode,
+    setThinkingLevel,
     setAttachments,
     setContextChips,
     setMention,

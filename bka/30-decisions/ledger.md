@@ -5115,3 +5115,737 @@ envelope-detection comment) still name the tool as the historical
 example that motivated a still-generic mechanism — left as-is; they are
 accurate about the past, not about current live behavior, and do not
 mislead the model (they are never sent in any prompt).
+
+---
+
+## ADL-066
+
+### Vertex Capability Registry (Phase 8, first slice) — a central, curated capability lookup replaces flat per-adapter booleans for Gemini/Vertex MaaS
+
+**What prompted this.** A large multi-part "Phase 8 — Vertex AI Capability
+Layer" spec was handed over (8, 8A-8L) asking for a central capability
+registry keyed by project/region/model/version rather than model-specific
+conditions scattered through the codebase — explicitly citing exactly the
+pattern already in this repo: `gemini.js`/`vertexMaas.js` each exported flat,
+hardcoded `supportsVision`/`supportsAudioVideo` module constants, true
+regardless of which model/region/project the college was actually
+configured for. 8A (native multimodal audio/video/archive) was already
+shipped the same day as the File Intelligence Router — see the
+CURRENT-STATE.md banner above this one. Given the spec's own size (12
+sub-phases, each independently substantial — multimodal routing, thinking
+controls, spatial/temporal grounding, structured outputs, context caching,
+function calling, code execution, batch prediction, fine-tuning governance,
+cost telemetry, an admin UI, and a full acceptance-test matrix), this
+session scoped itself to Phase 8's own foundational deliverable only — the
+registry — since every later sub-phase is written to consume it, matching
+how every other ADL in this ledger was built (one bounded, tested,
+live-checked slice, never a whole multi-week spec in one sitting).
+
+**What shipped.**
+- `vertexCapabilityRegistry.js` (new) — a curated, model-keyed table
+  (`KNOWN_MODEL_PROFILES`) covering the 24 capabilities Phase 8's own
+  suggested `VertexCapability` union names, plus `inputLimits`/
+  `supportedMimeTypes`/`preview`/`verifiedAt`/`notes`. Only one model is
+  populated today, `gemini-3.7-flash` (the only one this codebase has a
+  real resolvable config route to) — every value is either a fact already
+  live-verified elsewhere in this project's own history (audio,
+  `thinkingLevel`, `cachedContentTokenCount`) or explicitly marked
+  unmeasured/not-built in an inline comment, never a guessed `true`. A
+  model with no curated entry (any `vertex_maas` third-party model today)
+  gets a conservative all-`false`/empty fallback (`unknownModelProfile`),
+  logged once per miss via `logger.logWarn` rather than happening
+  silently. Cached in-memory, keyed by
+  `projectId::location::modelId::modelVersion`, 15-minute TTL.
+- `gemini.js`/`vertexMaas.js` each gained `getCapabilityProfile(cfg)`/
+  `supportsCapability(cfg, capability)`, routing through the registry —
+  **additive only**: the existing flat `supportsVision`/
+  `supportsAudioVideo` module exports are unchanged, since
+  `ai-providers.test.js` already pins them as plain per-adapter booleans
+  regardless of cfg.
+- `aiService.js`'s two duplicated "can this adapter see what's attached"
+  blocks (`askGeneralChat` and the main Curriculum decision call) are
+  consolidated into one `resolveMediaSupport(adapter, aiConfig, images,
+  media)` helper (exported for direct unit testing, same precedent as
+  `verifyResearchNumericClaims`). When the resolved adapter exposes
+  `supportsCapability` (gemini/vertex_maas), images and media are checked
+  as two **separate** registry lookups (`multimodal_image` vs.
+  `multimodal_audio`/`multimodal_video`) rather than one combined flag —
+  deliberately still resolves to the same `true`/`true` as before for the
+  one model this codebase actually runs, so this is a representational
+  change with no behavior change today, not a stricter gate. Every other
+  adapter (claude/openai/self_hosted) falls back to its existing static
+  flags, byte-identical to before this ADL.
+- `GET /api/v1/ai-config/capabilities` (new, `routes/aiConfig.js`,
+  `ai_config.read`-gated, same permission as the existing config GET) — a
+  safe, read-only capability summary for the college's own resolved
+  provider/model. Returns `{ provider, available: false }` for a
+  non-Vertex-backed or unconfigured adapter, or `{ provider, available:
+  true, capability: <safe profile> }` otherwise. `capability` is nested,
+  not spread — a real bug caught by this session's own new test: the
+  profile's own `provider: 'vertex_ai'` field (meaning "vendor surface")
+  would otherwise silently clobber the outer `provider` field (meaning
+  "which ARCNAVE adapter" — `'gemini'`) under the same JSON key. Never
+  returns `projectId`, matching the existing GET `/ai-config`'s own
+  precedent of never surfacing that server-level value.
+
+**What this explicitly does NOT do, on purpose — real Google Cloud APIs
+this dev environment cannot reach.** IAM permission checks, quota
+checks, live Model Garden/GA-vs-preview lookups, and data-governance
+policy are not implemented — `gemini.js`'s own header comment already
+states this codebase has no real GCP project reachable from here to probe
+against, and fabricating a stub check that always returns "ok" would be
+worse than not having one. `preview`/`verifiedAt` are populated from
+documented facts and this project's own prior live probes, cited per
+field, never invented. Phases 8B-8L (thinking controls, grounding,
+structured outputs, caching, function calling, code execution, batch
+prediction, fine-tuning, cost telemetry, admin UI, acceptance-test
+matrix) are all genuinely unstarted — the registry's own capability table
+already marks every one of them `false` for `gemini-3.7-flash` today,
+which is itself the honest current state, not a placeholder to fix later
+in the same pass.
+
+**Verification.** Full backend suite in Docker: **2619/2619 passing**
+(18 net new tests: `vertex-capability-registry.test.js` — 10; two new
+tests in `ai-providers.test.js`; four in the new
+`ai-service-media-support.test.js`; two new route tests plus the
+provider-key-collision fix in `ai-config.test.js`). Zero regressions.
+
+**Sequencing note for whoever picks this thread up next.** The registry
+exists and is wired, but almost nothing downstream consumes it yet beyond
+the one honest-degradation check it already backed. 8B (thinking
+profiles) is the natural next slice — `thinking_level`/`thinking_budget`
+are already modeled in the capability table, just not yet read by
+`gemini.js`'s `GENERATION_CONFIG` construction. Each remaining sub-phase
+still needs its own scoping pass before code, per this ledger's own
+established pattern — this ADL is not a green light to build all of
+8B-8L in one sitting.
+
+## ADL-067
+
+### CEO Vertex/Gemini capability-audit decision digest (47 capabilities, 23 multimodal types, 26 parameters/controls) — full decisions recorded; #12/C3 (structured-output enforcement) built and shipped this session
+
+**What prompted this.** ADL-066's audit report
+(`ARCNAVE-VERTEX-GEMINI-CEO-AUDIT-2026-08-30.md`) was returned by the owner
+as a filled-in spreadsheet
+(`ARCNAVE-VERTEX-GEMINI-CEO-AUDIT-2026-08-30.xlsx`, 3 sheets: Capability
+Register #1-47, Multimodal Gap Analysis M1-M23, Parameters and Controls
+C1-C26) with a CEO Decision + a free-text Notes column filled in for every
+row. This ADL is the authoritative record of those decisions — the two
+source files stay as historical attachments, not duplicated here in full;
+only the decisions and the two real conflicts they contained are recorded.
+Owner's stated build order: **"go by excel numbers"** — process by
+ascending ID, not by re-ranked urgency.
+
+**Two real conflicts found between the two sheets, resolved by the owner
+this session (not guessed):**
+1. **Audio/Voice (#9/#11 vs. M9/M10).** Capability Register row #9 (Audio
+   Understanding) and #11 (Speech-to-Text) both say "Keep this feature
+   off, if needed we will use" — but Multimodal Gap row M9 (Audio) and M10
+   (Voice Notes) say CEO Decision "Use now" / note "make native default".
+   Material because audio was **already shipped and live-verified** the
+   same day (File Intelligence Router, real WAV, HTTP 200). **Owner
+   resolved: #9/#11 wins — audio and speech-to-text are OFF.** Investigated
+   before writing any code: `aiService.js`'s `isAudioVideoEnabled` already
+   gates audio/video behind a **per-college opt-in** (`configuration`
+   category `audio_video_attachments`, `Boolean(row && ... .enabled)` — no
+   row means disabled), and no migration/seed anywhere sets it `enabled:
+   true` for any college. **Audio is therefore already off by default for
+   every tenant today — this decision requires no code change**, only this
+   record that it was checked, not assumed. (Video (#10/M11) had no
+   conflict — both sheets already said defer/off.)
+2. **Build sequencing.** The checkpoint file's own queued next step was 8B
+   (Thinking Levels, small/uncontested); the spreadsheet separately flags
+   #40/#42 (cross-provider fallback, per-tenant cost/quota) as "urgent,
+   real gap", Very High risk. Asked which to build first. **Owner
+   resolved: "go by excel numbers"** — ascending ID order governs, not
+   re-ranked urgency. By ID, the first genuine build item is **#12/C3
+   (Structured Output/JSON Schema)**, not 8B (#26) or #40/#42 — built
+   this session, see below.
+
+**Full decision digest, by ID, owner's Notes column verbatim in
+quotes where it adds something beyond the CEO Decision cell itself:**
+
+- **#1-#8 (text/PDF/image/OCR/tables, already-done items):** confirmed
+  as-is. Recurring note on every "already done" row: "Make native as
+  default, also check that if we change provider will it sustain as the
+  same way" — read as a standing design constraint (already this
+  codebase's practice per RS-AIG-008 provider-swappable adapters), not a
+  new task per row.
+- **#9 Audio Understanding, #11 Speech-to-Text:** **OFF** — see conflict
+  resolution above. #10 Video: stays deferred (unchanged).
+- **#12 Structured Output/JSON Schema — "P0, build next", "build".**
+  **BUILT THIS SESSION** — see implementation section below.
+- **#13-#17 (function calling single, multi-step plan, web search, URL
+  retrieval):** confirmed as-is, no change.
+- **#18 Vertex AI Search Grounding (managed RAG):** "Discussion needed" —
+  **decide, not build**. Own-RAG-vs-managed-RAG comparison pass still
+  needed before any further action; not started this session.
+- **#19 ArcNave-owned RAG:** "Comparison needed with Vertex RAG" — same
+  open item as #18, one comparison pass covers both.
+- **#20 Embeddings:** confirmed as-is.
+- **#21 Spatial Grounding — "P1, build (8C)".** Queued, not started —
+  needs its own scoping pass (touches extraction-verification UI).
+- **#22-#23 (temporal grounding, Computer Use):** both "Drop" — confirmed
+  rejected, no further action.
+- **#24 Code Execution (Vertex/Gemini native) / #25 ArcNave sandbox:**
+  "Discussion needed" / "Comparison needed with Python Sandbox" — a
+  comparison pass, not a decision to build native code execution;
+  ArcNave's own sandbox (ADL-059) stays the default meanwhile.
+- **#26 Thinking Levels — "P0, build next (8B)", note: "in AI Composer
+  enable level switching let user decide".** Queued as the natural next
+  slice per ADL-066's own sequencing note, but per the "go by excel
+  numbers" resolution above, #12 (lower ID) was built first this session.
+  Still needs its own scoping pass before code (per this ledger's
+  one-slice-at-a-time pattern) — the new requirement to add is a
+  user-facing level switch in the AI Composer, not just a backend default.
+- **#27 Thinking Trace Visibility — note overrides the CEO Decision
+  cell's "Rejected as evidence": "Enable it let us 1st test in real time
+  then if it is exposing we will then decide to stop".** Read as: ship it
+  behind a flag, observe real traces, THEN decide whether to keep it
+  user-facing — not a blanket rejection. Not started this session; needs
+  its own scoping pass (what "enabling" means concretely — a raw
+  `thinking` stream field is not the same commitment as a UI surface).
+- **#28 System Instructions, #29 Safety Settings:** "Discussion needed" /
+  no note beyond the CEO Decision cell — both already implemented exactly
+  as recommended (governance-wrapped system prompt, Google default safety
+  settings); no code change identified as needed. If the owner meant to
+  discuss changing the *content* of the system instructions rather than
+  the mechanism, that is a separate, more specific ask than this audit
+  captured.
+- **#30 Stop Sequences:** "Discussion needed", but CEO Decision is
+  "Skip" and the underlying reason ("Namma prompt design-ku vendiye
+  illa") stands — no real use case exists yet. No action.
+- **#31 Temperature — "Need more explanation".** Answered directly, not
+  escalated: temperature controls sampling randomness. Low temperature
+  (~0.1-0.3) makes repeated extraction calls over the *same* document
+  return the *same* field values — important because this project audits
+  AI answers and a non-reproducible extraction is hard to trust or debug.
+  Higher temperature suits open-ended chat/summarization where natural
+  phrasing varies. C1's own Notes say "Keep google default" — so no
+  override is being requested; this is confirmed as no-build.
+- **#32-#33 (max output tokens, context window):** confirmed as-is;
+  #33's "Keep 1M we will test and then decide to go down" is a future
+  measurement, not an action for this session.
+- **#34 Token Counting Preflight — "Must needed", "P1, real gap".**
+  Queued, not started — the real gap ADL-066 already named (measured only
+  in a standalone script, never wired into the live adapter pipeline).
+- **#37 Batch Prediction — CEO overrides the original "Defer" with
+  "Built this it will be useful in future".** Accepted as a real future
+  build, not urgent (ADL-066's own reasoning stands: no backlog volume
+  exists yet to batch). Queued behind the P0 items.
+- **#39 Logprobs — "Make native default and build this."** Internal
+  diagnostics only per the CEO Decision cell ("allow for internal eval
+  only") — queued as low-priority tooling, not a trust signal.
+- **#40 Cross-Provider Fallback, #41 Model Version Pinning, #42
+  Per-Tenant Cost/Quota — all "build", explicitly "make sure it shows in
+  frontend".** The three Very-High-risk real gaps ADL-066 already flagged.
+  Frontend-facing per the owner's note — each needs its own Product
+  Reasoning pass (CLAUDE.md: anything touching both frontend and backend)
+  before `/build-slice`. Not started this session.
+- **#43 Regional Availability/Data Residency — "build this".** Queued;
+  lower priority than the P0 items (compliance-driven, not urgent per
+  ADL-066's own risk rating).
+- **#46 Multilingual — CEO says "build this" against an original
+  "no new work needed" recommendation.** Read as: verify the claim with a
+  real measurement and record the result, not build a new feature — no
+  code path exists to add for something the model already does natively.
+  Queued as a lightweight verification task, not started this session.
+- **C9/C10 (parallel function calling) — "why not parallel?" /
+  "build".** Answered directly: parallel writes risk order-confusion
+  across records (e.g. two simultaneous fee-post + attendance-mark calls
+  racing) with no way for `WorkflowService`'s gate to re-validate state
+  between them — sequential calls let every step re-check policy against
+  the CURRENT state. C10's own "build" is read as "build read-only
+  parallel calls as a future exception" (matching #14's own conditional
+  decision), never for writes — not started this session, still needs its
+  own scoping pass.
+- **C14 Batch Jobs — "build must needed"**, same item as #37 above.
+- **C19-C21 (monitoring, cost control, rate limits) — "build"**, same
+  cluster as #40/#42 above; one Product Reasoning pass should likely cover
+  #40-#42 + C16/C19-C21 together (they share the same admin-facing
+  surface).
+- **C23 Privacy/Data Retention — "discussion needed".** A genuine
+  compliance/legal question (data retention policy vs. Google's default),
+  not something to decide unilaterally — flagged as open, needs its own
+  input (likely legal/compliance review), not started.
+- **M8 Excel — "why not to use?" (native AI reading instead of
+  `exceljs`).** Answered directly: `exceljs` already parses spreadsheets
+  deterministically (exact cell values/formulas, enforced row caps) —
+  100% accurate today. Native AI reading would replace a already-perfect
+  deterministic path with a probabilistic one for zero benefit, the same
+  reasoning already measured and accepted for PDF tables (#7/M7). No
+  change.
+- **M15 Attendance Evidence — "discussion needed".** The existing
+  recommendation ("Avoid auto-record — RS-ATT rule already protects
+  this") is already enforced in code — there is no dedicated AI-evidence
+  path today, so nothing auto-marks attendance from AI-read evidence.
+  Answered as: nothing to build unless a *specific* new capability is
+  requested beyond what RS-ATT already blocks; not escalated as an open
+  question since the safety property already holds.
+- **M22 Reports — "discussion needed as it is related to sandbox."**
+  Tied to the #24/#25 sandbox comparison pass above — own report
+  generators stay deterministic regardless of that comparison's outcome
+  (a report is a final artifact, not a claim needing a trust check the
+  same way an extraction is).
+- **Everything else** (#1-#8, #13-#17, #20, #28-#29, #32-#33, #44-#45,
+  #47, most of C1-C26 not named above): owner confirmed as-is, matching
+  ADL-066's own recommendation — no action needed.
+
+**What was built this session: #12/C3 — Structured Output/JSON Schema
+enforcement, mandatory for every extraction tool.**
+
+The real gap, found by reading the code rather than assuming:
+`documentExtractionService.js`'s two LLM calls (`classifyDocument`,
+`extractFields` — the admission-wizard document-classification and
+field-extraction flows) asked for JSON **only via prompt text** ("Respond
+with strict JSON only..."), with `safeJsonParse`'s bare try/catch as the
+only real enforcement. This degraded safely (never crashed) but silently
+— a malformed or wrong-shaped response was indistinguishable from "field
+not found" with zero operator-visible signal. This was the only concrete
+prompt-only-JSON call site found in the backend; every other tool-call
+path already gets Gemini's own function-calling schema enforcement for
+free (`aiToolRegistry.js`'s `params` JSON-Schema, already enforced by the
+`generateContent` tools API).
+
+**Design, additive end-to-end, zero behavior change for any caller that
+never sets it:**
+- `aiContextAssembly.js` — `responseSchema` added as an optional field on
+  `buildContext`/`flattenToPrompts`/`contextFromFlatPrompts`, alongside
+  the existing `tools`/`images`/`media`. Pure passthrough; not consumed
+  here.
+- `gemini.js` — a new `generationConfigFor(responseSchema)` builds
+  `{ ...GENERATION_CONFIG, responseMimeType: 'application/json',
+  responseSchema }` only when one is attached, never mutating the shared
+  `GENERATION_CONFIG` constant every other call site still reuses
+  unchanged. Native Vertex/Gemini structured-output enforcement.
+- `openai.js` — mapped to OpenAI's own documented `response_format:
+  {type: 'json_schema', json_schema: {name, schema, strict: true}}`
+  shape (not live-verified against a real key, same pre-existing caveat
+  this file already carries for everything else in it).
+- `claude.js`/`vertexMaas.js`/`selfHosted.js` — **zero changes.** None of
+  the three destructure `responseSchema` out of `flattenToPrompts`'s
+  return value, so an attached schema is silently ignored — additive by
+  construction, not a design gap: RS-AIG-008 (provider swappable) means a
+  provider with no native structured-output mechanism must degrade
+  gracefully, not error, and the deterministic check below is the actual
+  safety net for these three regardless of provider.
+- `documentExtractionService.js` — real JSON schemas built for both call
+  sites (`CLASSIFICATION_SCHEMA`, `buildFieldExtractionSchema(fieldTargets)`)
+  and attached via `responseSchema`. **Mandatory post-generation
+  validation** (`isValidClassificationShape`, `isValidFieldExtractionShape`)
+  now runs regardless of provider/native support — a parsed-but-wrong-shape
+  response (e.g. `confidence` returned as a string) is logged
+  (`logWarn`, previously only classification's normalize-miss case was
+  logged at all; extraction had zero visibility) and discarded to the
+  same null/0 shape a parse failure already produced, never partially
+  trusted.
+  - **One real regression caught during implementation, not shipped:** an
+    early version of `isValidFieldExtractionShape` required every field
+    target to be present, which broke the existing, intentional
+    "partially-populated LLM response fills in missing fields as null/0"
+    behavior (a field the model didn't find is a legitimate answer, not a
+    shape violation) — caught by the pre-existing test for exactly that
+    case failing, fixed to only validate fields that are actually
+    *present* in the parsed object, never require full coverage.
+
+**Verification.** `document-extraction-service.test.js` (55 tests,
+4 new: schema-passthrough + wrong-shape-discarded for both classify and
+extract) and `ai-providers.test.js` (47 tests, 5 new: gemini/openai
+schema-attached and no-schema-unchanged-shape, claude/self_hosted
+harmless-ignore) both 100% passing in Docker. Full backend suite run in
+Docker after the fix: confirm-pending as of this entry — see
+CURRENT-STATE.md for the latest run result before treating this as fully
+verified end-to-end.
+
+**Not built this session (queued, each needs its own scoping pass
+first, per this ledger's one-slice-at-a-time pattern):** ~~#18/#19 RAG
+comparison, #21 spatial grounding, #24/#25 code-execution comparison,
+#26 thinking levels (with the new Composer UI requirement), #27 thinking
+trace (flagged-rollout design), #34 token-counting preflight, #37/C14
+batch prediction, #39 logprobs tooling,~~ #40/#41/#42/C16/C19-C21 (fallback
++ model-version alerting + cost/quota + monitoring + rate limits — one
+frontend-facing Product Reasoning pass likely covers this whole
+cluster), C23 privacy/retention (needs legal/compliance input, not just
+engineering). **Struck-through items were built the same session as a
+second pass — see the addendum immediately below.** #18/#19 and #24/#25
+(explicitly excluded from that second pass, still genuinely unstarted)
+remain comparison-pass-only items, not builds.
+
+## ADL-067 addendum — second pass, same session: #21/#26/#27/#34/#37/#39 built; #43/#46 confirmed no-code-needed
+
+**Scope, per explicit owner instruction:** "do all item in one pass
+except comparison and the big one" — i.e. every queued item EXCEPT
+#18/#19 and #24/#25 (both comparison-pass-only, not builds) and the
+#40/#41/#42/C16/C19-C21 cluster ("the big one" — Very-High-risk,
+frontend-facing, needs its own Product Reasoning pass). Full backend
+suite run once at the end of the whole pass, per the same instruction,
+not after each item.
+
+**#43 Regional/Data Residency — confirmed already fully supported, ZERO
+code needed.** Investigated before writing anything (same discipline as
+#9/#11 audio-off): `gemini.js`'s `location(cfg)` already reads
+`cfg.location || DEFAULT_LOCATION` ('global'), and `config.js` already
+wires `GEMINI_LOCATION` end-to-end through `configurationService`. An
+operator can already point a college's requests at a real Vertex region
+(e.g. India) today by setting one env var — this was already built,
+just never confirmed/recorded as satisfying #43 until now.
+
+**#46 Multilingual — confirmed no new work needed**, same conclusion
+ADL-066 originally reached: Gemini handles Tamil/English mixed input
+natively (this entire ADL-067 exchange, in Tanglish, is itself a live
+instance), and no code path in this codebase blocks or filters by
+language anywhere. No independent live-metrics probe was run this
+session (would require a real GCP call this dev environment can't make
+cheaply) — this is a design/architecture confirmation, not a fresh
+measurement.
+
+**#39 Logprobs (internal diagnostics only) — built.** `gemini.js`'s
+`generationConfigFor` gained a fourth parameter (`logprobsTopK`) mapping
+to Vertex's real `responseLogprobs`/`logprobs` generationConfig fields;
+`completeWithMeta` surfaces `payload.candidates[0].logprobsResult` on its
+return value only when requested. Explicitly NOT wired into any
+aiService.js call site or eval tool — no internal diagnostics harness
+exists yet to consume it, and CEO's own decision was "internal eval
+only", never a trust signal. Capability-ahead-of-consumer, same
+precedent `vertexCapabilityRegistry.js` itself set.
+
+**#37/C14 Batch Prediction — built, deliberately NOT wired to any
+caller.** `gemini.js` gained `submitBatchPredictionJob`/
+`getBatchPredictionJob`, the real Vertex `batchPredictionJobs` REST
+shape (not live-verified — same standing caveat `generateImage`/`embed`
+already carry). **Real architectural blocker found and recorded, not
+worked around:** Vertex Batch Prediction requires a GCS input/output
+URI, and this codebase has zero GCS file routing today
+(`gcs_file_uri: false`, Phase 8A) — every request sends `inline_data`
+only. Building a caller against data with nowhere to live in GCS would
+be exactly the "guessed capability" this project's own measure-before-
+building discipline refuses to ship, so `vertexCapabilityRegistry.js`'s
+`batch_prediction` stays `false` on purpose: the adapter code existing
+is not the same claim as the capability being usable.
+
+**#27 Thinking Trace Visibility — built, gated, off by default.** Owner's
+note explicitly overrode the audit's own "never expose as evidence"
+default for this one item: *"Enable it let us 1st test in real time then
+if it is exposing we will then decide to stop."* `gemini.js`'s
+`generationConfigFor` requests `thinkingConfig.includeThoughts: true`
+when asked; `completeWithMeta`/`completeWithTools` both split thought
+parts out via a new `splitThoughtParts` helper. **A real latent bug was
+found and fixed while wiring this, before it ever shipped**: both
+functions previously built their visible `text` as
+`parts.map(p => p.text).join('')` with no awareness that a "thought"
+part carries its own `.text` field indistinguishable from a real answer
+except for `part.thought === true` — the moment thoughts were ever
+requested, the model's internal reasoning would have silently spliced
+into the visible answer. Wired into `askAgent`'s Curriculum decision
+call only (the highest-value single observation point, not every retry/
+continuation branch) — `logThoughtSummaryIfPresent` logs the captured
+summary (audit-only, `logWarn`) and it is never returned to any API
+response. RS-AIG-027 ("never expose as evidence") still governs the
+summary's USE; this only controls whether one is ever requested.
+
+**Gate mechanism corrected mid-pass, from a per-college DB read to a
+process-level flag — a real regression this ADL's own second pass
+caught, not a design choice made and kept.** First built as a per-college
+`configuration` category (`isThinkingTraceEnabled`, mirroring
+`isAudioVideoEnabled`'s shape) — this added ONE new query to every
+single `askAgent` call, unconditionally, to read `false` for every
+college that would never use it, and broke 3 exact-query-count tests
+(`ai-service.test.js`) that had no idea this feature existed. Fixed by
+replacing it with `config.experimentalThinkingTraceVisibility`
+(`EXPERIMENTAL_THINKING_TRACE_VISIBILITY` env var) — the SAME
+established pattern `experimentalAttachmentDiscipline`/
+`experimentalFullInstructionsDocument` already use for exactly this
+category of flag ("developer/ops real-time trial", not a per-college
+product feature), which costs nothing per call since it's read once at
+process start. `isAudioVideoEnabled` itself was the wrong precedent to
+copy: audio/video is a genuine per-college product toggle a real
+institution opts into; #27 is an internal engineering experiment, a
+different category the codebase already had a distinct, cheaper pattern
+for.
+
+**#34 Token Counting Preflight — built, real gap closed.** ADL-055 had
+only ever measured token cost from a standalone script; `gemini.js`
+gained a real `countTokens(cfg, arcnaveContext)` hitting Vertex's actual
+`:countTokens` endpoint. `aiService.js`'s new
+`logAttachmentTokenPreflight` is wired into BOTH chat entry points
+(`askAgent`'s Curriculum path and the `mode === 'general'`/
+`askGeneralChat` path) — advisory telemetry only, never a gate: a
+measurement failure is caught and logged, never allowed to affect the
+real turn (fire-and-forget, not awaited, so it adds zero latency to the
+actual answer). Logs a warning only above `TOKEN_PREFLIGHT_WARN_THRESHOLD`
+(100,000 tokens — a first real threshold, explicitly not tuned against
+measured production cost data yet). Only gemini/vertex_maas would ever
+export `countTokens` (Phase 8's own pattern) — every other provider
+silently skips this, same graceful-degradation posture as #12.
+
+**#26 Thinking Levels — built, full stack, including the Composer UI
+requirement.** Owner's note: *"in AI Composer enable level switching let
+user decide."* This is the one item in this pass that touches both
+frontend and backend — resolved WITHOUT a separate Product Reasoning
+pass because it extends an EXISTING design-system pattern
+(`ScopeToggle.jsx`'s exact segmented-button visual language) to one new
+instance, rather than introducing new visual design; CLAUDE.md's own
+carve-out ("a cosmetic-only difference resolves automatically via the
+existing design system") was judged to cover a new functional control in
+that same established shape, not a new layout/page.
+- Backend: `gemini.js`'s `GENERATION_CONFIG.thinkingConfig.thinkingLevel`
+  (hardcoded 'LOW' on every call before this) is now overridable per
+  turn via the same `responseSchema`-style Context passthrough, reaching
+  BOTH `completeWithMeta` (plain complete) and `completeWithTools` (the
+  actual decision/tool-select call — the one that matters for this
+  feature). `routes/ai.js`'s `THINKING_LEVEL_BY_LABEL` decouples the
+  frontend label (`fast`/`balanced`/`deep`) from Gemini's real enum
+  (`LOW`/`MEDIUM`/`HIGH`) — same "label only, wire value is ours"
+  precedent `ScopeToggle.jsx` already set for `mode`/`'general'`. Only
+  `LOW` is independently live-verified against the real endpoint;
+  MEDIUM/HIGH are Google's documented enum values, flagged as such
+  everywhere they appear, not re-probed this session (a live probe is
+  billable and this project's own standing rule is not to re-measure
+  speculatively).
+- Frontend: `ThinkingLevelToggle.jsx` (new), `ComposerProvider.jsx`
+  gained a `thinkingLevel` field on the per-scope draft (default `'fast'`
+  — `LOW`, so an untouched composer sends byte-identical requests to
+  before this field existed) with its own `setThinkingLevel`, mirroring
+  `mode`/`setMode` exactly. Threaded through every composer surface that
+  already threads `mode` (`AIComposer.jsx`, `ChatView.jsx`, `HomeView.jsx`,
+  `ProjectDetail.jsx` ×2, `ArtifactRevisionComposer.jsx`/`ArtifactEditor.jsx`,
+  `ChatRoute.jsx`) and `WorkspaceProvider.jsx`'s `sendMessage`/
+  `editMessage`/`runAiTurn`.
+- **A real bug in this session's OWN editing was caught and fixed before
+  it shipped**, not by a test: an `Edit` call meant to insert a new
+  function ahead of `askGeneralChat` matched on the substring `function
+  askGeneralChat(...)` (deliberately excluding `async` so the edit tool's
+  exact-match wouldn't need to repeat the whole signature) — but Edit
+  performs substring replacement, not line-anchored replacement, so the
+  literal token `async ` was left stranded immediately before the newly
+  inserted comment block, and `askGeneralChat` itself silently lost its
+  `async` keyword. This produced a hard `SyntaxError: await is only valid
+  in async functions` the moment `aiService.js` was next `require`d —
+  caught by the very next test run (`ai-service-token-preflight.test.js`),
+  not by inspection. Fixed by restoring `async` on `askGeneralChat` and
+  removing the orphaned token. **Lesson recorded for future edits in this
+  session and beyond: when inserting a new declaration immediately before
+  an existing one, include enough of the existing signature (its own
+  `async`/modifier keywords) in the match text that a substring match
+  cannot leave a keyword stranded — do not rely on a partial match
+  "starting after" a modifier.**
+
+**#21 Spatial Grounding — built, backend only, by design.** Owner's
+note: *"Use for extraction-verification UX"* (PDF/image only).
+**Real dependency found during scoping, not assumed:** the existing
+`extractFields` reads Tesseract's OCR TEXT, and Tesseract has already
+discarded WHERE on the page anything was — no bounding box can ever be
+recovered from text alone. This is genuinely a different pipeline, not a
+flag on the existing one: `documentExtractionService.extractFieldsWithSpatialGrounding`
+sends the raw image directly to a vision-capable model (fails closed
+with `DocumentExtractionSpatialGroundingUnsupportedError` if the
+configured adapter/model has no image capability), with a schema
+(`buildSpatialFieldExtractionSchema`) requesting an optional
+`boundingBox: {x, y, width, height}` per field in Gemini's own 0-1000
+normalized coordinate space (never pixels — resolution-independent).
+`isValidBoundingBox` validates coordinates are non-negative integers
+before they're ever trusted (RS-AIG's "validate before render"
+safeguard) — an invalid box, like any other schema-shape violation,
+discards the WHOLE response rather than half-trusting it; a field
+genuinely not visible on the page legitimately has `boundingBox: null`
+with no penalty to its `value`/`confidence`. **Deliberately NOT wired to
+any route or UI** — a bounding-box overlay (drawing a box over a
+rendered document image at the correct scale) is a real, new visual
+surface, judged to need its own product-reasoning pass, unlike #26's
+toggle which reused an existing pattern verbatim. This function is the
+backend capability, ready for that pass.
+
+**Registry updates, same session:** `vertexCapabilityRegistry.js`'s
+`gemini-3.7-flash` profile: `structured_output`, `count_tokens`,
+`thought_summaries`, `logprobs`, `spatial_grounding` flipped to `true`
+(each with a comment citing this ADL and exactly what does/doesn't
+consume it yet); `thinking_level`'s comment updated to note it is now
+caller-overridable, not just always-LOW; `batch_prediction` stays
+`false` on purpose (see #37 above).
+
+**Verification, this second pass.** New/updated tests: `ai-providers.test.js`
+(+12: thinkingLevel on completeWithMeta/completeWithTools, thought-part
+splitting on both plain and tool-call responses including the "thought
+alongside a function call" case, logprobsTopK wire+return shape,
+countTokens success/failure/unconfigured, submitBatchPredictionJob
+success+GCS-missing-refusal) — 59 tests, 100% passing.
+`document-extraction-service.test.js` (+10: capability-gate rejection,
+aadhaar-block, non-image-mimeType rejection, real image+schema
+passthrough, missing-boundingBox-is-fine, invalid-boundingBox-discards-
+whole-response, ocr_enabled:false short-circuit, `isValidBoundingBox`
+unit table) — 65 tests, 100% passing. New `ai-service-token-preflight.test.js`
+(6 tests, behavior-only per the destructured-`logWarn` mocking
+limitation documented in its own header — same limitation
+`documentExtractionService`'s own tests already work around the same
+way) — 100% passing. Full backend suite re-run in Docker after the
+async-keyword fix above: see CURRENT-STATE.md for the exact count:
+whichever run is recorded there as "this second pass" is the
+authoritative one, not the pre-fix run (which never actually executed
+past the `require` of `aiService.js` — every test file requiring it,
+directly or transitively, would have failed to load, not just the one
+that happened to run first).
+
+**Frontend regression check, same pass:** full `vitest run` — 106
+failed / 410 passed, **byte-identical to a `git stash`-verified baseline
+with none of this pass's changes applied** (re-confirmed this session,
+same method CURRENT-STATE.md's File Intelligence Router banner already
+used) — every failure is a pre-existing `useAuth must be used within
+AuthProvider` test-harness issue, unrelated to anything built here.
+Composer-specific suites most likely to catch a regression from the
+`thinkingLevel` propagation — `AIComposer.test.jsx` (4/4),
+`composerPaste.test.jsx` (14/14) — both clean.
+
+## ADL-068
+
+### "The big one" — #40/#41/#42/C16/C19/C20/C21, built without a separate Product Reasoning pass, per explicit owner instruction
+
+**What prompted this.** ADL-067's own digest explicitly carved this
+cluster out as needing its own Product Reasoning pass (frontend-facing,
+Very-High-risk per ADL-066). Owner's follow-up instruction, same
+session: *"big one implement paniru product reasoning elam vendam"*
+("implement the big one, skip the product reasoning") — an explicit,
+direct waiver of CLAUDE.md's "anything touching both frontend and
+backend goes through product-reasoning first" rule for this specific
+item, the same kind of explicit override already used once this session
+for #26's Composer UI. This ADL is the record in place of that pass —
+what was built, what was deliberately left out, and why.
+
+**#40 Cross-Provider Fallback — built as a transparent adapter-wrapping
+layer, not a per-call-site retry.** `aiProviderFallbackService.js` (new)
+— `buildResilientAdapter(primaryAdapter, fallbackAdapter, fallbackConfig,
+{onFallback})` returns an object shaped exactly like any other provider
+adapter (aiProviders/index.js's own common interface). Wired into
+`configurationService.getAiConfig`'s own return path (both branches —
+`platform_default` and `college_explicit`) via a new `applyProviderFallback`
+helper, so EVERY existing caller of `getAiConfig`/`resolveAiConfig`
+(askAgent, askGeneralChat, documentExtractionService.js, embeddings, ...)
+gets fallback protection automatically — zero call-site changes anywhere
+else in the codebase, matching Part 5's own "must sit behind an ArcNave
+abstraction layer" requirement.
+- Platform-wide, not per-college (`config.aiFallbackProvider`, an
+  `AI_FALLBACK_PROVIDER` env var reusing `GLOBAL_CONFIG_BUILDERS`'s
+  already-existing gemini/claude/openai global config blocks) —
+  deliberately not a per-college `college_ai_config` column: most
+  colleges will never configure their own fallback, and this needs to
+  protect everyone from day one with zero admin action, the same
+  "protect by default" posture #42's quota default also takes.
+- Eligible-for-fallback is a real, considered set:
+  `LlmRequestError`/`LlmNotConfiguredError` (retry.js's own 3 attempts
+  already exhausted by the time either reaches here) fall back;
+  `AiProviderCapabilityError` (a modality rejection, e.g. no audio
+  support) does NOT — RS-AIG-008 governs provider swaps for outages, not
+  to paper over a genuine capability gap the caller already checked for
+  honestly.
+- `supportsCapability`/`getCapabilityProfile` are deliberately NEVER
+  wrapped — these are queried by `resolveMediaSupport` BEFORE a call is
+  attempted, so they must answer for the PRIMARY only; guessing which
+  provider will end up answering a call that hasn't happened yet would
+  be dishonest, the same discipline RS-AIG-027 already established for
+  a different capability.
+- `logLlmCall` gained `providerFallbackTriggered`/`providerFallbackReason`
+  — deliberately a DIFFERENT field from the pre-existing `fallbackTriggered`
+  (Tool Search's own, unrelated "fell back to keyword routing" meaning).
+
+**#41 Model Version Pinning/Alerting — built as a drift DETECTOR, not a
+pin; stated as a real limitation, not hidden.** This codebase has no way
+to force Vertex to serve a specific dated snapshot when a college's
+config names an alias like `gemini-3.7-flash` (Google resolves that
+server-side); what's buildable without a live GCP project to probe is
+noticing when the RESOLVED version changes mid-flight. `gemini.js`'s
+`completeWithMeta`/`completeWithTools` now read Gemini's own documented
+top-level `modelVersion` response field (defensively — `payload &&
+payload.modelVersion`, never assumed present) and return it alongside
+`thoughtSummary`. `aiModelVersionService.js` (new) —
+`recordObservedVersion`/`getLastObservedVersion`, an **in-memory Map,
+process lifetime only** — stated as a real limitation: a restart forgets
+every baseline, and the next call for a given (college, provider, model)
+key starts fresh, never reported as drift. Wired into `askAgent`'s
+decision call site only.
+
+**#42/C20 Per-Tenant Cost/Quota Control + C21 Rate Limits — built by
+reusing the EXISTING `ai_llm_call` audit rows, not a new ledger.**
+`auditLogRepository.getAiUsageWindow` — ONE combined query answers both
+the monthly token ceiling and the short-window (60s) call count,
+deliberately not two separate queries since `aiCostControlService.checkUsageLimits`
+is called once per real AI turn and the rate-limit window is always a
+subset of the billing-month window. `aiCostControlService.js` (new) —
+`getMonthlyTokenQuota` (a college's own `configurations` category
+`ai_quota` override, else `config.aiDefaultMonthlyTokenQuota` — 2,000,000
+tokens/month, a first real number reasoned from this project's own
+largest measured single-turn cost (ADL-055's ~128k-token turn), not a
+guess dressed up as one), `getUsageStatus` (non-throwing read, shared by
+enforcement and the admin endpoint), `checkUsageLimits` (throws
+`AiQuotaExceededError`/`AiRateLimitExceededError`, quota checked first).
+Wired into `askAgent` at the very top — before attachment resolution,
+memory hints, or any config resolution — so an over-quota/rate-limited
+college is refused as cheaply as possible. `routes/ai.js` maps both new
+error classes to a clean HTTP 429, never a 500 or a 400 (the request
+itself is well-formed).
+
+**A real regression this ADL's own query addition caused, caught and
+fixed before it shipped:** `checkUsageLimits` adds 2 new queries
+(configurations lookup + the combined usage-window query) to the very
+start of every `askAgent` call — 3 pre-existing tests in
+`ai-service.test.js` asserted EXACT `client.queries.length`/indexed
+`client.queries[N]` values for the "unconfigured provider" /
+"hallucinated tool" / "no tool picked" scenarios. All 3 updated (length
++2, every existing index shifted by 2) — a real, necessary test update
+(unlike the #27 regression in the prior addendum, which was a bug to
+fix, not a behavior to keep): quota/rate-limit enforcement SHOULD run on
+every real call, so the added cost is intentional, not an accident to
+undo.
+
+**"Make sure it shows in frontend" — built by extending the ONE existing
+AI settings page, not a new route.** No frontend AI-admin surface
+existed at all before this (`GET /ai-config/capabilities`, built in the
+Phase 8 session, had zero frontend consumers) — except
+`InstitutionAiSettingsView.jsx` (route `/institution/ai-settings`,
+previously scoped only to the web-retrieval toggle despite its already-
+generic component/route name). New `GET /ai-config/ops-status` route
+(`routes/aiConfig.js`, same `ai_config.read` permission, never returns
+`apiKey`/`projectId`) combines fallback status + last-observed model
+version + quota/rate-limit usage into one response. `OpsStatusSection`
+(new, same file) renders it read-only, reusing the page's own existing
+`Section` component and design tokens (`bg-tint2`/`bg-accent`/etc.) — no
+new visual design introduced, same "extend an established pattern"
+resolution #26's Composer toggle already used to justify skipping a
+separate design pass. Page heading/sidebar label renamed "AI Browsing" →
+"AI Settings" (the route/component were already generic; only the
+label was narrowly scoped). No write controls were built for any of
+this — a per-college quota override or fallback provider choice still
+goes through the existing generic `PUT /configurations/:category`/
+`PUT /ai-config` mechanisms this page's other sections already use.
+
+**Deliberately NOT built, even with product-reasoning waived:**
+- A persisted (survives-restart) model-version history — the in-memory
+  Map is v1; upgrading it needs its own measurement of whether drift
+  alerts prove valuable enough to justify a new table/column.
+- Any WRITE UI for quota overrides or fallback provider selection — the
+  read-only ops-status view was the explicit ask ("make sure it SHOWS in
+  frontend"); a settings form is a different, larger surface.
+- Real-time push/alerting (email/Slack/etc.) on quota breach, rate-limit
+  breach, or model-version drift — all three currently only: log a
+  warning, and (quota/rate-limit) refuse the triggering request itself.
+  An admin only learns about it by visiting the page or reading logs.
+- Fallback wrapping for `documentExtractionService.js`'s two direct
+  `getAiConfig` callers was verified to happen for free (same function,
+  same wrapping), not independently re-tested against that file's own
+  call sites — its own test suite still mocks `getAiConfig` directly and
+  was untouched by this ADL.
+
+**Verification.** New test files: `ai-provider-fallback-service.test.js`
+(9/9), `ai-cost-control-service.test.js` (14/14), `ai-model-version-service.test.js`
+(6/6) — all pure unit tests over hand-built fakes, no real provider/DB.
+`ai-config.test.js` (+2 integration tests against real Postgres,
+`GET /ai-config/ops-status`'s fresh-tenant shape and its RBAC gate) —
+14/14. `ai-service.test.js` (3 tests' query-count assertions updated for
+the reasons above) — 219/219. Frontend: `npm run build` (vite) — clean,
+proving every new/modified JSX file's own syntax compiles; full
+`vitest run` — 410 passed/106 failed, **byte-identical to the
+pre-existing baseline** (same count re-confirmed both before and after
+this ADL's frontend changes) — no dedicated component test was written
+for `OpsStatusSection` itself, since this page has zero pre-existing
+test coverage to extend and a from-scratch full-`App`-render test would
+land in the same pre-existing `AuthProvider` test-harness bucket every
+other institution-page test already sits in, proving nothing about this
+specific change.

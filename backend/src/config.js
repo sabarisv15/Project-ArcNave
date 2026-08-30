@@ -315,6 +315,23 @@ module.exports = {
   // override before assuming the code default changed.
   experimentalFullInstructionsDocument: process.env.EXPERIMENTAL_FULL_INSTRUCTIONS_DOCUMENT === 'true',
 
+  // CEO Vertex/Gemini audit #27 (2026-08-30) — "Enable it let us 1st test
+  // in real time then if it is exposing we will then decide to stop."
+  // A global, process-level flag (not a per-college `configuration` DB
+  // row like audio_video_attachments) precisely because this is a
+  // developer/ops real-time trial, same category as
+  // experimentalAttachmentDiscipline/experimentalFullInstructionsDocument
+  // above — a DB-backed per-college toggle would cost every single
+  // askAgent call an extra query just to read `false` for every college
+  // that will never use it, which a real regression in this exact ADL's
+  // own second pass caught (3 exact-query-count tests broke the moment
+  // this was wired as a DB read instead). Off by default (false) — the
+  // only value this app ships with. When true, aiService.js requests
+  // Gemini's thought-summary parts on the Curriculum decision call and
+  // logs them (audit-only, never returned to any API response —
+  // RS-AIG-027 still bars user-facing exposure).
+  experimentalThinkingTraceVisibility: process.env.EXPERIMENTAL_THINKING_TRACE_VISIBILITY === 'true',
+
   // Which provider a college with no college_ai_config row of its own
   // falls back to (configurationService.getAiConfig). Defaults to
   // 'gemini' — Gemini is this app's global-default chat provider.
@@ -322,6 +339,41 @@ module.exports = {
   // populated is enough to make every college with no per-college
   // override use it instead, with no DB write required.
   defaultAiProvider: process.env.DEFAULT_AI_PROVIDER || 'gemini',
+
+  // CEO Vertex/Gemini audit #40 (2026-08-30) — "urgent, real gap": if the
+  // primary provider is down, every college loses AI, full stop. A
+  // single platform-wide fallback provider (not per-college — most
+  // colleges will never configure one themselves, and this needs to
+  // protect everyone from day one with zero admin action) — must name a
+  // DIFFERENT provider than defaultAiProvider/whatever a college's own
+  // row picks, checked at the point it's used (configurationService.getAiConfig),
+  // never here. `null` (unset) means no fallback exists — the honest,
+  // pre-this-ADL state, not a guessed provider. Its own global config
+  // block (GLOBAL_CONFIG_BUILDERS in configurationService.js) must
+  // already be populated via env vars the same way defaultAiProvider's
+  // own fallback path already requires.
+  aiFallbackProvider: process.env.AI_FALLBACK_PROVIDER || null,
+
+  // CEO Vertex/Gemini audit #42/C20 (2026-08-30) — "urgent, real gap":
+  // per-college cost/quota control, zero today. A single platform-wide
+  // default (tokens/calendar month) — real per-college overrides live in
+  // the `configurations` table (category 'ai_quota'), same mechanism
+  // audio_video_attachments/web_retrieval already use; this is only the
+  // floor every college gets before anyone configures anything. Not
+  // calibrated against real production cost data (no real customer has
+  // run through this system yet) — a first real number, not a guess
+  // dressed up as one: 2,000,000 tokens/month is comfortably above this
+  // project's own largest measured single-turn cost (ADL-055's
+  // ~128k-token turn) while still being a real ceiling, not an
+  // effectively-infinite one.
+  aiDefaultMonthlyTokenQuota: Number(process.env.AI_DEFAULT_MONTHLY_TOKEN_QUOTA) || 2_000_000,
+
+  // CEO Vertex/Gemini audit C21 (2026-08-30) — "prevent one college
+  // blocking others". Per-college, not global — one college hammering
+  // the API must never starve another's requests. 30/minute is generous
+  // headroom above any real interactive chat usage pattern (a human
+  // typing questions) while still bounding a runaway client/script.
+  aiRateLimitPerMinute: Number(process.env.AI_RATE_LIMIT_PER_MINUTE) || 30,
 
   // The embedding provider — deliberately a SEPARATE choice from
   // defaultAiProvider/a college's own chat provider (embeddingService.js's

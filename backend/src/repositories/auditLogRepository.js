@@ -91,4 +91,49 @@ async function findByUser(client, userId, { limit = 50, offset = 0 } = {}) {
   return result.rows;
 }
 
-module.exports = { createAuditLogEntry, findByEntity, findByUser };
+// CEO Vertex/Gemini audit #42/C20/C21 (2026-08-30) — reuses this
+// already-append-only, already-tenant-isolated (RLS) table rather than a
+// new one: every 'ai_llm_call' row's metadata already carries
+// inputTokens/outputTokens (aiService.js's own logLlmCall). ONE combined
+// query answers both the monthly cost ceiling (#42/C20) and the
+// short-window rate limit (C21) — deliberately not two separate
+// queries: this is called once per real AI turn (aiService.js's
+// enforceUsageLimits), and `windowStart` (rate-limit window) is always a
+// subset of `periodStart` (billing month), so a single scan of
+// `created_at >= periodStart` with FILTER clauses for the narrower
+// window costs the same as the wider query alone. COALESCE guards the
+// zero-rows case (a college with no AI usage yet) — SUM() over zero
+// rows is NULL in Postgres, never 0, and returning that raw would make
+// every caller re-derive the same NULL-means-zero rule.
+// (metadata->>'inputTokens')::numeric — JSONB values are stored as
+// whatever JSON.stringify produced (a number, but retrieved through ->>
+// as text) so both fields are cast explicitly, never assumed to already
+// be numeric.
+async function getAiUsageWindow(client, collegeId, { periodStart, windowStart }) {
+  const result = await client.query(
+    `SELECT
+       COALESCE(SUM((metadata->>'inputTokens')::numeric), 0)
+         + COALESCE(SUM((metadata->>'outputTokens')::numeric), 0) AS period_tokens,
+       COUNT(*) AS period_call_count,
+       COUNT(*) FILTER (WHERE created_at >= $3) AS window_call_count
+     FROM audit_log
+     WHERE college_id = $1 AND action = 'ai_llm_call' AND created_at >= $2`,
+    [collegeId, periodStart, windowStart],
+  );
+  // A real Postgres aggregate with no GROUP BY always returns exactly
+  // one row, even over zero matching rows — `rows[0]` defaulting to an
+  // empty object is defensive, not a real production case, but it keeps
+  // this function honest against a test double (or a future caller)
+  // that returns `rows: []` generically without knowing real SQL
+  // aggregate semantics.
+  const row = result.rows[0] || {};
+  return {
+    periodTokens: Number(row.period_tokens) || 0,
+    periodCallCount: Number(row.period_call_count) || 0,
+    windowCallCount: Number(row.window_call_count) || 0,
+  };
+}
+
+module.exports = {
+  createAuditLogEntry, findByEntity, findByUser, getAiUsageWindow,
+};

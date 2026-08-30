@@ -54,7 +54,9 @@ export function ProjectDetail() {
   if (!project) return null;
 
   const send = async () => {
-    const id = await sendMessage({ scope: 'project', convId, projectId, text: composer.text, attachments: composer.attachments, mode: composer.mode });
+    const id = await sendMessage({
+      scope: 'project', convId, projectId, text: composer.text, attachments: composer.attachments, mode: composer.mode, thinkingLevel: composer.thinkingLevel,
+    });
     if (id) composer.reset(); // clears this project conversation's draft only
   };
 
@@ -142,6 +144,8 @@ export function ProjectDetail() {
                 onSend={send}
                 mode={composer.mode}
                 onMode={composer.setMode}
+                thinkingLevel={composer.thinkingLevel}
+                onThinkingLevel={composer.setThinkingLevel}
                 variant="start"
                 placeholder="Ask ArcNave about this project…"
               />
@@ -161,7 +165,7 @@ export function ProjectDetail() {
                   onEdit={
                     convId
                       ? (id, text) => editMessage({
-                        scope: 'project', convId, projectId, messageId: id, text, mode: composer.mode,
+                        scope: 'project', convId, projectId, messageId: id, text, mode: composer.mode, thinkingLevel: composer.thinkingLevel,
                       })
                       : undefined
                   }
@@ -176,6 +180,8 @@ export function ProjectDetail() {
                 onSend={send}
                 mode={composer.mode}
                 onMode={composer.setMode}
+                thinkingLevel={composer.thinkingLevel}
+                onThinkingLevel={composer.setThinkingLevel}
                 variant="chat"
                 placeholder="Ask ArcNave about this project…"
               />

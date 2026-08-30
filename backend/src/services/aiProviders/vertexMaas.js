@@ -40,6 +40,7 @@ const {
   fetchWithTimeout, parseJsonResponse, extractOpenAiCompatibleUsage, buildOpenAiCompatiblePriorTurnMessages,
 } = require('./openAiCompatibleUtils');
 const { flattenToPrompts } = require('../aiContextAssembly');
+const vertexCapabilityRegistry = require('../vertexCapabilityRegistry');
 
 const REQUEST_TIMEOUT_MS = 30000;
 const MAX_TOTAL_LATENCY_MS = 30000;
@@ -98,6 +99,36 @@ function isConfigured(cfg) {
 
 function location(cfg) {
   return cfg.location || DEFAULT_LOCATION;
+}
+
+// Phase 8 — Vertex Capability Layer, same additive wiring as gemini.js's
+// own getCapabilityProfile/supportsCapability. Every MaaS model (Qwen3-
+// Next, MiniMax M2, Kimi K2, GLM, ...) is a third-party vendor model this
+// registry has no curated entry for — a lookup here always returns
+// unsupported-for-everything until/unless one is added, which correctly
+// matches this adapter's own static supportsVision=false/
+// supportsAudioVideo=false rather than contradicting it. cfg.model has no
+// DEFAULT_MODEL fallback (isConfigured() above already requires an
+// explicit cfg.model for this adapter), so an unconfigured cfg here
+// simply produces a null-modelId lookup a caller should not make without
+// isConfigured() first — same discipline every other cfg-consuming
+// function in this file already expects.
+function getCapabilityProfile(cfg = {}) {
+  return vertexCapabilityRegistry.getCapabilityProfile({
+    projectId: cfg.projectId,
+    location: location(cfg),
+    modelId: cfg.model,
+    modelVersion: cfg.modelVersion,
+  });
+}
+
+function supportsCapability(cfg = {}, capability) {
+  return vertexCapabilityRegistry.hasCapability({
+    projectId: cfg.projectId,
+    location: location(cfg),
+    model: cfg.model,
+    modelVersion: cfg.modelVersion,
+  }, capability);
 }
 
 // The one fixed MaaS route — every model shares this same URL, selected
@@ -513,6 +544,8 @@ module.exports = {
   name: 'vertex_maas',
   supportsVision,
   supportsAudioVideo,
+  getCapabilityProfile,
+  supportsCapability,
   isConfigured,
   complete,
   completeWithMeta,

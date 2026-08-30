@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ArcNave Vertex/Gemini Capability Audit — Interactive Checklist</title>
+<style>
+  :root{
+    --bg:#ffffff; --surface1:#f6f5f0; --surface2:#ffffff;
+    --text1:#141413; --text2:#5f5e5a; --textm:#888780;
+    --border:#e4e2d8; --borderstrong:#c9c7ba;
+    --success-bg:#eaf3de; --success-tx:#27500a; --success-bd:#639922;
+    --warning-bg:#faeeda; --warning-tx:#633806; --warning-bd:#ba7517;
+    --danger-bg:#fcebeb; --danger-tx:#791f1f; --danger-bd:#a32d2d;
+    --accent-bg:#e6f1fb; --accent-tx:#0c447c; --accent-bd:#378add;
+    --radius:8px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#141413; --surface1:#1f1e1c; --surface2:#26241f;
+      --text1:#f2f0e8; --text2:#b4b2a9; --textm:#888780;
+      --border:#3a3833; --borderstrong:#544f45;
+      --success-bg:#173404; --success-tx:#97c459; --success-bd:#639922;
+      --warning-bg:#412402; --warning-tx:#ef9f27; --warning-bd:#ba7517;
+      --danger-bg:#501313; --danger-tx:#f09595; --danger-bd:#a32d2d;
+      --accent-bg:#042c53; --accent-tx:#85b7eb; --accent-bd:#378add;
+    }
+  }
+  *{box-sizing:border-box}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--bg); color:var(--text1); margin:0; padding:24px 16px 64px;
+    max-width:760px; margin-left:auto; margin-right:auto; line-height:1.5;
+  }
+  h1{font-size:20px;font-weight:600;margin:0 0 4px}
+  .sub{font-size:13px;color:var(--text2);margin:0 0 20px}
+  .topbar{
+    position:sticky;top:0;background:var(--bg);z-index:5;padding:10px 0;
+    border-bottom:1px solid var(--border);margin-bottom:16px;
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap
+  }
+  .stat{font-size:13px;color:var(--text2)}
+  .stat b{color:var(--text1);font-weight:600}
+  .spacer{flex:1}
+  button{
+    font-size:12px;padding:6px 12px;border-radius:var(--radius);
+    border:1px solid var(--borderstrong);background:var(--surface2);
+    color:var(--text1);cursor:pointer
+  }
+  button:hover{background:var(--surface1)}
+  .sec{font-size:16px;font-weight:600;margin:28px 0 10px}
+  .sec:first-child{margin-top:0}
+  .card{border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--surface2)}
+  .chead{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;background:var(--surface1)}
+  .cid{font-size:12px;color:var(--textm);flex:0 0 auto;min-width:22px}
+  .cname{font-size:14px;font-weight:600;flex:1}
+  .chev{font-size:14px;color:var(--textm);transition:transform .15s}
+  .card.collapsed .chev{transform:rotate(-90deg)}
+  .card.collapsed .cbody{display:none}
+  .cbody{padding:12px}
+  .field{margin-bottom:10px}
+  .flabel{font-size:11px;color:var(--textm);display:block;margin-bottom:2px;text-transform:uppercase;letter-spacing:.02em}
+  .fval{font-size:13px;color:var(--text1)}
+  .actions{display:flex;gap:8px;margin:10px 0}
+  .abtn{display:inline-flex;align-items:center;gap:4px}
+  .abtn.accept.on{background:var(--success-bg);color:var(--success-tx);border-color:var(--success-bd)}
+  .abtn.reject.on{background:var(--danger-bg);color:var(--danger-tx);border-color:var(--danger-bd)}
+  .note{width:100%;min-height:50px;font-size:12px;margin-top:4px;padding:6px 8px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text1);font-family:inherit}
+  .card.dec-accept .chead{border-left:3px solid var(--success-bd)}
+  .card.dec-reject .chead{border-left:3px solid var(--danger-bd)}
+  .tag{font-size:11px;font-weight:600;padding:2px 8px;border-radius:var(--radius);flex:0 0 auto}
+  .tag-keep{background:var(--success-bg);color:var(--success-tx)}
+  .tag-build{background:var(--warning-bg);color:var(--warning-tx)}
+  .tag-avoid{background:var(--danger-bg);color:var(--danger-tx)}
+  .tag-defer{background:var(--surface1);color:var(--textm)}
+  .tag-cond{background:var(--accent-bg);color:var(--accent-tx)}
+  .btnrow{display:flex;gap:8px;margin:24px 0 0;flex-wrap:wrap}
+  .primary{background:var(--success-bg);color:var(--success-tx);border-color:var(--success-bd);padding:10px 18px;font-size:13px}
+  #exportBox{display:none;margin-top:16px;padding:12px;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface1)}
+  #exportBox textarea{width:100%;min-height:200px;font-size:12px;font-family:ui-monospace,monospace;padding:8px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text1)}
+</style>
+</head>
+<body>
+<h1>ArcNave Vertex AI / Gemini capability audit</h1>
+<p class="sub">Interactive checklist — 96 items, full table detail per item. Works offline, saves your progress in this browser.</p>
+<div class="topbar">
+  <span class="stat"><b id="cAcc">0</b> accepted</span>
+  <span class="stat"><b id="cRej">0</b> rejected</span>
+  <span class="stat"><b id="cPen">96</b> pending</span>
+  <span class="spacer"></span>
+  <button id="collapseAll">Collapse all</button>
+  <button id="expandAll">Expand all</button>
+</div>
+<div id="list"></div>
+<div class="btnrow">
+  <button id="exportBtn" class="primary">Export my finalized decisions</button>
+  <button id="resetBtn">Reset all</button>
+</div>
+<div id="exportBox">
+  <textarea id="exportText" readonly></textarea>
+  <div class="btnrow">
+    <button id="copyBtn">Copy to clipboard</button>
+    <button id="downloadTxtBtn">Download as .txt</button>
+  </div>
+</div>
+<script>
+var CAPCOLS=["Simple Tanglish meaning","ArcNave current status","Native support?","Recommended use","CEO decision","Why use","Why avoid / limit","Reliability risk","Required safeguard","Priority"];
+var MMCOLS=["ArcNave has it now?","Current method","Native Gemini support?","Should ArcNave use it?","Safe use case","Unsafe use case","CEO decision"];
+var CCOLS=["What it means in Tanglish","Use / avoid / conditional","Recommended default","Why","Reliability impact","CEO rule"];
+var DATA = [
+["Capability register","cap",CAPCOLS,[
+["1","Text Understanding","Plain text padichu answer sollradhu","Full-a irukku (aiService.js)","Yes","Use now","Use internally","Chat, summarize, classify — core AI velai","—","Low","Prompt safety layer already irukku","P0 (already done)"],
+["2","PDF/Document Native Reading","PDF-a nerudi Gemini padikkardhu (image maadhiri)","Attempted, product decision-padi default illa — pdfplumber (deterministic) than use pannuroam, Gemini count/sum thappu solradhu measure pannirukanga (ADL-058/063)","Yes","Use only as identity/attribution verifier, not for counting","Use behind ArcNave abstraction","Merged-cell attribution correct-a solradhu","Counting-la weak, 400-page doc-la fail aagum","High (silent wrong count)","Deterministic tool cross-check mandatory","P2"],
+["3","Image Understanding","Photo/screenshot-a paathu puriyardhu","Full-a irukku, live-a wire pannirukanga","Yes","Use now","Use internally, human-verify output","ID card, form-la irundhu field extract pannradhukku strong","—","Medium (wrong field extract aagalam)","RS-AIG-012 verification gate already irukku","P0 (already done)"],
+["4","OCR — Tesseract (current, own)","Scan pannina document-la irundhu text edukkardhu (namma own engine)","Real-a build pannirukanga (tesseractOcr.js), admission-wizard-la use aagudhu","N/A (not Gemini)","Keep as default","ArcNave-owned, keep","Free, offline, already tested","Handwriting-la weak","Medium","Confidence-low results-ku escalate pannanum","P1"],
+["5","OCR — Gemini Native Vision (alternate)","Same OCR velai, aana Gemini vision use panni","Missing — namma Tesseract mattum use pannuroam everywhere","Yes","Use only when Tesseract confidence low (handwritten/messy scan)","Integrate as optional escalation tier","Handwritten ID card/form-la Tesseract fail aagum, Gemini better","Cost increase-la every doc-ku Gemini anuppuna","Medium","Escalate only, not default; verify gate stays","P1"],
+["6","Handwritten Form Extraction","Kai-ezhuthu form-a padichu field edukkardhu","Missing/weak — Tesseract handwriting-la kammi","Yes (Gemini vision)","Use Gemini vision, mandatory human verify","Use with mandatory human approval","Admission forms romba handwritten-a varum","Wrong field = wrong student record","High","RS-AIG-012 already mandatory, keep strict","P1"],
+["7","Table/Spreadsheet AI Reading","Table-a AI padichu understand pannradhu","Attempted (native PDF/doc reading), retired for count/sum (ADL-065 — analyze_document_table removed)","Yes","Use only for description, never for count/sum","Replace with ArcNave-owned logic","—","AI count thappu (measured: 2 vs real 23)","Very High","Deterministic tool (documentAggregateService) mandatory for numbers","P0 (already correctly avoided)"],
+["8","Deterministic Table Extraction (own)","pdfplumber/library vachu exact-a table padikkardhu, AI illama","Build pannirukanga, verified 23/23","N/A","Keep, expand","ArcNave-owned, keep","100% accurate-a irukku already","—","Low","—","P0 (already done)"],
+["9","Audio Understanding","Audio file-a AI kettu answer sollradhu","Live-verified (audio/wav)","Yes","Use now","Use internally","Voice note, meeting audio understand panna","Video-kku paralel-a irukku, unverified codecs","Medium","Per-attachment failure = honest degrade, already build pannirukanga","P1"],
+["10","Video Understanding","Video file-a AI paathu understand pannradhu","Adapter-la attempt pannum, codec-wise verify pannala","Yes","Use only when a real product feature needs it","Defer — no feature exists yet","—","ArcNave-la video-content feature-e illa (lecture recording etc.)","Low (no live use)","—","P3"],
+["11","Speech-to-Text/Voice Notes","Pechu-a text-a maatradhu","Already implicit-a varudhu (audio path already irukku)","Yes","Use now, no new work","Use internally","—","—","Low","—","P2"],
+["12","Structured Output/JSON Schema","AI answer-a fixed format-la (JSON) force pannradhu","Missing — namma prompt-la mattum JSON kudu nu kettu vachurukanga, schema enforce pannala","Yes","Use for every extraction tool","Use internally, mandatory","Wrong-format data record aaganum-nu risk kurayum","—","Currently High (no enforcement)","Post-generation validation mandatory","P0 — build next"],
+["13","Function Calling — Single","AI oru tool-a select panni call pannradhu","Production-la irukku, 75+ tools","Yes","Use now","Use internally","Core AI action mechanism","—","Low","Policy Gate already irukku","P0 (already done)"],
+["14","Function Calling — Parallel","Onnukku mel tool same time-la call pannradhu","Missing, deliberate-a venaam nu decide pannirukanga (RS-AIG-018)","Yes","Read-only, no-side-effect calls mattum future-la allow pannalam","Conditional — accept for read-only only, reject for write","Speed-a irukum read-only-ku","Write-order confusion risk-a irukku records-ku","High (if allowed for writes)","Never for L3/write actions","P3"],
+["15","Multi-Step Agent Plan","AI plan panni, 6 steps varaikkum sequential-a tools run pannradhu","Build pannirukanga (bounded plan, RS-AIG-018)","Yes","Use now","Use internally","Complex velai-ku useful","—","Medium (managed by gate)","Every step same Policy Gate re-check aagum","P0 (already done)"],
+["16","Web Search Grounding (public)","Internet-la search panni real info kudukradhu","Already shipped (web_search)","Yes","Use now","Use internally, optional per college","Fresh public info venum sometimes","Hallucination-a irukalam","Medium","Untrusted-data boundary already irukku","P0 (already done)"],
+["17","URL Context Retrieval","Oru specific webpage-a padikkardhu","Already shipped (web_fetch)","Yes","Use now","Use internally","Trusted regulatory sites padikkardhukku","—","Low","Allowlist already irukku","P0 (already done)"],
+["18","Vertex AI Search Grounding (Private Data)","Namma sondha documents-a Google-oda own system-la search pannuradhu","Missing, namma sondha RAG (#19) already irukku, work pannudhu","Yes","Do not adopt yet","Defer — own decision needed, own-RAG vs managed-RAG comparison first","Maintenance kammi aagalam","Tenant isolation verify pannaveila; provider lock-in risk periya","High (architecture risk)","Own comparison pass mandatory before touching","P0 to decide, not to build"],
+["19","ArcNave-owned RAG (search_documents, pgvector)","Namma sondha document search system, database-leye build pannirukom","Real-a work pannudhu, cosine similarity, tenant-isolated (RLS)","N/A","Keep, expand","ArcNave-owned, keep","Already tested, already tenant-safe","—","Low","—","P0 (already done)"],
+["20","Embeddings (text)","Text-a number vector-a maatradhu, search easy aaga","gemini-embedding-001, 1024 dims","Yes","Use now","Use internally","Search, tool-retrieval-ku base","Model maarina re-embed pananum","Medium","Provenance tracking already irukku","P0 (already done)"],
+["21","Spatial Grounding (bounding box/point)","Photo/PDF-la exact spot kaatradhu","Missing","Yes","Use for extraction-verification UX","Use internally, PDF/image only","Human verify pannumbodhu fast-a irukum","Video use-case illai ippo","Low","Coordinates validate pannanum before render","P1 — build (8C)"],
+["22","Temporal Grounding (video/audio timestamp)","Audio/video-la exact time kaatradhu","Missing","Yes","—","Defer","—","ArcNave-la video/meeting-recording feature illa","Low","—","P3"],
+["23","Computer Use (Preview)","AI browser/screen-a nerudi control pannuradhu","Missing","Yes (Preview)","Never","Avoid completely","—","Unstable, no product need, backend-touch risk periya","Very High","RS-AIG-018 already bars this","Rejected"],
+["24","Code Execution — Vertex/Gemini native","Google-oda own Python sandbox-la code run pannuradhu","Missing","Yes","Never","Avoid, replace with own logic","—","Namma sondha sandbox already better (network-isolated)","Medium (redundant, weaker)","—","Rejected"],
+["25","Code Execution — ArcNave-owned sandbox","Namma sondha sandbox, database-ku path illama","Build pannirukanga (ADL-059)","N/A","Keep","ArcNave-owned, keep","Safe-a design pannirukanga already","—","Low","Already credential-less","P0 (already done)"],
+["26","Thinking Levels (low/medium/high)","AI evlo deep-a yosikkanum nu control pannuradhu","Missing — ippo eppodhum same level (LOW)","Yes","Use per-task","Use internally","Simple velai fast-a, complex velai deep-a","—","Low","—","P0 — build next (8B)"],
+["27","Thinking Trace Visibility","AI-oda internal yosippu-a streaming-a kaatradhu","Missing","Yes (optional)","Never expose as proof","Avoid — never user-facing as evidence","—","Chain-of-thought fake-a irukkalam, misleading","High if misused","Governance rule already bars this","Rejected as evidence"],
+["28","System Instructions","AI-oda basic rule/behavior fix pannuradhu","Every call-leyum anuppuroam","Yes","Use now","Use internally","Prompt-injection-a resist pannradhu","—","Low","Safety Layer already wraps","P0 (already done)"],
+["29","Safety Settings","Bad content (violence, hate) filter pannuradhu","Default settings mattum use pannuroam, custom config illa","Yes","Keep default","Use default, revisit only if issue varum","—","—","Low","—","P2"],
+["30","Stop Sequences","Specific word vandha AI-a udane niruthuradhu","Missing","Yes","No real need","Skip","—","Namma prompt design-ku vendiye illa","—","—","P3"],
+["31","Temperature/Sampling","AI-oda creativity level control","Not explicitly set (default use aagudhu)","Yes","Low temperature for extraction tasks","Use internally, keep low for factual tasks","Consistent answer venum campus data-ku","High temp = unpredictable","Medium","—","P2"],
+["32","Max Output Tokens","Ore badhil-la evlo periya answer varum","65,536 verified","Yes","Keep as-is","Use internally","Large table output-ku venum","—","Low","—","P0 (already done)"],
+["33","Context Window Size","Ore prompt-la evlo periya data anuppalam","1M claim irukku, ArcNave-la independently verify pannala","Yes","Confirm, don't over-rely","Use with bounded chunking, verify limit before trusting","—","Full document anuppradhukku helpful","Cost periya aagum periya context-ku","Medium","Preflight token count mandatory (#34)","P2"],
+["34","Token Counting Preflight (countTokens)","Request anuppradhukku munnadi cost check pannradhu","Missing in real pipeline (script-la mattum measure pannirukanga, adapter-la illa)","Yes","Use before every large request","Use internally, mandatory for large attachments","Cost/oversized-request problem munnadiye pidikkalam","—","Low","—","P1 — build (real gap)"],
+["35","Prompt Caching — Implicit","Google automatic-a repeat content-a cache pannum, cost kurayum","Already work aagudhu, telemetry-um irukku","Yes","Keep","Use internally, zero extra work","Free cost saving","—","Low","—","P0 (already done)"],
+["36","Prompt Caching — Explicit","Namma manually idha cache pannu nu solradhu","Missing, already decide pannirukanga venaam nu (ADL-054)","Yes","Not now","Defer","—","ArcNave-la cache-worthy periya content (policy handbook) feature-e illa ippo","—","—","P3"],
+["37","Batch Prediction","Periya amount velai-a ore thadava-la, cheap-a run pannradhu","Missing","Yes","Not now","Defer","—","ArcNave innum launch aagalaye, backlog data illa","—","—","P3"],
+["38","Supervised Fine-Tuning/Distillation","Namma sondha data vachu AI-ku training kudukradhu","Missing","Yes","Never (as general strategy)","Avoid — replace with deterministic/RAG logic","—","Namma already AI predict pannadhu nu decide pannirukanga (RS-AIG-014)","High (trained-model risk, drift)","—","Rejected"],
+["39","Logprobs (confidence score)","Ovvoru vaartha-kkum AI-oda confidence number","Missing","Yes","Internal diagnostics mattum","Avoid as trust signal, allow for internal eval only","—","Namma already deterministic re-verify pannuroam (better)","—","—","P3"],
+["40","Cross-Provider Fallback","Gemini down-na, automatic-a Claude/OpenAI-ku switch aagudhu","Missing — periya gap, BKA-la kelvi-e illai","N/A (ArcNave design)","Build now","ArcNave must own — build fallback layer","Vertex outage-la ella college-um AI illama poidum","—","Very High (single point of failure)","Monitoring + auto-switch + alert","P0 — urgent, real gap"],
+["41","Model Version Pinning/Alerting","Google model silent-a maathina, namakku theriyanumla","Missing","N/A","Build monitoring","ArcNave must own","Google model maathina answer quality change aagalam, theriyama poyidum","—","Medium","Version-change alert mandatory","P1"],
+["42","Per-Tenant Cost/Quota Control","Ovvoru college evlo AI use pannalam nu limit","Missing — periya gap","N/A (ArcNave design)","Build now","ArcNave must own — build now","Real customer vandha, bill kattupadutha vendiyathu mandatory","—","Very High (financial risk)","Per-college quota + budget alert","P0 — urgent, real gap"],
+["43","Regional Availability/Data Residency","Data edhu region-la process aagudhu","global use pannuroam, alternative region verify pannala","Yes","Confirm compliance need","Use internally, verify if compliance requires India-region","—","Indian college data — residency question varalam","Medium (compliance)","Legal/compliance check","P2"],
+["44","Audit Trail/Logging of AI Calls","Ovvoru AI call-um log aaguthaa nu check","ai_llm_call audit already irukku","N/A","Keep, expand for cost","ArcNave-owned, keep","Already strong","—","Low","—","P0 (already done)"],
+["45","Human Approval Workflow (L3 gate)","High-impact action AI pannuna, human confirm pannanum","WorkflowService gate already irukku, no exceptions","N/A","Keep","ArcNave-owned, keep","Core trust mechanism","—","Low","—","P0 (already done)"],
+["46","Multilingual/Translation","Vera language-la kelvi kettalum answer sollradhu","Gemini natively support pannum, ArcNave-la explicit feature-a illa","Yes","Use as-is, no dedicated build","Use internally, no new work needed","Tamil/English mix already handle pannudhu (idhe Tanglish!)","—","Low","—","P2"],
+["47","Vertex Capability Registry (control layer)","Ovvoru model/project/region-ku enna capability irukku nu central-a track pannradhu","Idhe intha session build pannitten","N/A (ArcNave-owned meta-layer)","Keep, expand","ArcNave-owned, keep, expand for #26/#34/#40 above","Ella future decision-um idhoda mele than build aagum","—","Low","—","P0 (already done)"]
+]],
+["Multimodal gap analysis","mm",MMCOLS,[
+["M1","Text","Full","Direct","Yes","Yes","Chat, summarize","—","Use now"],
+["M2","PDFs","Partial","pdfplumber (deterministic) + Tesseract fallback for scans","Yes (attempted, not default)","Only for identity-check, not counting","Attribution verify","Counting/sum","Deterministic stays primary"],
+["M3","Word Documents","Full","mammoth library (deterministic)","Yes (unused)","No — library already correct","Extraction","—","Keep library-based"],
+["M4","Scanned Documents","Partial","Tesseract OCR, capped 30 pages","Yes (alternate)","Add Gemini vision for low-confidence cases","Low-quality scan escalation","Bulk default (cost)","Hybrid: Tesseract default, Gemini escalation"],
+["M5","Images","Full","Native Gemini vision","Yes","Yes","ID/photo field extract","Unverified auto-record","Use now, human-verify"],
+["M6","Handwritten Forms","Weak","Tesseract (weak on handwriting)","Yes (better)","Yes, with mandatory verify","Admission form fields","Auto-publish without check","Use Gemini vision + human gate"],
+["M7","Tables","Partial","Deterministic (pdfplumber/library) — correct choice","Yes (rejected for math)","No for count/sum","Description only","Any arithmetic","Keep deterministic"],
+["M8","Excel/Spreadsheet","Full","exceljs (deterministic), 2000-row cap","Not needed","No","—","—","Keep library-based"],
+["M9","Audio","Full","Native Gemini","Yes","Yes","Voice note understanding","—","Use now"],
+["M10","Voice Notes","Full","Same as audio","Yes","Yes","Staff/student voice message","—","Use now"],
+["M11","Video","Attempted, unmeasured","Native Gemini (untested per-codec)","Yes","Only if a real feature needs it","—","—","Defer, no feature exists"],
+["M12","Screenshots","Full","Native Gemini (as image)","Yes","Yes","Bug report, UI issue","—","Use now"],
+["M13","Campus Circulars","Generic","Generic document upload, category-tagged, no special AI","N/A","Search/summarize only","Search via search_documents","Auto-decision from content","Use existing RAG"],
+["M14","Student Documents","Generic","Generic upload + document_type_registry","N/A","Extraction draft only","Draft admission field pre-fill","Auto-publish to record","Human verify mandatory"],
+["M15","Attendance Evidence","No dedicated path","No specific handling found","N/A","Very cautiously","—","Never auto-mark attendance from AI-read evidence","Avoid auto-record — RS-ATT rule already protects this"],
+["M16","Fee Receipts","Generic","Tagged as fee_receipt in registry, generic OCR path","Yes (untested for this type)","Extraction draft only","Pre-fill amount for staff review","Auto-post to fee ledger","Human verify mandatory"],
+["M17","ID Cards","Generic","Generic image upload","Yes","Field extraction draft","Pre-fill name/ID number","Auto-verify identity","Human verify mandatory — never identity-decide"],
+["M18","Certificates","Generic","Generic upload","Yes","Field extraction draft","Pre-fill certificate details","Auto-validate authenticity","Human verify mandatory"],
+["M19","Timetables (as documents)","Generic","Generic upload, versioned (RS-ASM-007)","Yes","Diff/extract, class-level publish already governed","Already correctly built","—","Keep as-is (already good)"],
+["M20","Question Papers","Generic","Generic upload under Examination category","Yes (unused)","Search/organize only","Filing, retrieval","Auto-grading/leak risk","Very cautious — never auto-process content"],
+["M21","Answer Sheets","No feature","Not found as a distinct capability","Yes (risky)","Do not build without explicit product decision","—","Auto-grading = academic integrity risk","Avoid until its own dedicated decision"],
+["M22","Reports","Full","Own generators (pdf/excel/word/csv) — deterministic","Not used","No","—","—","Keep own generators"],
+["M23","Notices/Admin Records","Generic","Generic document upload","N/A","Search/summarize","—","—","Use existing RAG"]
+]],
+["Parameters and controls register","c",CCOLS,[
+["C1","Temperature","AI-oda creativity level","Conditional","Low, for extraction","Consistent factual answer venum","High temp = unpredictable","Extraction-ku low, chat-ku default"],
+["C2","Max Output Tokens","Ore badhil-oda size limit","Use","65,536","Already tested ceiling","—","Keep as-is"],
+["C3","Structured Output/Schema","Fixed JSON format force pannradhu","Use, mandatory","Enabled for every extraction tool","Wrong-format risk kurayum","High currently (missing)","Build P0"],
+["C4","System Instructions","AI basic behavior lock pannradhu","Use","Every call","Injection resist pannradhu","Low","Keep"],
+["C5","Context Size","Ore prompt-la data amount","Conditional","Chunked, bounded","Cost/latency control","Medium","Preflight count before large sends"],
+["C6","File Handling (inline vs GCS)","File anuppumbodhu evvidham anuppradhu","Conditional","Inline for small, GCS for large (future)","Size limits irukku","Medium","Never raw gs:// to frontend"],
+["C7","Grounding (search)","Real-world info fetch pannradhu","Conditional, opt-in","Per-college toggle","Fresh info venum sometimes","Medium (hallucination)","Untrusted-data boundary mandatory"],
+["C8","Citations","Source URL kaatradhu","Use when grounding used","Always show source","Trust building","Low","Never hide source"],
+["C9","Function Calling","Tool select pannradhu","Use","Single-call per turn","Core mechanism","Low","Keep sequential"],
+["C10","Tool Usage (parallel)","Onnukku mel tool same time","Avoid for writes","Off","Order-confusion risk","High for writes","Read-only future exception only"],
+["C11","Safety Settings","Bad content filter","Use default","Google default","—","Low","Revisit only if issue"],
+["C12","Prompt Caching (implicit)","Auto cost-saving cache","Use","Always on (automatic)","Free saving","Low","Keep"],
+["C13","Prompt Caching (explicit)","Manual cache setup","Avoid for now","Off","No cache-worthy content yet","—","Revisit if policy-handbook feature built"],
+["C14","Batch Jobs","Bulk cheap processing","Avoid for now","Off","No backlog yet","—","Revisit post-launch"],
+["C15","Retries","Failed call-a again try pannradhu","Use","3 attempts, exponential backoff","Already correct","Low","Keep"],
+["C16","Fallback Models/Providers","Vera provider-ku switch aaguradhu","Use, build now","Auto-switch on sustained failure","Missing today — real risk","Very High","Build P0"],
+["C17","Regional Availability","Edhu region-la process aagudhu","Conditional","global unless compliance needs India-region","—","Medium (compliance)","Verify legal requirement"],
+["C18","Logging","Every call log aaguthaa","Use","Always","Audit trail core","Low","Keep, expand for cost"],
+["C19","Monitoring","Real-time problem kaatradhu","Use, build","Alert on failure-rate/cost spike","Currently missing dashboard","Medium","Build with C16/C20"],
+["C20","Cost Control","Kelavu limit vekradhu","Use, build now","Per-college quota + alert","Missing — real financial risk","Very High","Build P0"],
+["C21","Rate Limits","Evlo fast call panna mudiyum","Conditional","Per-tenant cap","Prevent one college blocking others","Medium","Build with C20"],
+["C22","Permissions","Yaru enna AI action pannalam","Use","Already RBAC-gated","Already strong","Low","Keep"],
+["C23","Privacy/Data Retention","Data evlo naal vachurupom","Conditional","Match ArcNave's own retention policy, not Google's default","Compliance","Medium","Legal review"],
+["C24","Model Version Changes","Google model silent maathinal","Use, build alert","Pin + alert on change","Missing today","Medium","Build P1"],
+["C25","Human Approval","High-impact action confirm","Use","Always for L3","Core trust","Low","Keep, never bypass"],
+["C26","Audit Trails","Ella AI action-um record aaguthaa","Use","Always","Already strong","Low","Keep"]
+]]
+];
+function tagFor(text){
+  var t=(text||"").toLowerCase();
+  if(t.indexOf("avoid")>=0||t.indexOf("reject")>=0)return ["tag-avoid","Avoid"];
+  if(t.indexOf("build")>=0)return ["tag-build","Build"];
+  if(t.indexOf("defer")>=0)return ["tag-defer","Defer"];
+  if(t.indexOf("conditional")>=0)return ["tag-cond","Conditional"];
+  return ["tag-keep","Keep / use"];
+}
+var listEl=document.getElementById("list");
+var total=0;
+var STATE_KEY="arcnave_vertex_audit_standalone_v1";
+function loadState(){try{return JSON.parse(localStorage.getItem(STATE_KEY)||"{}");}catch(e){return {};}}
+function saveState(s){try{localStorage.setItem(STATE_KEY,JSON.stringify(s));}catch(e){}}
+var state=loadState();
+DATA.forEach(function(sec){
+  var h=document.createElement("div");
+  h.className="sec";
+  h.textContent=sec[0];
+  listEl.appendChild(h);
+  var cols=sec[2];
+  sec[3].forEach(function(row){
+    total++;
+    var id=sec[1]+"-"+row[0];
+    var name=row[1];
+    var fields=row.slice(2);
+    var tagSource=(sec[1]==="cap")?fields[4]:fields[fields.length-1];
+    var t=tagFor(tagSource);
+    var card=document.createElement("div");
+    card.className="card collapsed";
+    card.setAttribute("data-id",id);
+    var body="";
+    for(var i=0;i<cols.length;i++){
+      body+='<div class="field"><span class="flabel">'+cols[i]+'</span><span class="fval">'+(fields[i]||"—")+'</span></div>';
+    }
+    card.innerHTML =
+      '<div class="chead"><span class="cid">'+row[0]+'</span><span class="cname">'+name+'</span><span class="tag '+t[0]+'">'+t[1]+'</span><span class="chev">&#9660;</span></div>'+
+      '<div class="cbody">'+body+
+      '<div class="actions"><button class="abtn accept" data-act="accept">&#10003; Accept</button><button class="abtn reject" data-act="reject">&#10005; Reject</button></div>'+
+      '<textarea class="note" placeholder="Your note for this item"></textarea>'+
+      '</div>';
+    listEl.appendChild(card);
+    var chead=card.querySelector(".chead");
+    chead.addEventListener("click",function(){card.classList.toggle("collapsed");});
+    var acceptBtn=card.querySelector(".abtn.accept");
+    var rejectBtn=card.querySelector(".abtn.reject");
+    var noteEl=card.querySelector(".note");
+    function applyDecision(dec){
+      acceptBtn.classList.toggle("on",dec==="accept");
+      rejectBtn.classList.toggle("on",dec==="reject");
+      card.classList.toggle("dec-accept",dec==="accept");
+      card.classList.toggle("dec-reject",dec==="reject");
+    }
+    function setDecision(dec){
+      var s=loadState();
+      if(!s[id])s[id]={};
+      s[id].dec=(s[id].dec===dec)?null:dec;
+      saveState(s);
+      applyDecision(s[id].dec);
+      updateStats();
+    }
+    acceptBtn.addEventListener("click",function(e){e.stopPropagation();setDecision("accept");});
+    rejectBtn.addEventListener("click",function(e){e.stopPropagation();setDecision("reject");});
+    noteEl.addEventListener("click",function(e){e.stopPropagation();});
+    noteEl.addEventListener("input",function(){
+      var s=loadState();
+      if(!s[id])s[id]={};
+      s[id].note=noteEl.value;
+      saveState(s);
+    });
+    if(state[id]){
+      card.classList.remove("collapsed");
+      applyDecision(state[id].dec||null);
+      noteEl.value=state[id].note||"";
+    }
+  });
+});
+function updateStats(){
+  var s=loadState();
+  var acc=0,rej=0;
+  Object.keys(s).forEach(function(k){if(s[k].dec==="accept")acc++;else if(s[k].dec==="reject")rej++;});
+  document.getElementById("cAcc").textContent=acc;
+  document.getElementById("cRej").textContent=rej;
+  document.getElementById("cPen").textContent=total-acc-rej;
+}
+updateStats();
+document.getElementById("collapseAll").addEventListener("click",function(){
+  listEl.querySelectorAll(".card").forEach(function(c){c.classList.add("collapsed");});
+});
+document.getElementById("expandAll").addEventListener("click",function(){
+  listEl.querySelectorAll(".card").forEach(function(c){c.classList.remove("collapsed");});
+});
+document.getElementById("resetBtn").addEventListener("click",function(){
+  if(!confirm("Reset every accept/reject decision and note?"))return;
+  saveState({});
+  listEl.querySelectorAll(".card").forEach(function(card){
+    card.classList.remove("dec-accept","dec-reject");
+    card.querySelector(".abtn.accept").classList.remove("on");
+    card.querySelector(".abtn.reject").classList.remove("on");
+    card.querySelector(".note").value="";
+  });
+  updateStats();
+});
+function buildSummary(){
+  var s=loadState();
+  var names={};
+  DATA.forEach(function(sec){sec[3].forEach(function(row){names[sec[1]+"-"+row[0]]=row[0]+" "+row[1];});});
+  var acc=[],rej=[],noted=[];
+  Object.keys(s).forEach(function(k){
+    if(s[k].dec==="accept")acc.push(names[k]+(s[k].note?" (note: "+s[k].note+")":""));
+    else if(s[k].dec==="reject")rej.push(names[k]+(s[k].note?" (note: "+s[k].note+")":""));
+    else if(s[k].note)noted.push(names[k]+" (note: "+s[k].note+")");
+  });
+  var msg="My finalized decisions on the ArcNave Vertex/Gemini capability audit:\n\n";
+  msg+="ACCEPTED ("+acc.length+"):\n"+(acc.length?acc.map(function(x){return "- "+x;}).join("\n"):"(none)")+"\n\n";
+  msg+="REJECTED ("+rej.length+"):\n"+(rej.length?rej.map(function(x){return "- "+x;}).join("\n"):"(none)")+"\n\n";
+  if(noted.length){msg+="NOTES WITHOUT A DECISION:\n"+noted.map(function(x){return "- "+x;}).join("\n")+"\n\n";}
+  msg+="Please proceed only with the accepted items.";
+  return msg;
+}
+document.getElementById("exportBtn").addEventListener("click",function(){
+  var box=document.getElementById("exportBox");
+  var ta=document.getElementById("exportText");
+  ta.value=buildSummary();
+  box.style.display="block";
+  box.scrollIntoView({behavior:"smooth",block:"nearest"});
+});
+document.getElementById("copyBtn").addEventListener("click",function(){
+  var ta=document.getElementById("exportText");
+  ta.select();
+  document.execCommand("copy");
+  this.textContent="Copied!";
+  var self=this;
+  setTimeout(function(){self.textContent="Copy to clipboard";},1500);
+});
+document.getElementById("downloadTxtBtn").addEventListener("click",function(){
+  var text=document.getElementById("exportText").value;
+  var blob=new Blob([text],{type:"text/plain"});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement("a");
+  a.href=url;
+  a.download="arcnave-vertex-audit-decisions.txt";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+</script>
+</body>
+</html>

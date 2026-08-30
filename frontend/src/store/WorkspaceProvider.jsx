@@ -294,7 +294,7 @@ export function WorkspaceProvider({ children }) {
    */
   const runAiTurn = useCallback(
     async (id, {
-      scope, projectId, artifactId, body, aiId, attachmentIds, sentAttachments = [], mode,
+      scope, projectId, artifactId, body, aiId, attachmentIds, sentAttachments = [], mode, thinkingLevel,
     }) => {
       const patchAiMessage = (patch) => {
         setThreads((prev) => ({
@@ -323,6 +323,11 @@ export function WorkspaceProvider({ children }) {
             // other than 'general' falls through to aiService.askAgent's
             // unchanged Curriculum path (that function's own comment).
             mode,
+            // CEO Vertex/Gemini audit #26 (2026-08-30) — ThinkingLevelToggle.jsx's
+            // own 'fast'/'balanced'/'deep' label, this message only. Missing/
+            // unrecognized falls through to routes/ai.js's own default
+            // ('fast' — gemini.js's existing LOW, zero behavior change).
+            thinkingLevel,
           },
           (event) => {
             if (event.type === 'delta') {
@@ -443,7 +448,9 @@ export function WorkspaceProvider({ children }) {
   );
 
   const sendMessage = useCallback(
-    async ({ scope = 'chat', convId, projectId, artifactId, text, attachments = [], mode }) => {
+    async ({
+      scope = 'chat', convId, projectId, artifactId, text, attachments = [], mode, thinkingLevel,
+    }) => {
       const body = (text ?? '').trim();
       if (!/[a-zA-Z0-9]/.test(body)) return null;
 
@@ -566,7 +573,7 @@ export function WorkspaceProvider({ children }) {
       // can list the real files this turn attached as Sources — the ids
       // alone have no name/type to show.
       runAiTurn(id, {
-        scope, projectId, artifactId, body, aiId, attachmentIds, sentAttachments, mode,
+        scope, projectId, artifactId, body, aiId, attachmentIds, sentAttachments, mode, thinkingLevel,
       });
 
       return id;
@@ -592,7 +599,7 @@ export function WorkspaceProvider({ children }) {
    */
   const editMessage = useCallback(
     async ({
-      scope = 'chat', convId, projectId, artifactId, messageId, text, mode,
+      scope = 'chat', convId, projectId, artifactId, messageId, text, mode, thinkingLevel,
     }) => {
       const next = (text ?? '').trim();
       if (!convId || !next) return false;
@@ -642,7 +649,7 @@ export function WorkspaceProvider({ children }) {
       // Deliberately not awaited — see sendMessage's own comment on why
       // runAiTurn is fire-and-forget from its caller's point of view.
       runAiTurn(convId, {
-        scope, projectId, artifactId, body: next, aiId, attachmentIds, sentAttachments, mode,
+        scope, projectId, artifactId, body: next, aiId, attachmentIds, sentAttachments, mode, thinkingLevel,
       });
 
       return true;

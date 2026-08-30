@@ -23,6 +23,8 @@ export const ArtifactRevisionComposer = forwardRef(function ArtifactRevisionComp
       onSend={onSend}
       mode={composer.mode}
       onMode={composer.setMode}
+      thinkingLevel={composer.thinkingLevel}
+      onThinkingLevel={composer.setThinkingLevel}
       variant="chat"
       placeholder={
         revising

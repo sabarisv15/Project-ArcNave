@@ -4,7 +4,24 @@ _Last updated: 2026-08-30._
 
 ---
 
-# ⛔ READ FIRST — CEO Vertex/Gemini audit fully actioned, including "the big one," except two comparison-only items, 2026-08-30. Read this banner before the Vertex Capability Registry one below — it is now the most recent session.
+# ⛔ READ FIRST — CEO Vertex/Gemini audit FULLY CLOSED, 2026-08-30. #18/#19 and #24/#25 comparison passes resolved (decision-only, no build) — see [ADL-069](../30-decisions/ledger.md#adl-069). Nothing queued from this audit thread. Read this banner before the "third pass" one below it — it supersedes that one's "Exact next action."
+
+**#18/#19 (RAG) and #24/#25 (code execution) — RESOLVED, 2026-08-30, no
+code.** Owner reviewed both comparisons in chat (non-technical) and
+decided: keep ArcNave's own RAG (pgvector) over Vertex AI Search
+Grounding, and keep ArcNave's own sandbox (ADL-059) over Vertex/Gemini
+native code execution — in both cases because ArcNave already owns the
+isolation/control boundary that the Google-managed alternative would
+give up, not because of cost alone. Full reasoning: [ADL-069](../30-decisions/ledger.md#adl-069).
+**Do not re-open either comparison or re-ask the owner** unless new
+evidence (e.g. a measured accuracy/scale gap in the own-RAG path)
+actually surfaces.
+
+**Exact next action, if resuming this thread:** none queued from the CEO
+audit — every item is either built, confirmed-as-is, or now decided. The
+only remaining open thread project-wide is **Decision 2 — image search**
+(below, still unanswered) or picking a fresh item via its own Product
+Reasoning pass.
 
 **Third pass, same session — "the big one" (#40/#41/#42/C16/C19/C20/C21)
 built, per explicit owner instruction to skip the Product Reasoning pass

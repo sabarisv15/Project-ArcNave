@@ -5849,3 +5849,59 @@ test coverage to extend and a from-scratch full-`App`-render test would
 land in the same pre-existing `AuthProvider` test-harness bucket every
 other institution-page test already sits in, proving nothing about this
 specific change.
+
+
+---
+
+## ADL-069
+
+### #18/#19 (RAG) and #24/#25 (code execution) comparison passes — both resolved: stay with ArcNave's own implementation, no build
+
+**What this closes.** The two remaining genuinely-unstarted items from the
+CEO Vertex/Gemini audit (ADL-067's digest) — both explicitly scoped as
+comparison/decision passes, not builds. Owner reviewed both comparisons
+(discussed in chat, non-technical) and decided on both in one pass,
+2026-08-30. No code changes — this is a decision record only.
+
+**#18/#19 — Vertex AI Search Grounding (managed RAG) vs. ArcNave's own
+RAG.** Decision: **keep ArcNave's own RAG (pgvector-based, already
+built and tuned — `TOP_K`/`SIMILARITY_DISTANCE_THRESHOLD`/`RANK_CAP`).
+Do not adopt Vertex AI Search Grounding.** Reasoning weighed:
+- Vertex managed RAG's advantage (Google-scale infra, broader grounding,
+  less code to own) does not outweigh its cost — per-query Google billing
+  with no cap, opaque retrieval internals (no debug/trace path), and a
+  second data-egress boundary to reason about for multi-tenant isolation
+  that does not exist today.
+- ArcNave's own RAG is already live, already integrated with the existing
+  RLS-based multi-tenant model, and has zero incremental per-query cost.
+  Its one real gap (accuracy/scale at larger volume) is unmeasured, not
+  evidenced — not a reason to switch today.
+- No new evidence changes this from ADL-067's original framing; this ADL
+  exists to make the decision durable so the item stops re-surfacing as
+  "genuinely unstarted."
+
+**#24/#25 — Vertex/Gemini native code execution vs. ArcNave's own
+sandbox.** Decision: **keep ArcNave's own sandbox (ADL-059, credential-
+less Cloud Run container, already the `execute_code` tool in production).
+Do not adopt Vertex/Gemini native code execution.** Reasoning weighed:
+- Both options happen to run on Google Cloud infrastructure — the owner
+  raised this directly ("namma sandbox um google cloud la thana iruku").
+  That does not change the decision: the deciding factor is who controls
+  the **isolation boundary**, not which company's datacenter hosts it.
+  ArcNave's sandbox is a namma-configured container (no DB credentials,
+  no ARCNAVE API session, no backend network path — ADL-059's own rule,
+  independently of hosting provider). Vertex/Gemini native code execution
+  is Google's own managed execution product — its internal isolation
+  shape is not inspectable or configurable by ArcNave.
+- ADL-059's credential-less guarantee is a hard, already-adopted
+  multi-tenant safety rule. Native Vertex/Gemini execution cannot be
+  verified against that rule, so it cannot be a safe substitute
+  regardless of convenience.
+
+**Affected artefacts.** `bka/70-checkpoint/CURRENT-STATE.md` (banner
+updated to close both items — see that file). No code, no spec, no
+migration.
+
+**Migration impact.** None — both decisions preserve the status quo.
+
+**Verification.** N/A — decision-only entry, nothing built.

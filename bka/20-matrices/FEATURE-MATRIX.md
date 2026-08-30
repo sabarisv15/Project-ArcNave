@@ -560,12 +560,28 @@ not one matching the wrong thing — a hand-written first attempt returned
 
 ---
 
-## AI Assistant chat — PDF geometric reconstruction as a trust-bounded fallback
+## AI Assistant chat — PDF geometric reconstruction as a trust-bounded fallback (SUPERSEDED — dated history, kept for the record; not the built design)
 
 Source: [`ai-chat-pdf-geometric-reconstruction-approved-spec.md`](../60-product-reasoning/ai-chat-pdf-geometric-reconstruction-approved-spec.md),
 analyzed 2026-08-26. Backend-only, no new page/screen. Queued item 1 slice 2
 — explicitly OUT OF SCOPE in the shipped extraction-trust spec, and named by
 ADL-057 as cross-document `join`'s prerequisite.
+
+**Superseded 2026-08-28 by [ADL-063](../30-decisions/ledger.md#adl-063),
+before any row below it was ever built.** Geometric reconstruction
+(`pdfjs-dist` x/y bucketing), the `partial_extraction` status, and
+"identity and record count only" access are **not implemented and will not
+be** — pdfplumber (already in the sandbox image per
+[ADL-059](../30-decisions/ledger.md#adl-059)) replaced geometry as the
+reconstruction method before this slice was ever picked up. Every "Not
+built" row in the table below is still factually accurate for the design
+it describes; none of it was later built as written. **For the fallback
+mechanism actually shipped, its trust rule, and its governing decisions,
+see "AI Assistant chat — PDF pdfplumber fallback: full trust via
+independent row-integrity check" further down this file.** The four probes
+and the regression numbers immediately below remain valid evidence (the
+separator finding in particular is reused, unchanged, by the shipped
+design) — only the CORE built on top of them changed.
 
 Four read-only probes were run before any design was written:
 
@@ -607,3 +623,56 @@ only**.
 Not asked, because rules and evidence settled them (workflow §15 steps 2-3):
 fallback vs default, the separator, refusing rather than guessing, and
 whether a new operation is needed.
+
+---
+
+## AI Assistant chat — PDF pdfplumber fallback: full trust via independent row-integrity check
+
+Source: [ADL-063](../30-decisions/ledger.md#adl-063) (2026-08-29, replaces
+the geometric-reconstruction CORE above before it was ever built) and its
+[row-integrity addendum](../30-decisions/ledger.md#adl-063-addendum--independent-row-integrity-check-required-for-full-trust-review-finding-3-2026-08-29)
+(2026-08-29, same day, corrects ADL-063's own original full-trust
+reasoning). This is the CORE actually implemented in
+`documentAnalysisService.js`/`documentTableExtractionService.js`/
+`documentRowIntegrityService.js` — verify any statement below against those
+files and `backend/tests/document-analysis-service.test.js` /
+`backend/tests/document-row-integrity-service.test.js` before relying on it.
+
+**Core principle.** Identity-marker coverage proves that every expected
+record/anchor is present in the reconstruction. It does **not** prove that
+a non-identity cell value landed on the correct row — a layout-reconstructed
+table can have every marker present and unique while a numeric column is
+still shifted onto the wrong record. `assessCoverage` alone was ADL-063's
+original (and mistaken) full-trust gate for a pdfplumber reconstruction;
+the addendum makes independent row-value evidence a second, separate
+requirement before such a reconstruction can be trusted the way a genuine
+flat-text/native extraction already is.
+
+| Page | Role | Tab | Feature | User Action | UI | Backend Dependency | DB Dependency | Permission | Current Status | Scope Classification | Dependencies | Open Decisions |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| AI Assistant chat | Existing chat-attachment roles | — | pdfplumber layout re-extraction as a fallback, only after flat text already failed reliability on a PDF | Attach a merged-cell PDF and ask about it | none (existing chat surface) | `documentAnalysisService.reconstructViaPdfplumber`, `sandboxExecutionService` (credential-less, ADL-059) | none | Unchanged (L1, read-only) | **Built** — live-verified against a real exam-fees PDF through the real deployed sandbox | CORE | flat-text ladder stays first; pdfplumber's default `lines` strategy only, never `{'vertical_strategy':'text','horizontal_strategy':'text'}` (reproduces the original defect) | Resolved — fallback, never default; disabled path costs nothing beyond a boolean check |
+| AI Assistant chat | — | — | Identity-marker coverage (`assessCoverage`) alone is **not** sufficient for full trust of a reconstructed table | Same | none | `documentTableExtractionService.assessCoverage`, `documentAnalysisService.analyzeAttachment` | none | Unchanged | **Built** — this is the Finding #3 correction to ADL-063's own original reasoning | CORE | — | Resolved — coverage proves rows are present, not that other cells are attributed correctly |
+| AI Assistant chat | — | — | Independent row-integrity check (`documentRowIntegrityService.assessRowIntegrity`): discovers a scaling/summation relation in the record's own numbers that holds across every record, at the widest prefix width still covered by 100% of them | Same | none | `documentRowIntegrityService.js` | none | Unchanged | **Built** — generalized (no column name/formula/rate hardcoded); ≥5 records and ≥2 independent relations required | CORE | scope: `sequential_id`-shaped pdfplumber records only — see Open Decisions | `delimited` reconstructions have no equivalent check yet; a real document with fewer than 5 records, or with no discoverable relation, can never earn full trust regardless of how clean its coverage is |
+| AI Assistant chat | — | — | Full trust once row-integrity verifies: `count`/`sum`/`breakdown`/`compare` all run exactly as they do for any other reliable document | Ask a count/sum/compare question over a verified reconstruction | none | `documentAggregateService` (unchanged) | none | Unchanged | **Built** — live-verified: `count` returns 23/23, `sum` returns a real total (5013) an ADL-058-shaped design would have refused outright | CORE | row-integrity check above | Resolved — no new `partial_extraction`/identity-only status; a verified reconstruction is indistinguishable downstream from any other trusted document |
+| AI Assistant chat | — | — | Safe non-full-trust outcome when row-integrity does not verify: `status: 'unreliable_extraction'`, `reason: 'row_integrity_unverified'` | Same document, integrity check fails/is inconclusive | none (message on existing chat surface) | `documentAnalysisService.analyzeAttachment` | none | Unchanged | **Built** — total refusal, not a partial tier: `filterBySerialRange`/`filterBySection`/`aggregate`/`compareRecords` never run; the caller gets `recordsDetected`/`rowsExpected`/`rowsAccountedFor` and nothing else | CORE | — | Resolved — this is stricter than ADL-058's own "identity and record count only" design, which is itself not built |
+| AI Assistant chat | — | — | `partial_extraction` status / "identity and record count only" access tier (the ADL-058 design, above) | — | — | — | — | — | **Not built — permanently superseded, will not be built** | — | superseded PDF-geometric-reconstruction section above | ADL-063 replaced this CORE before it was ever implemented; do not re-propose it without a fresh Product Reasoning pass |
+| AI Assistant chat | — | — | Graded trust tier (e.g. a `verified_partial` status, or aggregate-only/identity-only output) for a reconstruction whose row-integrity is unverified | — | — | — | — | — | **Not built** | FUTURE | independent row/column integrity evidence beyond what `documentRowIntegrityService` already checks | Not a current capability; today's behavior is binary (full trust once verified, total refusal otherwise), never a middle tier |
+| AI Assistant chat | — | — | Row-integrity check extended to `delimited`-shaped pdfplumber reconstructions | — | — | — | — | — | **Not built** | FUTURE | a different, more direct check — `delimited` already carries real column boundaries, unlike `sequential_id`'s raw text block | Not guessed at ahead of an actual document needing it, per this project's own no-hand-fit discipline |
+
+No Product Refinement question was asked for this pass — the row-integrity
+requirement was a correctness fix to ADL-063's own reasoning (Review
+Finding #3 on the uncommitted diff that shipped ADL-063), not a product
+choice among valid alternatives.
+
+**Implemented 2026-08-29** (same day as ADL-063 itself). Full backend
+suite **2446/2447** in Docker at the time (one pre-existing, unrelated
+failure — untouched files); 6 new unit tests
+(`document-row-integrity-service.test.js`) plus 2 new integration tests in
+`document-analysis-service.test.js`, alongside the pre-existing Finding #3
+tests (3-record fixtures, below the 5-record floor) that still pin "never
+full trust" unmodified. Live-verified against the real exam-fees PDF
+through the real deployed sandbox and a real DB-backed tenant: `count`
+returns `status: 'ok'`, 23/23; `sum` returns a real total instead of a
+refusal. Full narrative and the measured probe
+(`backend/scripts/row-arithmetic-consistency-probe.js`) are recorded in the
+[ADL-063 addendum](../30-decisions/ledger.md#adl-063-addendum--independent-row-integrity-check-required-for-full-trust-review-finding-3-2026-08-29).

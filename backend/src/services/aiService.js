@@ -2003,10 +2003,25 @@ async function askAboutTool(client, toolName, params, question, { identityContex
 // (e.g. a bare "hi"), to compare against P1's module-split and P3's
 // caching later — without either, "did it get smaller/cheaper" is a
 // guess, not a measurement.
+// Review Finding #13 (2026-08-30) — attempted/completed/fallbackTriggered
+// are optional, purpose-specific lifecycle signals (currently only ever
+// passed by the tool_search call site below). Every other existing call
+// site omits them, so `undefined` is what they carry there — and
+// JSON.stringify drops an `undefined`-valued key entirely, meaning every
+// non-tool_search audit row's metadata shape is byte-for-byte unchanged.
+// Their one job is fixing a real omission: a genuine Tool Search provider
+// call that completed with no usage block previously produced NO audit
+// row at all (indistinguishable from "never attempted"), because the
+// guard below only ever kept a row alive via usage/imageCount/
+// systemPromptChars/toolCount, none of which the tool_search call site
+// ever had. `attempted: true` is a fifth, purpose-agnostic reason to keep
+// the row — a real provider call happened and deserves a telemetry
+// record even when every other signal is empty.
 async function logLlmCall(client, {
   identityContext, adapter, aiConfig, purpose, usage, latencyMs, imageCount, systemPromptChars, toolCount,
+  attempted, completed, fallbackTriggered,
 }) {
-  if (!usage && !imageCount && systemPromptChars === undefined && toolCount === undefined) return;
+  if (!usage && !imageCount && systemPromptChars === undefined && toolCount === undefined && !attempted) return;
   await auditLogRepository.createAuditLogEntry(client, {
     collegeId: identityContext.collegeId,
     userId: identityContext.userId,
@@ -2025,10 +2040,19 @@ async function logLlmCall(client, {
       // never coerced to 0, so a `NULL`/absent value in a query genuinely
       // means "no signal," not "confirmed zero cache hit."
       cachedTokens: usage ? usage.cachedTokens : undefined,
+      // Only populated when a caller passes `attempted` (currently
+      // tool_search only) — an explicit false/null signal, never a
+      // fabricated 0, distinguishing "provider responded but reported no
+      // usage" from "usage present" for a purpose where a completed call
+      // can legitimately carry no usage block at all.
+      usageAvailable: attempted !== undefined ? Boolean(usage) : undefined,
       latencyMs,
       imageCount: imageCount || undefined,
       systemPromptChars,
       toolCount,
+      attempted,
+      completed,
+      fallbackTriggered,
     },
   });
 }
@@ -2474,20 +2498,61 @@ async function askAgent(client, question, {
   // true, which is what lets the tool-catalogue segment below be
   // omitted — the actual point of this architecture (see aiService.js's
   // buildToolCatalogue's own comment on catalogue token cost).
+  //
+  // Review Finding #16 — this call, describeIdentityContext, and
+  // resolveAiConfig below are all started here, back to back, before any
+  // of the three is awaited. None depends on either of the others'
+  // results: discoverRelevantTools only ever needs roleTools/question
+  // (both already computed above from identityContext.role and the
+  // caller's own question string), describeIdentityContext only needs
+  // identityContext itself, and resolveAiConfig only needs
+  // identityContext.collegeId — a plain field, not a promise. Each is
+  // still awaited at the exact point its result was already being
+  // consumed before this change (discoverRelevantTools's result
+  // immediately below for the tool_search audit row and tool list;
+  // identityBlock/aiConfig further down, unchanged), so call order,
+  // call count, and error propagation for each individual operation are
+  // unchanged — only the wall-clock overlap between them is new.
+  const identityBlockPromise = aiActorContext.describeIdentityContext(client, identityContext);
+  const aiConfigPromise = configurationService.resolveAiConfig(
+    client, identityContext.collegeId, { allowExperimentalFallback: true },
+  );
+  // A rejection here is only ever surfaced via the real `await` further
+  // down, once discoverRelevantTools/logLlmCall/pinDocumentAnalysisTool
+  // have run — this empty handler exists solely so Node never logs an
+  // "unhandled rejection" warning for the window between creating these
+  // two promises and actually awaiting them; it does not change what
+  // either promise resolves/rejects with, or swallow the real error the
+  // later `await` still throws.
+  identityBlockPromise.catch(() => {});
+  aiConfigPromise.catch(() => {});
   const {
     tools: retrievedTools, viaToolSearch, usage: toolSearchUsage, provider: toolSearchProvider, model: toolSearchModel,
     coverageStatus: toolCoverageStatus, uncoveredRequirements: toolUncoveredRequirements,
+    attempted: toolSearchAttempted, completed: toolSearchCompleted,
   } = await aiToolSearchService.discoverRelevantTools(client, { roleTools, question });
   // ADR-030 P0/P1 telemetry, same convention every other LLM call in
   // this turn already gets (see logLlmCall's own comment) — a no-op
-  // when toolSearchUsage is undefined (Tool Search disabled, or no call
+  // when toolSearchAttempted is false (Tool Search disabled, or no call
   // was ever attempted), so this line changes nothing on the default
   // path. When a real Tool Search call did happen, its real cost is
   // recorded under purpose: 'tool_search' EVEN if this service then
   // distrusted the response and fell back — a distrusted answer still
-  // cost real tokens (Section 19 of this session's plan).
+  // cost real tokens (Section 19 of this session's plan). Review Finding
+  // #13: `attempted` (not `usage`) is what keeps this row alive now, so a
+  // completed call with no usage block is still recorded instead of
+  // silently vanishing — provider/model/toolSearchAttempted/
+  // toolSearchCompleted all come from discoverRelevantTools's own single
+  // resolved config, never re-resolved here for logging.
   await logLlmCall(client, {
-    identityContext, adapter: { name: toolSearchProvider }, aiConfig: { model: toolSearchModel }, purpose: 'tool_search', usage: toolSearchUsage,
+    identityContext,
+    adapter: { name: toolSearchProvider },
+    aiConfig: { model: toolSearchModel },
+    purpose: 'tool_search',
+    usage: toolSearchUsage,
+    attempted: toolSearchAttempted,
+    completed: toolSearchCompleted,
+    fallbackTriggered: toolSearchAttempted ? !viaToolSearch : undefined,
   });
   const tools = pinDocumentAnalysisTool(retrievedTools, roleTools, documents);
   // The bounded-plan meta-tool (P0.3) is never subject to relevance
@@ -2501,10 +2566,8 @@ async function askAgent(client, question, {
   // tool-happy model, the exact failure aiPolicyAssembly's TOOL_SELECTION
   // module's own tightened wording already had to correct for once).
   const toolsWithPlan = tools.length >= 2 ? [...tools, buildPlanMetaTool()] : tools;
-  const identityBlock = await aiActorContext.describeIdentityContext(client, identityContext);
-  const { adapter, config: aiConfig } = await configurationService.resolveAiConfig(
-    client, identityContext.collegeId, { allowExperimentalFallback: true },
-  );
+  const identityBlock = await identityBlockPromise;
+  const { adapter, config: aiConfig } = await aiConfigPromise;
 
   // Honest degradation (never a blanket ignore-flag): the deterministic
   // capability check happens here, once, and the LLM can never bypass

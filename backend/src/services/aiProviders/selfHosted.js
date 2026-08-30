@@ -21,6 +21,9 @@
 const { LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError } = require('./errors');
 const { withRetry } = require('./retry');
 const { iterateSseLines } = require('./sse');
+const {
+  fetchWithTimeout, parseJsonResponse, extractOpenAiCompatibleUsage, buildOpenAiCompatiblePriorTurnMessages,
+} = require('./openAiCompatibleUtils');
 const { flattenToPrompts } = require('../aiContextAssembly');
 
 const REQUEST_TIMEOUT_MS = 30000;
@@ -39,37 +42,24 @@ function isConfigured(cfg) {
   return Boolean(cfg && cfg.baseUrl);
 }
 
+// Review Finding #15 — the transport/response-validation mechanics below
+// are shared (openAiCompatibleUtils.js), identical to vertexMaas.js/
+// openai.js's own postJson; only the URL and auth-header construction
+// stay local, since baseUrl is college-specific and apiKey is optional
+// here (unlike openai.js's required key).
 async function postJson(cfg, path, body) {
   const headers = { 'content-type': 'application/json' };
   if (cfg.apiKey) headers.authorization = `Bearer ${cfg.apiKey}`;
 
-  const response = await withRetry(async () => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    try {
-      return await fetch(`${cfg.baseUrl}${path}`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-    } catch (err) {
-      throw new LlmRequestError(`request to self-hosted LLM provider failed: ${err.message}`);
-    } finally {
-      clearTimeout(timeout);
-    }
-  });
+  const response = await withRetry(() => fetchWithTimeout({
+    url: `${cfg.baseUrl}${path}`,
+    headers,
+    body,
+    timeoutMs: REQUEST_TIMEOUT_MS,
+    providerLabel: 'self-hosted LLM provider',
+  }));
 
-  if (!response.ok) {
-    const bodyText = await response.text().catch(() => '');
-    throw new LlmRequestError(`self-hosted LLM provider returned ${response.status}: ${bodyText.slice(0, 500)}`);
-  }
-
-  try {
-    return await response.json();
-  } catch (err) {
-    throw new LlmRequestError(`self-hosted LLM provider returned a non-JSON response: ${err.message}`);
-  }
+  return parseJsonResponse(response, 'self-hosted LLM provider');
 }
 
 // Token/cost telemetry (P1.1) — see openai.js's own comment; same
@@ -96,9 +86,7 @@ async function completeWithMeta(cfg, arcnaveContext) {
     throw new LlmRequestError('self-hosted LLM provider response did not contain choices[0].message.content');
   }
 
-  const usage = payload && payload.usage
-    ? { inputTokens: payload.usage.prompt_tokens, outputTokens: payload.usage.completion_tokens }
-    : undefined;
+  const usage = extractOpenAiCompatibleUsage(payload && payload.usage);
   return { text: answer, usage };
 }
 
@@ -186,20 +174,11 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
 
 // ADR-030 P2(c) — same OpenAI-compatible continuation shape openai.js's
 // own buildPriorTurnMessages uses (this adapter targets the same wire
-// convention). See that file's comment for the rawToolCall-preference
-// reasoning.
-function buildPriorTurnMessages(priorTurns) {
-  return priorTurns.flatMap((turn) => [
-    {
-      role: 'assistant',
-      content: null,
-      tool_calls: [turn.rawToolCall || {
-        id: turn.callId, type: 'function', function: { name: turn.toolName, arguments: JSON.stringify(turn.arguments || {}) },
-      }],
-    },
-    { role: 'tool', tool_call_id: turn.callId, content: turn.resultText },
-  ]);
-}
+// convention). Review Finding #15 — byte-identical between the two, so
+// it's the shared buildOpenAiCompatiblePriorTurnMessages, aliased here so
+// this file's own call sites are unchanged. See that shared function's
+// own comment for the rawToolCall-preference reasoning.
+const buildPriorTurnMessages = buildOpenAiCompatiblePriorTurnMessages;
 
 async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   const { systemPrompt, userPrompt, tools } = flattenToPrompts(arcnaveContext);
@@ -239,9 +218,7 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
       throw new LlmRequestError(`self-hosted LLM tool call arguments were not valid JSON: ${err.message}`);
     }
     // ADR-030 P0 telemetry — see gemini.js's own equivalent comment.
-    const usage = payload && payload.usage
-      ? { inputTokens: payload.usage.prompt_tokens, outputTokens: payload.usage.completion_tokens }
-      : undefined;
+    const usage = extractOpenAiCompatibleUsage(payload && payload.usage);
     return {
       type: 'tool_call', toolName: fn.name, arguments: toolArguments, callId: toolCalls[0].id, rawToolCall: toolCalls[0], usage,
     };
@@ -250,9 +227,7 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   if (typeof message.content !== 'string') {
     throw new LlmRequestError('self-hosted LLM provider response contained neither a tool call nor message content');
   }
-  const usage = payload && payload.usage
-    ? { inputTokens: payload.usage.prompt_tokens, outputTokens: payload.usage.completion_tokens }
-    : undefined;
+  const usage = extractOpenAiCompatibleUsage(payload && payload.usage);
   return { type: 'answer', text: message.content, usage };
 }
 

@@ -36,6 +36,9 @@ const {
   LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError,
 } = require('./errors');
 const { withRetry } = require('./retry');
+const {
+  fetchWithTimeout, parseJsonResponse, extractOpenAiCompatibleUsage, buildOpenAiCompatiblePriorTurnMessages,
+} = require('./openAiCompatibleUtils');
 const { flattenToPrompts } = require('../aiContextAssembly');
 
 const REQUEST_TIMEOUT_MS = 30000;
@@ -131,6 +134,12 @@ async function getAccessToken(cfg) {
   return token;
 }
 
+// Review Finding #15 — the single-attempt transport (AbortController from
+// a timeout, fetch, network-error wrapping) and the response validation/
+// JSON-parse below are shared mechanics (openAiCompatibleUtils.js),
+// identical to selfHosted.js/openai.js's own postJson. The deadline
+// budget/shrinking-per-attempt-timeout wrapped around it is NOT shared —
+// selfHosted/openai have no equivalent concept — and stays local here.
 async function postJson(cfg, body) {
   const token = await getAccessToken(cfg);
   const deadline = Date.now() + (cfg.maxTotalLatencyMs || MAX_TOTAL_LATENCY_MS);
@@ -139,40 +148,23 @@ async function postJson(cfg, body) {
     if (remaining <= 0) {
       throw new LlmRequestError('Vertex AI MaaS request exceeded its overall time budget before a response was received');
     }
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), Math.min(REQUEST_TIMEOUT_MS, remaining));
-    try {
-      return await fetch(chatCompletionsUrl(cfg), {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-    } catch (err) {
-      throw new LlmRequestError(`request to Vertex AI MaaS failed: ${err.message}`);
-    } finally {
-      clearTimeout(timeout);
-    }
+    return fetchWithTimeout({
+      url: chatCompletionsUrl(cfg),
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body,
+      timeoutMs: Math.min(REQUEST_TIMEOUT_MS, remaining),
+      providerLabel: 'Vertex AI MaaS',
+    });
   });
 
-  if (!response.ok) {
-    const bodyText = await response.text().catch(() => '');
-    throw new LlmRequestError(`Vertex AI MaaS returned ${response.status}: ${bodyText.slice(0, 500)}`);
-  }
-
-  try {
-    return await response.json();
-  } catch (err) {
-    throw new LlmRequestError(`Vertex AI MaaS returned a non-JSON response: ${err.message}`);
-  }
+  return parseJsonResponse(response, 'Vertex AI MaaS');
 }
 
 // Token/cost telemetry — OpenAI-compatible `usage` block, same shape
-// openai.js/selfHosted.js already read.
-function extractUsage(usage) {
-  if (!usage) return undefined;
-  return { inputTokens: usage.prompt_tokens, outputTokens: usage.completion_tokens };
-}
+// openai.js/selfHosted.js already read. Review Finding #15 — this exact
+// mapping was duplicated three times; extractOpenAiCompatibleUsage is the
+// shared one, aliased here so every existing call site below is unchanged.
+const extractUsage = extractOpenAiCompatibleUsage;
 
 // Review Finding #4 (2026-08-29) — some Vertex MaaS models (the same
 // reasoning models extractToolCallFromContent below already accommodates)
@@ -352,36 +344,32 @@ function resolveToolCallId(rawId) {
 // ADR-030 P2(c)-equivalent continuation shape — identical to
 // selfHosted.js's own buildPriorTurnMessages, same OpenAI-compatible
 // wire convention this adapter targets.
+// Review Finding #15 — the actual message-pair construction below is
+// shared (buildOpenAiCompatiblePriorTurnMessages, byte-identical to
+// selfHosted.js/openai.js). The validation loop in front of it is NOT
+// shared — it is Vertex-specific compatibility handling (Review Finding
+// #11) that has no equivalent in the other two adapters, run first so an
+// invalid turn throws before any message is built, exactly as before.
 function buildPriorTurnMessages(priorTurns) {
-  return priorTurns.flatMap((turn) => {
-    // Defense in depth only (Review Finding #11) — completeWithTools
-    // below already normalizes every returned callId via
-    // resolveToolCallId before a caller can ever construct a priorTurns
-    // entry from it, so this should never actually fire. Deliberately
-    // NOT a silent regeneration here: turn.rawToolCall (used for the
-    // assistant tool_calls entry immediately below, when present) may
-    // carry its OWN id — generating a fresh replacement ID only for
-    // tool_call_id while rawToolCall.id stays whatever it already was
-    // would create a NEW mismatch between the two messages, worse than
-    // the one this finding exists to fix. A thrown, existing-convention
-    // LlmRequestError is the safe choice for a state normalization
-    // itself already rules out.
+  // Defense in depth only (Review Finding #11) — completeWithTools below
+  // already normalizes every returned callId via resolveToolCallId before
+  // a caller can ever construct a priorTurns entry from it, so this
+  // should never actually fire. Deliberately NOT a silent regeneration
+  // here: turn.rawToolCall (used for the assistant tool_calls entry, when
+  // present) may carry its OWN id — generating a fresh replacement ID
+  // only for tool_call_id while rawToolCall.id stays whatever it already
+  // was would create a NEW mismatch between the two messages, worse than
+  // the one this finding exists to fix. A thrown, existing-convention
+  // LlmRequestError is the safe choice for a state normalization itself
+  // already rules out.
+  priorTurns.forEach((turn) => {
     if (typeof turn.callId !== 'string' || turn.callId.trim().length === 0) {
       throw new LlmRequestError(
         'Vertex AI MaaS: a prior tool turn has no valid call ID to associate its result with — refusing to send an unassociated tool-result message',
       );
     }
-    return [
-      {
-        role: 'assistant',
-        content: null,
-        tool_calls: [turn.rawToolCall || {
-          id: turn.callId, type: 'function', function: { name: turn.toolName, arguments: JSON.stringify(turn.arguments || {}) },
-        }],
-      },
-      { role: 'tool', tool_call_id: turn.callId, content: turn.resultText },
-    ];
   });
+  return buildOpenAiCompatiblePriorTurnMessages(priorTurns);
 }
 
 // Some Vertex MaaS models — measured live this session against the

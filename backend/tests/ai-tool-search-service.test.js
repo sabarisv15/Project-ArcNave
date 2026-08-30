@@ -289,9 +289,109 @@ test('discoverRelevantTools: an empty roleTools set short-circuits to the fallba
   let configResolved = false;
   await withStub(configurationService, 'getToolSearchConfig', () => { configResolved = true; return null; }, async () => {
     const result = await aiToolSearchService.discoverRelevantTools({}, { roleTools: [], question: 'q' });
-    assert.deepEqual(result, { tools: [], viaToolSearch: false, usage: undefined });
+    assert.deepEqual(result, {
+      tools: [], viaToolSearch: false, usage: undefined, attempted: false,
+    });
   });
   assert.equal(configResolved, false, 'nothing to search for zero tools — never even resolves a Tool Search config');
+});
+
+// --- Review Finding #13: attempted/completed lifecycle telemetry, and ---
+// exact toolSearchConfig reuse for logging (no second resolution).
+
+test('discoverRelevantTools: Tool Search disabled (getToolSearchConfig returns null) reports attempted: false, no provider/model', async () => {
+  const tools = makeTools(3);
+  await withStub(aiToolRetrievalService, 'retrieveRelevantTools', async () => [], () => withStub(
+    configurationService,
+    'getToolSearchConfig',
+    () => null,
+    async () => {
+      const result = await aiToolSearchService.discoverRelevantTools({}, { roleTools: tools, question: 'q' });
+      assert.equal(result.attempted, false);
+      assert.equal(result.completed, undefined);
+      assert.equal(result.provider, undefined);
+      assert.equal(result.model, undefined);
+      assert.equal(result.usage, undefined);
+    },
+  ));
+});
+
+test('discoverRelevantTools: a successful provider response with no usage block is still reported as attempted/completed, with usage explicitly undefined (never a fabricated zero)', async () => {
+  const tools = makeTools(5);
+  await withStub(configurationService, 'getToolSearchConfig', () => ({
+    provider: 'vertex_maas',
+    config: { model: 'the-tool-search-model' },
+    adapter: {
+      completeWithTools: async () => ({
+        type: 'tool_call',
+        toolName: aiToolSearchService.SELECT_TOOLS_META_TOOL_NAME,
+        arguments: { names: ['tool_0'], coverageStatus: 'complete' },
+        // Deliberately no `usage` field at all — a real, observed
+        // provider shape this test pins against.
+      }),
+    },
+  }), async () => {
+    const result = await aiToolSearchService.discoverRelevantTools({}, { roleTools: tools, question: 'q' });
+    assert.equal(result.attempted, true);
+    assert.equal(result.completed, true);
+    assert.equal(result.viaToolSearch, true);
+    assert.equal(result.usage, undefined, 'unavailable usage must stay undefined, never {inputTokens:0,...}');
+    assert.equal(result.provider, 'vertex_maas');
+    assert.equal(result.model, 'the-tool-search-model');
+  });
+});
+
+test('discoverRelevantTools: a provider throw is reported as attempted: true, completed: false, usage still unavailable', async () => {
+  const tools = makeTools(5);
+  await withStub(aiToolRetrievalService, 'retrieveRelevantTools', async () => [tools[1]], () => withStub(
+    configurationService,
+    'getToolSearchConfig',
+    () => enabledConfig(async () => { throw new Error('request timed out'); }),
+    async () => {
+      const result = await aiToolSearchService.discoverRelevantTools({}, { roleTools: tools, question: 'q' });
+      assert.equal(result.attempted, true);
+      assert.equal(result.completed, false);
+      assert.equal(result.usage, undefined);
+      assert.equal(result.viaToolSearch, false);
+    },
+  ));
+});
+
+test('discoverRelevantTools: a distrusted-but-completed response (model did not call the meta-tool) is still attempted/completed, not silently dropped', async () => {
+  const tools = makeTools(5);
+  await withStub(aiToolRetrievalService, 'retrieveRelevantTools', async () => [tools[0]], () => withStub(
+    configurationService,
+    'getToolSearchConfig',
+    () => enabledConfig(async () => ({ type: 'answer', text: 'I think tool_0 fits.' })),
+    async () => {
+      const result = await aiToolSearchService.discoverRelevantTools({}, { roleTools: tools, question: 'q' });
+      assert.equal(result.attempted, true);
+      assert.equal(result.completed, true);
+      assert.equal(result.viaToolSearch, false, 'the response itself is still untrusted for tool selection purposes');
+    },
+  ));
+});
+
+test('discoverRelevantTools: the provider request and the logged provider/model come from the SAME resolved config — a second, differing getToolSearchConfig() lookup is never consulted', async () => {
+  const tools = makeTools(5);
+  let resolveCount = 0;
+  await withStub(aiToolRetrievalService, 'retrieveRelevantTools', async () => [tools[0]], () => withStub(
+    configurationService,
+    'getToolSearchConfig',
+    () => {
+      resolveCount += 1;
+      // Every call after the first would report a different model —
+      // proof that only the FIRST resolution is actually used, both for
+      // the request itself and for what gets logged.
+      const model = resolveCount === 1 ? 'first-resolved-model' : 'SECOND-resolution-should-never-be-seen';
+      return { provider: 'vertex_maas', config: { model }, adapter: { completeWithTools: async () => ({ type: 'answer', text: 'no tool call' }) } };
+    },
+    async () => {
+      const result = await aiToolSearchService.discoverRelevantTools({}, { roleTools: tools, question: 'q' });
+      assert.equal(resolveCount, 1, 'getToolSearchConfig must be resolved exactly once per request, even on the distrusted-response fallback path');
+      assert.equal(result.model, 'first-resolved-model');
+    },
+  ));
 });
 
 // --- Review Finding #8: coverage-status honesty and recovery ---------

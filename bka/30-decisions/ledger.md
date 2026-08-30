@@ -4835,3 +4835,103 @@ exam-fees PDF through the real deployed sandbox**
 returns 23, and `sum` — an operation ADL-058's design would have
 refused outright — returns a real total (5013) over 15 matched rows.
 Full trust, proven live, not just asserted in a mock.
+
+#### ADL-063 addendum — independent row-integrity check required for full trust (Review Finding #3, 2026-08-29)
+
+**A correction to this entry's own reasoning, found the same day it
+shipped.** The full-trust decision above rests on "a pdfplumber
+reconstruction that passes `assessCoverage` gets the same trust as any
+other reliable document." That premise is false, and it is the exact
+defect class ([ADL-055](#adl-055)) this whole thread exists to chase, one
+layer further up: `documentTableExtractionService.assessCoverage`
+(`backend/src/services/documentTableExtractionService.js:169`) only
+verifies that every identity marker (a DoB occurrence) is accounted for
+exactly once — orphan count zero, no collapsed records. It never checks
+whether the *other* cell values in each row are attributed to the right
+record. A layout-reconstructed table can have every marker present and
+unique while a numeric column is still shifted onto the wrong student —
+coverage counts rows, it does not verify column content, the same gap
+[ADL-058](#adl-058)'s own four origin findings named for geometry and
+which this entry's "why full trust" section wrongly treated as closed by
+switching reconstruction methods.
+
+**Fix, in two parts, both shipped this session.**
+
+**Part 1 — the cap is restored first, before any replacement check
+exists.** `documentAnalysisService.analyzeAttachment` now caps *every*
+pdfplumber reconstruction at `unreliable_extraction` /
+`row_integrity_unverified` regardless of what `coverage` reports, closing
+the false-full-trust window this entry originally opened. No operation
+(`count`/`sum`/`breakdown`/`compare`, nor `filterBySerialRange`/
+`filterBySection`) runs on a capped result — the refusal is total, not a
+partial-access tier; the caller gets only `recordsDetected`/
+`rowsExpected`/`rowsAccountedFor` for diagnostics.
+
+**Part 2 — the independent check itself:
+`documentRowIntegrityService.assessRowIntegrity`** (new file,
+`backend/src/services/documentRowIntegrityService.js`), wired into the
+same call site immediately after Part 1. Generalized, not hand-fit to the
+exam-fees PDF's own fee schedule: it strips only the substrings already
+structurally known to be non-value (a record's own `serialNo`/`regNo`, a
+DoB-shaped span, a semester/regulation marker), then searches increasing
+fixed-width numeric prefixes of each record's remaining numbers for a
+scaling or summation relation that holds **exactly across every single
+record** — never a sample, never a majority — using the widest prefix
+width still covered by 100% of records. Measured first
+(`backend/scripts/row-arithmetic-consistency-probe.js`, read-only, not
+billable) against the real exam-fees PDF: a naive "match on the modal
+number-count" version degenerately passes by only testing the 9/23
+all-zero rows and never touching the 14 rows that actually carry
+arrears — exactly the rows a misattribution defect would corrupt. The
+fixed-width-prefix version achieves 23/23 coverage and discovers the same
+two real relations (`fees = arrears × 65`, `total = fees + 625`) the
+original hand-fit probe found, without being told what either column
+meant. `MIN_RECORDS = 5` and `MIN_RELATIONS = 2` are named constants, not
+implicit assumptions: below 5 records a relation holding on every row is
+too easily coincidence, and a single relation (especially a small-integer
+scaling factor) is more plausibly one than two independent ones are.
+
+**What earns full trust now, precisely.** In
+`documentAnalysisService.analyzeAttachment`, once a pdfplumber
+reconstruction passes `assessCoverage`,
+`documentRowIntegrityService.assessRowIntegrity(records)` runs against its
+`sequential_id`-shaped records. If `verified: true` (100% of records
+testable at the chosen prefix width, and at least `MIN_RELATIONS` distinct
+non-trivial relations hold across all of them), the `unreliable_extraction`
+cap from Part 1 is skipped and `count`/`sum`/`breakdown`/`compare` all run
+exactly as they do for any other reliable document — no new
+`partial_extraction` status, no identity-only tier, nothing refused. If
+`verified: false` (fewer than 5 records, no discoverable relation, or
+fewer than 2 independent ones), the document falls through to the Part 1
+cap unchanged, however clean its coverage is. This is deliberately a
+**binary** outcome — full trust or total refusal — never a graded partial
+tier; a `verified_partial`/aggregate-only/identity-only status for an
+unverified reconstruction is not implemented and remains FUTURE work
+(tracked in
+[FEATURE-MATRIX.md](../20-matrices/FEATURE-MATRIX.md#ai-assistant-chat--pdf-pdfplumber-fallback-full-trust-via-independent-row-integrity-check)).
+
+**Scope, stated rather than assumed.** This check only ever runs against
+`sequential_id`-shaped pdfplumber reconstructions — the only shape the
+fallback produces (`PDFPLUMBER_RECONSTRUCT_SCRIPT` always rejoins a row's
+cells with a single space, never a real delimiter). A `delimited`
+reconstruction already carries real column boundaries by construction and
+would need a different, more direct check if this were ever extended to
+it — not guessed at here before that case is actually encountered.
+Native/flat-text extraction (never a pdfplumber reconstruction) is
+untouched by this addendum: it keeps earning full trust from
+`assessCoverage` alone, because it has no merged-cell/layout-reconstruction
+step to introduce this failure mode in the first place.
+
+**Status.** Resolved and implemented, 2026-08-29 (same day as the entry
+above). 6 new unit tests
+(`backend/tests/document-row-integrity-service.test.js`) plus 2 new
+integration tests in `backend/tests/document-analysis-service.test.js`;
+the two pre-existing tests pinning "never full trust" from Part 1 still
+pass unmodified (their 3-record fixtures never meet the 5-record floor).
+Full backend suite **2446/2447** in Docker (one pre-existing, unrelated
+failure in `ai-service.test.js`'s Tool Search catalogue-text assertion —
+untouched files). **Live-verified against the real exam-fees PDF through
+the real deployed sandbox and a real DB-backed tenant**
+(`backend/scripts/pdfplumber-fallback-live-check.js`): `count` returns
+`status: 'ok'`, 23/23, and `sum` returns a real total (5013) instead of a
+refusal.

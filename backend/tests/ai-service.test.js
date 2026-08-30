@@ -37,6 +37,7 @@ const artifactService = require('../src/services/artifactService');
 const documentTextExtractionService = require('../src/services/documentTextExtractionService');
 const documentAnalysisService = require('../src/services/documentAnalysisService');
 const configurationService = require('../src/services/configurationService');
+const aiToolSearchService = require('../src/services/aiToolSearchService');
 const claudeAdapter = require('../src/services/aiProviders/claude');
 const selfHostedAdapter = require('../src/services/aiProviders/selfHosted');
 const embeddingService = require('../src/services/embeddingService');
@@ -1265,6 +1266,300 @@ test('aiService.askAgent: Tool Search enabled and successful — the decision ca
   const decisionSystemMessage = capturedBodies[0].messages.find((m) => m.role === 'system');
   assert.doesNotMatch(decisionSystemMessage.content, /EVERY tool available to you, by name/);
   assert.match(decisionSystemMessage.content, /You were given only the tools judged relevant/);
+});
+
+// --- Review Finding #13: Tool Search LLM-call telemetry must never be
+// silently omitted just because the provider response carried no usage
+// block. These tests check the actual ai_llm_call audit row aiService.js
+// writes for purpose: 'tool_search' — ai-tool-search-service.test.js
+// already covers aiToolSearchService.js's own attempted/completed return
+// values in isolation; these prove aiService.js's wiring of those values
+// into logLlmCall.
+
+function toolSearchAuditRow(client) {
+  return client.queries.find((q) => q.text.includes('INSERT INTO audit_log') && q.params[2] === 'ai_llm_call'
+    && JSON.parse(q.params[5]).purpose === 'tool_search');
+}
+
+test('aiService.askAgent: Tool Search call WITH usage — one ai_llm_call/tool_search row, real token counts, provider/model match the resolved config', async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  let fetchCalls = 0;
+
+  await withStub(configurationService, 'getToolSearchConfig', () => ({
+    provider: 'vertex_maas',
+    config: { model: 'qwen3-next-80b-a3b-thinking-maas' },
+    adapter: {
+      completeWithTools: async () => ({
+        type: 'tool_call',
+        toolName: 'select_relevant_tools',
+        arguments: { names: ['get_college_profile'], coverageStatus: 'complete' },
+        usage: { inputTokens: 340, outputTokens: 12 },
+      }),
+    },
+  }), () => withOpenAiConfig('test-openai-key', () => withMockFetch(async () => {
+    fetchCalls += 1;
+    return fetchCalls === 1
+      ? mockToolCallResponse('get_college_profile', {})
+      : mockAnswerResponse('This is the college profile.');
+  }, async () => {
+    await aiService.askAgent(client, 'What college is this?', { identityContext });
+  })));
+
+  const row = toolSearchAuditRow(client);
+  assert.ok(row, 'exactly one ai_llm_call row for purpose tool_search must exist');
+  const metadata = JSON.parse(row.params[5]);
+  assert.equal(metadata.provider, 'vertex_maas');
+  assert.equal(metadata.model, 'qwen3-next-80b-a3b-thinking-maas');
+  assert.equal(metadata.inputTokens, 340);
+  assert.equal(metadata.outputTokens, 12);
+  assert.equal(metadata.usageAvailable, true);
+  assert.equal(metadata.attempted, true);
+  assert.equal(metadata.completed, true);
+});
+
+test('aiService.askAgent: Tool Search call succeeds but the provider response has NO usage block — the row is still written, usage stays unknown (never a fabricated zero), and the call is distinguishable from "never attempted"', async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  let fetchCalls = 0;
+
+  await withStub(configurationService, 'getToolSearchConfig', () => ({
+    provider: 'vertex_maas',
+    config: { model: 'qwen3-next-80b-a3b-thinking-maas' },
+    adapter: {
+      completeWithTools: async () => ({
+        type: 'tool_call',
+        toolName: 'select_relevant_tools',
+        arguments: { names: ['get_college_profile'], coverageStatus: 'complete' },
+        // No `usage` field at all — the primary regression case.
+      }),
+    },
+  }), () => withOpenAiConfig('test-openai-key', () => withMockFetch(async () => {
+    fetchCalls += 1;
+    return fetchCalls === 1
+      ? mockToolCallResponse('get_college_profile', {})
+      : mockAnswerResponse('This is the college profile.');
+  }, async () => {
+    await aiService.askAgent(client, 'What college is this?', { identityContext });
+  })));
+
+  const row = toolSearchAuditRow(client);
+  assert.ok(row, 'a completed Tool Search call with no usage block must still produce a telemetry row — this is the exact regression Review Finding #13 fixes');
+  const metadata = JSON.parse(row.params[5]);
+  assert.equal(metadata.inputTokens, undefined, 'no usage block means unknown, never a fabricated 0');
+  assert.equal(metadata.outputTokens, undefined);
+  assert.equal(metadata.usageAvailable, false, 'unavailable usage must be explicit, distinguishable from "not attempted"');
+  assert.equal(metadata.attempted, true);
+  assert.equal(metadata.completed, true);
+  assert.equal(metadata.provider, 'vertex_maas');
+  assert.equal(metadata.model, 'qwen3-next-80b-a3b-thinking-maas');
+});
+
+test('aiService.askAgent: Tool Search provider call throws — attempted: true, completed: false, no usage fabricated, existing fallback/error behavior unchanged', async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  let fetchCalls = 0;
+
+  await withStub(configurationService, 'getToolSearchConfig', () => ({
+    provider: 'vertex_maas',
+    config: { model: 'qwen3-next-80b-a3b-thinking-maas' },
+    adapter: { completeWithTools: async () => { throw new Error('request timed out'); } },
+  }), () => withOpenAiConfig('test-openai-key', () => withMockFetch(async () => {
+    fetchCalls += 1;
+    return fetchCalls === 1
+      ? mockToolCallResponse('get_college_profile', {})
+      : mockAnswerResponse('This is the college profile.');
+  }, async () => {
+    await aiService.askAgent(client, 'What college is this?', { identityContext });
+  })));
+
+  const row = toolSearchAuditRow(client);
+  assert.ok(row, 'a real, attempted Tool Search call must be observable even when the provider call itself failed');
+  const metadata = JSON.parse(row.params[5]);
+  assert.equal(metadata.attempted, true);
+  assert.equal(metadata.completed, false);
+  assert.equal(metadata.usageAvailable, false);
+  assert.equal(metadata.inputTokens, undefined);
+  assert.equal(metadata.outputTokens, undefined);
+});
+
+test('aiService.askAgent: Tool Search disabled (default) — no ai_llm_call/tool_search row at all, "never attempted" stays distinguishable from "attempted with unknown usage"', async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(async () => mockAnswerResponse('Campus is open 9am-5pm.'), async () => {
+      await aiService.askAgent(client, 'What are the campus hours?', { identityContext });
+    });
+  });
+
+  assert.equal(toolSearchAuditRow(client), undefined, 'the disabled/never-attempted path must not produce a tool_search telemetry row');
+});
+
+test('aiService.askAgent: non-tool_search ai_llm_call rows are unaffected by the attempted/usageAvailable fields — existing tool_select telemetry shape unchanged', async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(async () => mockAnswerResponse('Campus is open 9am-5pm.'), async () => {
+      await aiService.askAgent(client, 'What are the campus hours?', { identityContext });
+    });
+  });
+
+  const toolSelectRow = client.queries.find((q) => q.text.includes('INSERT INTO audit_log') && q.params[2] === 'ai_llm_call'
+    && JSON.parse(q.params[5]).purpose === 'tool_select');
+  assert.ok(toolSelectRow);
+  const metadata = JSON.parse(toolSelectRow.params[5]);
+  assert.equal(metadata.attempted, undefined, 'a purpose that never passes attempted must not have it appear in metadata at all');
+  assert.equal(metadata.usageAvailable, undefined, 'usageAvailable is purpose-specific and must not leak onto callers that never opted in');
+});
+
+// --- Review Finding #16: independent preflight operations (Tool Search,
+// Identity Context, AI config resolution) must start concurrently, not
+// sequentially. Proven with deferred promises/mocks — never a wall-clock
+// threshold, which would be a fragile test on a shared CI runner.
+
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+
+function flushMicrotasks() {
+  return new Promise((resolve) => { setImmediate(resolve); });
+}
+
+test('aiService.askAgent: discoverRelevantTools, describeIdentityContext, and resolveAiConfig are all started before any of them resolves', async (t) => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+
+  const toolSearch = createDeferred();
+  const identity = createDeferred();
+  const aiConfigResult = createDeferred();
+
+  const toolSearchMock = t.mock.method(aiToolSearchService, 'discoverRelevantTools', () => toolSearch.promise);
+  const identityMock = t.mock.method(aiActorContext, 'describeIdentityContext', () => identity.promise);
+  const aiConfigMock = t.mock.method(configurationService, 'resolveAiConfig', () => aiConfigResult.promise);
+
+  let capturedBody;
+  const resultPromise = withMockFetch(async (url, options) => {
+    capturedBody = JSON.parse(options.body);
+    return mockAnswerResponse('This is ARCNAVE Demo College.');
+  }, () => withOpenAiConfig('test-openai-key', () => aiService.askAgent(client, 'What college is this?', { identityContext })));
+
+  // Let every earlier awaited step (attachment resolution, hint builders,
+  // etc.) run to completion against the real fakeClient before asserting
+  // — none of that work touches these three mocks, so once it settles,
+  // execution is either at or past the point all three are called and
+  // stuck waiting on the still-pending deferred promises above.
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  assert.equal(toolSearchMock.mock.callCount(), 1, 'discoverRelevantTools must already have been invoked');
+  assert.equal(identityMock.mock.callCount(), 1, 'describeIdentityContext must already have been invoked, before discoverRelevantTools resolved');
+  assert.equal(aiConfigMock.mock.callCount(), 1, 'resolveAiConfig must already have been invoked, before discoverRelevantTools resolved');
+
+  toolSearch.resolve({
+    tools: [], viaToolSearch: false, usage: undefined, attempted: false,
+  });
+  identity.resolve('Identity Context\nRole: Principal\nInstitution: Demo College');
+  aiConfigResult.resolve({ adapter: openaiAdapter, config: { apiKey: 'k', model: 'gpt-x' } });
+
+  const result = await resultPromise;
+  assert.equal(result.answer, 'This is ARCNAVE Demo College.');
+  // The resolved identityBlock actually reached the decision call's
+  // system prompt — proof the concurrently-started promise's value still
+  // flows through the same downstream construction as before.
+  const systemMessage = capturedBody.messages.find((m) => m.role === 'system');
+  assert.match(systemMessage.content, /Institution: Demo College/);
+});
+
+test('aiService.askAgent: a discoverRelevantTools rejection propagates out of askAgent exactly as the old sequential await would', async (t) => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  t.mock.method(aiToolSearchService, 'discoverRelevantTools', async () => { throw new Error('tool search exploded'); });
+
+  await withOpenAiConfig('test-openai-key', async () => {
+    await assert.rejects(
+      () => aiService.askAgent(client, 'What college is this?', { identityContext }),
+      /tool search exploded/,
+    );
+  });
+});
+
+test('aiService.askAgent: a describeIdentityContext rejection propagates out of askAgent, no request runs with incomplete identity context', async (t) => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  t.mock.method(aiActorContext, 'describeIdentityContext', async () => { throw new Error('identity lookup failed'); });
+  let fetchCalled = false;
+
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(async () => { fetchCalled = true; return mockAnswerResponse('should never be reached'); }, async () => {
+      await assert.rejects(
+        () => aiService.askAgent(client, 'What college is this?', { identityContext }),
+        /identity lookup failed/,
+      );
+    });
+  });
+  assert.equal(fetchCalled, false, 'no LLM request may run once identity context is unavailable');
+});
+
+test('aiService.askAgent: a resolveAiConfig rejection propagates out of askAgent, no request runs with missing/invalid AI configuration', async (t) => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  t.mock.method(configurationService, 'resolveAiConfig', async () => { throw new Error('config resolution failed'); });
+  let fetchCalled = false;
+
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(async () => { fetchCalled = true; return mockAnswerResponse('should never be reached'); }, async () => {
+      await assert.rejects(
+        () => aiService.askAgent(client, 'What college is this?', { identityContext }),
+        /config resolution failed/,
+      );
+    });
+  });
+  assert.equal(fetchCalled, false, 'no LLM request may run once AI configuration is unavailable');
+});
+
+test('aiService.askAgent: two colleges resolved concurrently never cross-contaminate identity context or AI config (tenant isolation)', async (t) => {
+  const clientA = fakeClient();
+  const clientB = fakeClient();
+  const identityA = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const identityB = { userId: 'u2', role: 'principal', collegeId: 'college-b' };
+
+  // Each college gets a distinguishable config, keyed off its own
+  // collegeId — real resolveAiConfig is bypassed here so the request
+  // body itself (via the model name) proves which college a given
+  // outbound request actually carried, regardless of which of the two
+  // concurrent askAgent calls happened to reach the mocked fetch first.
+  t.mock.method(configurationService, 'resolveAiConfig', async (client, collegeId) => ({
+    adapter: openaiAdapter, config: { apiKey: 'k', model: `model-for-${collegeId}` },
+  }));
+  t.mock.method(aiActorContext, 'describeIdentityContext', async (client, identityContext) => `Identity Context\nInstitution: ${identityContext.collegeId}`);
+
+  // A SINGLE shared fetch mock, since both askAgent calls run inside one
+  // Promise.all and global.fetch can only be stubbed once at a time —
+  // it distinguishes the two concurrent requests by their own request
+  // body (the per-college model name), never by call order.
+  const bodiesByModel = {};
+  const [resultA, resultB] = await withOpenAiConfig('test-openai-key', () => withMockFetch(async (url, options) => {
+    const body = JSON.parse(options.body);
+    bodiesByModel[body.model] = body;
+    return mockAnswerResponse(body.model === 'model-for-college-a' ? 'Answer A' : 'Answer B');
+  }, () => Promise.all([
+    aiService.askAgent(clientA, 'What college is this?', { identityContext: identityA }),
+    aiService.askAgent(clientB, 'What college is this?', { identityContext: identityB }),
+  ])));
+
+  assert.equal(resultA.answer, 'Answer A');
+  assert.equal(resultB.answer, 'Answer B');
+  const systemA = bodiesByModel['model-for-college-a'].messages.find((m) => m.role === 'system').content;
+  const systemB = bodiesByModel['model-for-college-b'].messages.find((m) => m.role === 'system').content;
+  assert.match(systemA, /Institution: college-a/);
+  assert.match(systemB, /Institution: college-b/);
+  assert.doesNotMatch(systemA, /college-b/);
+  assert.doesNotMatch(systemB, /college-a/);
 });
 
 test('aiService.askAgent: the LLM picks no tool -> returns its direct answer, still wrapped in the Prompt Safety Layer\'s envelope', async () => {

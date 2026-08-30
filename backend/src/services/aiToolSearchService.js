@@ -233,15 +233,28 @@ async function discoverRelevantTools(client, { roleTools, question }) {
   // model is free") needs that number regardless of the trust decision.
   // undefined when no call was ever attempted (disabled, zero tools, or
   // the call itself threw before returning anything).
-  const fallback = async (usage) => ({
+  // attempted/completed (Review Finding #13) — purpose-agnostic lifecycle
+  // signals threaded through to aiService.js's logLlmCall so a genuine
+  // provider call that completed with no usage block is still logged,
+  // instead of silently vanishing the way a bare `usage`-only guard would
+  // drop it. `attempted` defaults false (disabled/never-called path);
+  // every call site below that actually reached the provider passes
+  // `attempted: true` explicitly. provider/model are populated from the
+  // SAME `toolSearchConfig` this function already resolved for the real
+  // request — never a second `configurationService.getToolSearchConfig()`
+  // lookup, which could observe a different value than the one the
+  // request itself used.
+  const fallback = async ({ usage, attempted = false, completed } = {}) => ({
     tools: await aiToolRetrievalService.retrieveRelevantTools(client, { roleTools, question }),
     viaToolSearch: false,
     usage,
-    provider: usage ? 'vertex_maas' : undefined,
-    model: usage ? configurationService.getToolSearchConfig().config.model : undefined,
+    provider: attempted ? 'vertex_maas' : undefined,
+    model: attempted ? toolSearchConfig.config.model : undefined,
+    attempted,
+    completed,
   });
 
-  if (roleTools.length === 0) return { tools: [], viaToolSearch: false, usage: undefined };
+  if (roleTools.length === 0) return { tools: [], viaToolSearch: false, usage: undefined, attempted: false };
 
   const toolSearchConfig = configurationService.getToolSearchConfig();
   if (!toolSearchConfig) return fallback();
@@ -267,23 +280,27 @@ async function discoverRelevantTools(client, { roleTools, question }) {
     // LlmNotConfiguredError by the adapter) degrades to the existing
     // retrieval path. A chat turn must never fail because Tool Search
     // did. No usage available — the call never returned a response to
-    // read one from.
+    // read one from. attempted: true / completed: false — the request
+    // was actually made and never got a response, distinct from the
+    // disabled/never-attempted case above.
     logToolSearchFallback('provider_error');
-    return fallback();
+    return fallback({ attempted: true, completed: false });
   }
 
   if (decision.type !== 'tool_call' || decision.toolName !== SELECT_TOOLS_META_TOOL_NAME) {
     // The model answered in prose instead of calling the meta-tool, or
     // called something else entirely — not a shape this service trusts.
+    // The call still completed (a response came back), so attempted/
+    // completed are both true even though the answer itself is distrusted.
     logToolSearchFallback('model_did_not_call_meta_tool');
-    return fallback(decision.usage);
+    return fallback({ usage: decision.usage, attempted: true, completed: true });
   }
 
   const rawNames = decision.arguments && decision.arguments.names;
   const validated = validateNames(rawNames, roleTools);
   if (validated === null) {
     logToolSearchFallback('unparseable_names');
-    return fallback(decision.usage);
+    return fallback({ usage: decision.usage, attempted: true, completed: true });
   }
   // Every name came back invalid despite a non-empty raw response — the
   // model likely hallucinated names outside the list, not a genuine
@@ -293,13 +310,13 @@ async function discoverRelevantTools(client, { roleTools, question }) {
   const rawNameArray = toNameArray(rawNames);
   if (validated.length === 0 && rawNameArray && rawNameArray.length > 0) {
     logToolSearchFallback('all_names_invalid');
-    return fallback(decision.usage);
+    return fallback({ usage: decision.usage, attempted: true, completed: true });
   }
 
   const coverageStatus = normalizeCoverageStatus(decision.arguments && decision.arguments.coverageStatus);
   const uncoveredRequirements = normalizeUncoveredRequirements(decision.arguments && decision.arguments.uncoveredRequirements);
   const commonReturn = {
-    usage: decision.usage, provider: 'vertex_maas', model: toolSearchConfig.config.model,
+    usage: decision.usage, provider: 'vertex_maas', model: toolSearchConfig.config.model, attempted: true, completed: true,
   };
 
   // Review Finding #8: valid tool names are not the same claim as

@@ -81,6 +81,19 @@ RUN apt-get update \
 # COST, stated rather than discovered later: this is a large increase on
 # an image that was already ~1.2GB, and its cold-start cost has never
 # been measured. That measurement is now more overdue, not less.
+#
+# 2026-08-30 — File Intelligence Router (ai-chat-file-intelligence-router-
+# approved-spec.md), owner-approved infra addition, same rigor as every
+# addition above (fixed, reviewed, no request-time install):
+#   ffmpeg - audio/video transcode to the closed set of formats the
+#            native-multimodal audio/video path actually sends
+#            (scripts/transcode.py). No archive-extraction package is
+#            added here — zipfile/tarfile are already in the Python
+#            standard library and give full control over reading each
+#            entry's declared size BEFORE extracting it, which is
+#            exactly the property a zip-bomb guard needs
+#            (scripts/extract_archive.py) and a third-party convenience
+#            wrapper would only obscure.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libreoffice-calc \
@@ -88,12 +101,15 @@ RUN apt-get update \
         libreoffice-impress \
         tesseract-ocr \
         poppler-utils \
+        ffmpeg \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY package.json server.js ./
 COPY scripts/recalc.py scripts/recalc.py
+COPY scripts/transcode.py scripts/transcode.py
+COPY scripts/extract_archive.py scripts/extract_archive.py
 
 # Runs as a non-root user — the container's own root account should
 # never be what executes arbitrary submitted code.

@@ -4,7 +4,111 @@ _Last updated: 2026-08-30._
 
 ---
 
-# ⛔ READ FIRST — ADL-064/065 shipped and review-fixed, 2026-08-30. Decision 2 (image search) is still the only open item.
+# ⛔ READ FIRST — File Intelligence Router (audio/video/archive attachment support) built and verified, 2026-08-30. Read this banner before the ADL-064/065 one below — it is now the most recent session.
+
+**New feature, not one of the six queued document-analysis items and not
+Decision 2** — a separate, user-directed request to generalize chat
+attachments beyond images/PDF/office/text into a real classification
+router, adding audio, video, and archive support for the first time.
+Approved Spec (with the four owner decisions this session opened with):
+[`ai-chat-file-intelligence-router-approved-spec.md`](../60-product-reasoning/ai-chat-file-intelligence-router-approved-spec.md).
+
+**Shipped and verified this session:**
+- `fileIntelligenceRouter.js` — real MIME-sniff classification (extended
+  from the sniffing that used to live directly in `routes/documents.js`)
+  covering all 10 task-defined categories, including ISO-BMFF/RIFF
+  container disambiguation (HEIC vs. M4A vs. MP4 vs. WAV vs. AVI vs.
+  WebP all share a magic-byte shape and are told apart by internal
+  brand/form data, not extension).
+- `attachment_intelligence` table (new migration, `ON DELETE CASCADE` to
+  `documents`) + `attachmentIntelligenceRepository`/`attachmentIntelligenceService`
+  — one row per attachment, archive children linked via
+  `parent_attachment_id`, recursive tree walk for the new
+  `GET /documents/chat-attachments/:id/intelligence` endpoint.
+- Archive extraction: sandbox-side `extract_archive.py` (zip/tar/gzip,
+  200-entry/500MB bounds enforced BEFORE any byte is written, hard
+  path-traversal rejection — an earlier version silently
+  relocated `../../evil.txt` into a safe path instead of rejecting the
+  archive, caught and fixed via a real fixture, not reasoning alone),
+  invoked synchronously at upload time (same "sandbox round-trip inside
+  one HTTP request" precedent `execute_code` already set). Recursion
+  depth capped at 6, verified via a real mocked-recursion test.
+- Audio/video: `transcode.py` (ffmpeg, fixed codec targets only) added
+  to the sandbox image; `gemini.js` sends real `inline_data` audio/video
+  parts and reuses the existing `AiProviderCapabilityError` class when
+  the provider rejects one (routes/ai.js already maps that to a clean
+  503 — no new error-mapping code needed). **Live-verified real audio
+  capability, 2026-08-30**: a real synthesized WAV sent to the actually-
+  configured `GEMINI_MODEL` returned HTTP 200 with a correct content
+  description (`scripts/multimodal-audio-video-capability-probe.js`).
+  Video/HEIC remain explicitly UNMEASURED (no ffmpeg on the host this
+  was built on) — documented as an open item, not assumed either way.
+  Per-college opt-in reuses the EXISTING `configurationService`
+  generic-category mechanism (`web_retrieval`'s own precedent) — no new
+  config table.
+- `resolveChatAttachments`/`askGeneralChat`/`askAgent`'s Curriculum
+  tool-loop all thread a new `media` array alongside the existing
+  `images` array, mirroring its exact honest-degradation shape
+  (`imagesSupported`/`imageAnalysisUnavailable` → `mediaSupported`/
+  `mediaAnalysisUnavailable`). PDF/DOCX/XLSX/PPTX/ODT/ODS/text
+  extraction is **byte-identical to before this router existed** — the
+  router classifies them but the existing extraction path is untouched.
+- Frontend: `composerAttachments.js` accepts audio/video/archive types
+  client-side; `useComposerAttachments.js` no longer blindly shows
+  'ready' for every successful HTTP upload (a real bug this session's
+  own richer response shape exposed — an archive whose extraction
+  failed server-side used to display as a normal, successful attachment).
+- **Full backend suite: 2596/2596 passing** (clean, `docker compose exec
+  app npm test`, captured directly to a file rather than a background-
+  task buffer — no truncation risk this time). Frontend:
+  `composerAttachments.test.js` 25/25. The 106 unrelated frontend
+  failures seen in a full `vitest run` (AuthProvider/localStorage errors
+  in `students.test.jsx`/`institutionReadiness.test.jsx`/etc.) are
+  **pre-existing** — confirmed via `git stash` against unmodified code,
+  not caused by this work.
+
+**Deliberately NOT built this session (see the spec's OUT OF SCOPE
+table for the full list with reasoning):** malware/AV scanning (no
+engine anywhere in this repo); specialized-binary preview rendering;
+office-document visual rendering (docx/pptx → PDF/image); xlsx's
+direct-chat-context path still text-extracts rather than using a
+deterministic sandbox summary (the separate, already-correct
+tool-based `documentAnalysisService` pipeline is unaffected either
+way); any write of extracted marks/IDs/financial values to an
+authoritative record; per-attachment async status polling in the
+composer UI (the vocabulary/labels are ready in `AttachmentManager.jsx`,
+but nothing async actually happens yet since archive extraction is
+synchronous and audio/video has no queue).
+
+**`transcodeMedia` wiring — CLOSED, same session, 2026-08-30.**
+`resolveChatAttachments` now checks each audio/video attachment's
+detected mime type against a closed native-support set
+(`NATIVE_AUDIO_MIME_TYPES`/`NATIVE_VIDEO_MIME_TYPES`, `aiService.js`) —
+a natively-supported type (every audio type the router currently
+sniffs, plus mp4/webm/mov video) is sent as-is with zero sandbox calls;
+anything else (concretely, today: AVI, `video/x-msvideo`) is
+transcoded via `sandboxExecutionService.transcodeMedia` first
+(`resolveNativeSendableMedia`, `aiService.js`). A transcode failure —
+thrown (sandbox not configured/unreachable) or returned
+(`{status:'failed'}`, e.g. ffmpeg timeout) — degrades to the same
+`documents[]`-with-`failureReason` shape every other unreadable
+attachment already uses, normalized through a closed, audit-safe
+reason vocabulary (`describeTranscodeFailureReason`), never thrown out
+of the turn. Four new tests, all passing, including a real AVI fixture
+exercising the actual transcode call (not just a mocked category).
+**Full backend suite: 2601/2601, clean.** This closes the one item the
+previous banner named as the exact next action for this thread.
+
+**Genuinely still open, if resuming this thread:** the video/HEIC
+capability probes (no ffmpeg was available on the host this was built
+on — audio's own native-support probe is real and live-verified, video/
+HEIC support is asserted from the spec's stated scope, not
+independently measured per codec). Otherwise this thread is done for
+now — Decision 2 below remains the other genuinely open item.
+
+---
+
+# ⛔ Previous banner — ADL-064/065 shipped and review-fixed, 2026-08-30. Decision 2 (image search) is still the only open item from that thread.
 
 **ADL-064 (catalogue-routing-variant experiment resolved) and ADL-065
 (`analyze_document_table` retired) are FULLY SHIPPED, 2026-08-30.** Both

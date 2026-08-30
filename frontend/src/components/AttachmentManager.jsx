@@ -21,6 +21,31 @@ import { cn } from '../lib/utils';
  * Scope is inherited, not chosen: it renders the list handed to it by one
  * composer, so a Home paste is not visible here from a project chat.
  */
+/**
+ * Status copy follows ai-chat-file-intelligence-router-approved-spec.md's
+ * own recommended language ("Ready for AI analysis" / "Processing
+ * failed", never "100% accurate" / "AI verified"). `processingStatus`
+ * only ever carries the values the backend can actually return today
+ * (uploaded/ready/failed/blocked) — this function is written to also
+ * recognize the richer async vocabulary (queued/processing/needs_review)
+ * the spec defines, so the UI does not need another change the day a
+ * future slice wires up real async processing (audio/video transcode,
+ * provider indexing) — those branches are simply unreachable until then,
+ * not dead code guessing at a shape that doesn't exist.
+ */
+function statusLabel(attachment, uploading, failed) {
+  if (uploading) return `Uploading ${Math.round((attachment.progress ?? 0) * 100)}%`;
+  if (failed) return 'Processing failed';
+  switch (attachment.processingStatus) {
+    case 'validating': return 'Validating file';
+    case 'queued': return 'Queued';
+    case 'processing': return 'Processing';
+    case 'needs_review': return `${formatBytes(attachment.size)} · Needs review`;
+    case 'blocked': return 'File type is not supported for AI analysis';
+    default: return `${formatBytes(attachment.size)} · Ready for AI analysis`;
+  }
+}
+
 export function AttachmentManager({ open, onOpenChange, attachments, onRemove, onRetry }) {
   const total = attachments?.length ?? 0;
 
@@ -84,11 +109,7 @@ export function AttachmentManager({ open, onOpenChange, attachments, onRemove, o
                           {a.name}
                         </span>
                         <span className="block text-[11px] text-ink-faint">
-                          {failed
-                            ? 'Upload failed'
-                            : uploading
-                              ? `Uploading ${Math.round((a.progress ?? 0) * 100)}%`
-                              : `${formatBytes(a.size)} · Ready`}
+                          {statusLabel(a, uploading, failed)}
                         </span>
                       </span>
 

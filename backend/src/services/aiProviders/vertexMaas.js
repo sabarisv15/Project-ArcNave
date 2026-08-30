@@ -84,6 +84,9 @@ const MAX_TOKENS = 65_536;
 // not used for multimodal turns in Phase 1 regardless (Tool Search only
 // ever sees the question text — see aiToolSearchService.js).
 const supportsVision = false;
+// See claude.js's identical comment — audio/video is scoped to Gemini
+// only for now; this adapter has no media-part construction.
+const supportsAudioVideo = false;
 
 function isConfigured(cfg) {
   // No sane default model exists here (unlike gemini.js's DEFAULT_MODEL)
@@ -509,6 +512,7 @@ async function generateImage() {
 module.exports = {
   name: 'vertex_maas',
   supportsVision,
+  supportsAudioVideo,
   isConfigured,
   complete,
   completeWithMeta,

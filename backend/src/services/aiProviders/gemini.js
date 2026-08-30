@@ -78,6 +78,15 @@ const EMBEDDING_DIMENSIONS = 1024;
 const GENERATION_CONFIG = { maxOutputTokens: MAX_OUTPUT_TOKENS, thinkingConfig: { thinkingLevel: 'LOW' } };
 
 const supportsVision = true;
+// Live-verified 2026-08-30 for audio (scripts/multimodal-audio-video-
+// capability-probe.js — a real WAV sent as inline_data returned a real,
+// correct description, HTTP 200). Video/HEIC remain UNMEASURED (see
+// that probe's own file comment) — `true` here is still correct because
+// this flag gates whether media is even ATTEMPTED, not whether every
+// sub-case is confirmed; a genuine per-call rejection (video/HEIC or
+// otherwise) is caught separately via AiProviderCapabilityError in
+// postJson above, the actual "don't assume" enforcement point.
+const supportsAudioVideo = true;
 
 function isConfigured(cfg) {
   return Boolean(cfg && cfg.projectId);
@@ -133,21 +142,42 @@ async function getAccessToken(cfg) {
   return token;
 }
 
-// Builds the user turn's `parts` array — text only when no images are
-// attached (unchanged shape every existing caller/test expects), or
-// Gemini's real inline_data image-part shape (images first, text last)
-// when images are present.
-function buildUserParts(userPrompt, images) {
-  if (!images || images.length === 0) {
+// Builds the user turn's `parts` array — text only when no images/media
+// are attached (unchanged shape every existing caller/test expects),
+// otherwise images first, then audio/video (`media`,
+// ai-chat-file-intelligence-router-approved-spec.md's Audio/Video
+// features — same wire shape as images: Gemini's generateContent parts
+// array accepts inline_data for any modality, disambiguated by
+// mime_type alone, live-verified for audio/wav via
+// scripts/multimodal-audio-video-capability-probe.js, 2026-08-30), text
+// last.
+function buildUserParts(userPrompt, images, media) {
+  if ((!images || images.length === 0) && (!media || media.length === 0)) {
     return [{ text: userPrompt }];
   }
   return [
-    ...images.map((img) => ({ inline_data: { mime_type: img.mimeType, data: img.base64 } })),
+    ...(images || []).map((img) => ({ inline_data: { mime_type: img.mimeType, data: img.base64 } })),
+    ...(media || []).map((item) => ({ inline_data: { mime_type: item.mimeType, data: item.base64 } })),
     { text: userPrompt },
   ];
 }
 
-async function postJson(cfg, url, body) {
+// hasMedia: true when this request's parts included an audio/video
+// inline_data part — used ONLY to classify a 4xx response afterward,
+// never to decide whether to send the request (the router already
+// decided that; this is purely about giving the caller an honest,
+// distinguishable error when the provider itself rejects the modality).
+// A 4xx with media attached is treated as a capability rejection
+// (AiProviderCapabilityError) rather than a generic LlmRequestError —
+// this project's own explicit rule is never to assume support, so a
+// wrong guess must degrade to a clear, specific signal
+// (attachmentIntelligenceService's 'modality_unsupported_by_provider'),
+// not an opaque request failure indistinguishable from a malformed
+// prompt or an auth fault. A 5xx/timeout/network error is NOT
+// reclassified — those are infra symptoms, not a capability answer,
+// same distinction this file's own retry.js already draws between
+// retryable-transient and not.
+async function postJson(cfg, url, body, { hasMedia = false } = {}) {
   const token = await getAccessToken(cfg);
   // cfg.maxTotalLatencyMs: test-only override, same escape-hatch
   // precedent as cfg.accessToken above (avoids waiting out the real
@@ -176,6 +206,11 @@ async function postJson(cfg, url, body) {
 
   if (!response.ok) {
     const bodyText = await response.text().catch(() => '');
+    if (hasMedia && response.status >= 400 && response.status < 500) {
+      throw new AiProviderCapabilityError(
+        `Gemini (Vertex AI) rejected an audio/video attachment for this model (HTTP ${response.status}): ${bodyText.slice(0, 500)}`,
+      );
+    }
     throw new LlmRequestError(`Gemini (Vertex AI) returned ${response.status}: ${bodyText.slice(0, 500)}`);
   }
 
@@ -212,16 +247,16 @@ function extractUsage(usageMetadata) {
 }
 
 async function completeWithMeta(cfg, arcnaveContext) {
-  const { systemPrompt, userPrompt, images } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, images, media } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
   }
 
   const payload = await postJson(cfg, modelUrl(cfg, model(cfg), 'generateContent'), {
     systemInstruction: { parts: [{ text: systemPrompt }] },
-    contents: [{ role: 'user', parts: buildUserParts(userPrompt, images) }],
+    contents: [{ role: 'user', parts: buildUserParts(userPrompt, images, media) }],
     generationConfig: GENERATION_CONFIG,
-  });
+  }, { hasMedia: Boolean(media && media.length) });
 
   const parts = payload && payload.candidates && payload.candidates[0]
     && payload.candidates[0].content && payload.candidates[0].content.parts;
@@ -253,7 +288,8 @@ async function complete(cfg, prompts) {
 // the caller; an attempt is only ever retried before its first real
 // chunk, never after.
 async function attemptStream(cfg, arcnaveContext, deadline, onDelta) {
-  const { systemPrompt, userPrompt, images } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, images, media } = flattenToPrompts(arcnaveContext);
+  const hasMedia = Boolean(media && media.length);
   const token = await getAccessToken(cfg);
   const response = await withRetry(async () => {
     const remaining = deadline - Date.now();
@@ -268,7 +304,7 @@ async function attemptStream(cfg, arcnaveContext, deadline, onDelta) {
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: systemPrompt }] },
-          contents: [{ role: 'user', parts: buildUserParts(userPrompt, images) }],
+          contents: [{ role: 'user', parts: buildUserParts(userPrompt, images, media) }],
           generationConfig: GENERATION_CONFIG,
         }),
         signal: controller.signal,
@@ -282,6 +318,11 @@ async function attemptStream(cfg, arcnaveContext, deadline, onDelta) {
 
   if (!response.ok) {
     const bodyText = await response.text().catch(() => '');
+    if (hasMedia && response.status >= 400 && response.status < 500) {
+      throw new AiProviderCapabilityError(
+        `Gemini (Vertex AI) rejected an audio/video attachment for this model (HTTP ${response.status}): ${bodyText.slice(0, 500)}`,
+      );
+    }
     throw new LlmRequestError(`Gemini (Vertex AI) returned ${response.status}: ${bodyText.slice(0, 500)}`);
   }
 
@@ -420,7 +461,7 @@ function buildPriorTurnContents(priorTurns) {
 
 async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   const {
-    systemPrompt, userPrompt, tools, images,
+    systemPrompt, userPrompt, tools, images, media,
   } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
@@ -429,7 +470,7 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   const payload = await postJson(cfg, modelUrl(cfg, model(cfg), 'generateContent'), {
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents: [
-      { role: 'user', parts: buildUserParts(userPrompt, images) },
+      { role: 'user', parts: buildUserParts(userPrompt, images, media) },
       ...buildPriorTurnContents(priorTurns),
     ],
     tools: [{
@@ -440,7 +481,7 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
       })),
     }],
     generationConfig: GENERATION_CONFIG,
-  });
+  }, { hasMedia: Boolean(media && media.length) });
 
   const parts = payload && payload.candidates && payload.candidates[0]
     && payload.candidates[0].content && payload.candidates[0].content.parts;
@@ -545,6 +586,7 @@ module.exports = {
   name: 'gemini',
   EMBEDDING_DIMENSIONS,
   supportsVision,
+  supportsAudioVideo,
   isConfigured,
   complete,
   completeWithMeta,

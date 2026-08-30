@@ -57,13 +57,18 @@ function computeFingerprint(segments) {
   return crypto.createHash('sha256').update(JSON.stringify(qualifying)).digest('hex');
 }
 
-// `tools`/`images` are carried as separate top-level fields, never turned
-// into segments — they're structured arrays passed straight to
-// adapter.completeWithTools today, never stringified into prompt text at
-// any call site in aiService.js.
-function buildContext(segments, { tools, images } = {}) {
+// `tools`/`images`/`media` are carried as separate top-level fields,
+// never turned into segments — they're structured arrays passed
+// straight to adapter.completeWithTools today, never stringified into
+// prompt text at any call site in aiService.js. `media` is new
+// (ai-chat-file-intelligence-router-approved-spec.md's audio/video
+// feature) — deliberately a SEPARATE field from `images`, not images
+// generalized to cover every modality, so every existing `images`
+// caller/test keeps its exact original shape untouched; only aiService's
+// new audio/video path populates `media`.
+function buildContext(segments, { tools, images, media } = {}) {
   return {
-    segments, tools, images, fingerprint: computeFingerprint(segments),
+    segments, tools, images, media, fingerprint: computeFingerprint(segments),
   };
 }
 
@@ -86,18 +91,18 @@ function flattenToPrompts(context) {
     .map((s) => s.content)
     .join('\n\n');
   return {
-    systemPrompt, userPrompt, tools: context.tools, images: context.images,
+    systemPrompt, userPrompt, tools: context.tools, images: context.images, media: context.media,
   };
 }
 
 // Test/back-compat helper: wraps a flat {systemPrompt, userPrompt, tools,
-// images} object (today's shape) into a minimal two-segment Context, so
-// existing test call sites and the two documentExtractionService.js call
-// sites (which have no real segment structure to preserve — a single
-// static instruction + a single turn-scoped OCR text blob) don't need to
-// hand-build a segment list.
+// images, media} object (today's shape, now with `media` additive) into
+// a minimal two-segment Context, so existing test call sites and the two
+// documentExtractionService.js call sites (which have no real segment
+// structure to preserve — a single static instruction + a single
+// turn-scoped OCR text blob) don't need to hand-build a segment list.
 function contextFromFlatPrompts({
-  systemPrompt, userPrompt, tools, images,
+  systemPrompt, userPrompt, tools, images, media,
 } = {}) {
   const segments = [];
   if (systemPrompt) {
@@ -110,7 +115,7 @@ function contextFromFlatPrompts({
       source: 'flat-user', stability: STABILITY.TURN, target: 'user', content: userPrompt,
     }));
   }
-  return buildContext(segments, { tools, images });
+  return buildContext(segments, { tools, images, media });
 }
 
 module.exports = {

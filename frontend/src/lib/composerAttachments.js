@@ -37,7 +37,33 @@ export const ACCEPTED_DOCUMENT_TYPES = [
   'text/csv',
 ];
 
-export const ACCEPTED_ATTACHMENT_TYPES = [...ACCEPTED_IMAGE_TYPES, ...ACCEPTED_DOCUMENT_TYPES];
+/**
+ * File Intelligence Router (ai-chat-file-intelligence-router-approved-
+ * spec.md) — audio/video, gated server-side behind the per-college
+ * `audio_video_attachments` opt-in (aiService.resolveChatAttachments),
+ * not here: this list only controls what the picker/drop surface will
+ * OFFER, never authorization. An attachment from a college that hasn't
+ * opted in still uploads and stores successfully — it degrades to a
+ * "not available to the AI" note at chat-turn time instead, same as any
+ * other honestly-degraded attachment.
+ */
+export const ACCEPTED_MEDIA_TYPES = [
+  'audio/wav', 'audio/mpeg', 'audio/flac', 'audio/ogg', 'audio/mp4',
+  'video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo',
+];
+
+/** Archives are unpacked server-side (fileIntelligenceRouter's
+ *  ARCHIVE_OR_CONTAINER route) — each extracted child becomes its own,
+ *  independently usable attachment; see routes/documents.js's
+ *  processArchiveAttachment. */
+export const ACCEPTED_ARCHIVE_TYPES = ['application/zip', 'application/gzip', 'application/x-tar'];
+
+export const ACCEPTED_ATTACHMENT_TYPES = [
+  ...ACCEPTED_IMAGE_TYPES,
+  ...ACCEPTED_DOCUMENT_TYPES,
+  ...ACCEPTED_MEDIA_TYPES,
+  ...ACCEPTED_ARCHIVE_TYPES,
+];
 
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
 /** Ten, because ten is what people actually paste — a set of screenshots from
@@ -71,6 +97,22 @@ const EXTENSION_MIME_TYPES = {
   md: 'text/markdown',
   txt: 'text/plain',
   csv: 'text/csv',
+  // Audio/video — several OSes report an empty/generic file.type for
+  // these too, same reasoning as the document extensions above.
+  wav: 'audio/wav',
+  mp3: 'audio/mpeg',
+  flac: 'audio/flac',
+  ogg: 'audio/ogg',
+  m4a: 'audio/mp4',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mov: 'video/quicktime',
+  avi: 'video/x-msvideo',
+  // Archives.
+  zip: 'application/zip',
+  gz: 'application/gzip',
+  tgz: 'application/gzip',
+  tar: 'application/x-tar',
 };
 
 /** The best MIME type available for a candidate file — its own, or one

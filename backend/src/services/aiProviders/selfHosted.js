@@ -37,6 +37,9 @@ const MAX_TOKENS = 1024;
 // operator configured — no vision-capable convention is assumed here,
 // since there's no fixed vendor to make that guarantee.
 const supportsVision = false;
+// See claude.js's identical comment — audio/video is scoped to Gemini
+// only for now; this adapter has no media-part construction.
+const supportsAudioVideo = false;
 
 function isConfigured(cfg) {
   return Boolean(cfg && cfg.baseUrl);
@@ -267,6 +270,7 @@ async function generateImage() {
 module.exports = {
   name: 'self_hosted',
   supportsVision,
+  supportsAudioVideo,
   isConfigured,
   complete,
   completeWithMeta,

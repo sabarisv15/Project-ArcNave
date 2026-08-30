@@ -59,8 +59,17 @@ describe('accepted types', () => {
     }
   });
 
-  it('isAcceptedAttachment still rejects a real non-starter (e.g. a bare zip)', () => {
-    expect(isAcceptedAttachment('application/zip')).toBe(false);
+  it('isAcceptedAttachment now accepts audio/video/archive types (File Intelligence Router)', () => {
+    for (const type of [
+      'audio/wav', 'audio/mpeg', 'video/mp4', 'video/webm',
+      'application/zip', 'application/gzip', 'application/x-tar',
+    ]) {
+      expect(isAcceptedAttachment(type)).toBe(true);
+    }
+  });
+
+  it('isAcceptedAttachment still rejects a real non-starter (e.g. an executable)', () => {
+    expect(isAcceptedAttachment('application/x-msdownload')).toBe(false);
   });
 
   it('resolveAttachmentType falls back to the extension when the browser gave no usable type (routine for .md)', () => {

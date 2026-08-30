@@ -32,6 +32,9 @@ const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 const MAX_TOKENS = 1024;
 
 const supportsVision = true;
+// See claude.js's identical comment — audio/video is scoped to Gemini
+// only for now; this adapter has no media-part construction.
+const supportsAudioVideo = false;
 
 function isConfigured(cfg) {
   return Boolean(cfg && cfg.apiKey);
@@ -324,6 +327,7 @@ async function generateImage(cfg, { prompt }) {
 module.exports = {
   name: 'openai',
   supportsVision,
+  supportsAudioVideo,
   isConfigured,
   generateImage,
   complete,

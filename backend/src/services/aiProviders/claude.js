@@ -55,6 +55,13 @@ const DEFAULT_VERTEX_MODEL = 'claude-sonnet-5';
 const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 
 const supportsVision = true;
+// ai-chat-file-intelligence-router-approved-spec.md's audio/video
+// features are scoped to the configured Gemini/Vertex model only
+// (Decision 1's own framing, and the only adapter with a live-verified
+// native audio capability — gemini.js's own comment). This adapter has
+// no media-part construction at all, so this is a real, honest false,
+// not a placeholder.
+const supportsAudioVideo = false;
 
 function isVertexMode(cfg) {
   return Boolean(cfg && cfg.projectId);
@@ -384,6 +391,7 @@ async function generateImage() {
 module.exports = {
   name: 'claude',
   supportsVision,
+  supportsAudioVideo,
   isConfigured,
   complete,
   completeWithMeta,

@@ -1,7 +1,6 @@
 'use strict';
 
 const express = require('express');
-const PizZip = require('pizzip');
 const asyncHandler = require('../middleware/asyncHandler');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const { roleHasPermission } = require('../middleware/permissions');
@@ -11,6 +10,8 @@ const ocrService = require('../services/ocrService');
 const visibilityService = require('../services/visibilityService');
 const collegeProfileService = require('../services/collegeProfileService');
 const identityService = require('../services/identityService');
+const fileIntelligenceRouter = require('../services/fileIntelligenceRouter');
+const attachmentIntelligenceService = require('../services/attachmentIntelligenceService');
 
 function requireResolvedTenant(req, res) {
   if (req.collegeId === null) {
@@ -57,132 +58,14 @@ function decodeStrictBase64(value) {
   return buffer;
 }
 
-// Real file-content sniffing (magic bytes) — never trusts a caller's
-// declared mime_type. Covers exactly the 4 types the composer's own
-// ACCEPTED_IMAGE_TYPES accepts (composerAttachments.js): PNG, JPEG,
-// GIF, WEBP. Returns null (not a fallback/guess) for anything else, so
-// a mislabeled or spoofed upload is rejected rather than silently
-// stored under a wrong or fabricated type.
-function sniffImageMimeType(buffer) {
-  if (buffer.length >= 4 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
-    return 'image/png';
-  }
-  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
-    return 'image/jpeg';
-  }
-  if (buffer.length >= 6) {
-    const header = buffer.toString('ascii', 0, 6);
-    if (header === 'GIF87a' || header === 'GIF89a') {
-      return 'image/gif';
-    }
-  }
-  if (buffer.length >= 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') {
-    return 'image/webp';
-  }
-  return null;
-}
-
-// PDF/DOCX/XLSX/PPTX magic-byte sniffing, extending sniffImageMimeType above
-// with the same "never trust the client's declared type" discipline — see the
-// documentTextExtractionService.js file comment for why chat attachments
-// support these formats. DOCX/XLSX/PPTX share the ZIP container magic
-// (50 4B 03 04); PizZip (already a dependency — see
-// documentService.assertValidDocxTemplate's identical technique) is opened to
-// check which real OpenXML part is inside, so a bare .zip (ZIP magic, but
-// none of word/document.xml, xl/workbook.xml, ppt/presentation.xml) is
-// rejected by construction, not by a separate deny-list.
-function sniffOfficeOpenXmlMimeType(buffer) {
-  const isZip = buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04;
-  if (!isZip) return null;
-  let zip;
-  try {
-    zip = new PizZip(buffer);
-  } catch {
-    return null;
-  }
-  if (zip.file('word/document.xml')) {
-    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-  }
-  if (zip.file('xl/workbook.xml')) {
-    return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-  }
-  if (zip.file('ppt/presentation.xml')) {
-    return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-  }
-  return null;
-}
-
-// ODT/ODS sniffing — also a ZIP container (same 50 4B 03 04 magic as
-// OOXML above), but OpenDocument's own manifest is the "mimetype" member
-// stored at the archive root: its raw content IS the real media type
-// (per the ODF spec, always uncompressed / first entry), so reading it
-// directly is the equivalent of checking word/document.xml above — real
-// internal-structure evidence, not a filename guess.
-const OPEN_DOCUMENT_MIME_TYPES = new Set([
-  'application/vnd.oasis.opendocument.text',
-  'application/vnd.oasis.opendocument.spreadsheet',
-]);
-function sniffOpenDocumentMimeType(buffer) {
-  const isZip = buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04;
-  if (!isZip) return null;
-  let zip;
-  try {
-    zip = new PizZip(buffer);
-  } catch {
-    return null;
-  }
-  const mimetypeEntry = zip.file('mimetype');
-  if (!mimetypeEntry) return null;
-  const declared = mimetypeEntry.asText().trim();
-  return OPEN_DOCUMENT_MIME_TYPES.has(declared) ? declared : null;
-}
-
-function sniffPdfMimeType(buffer) {
-  return (buffer.length >= 4 && buffer.toString('ascii', 0, 4) === '%PDF') ? 'application/pdf' : null;
-}
-
-// CSV/MD/TXT have no magic-byte signature at all — they're just UTF-8 text.
-// The closest equivalent to "never trust the client" here is a content-shape
-// check: reject anything containing a NUL byte or invalid UTF-8 (Node's
-// toString('utf8') silently substitutes U+FFFD for invalid sequences rather
-// than throwing, so that substitution is the actual signal to check for), and
-// require a high printable/whitespace ratio so a binary file that happens to
-// avoid NUL bytes still gets rejected. The declared file_name's extension is
-// then used ONLY to pick which of the three text mime types to label it as —
-// never as the security check itself.
-const PLAIN_TEXT_EXTENSION_MIME_TYPES = { '.md': 'text/markdown', '.txt': 'text/plain', '.csv': 'text/csv' };
-const PLAIN_TEXT_SNIFF_SAMPLE_BYTES = 65536;
-
-function looksLikePlainText(buffer) {
-  if (buffer.length === 0) return true;
-  const sample = buffer.length > PLAIN_TEXT_SNIFF_SAMPLE_BYTES ? buffer.subarray(0, PLAIN_TEXT_SNIFF_SAMPLE_BYTES) : buffer;
-  if (sample.includes(0)) return false;
-  const text = sample.toString('utf8');
-  if (text.includes('�')) return false;
-  let printable = 0;
-  for (let i = 0; i < text.length; i += 1) {
-    const code = text.charCodeAt(i);
-    if (code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127)) printable += 1;
-  }
-  return printable / text.length >= 0.95;
-}
-
-function sniffPlainTextMimeType(buffer, fileName) {
-  if (!looksLikePlainText(buffer)) return null;
-  const match = typeof fileName === 'string' ? fileName.toLowerCase().match(/\.[a-z0-9]+$/) : null;
-  return (match && PLAIN_TEXT_EXTENSION_MIME_TYPES[match[0]]) || null;
-}
-
-// The combined sniff used by POST /documents/chat-attachments below —
-// images (unchanged) first, then documents, in cheapest-check-first order.
-function sniffChatAttachmentMimeType(buffer, fileName) {
-  return sniffImageMimeType(buffer)
-    || sniffPdfMimeType(buffer)
-    || sniffOfficeOpenXmlMimeType(buffer)
-    || sniffOpenDocumentMimeType(buffer)
-    || sniffPlainTextMimeType(buffer, fileName)
-    || null;
-}
+// Real file-content sniffing now lives in fileIntelligenceRouter.js —
+// classifyAttachment() is the single place every caller (this route AND
+// aiService.resolveChatAttachments) decides what kind of file a byte
+// buffer is. sniffChatAttachmentMimeType below is that module's
+// backward-compatible wrapper, matching this route's original
+// (buffer, fileName) -> mime-type-or-null shape exactly, so this
+// endpoint's existing image/pdf/office/text behavior is unchanged.
+const { sniffChatAttachmentMimeType } = fileIntelligenceRouter;
 
 function bodyToFields(body, fieldMap) {
   const fields = {};
@@ -555,16 +438,17 @@ function createDocumentsRouter() {
       return;
     }
     // The client's declared mime_type is never trusted (composerAttachments.js's own
-    // "server still authorizes and re-validates every upload" comment) — the sniffed
-    // type from the real bytes is what's stored and later sent to a vision provider
-    // or through documentTextExtractionService, depending on type. Bare ZIP and
-    // executable/script content are rejected here — either they fail every sniff
-    // check outright (no matching magic bytes/internal manifest/plain-text shape)
-    // or they're simply not in the allowlist.
-    const sniffedMimeType = sniffChatAttachmentMimeType(fileBuffer, fileName);
-    if (!sniffedMimeType) {
+    // "server still authorizes and re-validates every upload" comment) — classification
+    // is decided from the real bytes by fileIntelligenceRouter.classifyAttachment, the
+    // single place every caller (this route, aiService.resolveChatAttachments, and the
+    // archive-extraction recursion) makes this decision. A BLOCKED result (executable,
+    // APK, or genuinely unrecognized content — either they fail every sniff check
+    // outright or they're a positively-identified type this platform never allows) is
+    // rejected here before anything is stored.
+    const classification = fileIntelligenceRouter.classifyAttachment(fileBuffer, { fileName });
+    if (classification.processingMode === fileIntelligenceRouter.PROCESSING_MODES.BLOCKED) {
       res.status(400).json({
-        detail: 'file content is not a supported attachment type (png, jpeg, gif, webp, pdf, docx, xlsx, pptx, odt, ods, md, txt, csv)',
+        detail: 'file content is not a supported attachment type (image, pdf, docx, xlsx, pptx, odt, ods, audio, video, zip/tar/gzip archive, or plain text/code)',
       });
       return;
     }
@@ -575,14 +459,77 @@ function createDocumentsRouter() {
         {
           collegeId: req.collegeId,
           fileName: typeof fileName === 'string' && fileName ? fileName : 'attachment',
-          mimeType: sniffedMimeType,
+          mimeType: classification.detectedMimeType,
           fileBuffer,
         },
         { actorUserId: identityService.resolveActorUserId(req.capabilities) },
       );
-      res.status(201).json({ id: document.id, mime_type: document.mime_type, size_bytes: document.file_size_bytes });
+      const actorUserId = identityService.resolveActorUserId(req.capabilities);
+      let { record: intelligence } = await attachmentIntelligenceService.classifyAndRecord(req.dbClient, {
+        collegeId: req.collegeId,
+        documentId: document.id,
+        buffer: fileBuffer,
+        fileName,
+      });
+
+      // Archive extraction runs synchronously, in this same request —
+      // see processArchiveAttachment's own comment for why (bounded
+      // work, same precedent execute_code's own long sandbox round
+      // trips already set). The response reports the FINAL status
+      // (ready/failed), not 'uploaded', so the composer never has to
+      // poll just to learn an archive that already finished extracting
+      // is still showing a stale state.
+      if (intelligence.category === fileIntelligenceRouter.ATTACHMENT_CATEGORIES.ARCHIVE_OR_CONTAINER) {
+        intelligence = await attachmentIntelligenceService.processArchiveAttachment(req.dbClient, {
+          collegeId: req.collegeId,
+          actorUserId,
+          attachmentIntelligenceId: intelligence.id,
+          buffer: fileBuffer,
+          fileName,
+          detectedMimeType: intelligence.detected_mime_type,
+        });
+      }
+
+      res.status(201).json({
+        id: document.id,
+        mime_type: document.mime_type,
+        size_bytes: document.file_size_bytes,
+        category: intelligence.category,
+        processing_status: intelligence.processing_status,
+      });
     } catch (err) {
       if (mapDocumentServiceError(err, res)) return;
+      throw err;
+    }
+  }));
+
+  // Read-only status/category lookup for the composer's own polling —
+  // same auth chain as attachment download (RLS + ownership,
+  // attachmentIntelligenceService.getForDocument), a cross-tenant or
+  // not-owned id simply doesn't resolve (404), never a 403.
+  router.get('/documents/chat-attachments/:id/intelligence', requireAuth, asyncHandler(async (req, res) => {
+    if (!requireResolvedTenant(req, res)) return;
+    try {
+      const rows = await attachmentIntelligenceService.getForDocument(
+        req.dbClient,
+        req.params.id,
+        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+      );
+      res.json(rows.map((row) => ({
+        id: row.id,
+        parent_attachment_id: row.parent_attachment_id,
+        category: row.category,
+        processing_mode: row.processing_mode,
+        processing_status: row.processing_status,
+        detected_mime_type: row.detected_mime_type,
+        error_code: row.error_code,
+        error_message_safe: row.error_message_safe,
+      })));
+    } catch (err) {
+      if (err instanceof attachmentIntelligenceService.AttachmentIntelligenceNotFoundError) {
+        res.status(404).json({ detail: 'attachment not found' });
+        return;
+      }
       throw err;
     }
   }));

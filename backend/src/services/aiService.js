@@ -29,6 +29,8 @@ const documentService = require('./documentService');
 const auditLogRepository = require('../repositories/auditLogRepository');
 const idempotencyKeyRepository = require('../repositories/idempotencyKeyRepository');
 const documentTextExtractionService = require('./documentTextExtractionService');
+const fileIntelligenceRouter = require('./fileIntelligenceRouter');
+const sandboxExecutionService = require('./sandboxExecutionService');
 const aiMemoryService = require('./aiMemoryService');
 const artifactService = require('./artifactService');
 // AI Experience Layer (AIX) — presentation only, added after the real
@@ -498,9 +500,75 @@ function describeExtractionFailureReason(failureReason) {
 // instead of throwing: the whole /ai/ask turn shouldn't fail because one
 // attachment was unreadable, matching buildImageUnavailableNote's own
 // honest-degradation precedent below.
+// Cached per-request-scope would be nice but this function is called
+// once per turn already, and getConfiguration is a single indexed
+// lookup — same cost class as every other per-turn config read already
+// on this path (resolveAiConfig etc.), not worth its own cache.
+async function isAudioVideoEnabled(client, collegeId) {
+  const row = await configurationService.getConfiguration(client, { collegeId, category: 'audio_video_attachments' });
+  return Boolean(row && row.configuration && row.configuration.enabled);
+}
+
+// The closed set ai-chat-file-intelligence-router-approved-spec.md
+// names as reaching Gemini natively, with no conversion step — audio's
+// own live probe (scripts/multimodal-audio-video-capability-probe.js,
+// 2026-08-30) confirmed audio/wav specifically; the rest of this set is
+// the spec's own stated scope, not independently re-verified per
+// codec. Anything fileIntelligenceRouter classifies as audio/video but
+// is NOT in the matching set here (today, concretely: video/x-msvideo/
+// AVI — every audio type the router currently sniffs already IS in the
+// native set) is transcoded first, never sent as-is and never silently
+// dropped.
+const NATIVE_AUDIO_MIME_TYPES = new Set(['audio/wav', 'audio/mpeg', 'audio/flac', 'audio/ogg', 'audio/mp4']);
+const NATIVE_VIDEO_MIME_TYPES = new Set(['video/mp4', 'video/webm', 'video/quicktime']);
+
+// A closed, audit-safe vocabulary for transcode failures — mirrors
+// describeExtractionFailureReason's own reasoning (never the raw
+// sandbox/ffmpeg error text, which can echo fragments of the file
+// itself). sandboxExecutionService's own error classes (thrown, not
+// returned) collapse to the same 'transcode_unavailable' code as a
+// returned { status: 'failed' } with an unrecognized reason — from the
+// caller's point of view "the sandbox rejected this" and "the sandbox
+// isn't reachable at all" both mean the same thing: this attachment
+// cannot be sent natively right now.
+const TRANSCODE_FAILURE_REASONS = new Set([
+  'transcode_failed', 'transcode_timeout', 'output_file_too_large', 'invalid_arguments',
+]);
+function describeTranscodeFailureReason(reason) {
+  return TRANSCODE_FAILURE_REASONS.has(reason) ? reason : 'transcode_unavailable';
+}
+
+// Decides whether an audio/video attachment can be sent to Gemini as-is
+// or needs the sandbox ffmpeg step first — and runs that step when
+// needed. Returns { status: 'ok', mimeType, buffer } (buffer is either
+// the original, untouched, or the transcoded one — the caller never
+// needs to know which) or { status: 'failed', reason }. Never throws:
+// every sandbox-layer fault (not configured, timeout, rejected input)
+// is caught here and turned into the same honest 'failed' shape the
+// rest of resolveChatAttachments already degrades on, matching
+// buildImageUnavailableNote's own "the whole turn shouldn't fail
+// because one attachment couldn't be prepared" precedent.
+async function resolveNativeSendableMedia(mimeType, buffer, fileName, isVideo) {
+  const nativeSet = isVideo ? NATIVE_VIDEO_MIME_TYPES : NATIVE_AUDIO_MIME_TYPES;
+  if (nativeSet.has(mimeType)) {
+    return { status: 'ok', mimeType, buffer };
+  }
+  const targetFormat = isVideo ? 'video_mp4' : 'audio_wav';
+  let result;
+  try {
+    result = await sandboxExecutionService.transcodeMedia({ buffer, fileName, targetFormat });
+  } catch (err) {
+    return { status: 'failed', reason: 'transcode_unavailable' };
+  }
+  if (result.status !== 'ok') {
+    return { status: 'failed', reason: describeTranscodeFailureReason(result.reason) };
+  }
+  return { status: 'ok', mimeType: isVideo ? 'video/mp4' : 'audio/wav', buffer: result.file.buffer };
+}
+
 async function resolveChatAttachments(client, attachmentIds, identityContext) {
   if (!attachmentIds || attachmentIds.length === 0) {
-    return { images: [], documents: [] };
+    return { images: [], documents: [], media: [] };
   }
   if (attachmentIds.length > MAX_CHAT_ATTACHMENTS) {
     throw new AiServiceValidationError(`at most ${MAX_CHAT_ATTACHMENTS} attachments may be referenced in one turn`);
@@ -508,6 +576,11 @@ async function resolveChatAttachments(client, attachmentIds, identityContext) {
 
   const images = [];
   const documents = [];
+  const media = [];
+  // Resolved at most once per turn, only if an audio/video attachment
+  // is actually present — every other attachment type is unaffected by
+  // this flag and must not pay for a config read it doesn't need.
+  let audioVideoEnabled = null;
   for (const attachmentId of attachmentIds) {
     // eslint-disable-next-line no-await-in-loop
     const downloaded = await documentService.downloadDocument(client, attachmentId);
@@ -522,6 +595,57 @@ async function resolveChatAttachments(client, attachmentIds, identityContext) {
 
     if (document.mime_type.startsWith('image/')) {
       images.push({ mimeType: document.mime_type, base64: downloaded.buffer.toString('base64') });
+      continue; // eslint-disable-line no-continue
+    }
+
+    // File Intelligence Router (ai-chat-file-intelligence-router-
+    // approved-spec.md) — classification decides audio/video (opt-in
+    // gated, native_multimodal) and archive (its children are already
+    // independently stored/usable attachments from upload time — see
+    // routes/documents.js's processArchiveAttachment — so the archive
+    // ITSELF is never sent anywhere, just degraded with a note) BEFORE
+    // falling through to the UNCHANGED DOCUMENT_ATTACHMENT_MIME_TYPES
+    // text-extraction path below for every other real mime type
+    // (PDF/DOCX/XLSX/PPTX/ODT/ODS/text) — that path's own behavior is
+    // byte-identical to before this router existed.
+    const classification = fileIntelligenceRouter.classifyAttachment(downloaded.buffer, {
+      fileName: document.file_name, declaredMimeType: document.mime_type,
+    });
+
+    if (classification.category === fileIntelligenceRouter.ATTACHMENT_CATEGORIES.NATIVE_MULTIMODAL_AUDIO
+      || classification.category === fileIntelligenceRouter.ATTACHMENT_CATEGORIES.NATIVE_MULTIMODAL_VIDEO) {
+      if (audioVideoEnabled === null) {
+        // eslint-disable-next-line no-await-in-loop
+        audioVideoEnabled = await isAudioVideoEnabled(client, identityContext.collegeId);
+      }
+      if (!audioVideoEnabled) {
+        documents.push({
+          attachmentId, fileName: document.file_name, mimeType: document.mime_type, text: null, failureReason: 'audio_video_not_enabled',
+        });
+        continue; // eslint-disable-line no-continue
+      }
+
+      // eslint-disable-next-line no-await-in-loop
+      const nativeSendable = await resolveNativeSendableMedia(
+        classification.detectedMimeType,
+        downloaded.buffer,
+        document.file_name,
+        classification.category === fileIntelligenceRouter.ATTACHMENT_CATEGORIES.NATIVE_MULTIMODAL_VIDEO,
+      );
+      if (nativeSendable.status !== 'ok') {
+        documents.push({
+          attachmentId, fileName: document.file_name, mimeType: document.mime_type, text: null, failureReason: nativeSendable.reason,
+        });
+        continue; // eslint-disable-line no-continue
+      }
+      media.push({ mimeType: nativeSendable.mimeType, base64: nativeSendable.buffer.toString('base64') });
+      continue; // eslint-disable-line no-continue
+    }
+
+    if (classification.category === fileIntelligenceRouter.ATTACHMENT_CATEGORIES.ARCHIVE_OR_CONTAINER) {
+      documents.push({
+        attachmentId, fileName: document.file_name, mimeType: document.mime_type, text: null, failureReason: 'archive_use_extracted_children',
+      });
       continue; // eslint-disable-line no-continue
     }
 
@@ -569,7 +693,7 @@ async function resolveChatAttachments(client, attachmentIds, identityContext) {
       attachmentId, fileName: document.file_name, mimeType: document.mime_type, text: extraction.text,
     });
   }
-  return { images, documents };
+  return { images, documents, media };
 }
 
 // Shared per-turn character budget (not a flat per-file cap) — three
@@ -693,6 +817,23 @@ function buildImageUnavailableNote(imageCount) {
   return `Note: ${imageCount} ${plural} attached to this message, but the currently configured AI model cannot `
     + 'view images. Do not guess, infer, or assume what the image(s) show. If answering the question requires '
     + "seeing the image, say so plainly instead — never describe or reference the image's contents.";
+}
+
+// Same honest-degradation shape as buildImageUnavailableNote above,
+// for audio/video (ai-chat-file-intelligence-router-approved-spec.md).
+// mediaAnalysisUnavailable covers TWO distinct reasons a media item
+// never made it into the outbound request — the adapter has no media
+// support at all (adapter.supportsAudioVideo === false), or the
+// college has not opted in to audio/video attachments
+// (audio_video_attachments configuration) — both collapse to the same
+// honest note here, since the model's own correct behavior (say so,
+// don't guess) is identical either way.
+function buildMediaUnavailableNote(mediaCount) {
+  const plural = mediaCount === 1 ? 'file was' : 'files were';
+  return `Note: ${mediaCount} audio/video ${plural} attached to this message, but they are not available to the `
+    + 'currently configured AI model for this college. Do not guess, infer, or assume what the audio/video '
+    + "contains. If answering the question requires it, say so plainly instead — never describe or reference "
+    + "the audio/video's contents.";
 }
 
 // Runs the whole pipeline for a single tool call: Policy Gate ->
@@ -2234,10 +2375,15 @@ async function summarizeToolResult(client, identityContext, sanitizedContext, pr
 // adapter.completeWithTools, which exists specifically to let a model
 // pick FROM a tool list that here is deliberately empty.
 async function askGeneralChat(client, question, promptQuestion, {
-  identityContext, identityBlock, adapter, aiConfig, images, hasHistory, hasAttachedDocuments,
+  identityContext, identityBlock, adapter, aiConfig, images, media, hasHistory, hasAttachedDocuments,
 }, onDelta, onStep = () => {}) {
   const imagesSupported = images.length > 0 && Boolean(adapter.supportsVision);
   const imageAnalysisUnavailable = images.length > 0 && !imagesSupported;
+  // Same honest-degradation shape as images above — see
+  // buildMediaUnavailableNote's own comment for why "no adapter
+  // support" and "college hasn't opted in" collapse to one note.
+  const mediaSupported = media.length > 0 && Boolean(adapter.supportsAudioVideo);
+  const mediaAnalysisUnavailable = media.length > 0 && !mediaSupported;
   // ADR-030 P2(a): builds an ARCNAVE Context instead of a flat
   // systemPrompt/userPrompt pair — representation change only, byte-
   // identical output via aiContextAssembly.flattenToPrompts. identityBlock
@@ -2257,6 +2403,11 @@ async function askGeneralChat(client, question, promptQuestion, {
   if (imageAnalysisUnavailable) {
     userSegments.push(aiContextAssembly.segment({
       source: 'image-unavailable-note', stability: aiContextAssembly.STABILITY.TURN, target: 'user', content: buildImageUnavailableNote(images.length),
+    }));
+  }
+  if (mediaAnalysisUnavailable) {
+    userSegments.push(aiContextAssembly.segment({
+      source: 'media-unavailable-note', stability: aiContextAssembly.STABILITY.TURN, target: 'user', content: buildMediaUnavailableNote(media.length),
     }));
   }
   const arcnaveContext = aiContextAssembly.buildContext([
@@ -2299,7 +2450,7 @@ async function askGeneralChat(client, question, promptQuestion, {
       source: 'identity', stability: aiContextAssembly.STABILITY.CONVERSATION, target: 'system', content: identityBlock,
     }),
     ...userSegments,
-  ], { images: imagesSupported ? images : undefined });
+  ], { images: imagesSupported ? images : undefined, media: mediaSupported ? media : undefined });
 
   // Research mode has no tool call to report progress on, but it was
   // previously the one askAgent path that never fired a single onStep
@@ -2399,7 +2550,7 @@ async function askAgent(client, question, {
   // larger one; a Gemini-configured college simply doesn't get its full
   // 1,000,000-char allowance automatically here (ATTACHMENT_BUDGET_BY_PROVIDER
   // stays available for a caller that already knows its adapter).
-  const { images, documents } = await resolveChatAttachments(client, attachmentIds, identityContext);
+  const { images, documents, media } = await resolveChatAttachments(client, attachmentIds, identityContext);
   const attachmentHint = buildAttachmentHint(documents);
   const historyHint = buildHistoryHint(history);
   const focusHint = await buildFocusHint(focusContext, client, identityContext);
@@ -2457,7 +2608,7 @@ async function askAgent(client, question, {
       client, identityContext.collegeId, { allowExperimentalFallback: true },
     );
     return askGeneralChat(client, question, promptQuestion, {
-      identityContext, identityBlock, adapter, aiConfig, images, hasHistory: historyHint !== '', hasAttachedDocuments: documents.length > 0,
+      identityContext, identityBlock, adapter, aiConfig, images, media, hasHistory: historyHint !== '', hasAttachedDocuments: documents.length > 0,
     }, onDelta, onStep);
   }
 
@@ -2572,6 +2723,9 @@ async function askAgent(client, question, {
   // remembering the instruction.
   const imagesSupported = images.length > 0 && Boolean(adapter.supportsVision);
   const imageAnalysisUnavailable = images.length > 0 && !imagesSupported;
+  // Same honest-degradation shape as images above, for audio/video.
+  const mediaSupported = media.length > 0 && Boolean(adapter.supportsAudioVideo);
+  const mediaAnalysisUnavailable = media.length > 0 && !mediaSupported;
   // ADR-030 P2(a): builds an ARCNAVE Context instead of flat strings —
   // representation change only, byte-identical output. identityBlock
   // stays last — ADR-030 P0 (see executeWorkflowPlan's own comment). No
@@ -2671,11 +2825,19 @@ async function askAgent(client, question, {
       source: 'image-unavailable-note', stability: aiContextAssembly.STABILITY.TURN, target: 'user', content: buildImageUnavailableNote(images.length),
     })
     : null;
+  // Same "shared by both variants" reasoning as imageUnavailableSegment
+  // above, for audio/video.
+  const mediaUnavailableSegment = mediaAnalysisUnavailable
+    ? aiContextAssembly.segment({
+      source: 'media-unavailable-note', stability: aiContextAssembly.STABILITY.TURN, target: 'user', content: buildMediaUnavailableNote(media.length),
+    })
+    : null;
   const decisionUserSegments = [
     aiContextAssembly.segment({
       source: 'question', stability: aiContextAssembly.STABILITY.TURN, target: 'user', content: promptQuestion,
     }),
     ...(imageUnavailableSegment ? [imageUnavailableSegment] : []),
+    ...(mediaUnavailableSegment ? [mediaUnavailableSegment] : []),
   ];
   // Review Finding #2 — the ONLY difference from decisionSegments below
   // is this list's 'question' segment (compactPromptQuestion instead of
@@ -2687,10 +2849,12 @@ async function askAgent(client, question, {
       source: 'question', stability: aiContextAssembly.STABILITY.TURN, target: 'user', content: compactPromptQuestion,
     }),
     ...(imageUnavailableSegment ? [imageUnavailableSegment] : []),
+    ...(mediaUnavailableSegment ? [mediaUnavailableSegment] : []),
   ];
   const decisionSegments = [...sharedSystemSegments, ...decisionUserSegments];
   const continuationSegments = [...sharedSystemSegments, ...continuationUserSegments];
   const decisionImages = imagesSupported ? images : undefined;
+  const decisionMedia = mediaSupported ? media : undefined;
   // decisionContext is used for exactly ONE call — the initial decision
   // below — and never rebuilt or reused after it: every later
   // completeWithTools call in the loop (schema-fetch retries,
@@ -2701,8 +2865,8 @@ async function askAgent(client, question, {
   // continuationContext gets rebuilt for that, since decisionContext's one
   // consumer has already run by the time the loop can reach that point.
   let offeredTools = [...toolsWithPlan, buildSchemaMetaTool()];
-  const decisionContext = aiContextAssembly.buildContext(decisionSegments, { tools: offeredTools, images: decisionImages });
-  let continuationContext = aiContextAssembly.buildContext(continuationSegments, { tools: offeredTools, images: decisionImages });
+  const decisionContext = aiContextAssembly.buildContext(decisionSegments, { tools: offeredTools, images: decisionImages, media: decisionMedia });
+  let continuationContext = aiContextAssembly.buildContext(continuationSegments, { tools: offeredTools, images: decisionImages, media: decisionMedia });
 
   const decisionStartedAt = Date.now();
   // Real progress signal (P1) for the one call in this path that
@@ -2804,7 +2968,7 @@ async function askAgent(client, question, {
           // continuationContext needs rebuilding here — decisionContext's
           // one consumer (the initial completeWithTools call above) has
           // already run.
-          continuationContext = aiContextAssembly.buildContext(continuationSegments, { tools: offeredTools, images: decisionImages });
+          continuationContext = aiContextAssembly.buildContext(continuationSegments, { tools: offeredTools, images: decisionImages, media: decisionMedia });
         }
         const unknown = requested.filter((n) => !resolvedTools.some((t) => t.name === n));
         resultText = [

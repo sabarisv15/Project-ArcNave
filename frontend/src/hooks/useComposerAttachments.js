@@ -74,7 +74,28 @@ export function useComposerAttachments(composer) {
           // serverId is the backend-issued document id — the one a later
           // send() forwards as an attachment_ids entry; the local att-...
           // id stays the React key/removal handle and is never sent.
-          patchOne(attachment.id, { status: 'ready', progress: 1, serverId: uploaded.id });
+          //
+          // File Intelligence Router (ai-chat-file-intelligence-router-
+          // approved-spec.md) — a 201 response no longer always means
+          // "ready": an archive is extracted synchronously during this
+          // same upload call and can come back with processing_status
+          // 'failed' (e.g. the extraction sandbox being unavailable).
+          // Blindly showing 'ready' for every successful HTTP response
+          // was itself the bug this route's own richer response shape
+          // now lets the composer correct — an attachment that failed
+          // server-side processing must show as failed here too, not
+          // just a failed HTTP call.
+          const serverFailed = uploaded.processing_status === 'failed' || uploaded.processing_status === 'blocked';
+          patchOne(attachment.id, {
+            status: serverFailed ? 'failed' : 'ready',
+            progress: 1,
+            serverId: uploaded.id,
+            category: uploaded.category,
+            processingStatus: uploaded.processing_status,
+          });
+          if (serverFailed) {
+            setAnnouncement(`${attachment.name} was uploaded but could not be processed.`);
+          }
         } catch (err) {
           if (cancelled.current.has(attachment.id)) return;
           patchOne(attachment.id, { status: 'failed', progress: 0 });

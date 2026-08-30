@@ -80,6 +80,21 @@ const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10MB request cap (code + files)
 // input files.
 const MAX_OUTPUT_FILE_BYTES = 10 * 1024 * 1024;
 
+// File Intelligence Router (ai-chat-file-intelligence-router-approved-
+// spec.md) — `operation` is a CLOSED, backend-selected dispatch onto
+// transcode.py/extract_archive.py, run the exact same way recalc.py
+// already is (a fixed, server-shipped script invoked with argv, never
+// the `body.code` arbitrary-execution path). This is the load-bearing
+// distinction: the archive size/count/path-traversal bounds and the
+// ffmpeg codec choice must stay developer-controlled, never something
+// LLM-supplied `code` could omit or override — RS-AIG-018's
+// credential-less execute_code capability is a different, narrower
+// grant than "the LLM picks the extraction bounds."
+const TRANSCODE_TIMEOUT_MS = Number(process.env.TRANSCODE_TIMEOUT_MS) || 110000;
+const ARCHIVE_EXTRACT_TIMEOUT_MS = Number(process.env.ARCHIVE_EXTRACT_TIMEOUT_MS) || 60000;
+const TRANSCODE_TARGET_FORMATS = { audio_wav: 'output.wav', video_mp4: 'output.mp4' };
+const ARCHIVE_KINDS = new Set(['zip', 'tar', 'gzip']);
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -224,6 +239,106 @@ async function runInSandbox({
   }
 }
 
+// Runs transcode.py on exactly one input file, returning the transcoded
+// output the same {name, contentBase64} shape runInSandbox's own
+// outputFile path already returns — so the backend's consumption code
+// (attachmentIntelligenceService) has one response shape to handle, not
+// two. workDir is created/torn down here directly (not via
+// runInSandbox — that function's shape is specific to "run arbitrary
+// code then optionally read one file back", which does not fit this
+// operation's fixed-script/single-input/single-output contract).
+async function runTranscode({ files, targetFormat }) {
+  const outputName = TRANSCODE_TARGET_FORMATS[targetFormat];
+  if (!outputName) {
+    return { status: 'failed', reason: 'invalid_arguments', detail: `unknown targetFormat ${targetFormat}` };
+  }
+  if (!Array.isArray(files) || files.length !== 1) {
+    return { status: 'failed', reason: 'invalid_arguments', detail: 'exactly one input file is required' };
+  }
+
+  const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-transcode-'));
+  try {
+    const inputName = path.basename(files[0].name || 'input');
+    const inputPath = path.join(workDir, inputName);
+    await fs.writeFile(inputPath, Buffer.from(files[0].contentBase64, 'base64'));
+    const outputPath = path.join(workDir, outputName);
+
+    const { stdout, stderr, exitCode } = await runProcess(
+      'python3',
+      [path.join(__dirname, 'scripts', 'transcode.py'), inputPath, targetFormat, outputPath],
+      { cwd: workDir, env: { PATH: process.env.PATH }, timeout: TRANSCODE_TIMEOUT_MS },
+    );
+    if (exitCode !== 0) {
+      let parsed;
+      try { parsed = JSON.parse(stdout); } catch { parsed = null; }
+      return parsed || { status: 'failed', reason: 'transcode_process_failed', detail: stderr.slice(0, 500) };
+    }
+
+    let stat;
+    try {
+      stat = await fs.stat(outputPath);
+    } catch {
+      return { status: 'failed', reason: 'transcode_failed', detail: 'no output file was produced' };
+    }
+    if (stat.size > MAX_OUTPUT_FILE_BYTES) {
+      return { status: 'failed', reason: 'output_file_too_large', detail: `${stat.size} bytes exceeds the ${MAX_OUTPUT_FILE_BYTES}-byte limit` };
+    }
+    const contentBase64 = (await fs.readFile(outputPath)).toString('base64');
+    return { status: 'ok', file: { name: outputName, contentBase64 } };
+  } finally {
+    await fs.rm(workDir, { recursive: true, force: true });
+  }
+}
+
+// Runs extract_archive.py on exactly one input archive, returning every
+// extracted child as a {name, contentBase64} entry. A per-file cap
+// (MAX_OUTPUT_FILE_BYTES, same constant the single-outputFile path
+// already uses) is enforced again here at the Node layer — defense in
+// depth alongside extract_archive.py's own 500MB total/entry bounds,
+// not a replacement for them.
+async function runArchiveExtraction({ files, archiveKind }) {
+  if (!ARCHIVE_KINDS.has(archiveKind)) {
+    return { status: 'failed', reason: 'invalid_arguments', detail: `unknown archiveKind ${archiveKind}` };
+  }
+  if (!Array.isArray(files) || files.length !== 1) {
+    return { status: 'failed', reason: 'invalid_arguments', detail: 'exactly one input file is required' };
+  }
+
+  const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-archive-'));
+  try {
+    const inputName = path.basename(files[0].name || 'archive');
+    const inputPath = path.join(workDir, inputName);
+    await fs.writeFile(inputPath, Buffer.from(files[0].contentBase64, 'base64'));
+    const extractedDir = path.join(workDir, 'extracted');
+
+    const { stdout, stderr, exitCode } = await runProcess(
+      'python3',
+      [path.join(__dirname, 'scripts', 'extract_archive.py'), inputPath, archiveKind, extractedDir],
+      { cwd: workDir, env: { PATH: process.env.PATH }, timeout: ARCHIVE_EXTRACT_TIMEOUT_MS },
+    );
+    let parsed;
+    try { parsed = JSON.parse(stdout); } catch { parsed = null; }
+    if (exitCode !== 0 || !parsed || parsed.status !== 'ok') {
+      return parsed || { status: 'failed', reason: 'archive_extraction_process_failed', detail: stderr.slice(0, 500) };
+    }
+
+    const outFiles = [];
+    for (const relativeName of parsed.entries) {
+      // eslint-disable-next-line no-await-in-loop
+      const stat = await fs.stat(path.join(extractedDir, relativeName));
+      if (stat.size > MAX_OUTPUT_FILE_BYTES) {
+        return { status: 'failed', reason: 'output_file_too_large', detail: `${relativeName} exceeds the ${MAX_OUTPUT_FILE_BYTES}-byte limit` };
+      }
+      // eslint-disable-next-line no-await-in-loop
+      const contentBase64 = (await fs.readFile(path.join(extractedDir, relativeName))).toString('base64');
+      outFiles.push({ name: relativeName, contentBase64 });
+    }
+    return { status: 'ok', files: outFiles };
+  } finally {
+    await fs.rm(workDir, { recursive: true, force: true });
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   if (req.method !== 'POST' || req.url !== '/execute') {
     res.writeHead(404).end();
@@ -241,6 +356,18 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(400).end('invalid request body');
     return;
   }
+
+  if (body.operation === 'transcode_media') {
+    const result = await runTranscode({ files: body.files, targetFormat: body.targetFormat });
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
+    return;
+  }
+  if (body.operation === 'extract_archive') {
+    const result = await runArchiveExtraction({ files: body.files, archiveKind: body.archiveKind });
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
+    return;
+  }
+
   if (typeof body.code !== 'string' || !body.code.trim()) {
     res.writeHead(400).end('code is required');
     return;

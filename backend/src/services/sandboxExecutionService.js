@@ -265,6 +265,133 @@ async function executeCode({
   };
 }
 
+// File Intelligence Router (ai-chat-file-intelligence-router-approved-
+// spec.md) — transcodeMedia/extractArchive below call the SAME /execute
+// endpoint as executeCode above, but with `operation` set, which routes
+// server.js onto its fixed transcode.py/extract_archive.py scripts
+// instead of the arbitrary-`code` path (see server.js's own comment on
+// why that distinction matters: the codec choice and archive safety
+// bounds must stay developer-controlled, never LLM-influenced). These
+// two functions are never exposed as an AI tool the model calls
+// directly — they are invoked by attachmentIntelligenceService as part
+// of the router's own processing pipeline, same as documentTextExtractionService
+// is invoked by aiService today, not registered in aiToolRegistry.
+
+const TRANSCODE_TIMEOUT_MS = 115000; // must stay >= server.js's own TRANSCODE_TIMEOUT_MS (110s)
+const ARCHIVE_EXTRACT_TIMEOUT_MS = 65000; // must stay >= server.js's own ARCHIVE_EXTRACT_TIMEOUT_MS (60s)
+const MAX_MEDIA_FILE_BYTES = 200 * 1024 * 1024; // one lecture recording/video, not a media dump
+const TRANSCODE_TARGET_FORMATS = new Set(['audio_wav', 'video_mp4']);
+const ARCHIVE_KINDS = new Set(['zip', 'tar', 'gzip']);
+
+async function postSandboxOperation(payload, timeoutMs) {
+  assertConfigured();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const headers = await buildAuthHeaders();
+  let response;
+  try {
+    response = await fetch(`${config.sandboxServiceUrl}/execute`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    throw new SandboxExecutionError(`sandbox request failed: ${err.message}`);
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (!response.ok) {
+    throw new SandboxExecutionError(`sandbox returned ${response.status}`);
+  }
+  return response.json();
+}
+
+// buffer/fileName are the ORIGINAL attachment's already-downloaded
+// bytes (documentService.downloadDocument's own return shape) — this
+// function does no storage I/O itself, matching every other stateless
+// sandbox call in this file.
+async function transcodeMedia({ buffer, fileName, targetFormat }) {
+  if (!TRANSCODE_TARGET_FORMATS.has(targetFormat)) {
+    throw new SandboxValidationError(`targetFormat must be one of ${[...TRANSCODE_TARGET_FORMATS].join(', ')}`);
+  }
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    throw new SandboxValidationError('buffer is required and must be non-empty');
+  }
+  if (buffer.length > MAX_MEDIA_FILE_BYTES) {
+    throw new SandboxValidationError(`file exceeds the ${MAX_MEDIA_FILE_BYTES}-byte limit`);
+  }
+
+  const result = await postSandboxOperation({
+    operation: 'transcode_media',
+    targetFormat,
+    files: [{ name: fileName || 'input', contentBase64: buffer.toString('base64') }],
+  }, TRANSCODE_TIMEOUT_MS);
+
+  if (result.status !== 'ok') {
+    return { status: 'failed', reason: result.reason || 'transcode_failed', detail: result.detail || null };
+  }
+  const approxBytes = ((result.file && result.file.contentBase64) || '').length * 0.75;
+  if (approxBytes > MAX_RETURNED_FILE_BYTES) {
+    throw new SandboxExecutionError(
+      `sandbox returned a transcoded file exceeding the ${MAX_RETURNED_FILE_BYTES}-byte limit — this should have been rejected by the sandbox itself`,
+    );
+  }
+  return {
+    status: 'ok',
+    file: { name: String(result.file.name), buffer: Buffer.from(result.file.contentBase64, 'base64') },
+  };
+}
+
+// Returns every extracted child as a real Buffer (never a caller-facing
+// base64 string — same "decode once, at the boundary" discipline every
+// other sandbox-facing function in this file already applies). A
+// MAX_ARCHIVE_CHILDREN cap here is defense in depth alongside
+// extract_archive.py's own 200-entry bound — this client must never
+// trust the sandbox's own cap alone, same reasoning MAX_RETURNED_FILE_BYTES
+// already documents above for executeCode.
+const MAX_ARCHIVE_CHILDREN = 200;
+
+async function extractArchive({ buffer, fileName, archiveKind }) {
+  if (!ARCHIVE_KINDS.has(archiveKind)) {
+    throw new SandboxValidationError(`archiveKind must be one of ${[...ARCHIVE_KINDS].join(', ')}`);
+  }
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    throw new SandboxValidationError('buffer is required and must be non-empty');
+  }
+  if (buffer.length > MAX_MEDIA_FILE_BYTES) {
+    throw new SandboxValidationError(`file exceeds the ${MAX_MEDIA_FILE_BYTES}-byte limit`);
+  }
+
+  const result = await postSandboxOperation({
+    operation: 'extract_archive',
+    archiveKind,
+    files: [{ name: fileName || 'archive', contentBase64: buffer.toString('base64') }],
+  }, ARCHIVE_EXTRACT_TIMEOUT_MS);
+
+  if (result.status !== 'ok') {
+    return { status: 'failed', reason: result.reason || 'archive_extraction_failed', detail: result.detail || null };
+  }
+  const files = Array.isArray(result.files) ? result.files : [];
+  if (files.length > MAX_ARCHIVE_CHILDREN) {
+    throw new SandboxExecutionError(
+      `sandbox returned more than ${MAX_ARCHIVE_CHILDREN} archive entries — this should have been rejected by the sandbox itself`,
+    );
+  }
+  files.forEach((file) => {
+    const approxBytes = ((file && file.contentBase64) || '').length * 0.75;
+    if (approxBytes > MAX_RETURNED_FILE_BYTES) {
+      throw new SandboxExecutionError(
+        `sandbox returned an archive entry exceeding the ${MAX_RETURNED_FILE_BYTES}-byte limit — this should have been rejected by the sandbox itself`,
+      );
+    }
+  });
+  return {
+    status: 'ok',
+    files: files.map((file) => ({ name: String(file.name), buffer: Buffer.from(file.contentBase64, 'base64') })),
+  };
+}
+
 module.exports = {
   SandboxNotConfiguredError,
   SandboxValidationError,
@@ -275,4 +402,6 @@ module.exports = {
   MAX_FILE_BYTES,
   MAX_RETURNED_FILE_BYTES,
   executeCode,
+  transcodeMedia,
+  extractArchive,
 };

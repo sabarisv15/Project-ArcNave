@@ -3340,11 +3340,11 @@ function fakeDocumentDownload(overrides = {}) {
   };
 }
 
-test('resolveChatAttachments: no attachmentIds -> returns {images:[],documents:[]} without touching the DB', async () => {
+test('resolveChatAttachments: no attachmentIds -> returns {images:[],documents:[],media:[]} without touching the DB', async () => {
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
   const result = await aiService.resolveChatAttachments(client, undefined, identityContext);
-  assert.deepEqual(result, { images: [], documents: [] });
+  assert.deepEqual(result, { images: [], documents: [], media: [] });
   assert.deepEqual(client.queries, []);
 });
 
@@ -3482,6 +3482,191 @@ test('resolveChatAttachments: an extraction failure with an unrecognized reason 
   const auditQueries = client.queries.filter((q) => q.text.includes('INSERT INTO audit_log'));
   const metadata = JSON.parse(auditQueries[0].params[5]);
   assert.equal(metadata.reason, 'extraction_failed');
+});
+
+// A real, valid minimal WAV (16-bit PCM, 8 samples) — real magic bytes,
+// same "prove something real" discipline fakeImageDownload/
+// fakeDocumentDownload's own trusted-declared-mime_type shortcut does
+// NOT need (the image/document paths still branch on document.mime_type
+// alone, unchanged), but the NEW audio/video/archive branches classify
+// from the real buffer via fileIntelligenceRouter, so a fake buffer
+// would misclassify.
+function realWavBuffer() {
+  const numSamples = 8;
+  const buffer = Buffer.alloc(44 + numSamples * 2);
+  buffer.write('RIFF', 0, 'ascii');
+  buffer.writeUInt32LE(36 + numSamples * 2, 4);
+  buffer.write('WAVE', 8, 'ascii');
+  buffer.write('fmt ', 12, 'ascii');
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(1, 22);
+  buffer.writeUInt32LE(8000, 24);
+  buffer.writeUInt32LE(16000, 28);
+  buffer.writeUInt16LE(2, 32);
+  buffer.writeUInt16LE(16, 34);
+  buffer.write('data', 36, 'ascii');
+  buffer.writeUInt32LE(numSamples * 2, 40);
+  return buffer;
+}
+
+function fakeAudioDownload(overrides = {}) {
+  return {
+    document: {
+      doc_type: CHAT_DOC_TYPE, uploaded_by_user_id: 'u1', mime_type: 'audio/wav', file_name: 'voice-note.wav', ...overrides,
+    },
+    buffer: realWavBuffer(),
+  };
+}
+
+function realBareZipBuffer() {
+  const PizZip = require('pizzip'); // eslint-disable-line global-require
+  const zip = new PizZip();
+  zip.file('some/unrelated/part.xml', '<nothing/>');
+  return zip.generate({ type: 'nodebuffer' });
+}
+
+function fakeArchiveDownload(overrides = {}) {
+  return {
+    document: {
+      doc_type: CHAT_DOC_TYPE, uploaded_by_user_id: 'u1', mime_type: 'application/zip', file_name: 'bundle.zip', ...overrides,
+    },
+    buffer: realBareZipBuffer(),
+  };
+}
+
+test('resolveChatAttachments: an audio attachment is refused (documents[], not thrown) when the college has not opted in to audio/video', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async () => fakeAudioDownload());
+  t.mock.method(configurationService, 'getConfiguration', async () => null); // no row -> not enabled
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const { media, documents } = await aiService.resolveChatAttachments(client, ['att-1'], identityContext);
+  assert.equal(media.length, 0);
+  assert.equal(documents.length, 1);
+  assert.equal(documents[0].failureReason, 'audio_video_not_enabled');
+});
+
+test('resolveChatAttachments: an audio attachment resolves into media[] as {mimeType, base64} once the college has opted in', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async () => fakeAudioDownload());
+  t.mock.method(configurationService, 'getConfiguration', async (client, { category }) => {
+    assert.equal(category, 'audio_video_attachments');
+    return { configuration: { enabled: true } };
+  });
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const { media, documents } = await aiService.resolveChatAttachments(client, ['att-1'], identityContext);
+  assert.equal(documents.length, 0);
+  assert.equal(media.length, 1);
+  assert.equal(media[0].mimeType, 'audio/wav');
+  assert.equal(media[0].base64, realWavBuffer().toString('base64'));
+});
+
+test('resolveChatAttachments: the audio/video opt-in config is read at most once per turn, even with multiple audio/video attachments', async (t) => {
+  let callCount = 0;
+  t.mock.method(documentService, 'downloadDocument', async () => fakeAudioDownload());
+  t.mock.method(configurationService, 'getConfiguration', async () => {
+    callCount += 1;
+    return { configuration: { enabled: true } };
+  });
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const { media } = await aiService.resolveChatAttachments(client, ['att-1', 'att-2'], identityContext);
+  assert.equal(media.length, 2);
+  assert.equal(callCount, 1);
+});
+
+// A real, valid minimal AVI — RIFF container, 'AVI ' form tag — the one
+// video type fileIntelligenceRouter currently sniffs that is NOT in
+// aiService's own NATIVE_VIDEO_MIME_TYPES set, so it is the real,
+// reachable case for the transcode path (every audio type the router
+// sniffs is already natively supported, so audio has no reachable
+// transcode case today — see resolveNativeSendableMedia's own comment).
+function realAviBuffer() {
+  const buffer = Buffer.alloc(16);
+  buffer.write('RIFF', 0, 'ascii');
+  buffer.write('AVI ', 8, 'ascii');
+  return buffer;
+}
+
+function fakeAviDownload(overrides = {}) {
+  return {
+    document: {
+      doc_type: CHAT_DOC_TYPE, uploaded_by_user_id: 'u1', mime_type: 'video/x-msvideo', file_name: 'clip.avi', ...overrides,
+    },
+    buffer: realAviBuffer(),
+  };
+}
+
+test('resolveChatAttachments: a natively-supported audio/video mime type (e.g. audio/wav) is sent as-is — the sandbox is never called', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async () => fakeAudioDownload());
+  t.mock.method(configurationService, 'getConfiguration', async () => ({ configuration: { enabled: true } }));
+  const transcodeMock = t.mock.method(sandboxExecutionService, 'transcodeMedia', async () => {
+    throw new Error('must not be called for a natively-supported type');
+  });
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const { media } = await aiService.resolveChatAttachments(client, ['att-1'], identityContext);
+  assert.equal(media.length, 1);
+  assert.equal(media[0].mimeType, 'audio/wav');
+  assert.equal(transcodeMock.mock.callCount(), 0);
+});
+
+test('resolveChatAttachments: an unsupported video container (AVI) is transcoded to MP4 before being sent natively', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async () => fakeAviDownload());
+  t.mock.method(configurationService, 'getConfiguration', async () => ({ configuration: { enabled: true } }));
+  const transcodedBuffer = Buffer.from('fake-transcoded-mp4-bytes');
+  const transcodeMock = t.mock.method(sandboxExecutionService, 'transcodeMedia', async ({ buffer, fileName, targetFormat }) => {
+    assert.equal(targetFormat, 'video_mp4');
+    assert.equal(fileName, 'clip.avi');
+    assert.deepEqual(buffer, realAviBuffer());
+    return { status: 'ok', file: { name: 'output.mp4', buffer: transcodedBuffer } };
+  });
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const { media, documents } = await aiService.resolveChatAttachments(client, ['att-1'], identityContext);
+  assert.equal(transcodeMock.mock.callCount(), 1);
+  assert.equal(documents.length, 0);
+  assert.equal(media.length, 1);
+  assert.equal(media[0].mimeType, 'video/mp4');
+  assert.equal(media[0].base64, transcodedBuffer.toString('base64'));
+});
+
+test('resolveChatAttachments: a transcode failure (sandbox unavailable or ffmpeg rejects the input) degrades gracefully — never throws, never sent untranscoded', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async () => fakeAviDownload());
+  t.mock.method(configurationService, 'getConfiguration', async () => ({ configuration: { enabled: true } }));
+  t.mock.method(sandboxExecutionService, 'transcodeMedia', async () => {
+    throw new sandboxExecutionService.SandboxNotConfiguredError('sandbox not deployed');
+  });
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const { media, documents } = await aiService.resolveChatAttachments(client, ['att-1'], identityContext);
+  assert.equal(media.length, 0);
+  assert.equal(documents.length, 1);
+  assert.equal(documents[0].failureReason, 'transcode_unavailable');
+});
+
+test('resolveChatAttachments: a returned (non-thrown) transcode failure reason is normalized to a closed, audit-safe vocabulary', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async () => fakeAviDownload());
+  t.mock.method(configurationService, 'getConfiguration', async () => ({ configuration: { enabled: true } }));
+  t.mock.method(sandboxExecutionService, 'transcodeMedia', async () => ({
+    status: 'failed', reason: 'transcode_timeout',
+  }));
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const { documents } = await aiService.resolveChatAttachments(client, ['att-1'], identityContext);
+  assert.equal(documents[0].failureReason, 'transcode_timeout');
+});
+
+test('resolveChatAttachments: an archive attachment degrades gracefully — its children (already extracted at upload time) are used instead, the archive itself never reaches images/documents-as-text/media', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async () => fakeArchiveDownload());
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const { images, media, documents } = await aiService.resolveChatAttachments(client, ['att-1'], identityContext);
+  assert.equal(images.length, 0);
+  assert.equal(media.length, 0);
+  assert.equal(documents.length, 1);
+  assert.equal(documents[0].text, null);
+  assert.equal(documents[0].failureReason, 'archive_use_extracted_children');
 });
 
 test('buildAttachmentHint: wraps extracted text in the existing untrusted-data boundary, tagged user_uploaded_unclassified, never Internal/Confidential/Restricted', () => {

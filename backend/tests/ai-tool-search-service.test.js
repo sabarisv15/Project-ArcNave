@@ -32,8 +32,16 @@ function enabledConfig(completeWithTools) {
   return { provider: 'vertex_maas', config: {}, adapter: { completeWithTools } };
 }
 
-function toolCallDecision(names) {
-  return { type: 'tool_call', toolName: aiToolSearchService.SELECT_TOOLS_META_TOOL_NAME, arguments: { names } };
+// coverageStatus defaults to 'complete' here — every pre-existing test
+// using this helper represents a selection that was always meant to be
+// trusted as-is, and defaulting it any other way would silently route
+// them all through the new uncertain/insufficient recovery path below.
+function toolCallDecision(names, { coverageStatus = 'complete', uncoveredRequirements } = {}) {
+  return {
+    type: 'tool_call',
+    toolName: aiToolSearchService.SELECT_TOOLS_META_TOOL_NAME,
+    arguments: { names, coverageStatus, ...(uncoveredRequirements ? { uncoveredRequirements } : {}) },
+  };
 }
 
 test('discoverRelevantTools: valid tool-name selection is returned with viaToolSearch true', async () => {
@@ -53,7 +61,7 @@ test('discoverRelevantTools: a double-encoded names string (real quirk measured 
     async () => ({
       type: 'tool_call',
       toolName: aiToolSearchService.SELECT_TOOLS_META_TOOL_NAME,
-      arguments: { names: '["tool_0","tool_1"]' },
+      arguments: { names: '["tool_0","tool_1"]', coverageStatus: 'complete' },
     }),
   ), async () => {
     const result = await aiToolSearchService.discoverRelevantTools({}, { roleTools: tools, question: 'q' });
@@ -76,6 +84,16 @@ test('discoverRelevantTools: a names string that is not valid JSON falls back ra
       assert.deepEqual(result.tools, [tools[0]]);
     },
   ));
+});
+
+test('discoverRelevantTools: a name with stray leading/trailing whitespace (real quirk measured against qwen/qwen3-next-80b-a3b-thinking-maas) still matches, not rejected as invalid', async () => {
+  const tools = makeTools(5);
+  await withStub(configurationService, 'getToolSearchConfig', () => enabledConfig(
+    async () => toolCallDecision([' tool_0', 'tool_1 ']),
+  ), async () => {
+    const result = await aiToolSearchService.discoverRelevantTools({}, { roleTools: tools, question: 'q' });
+    assert.deepEqual(result.tools.map((t) => t.name), ['tool_0', 'tool_1']);
+  });
 });
 
 test('discoverRelevantTools: a name outside roleTools is rejected, never trusted blindly', async () => {
@@ -258,9 +276,13 @@ test('discoverRelevantTools: the select_relevant_tools meta-tool schema is built
   assert.equal(metaTool.parameters, undefined, 'the old `parameters` key must not be used — no adapter reads it');
   assert.ok(metaTool.params, 'the schema must be present under `params`, the key every adapter actually reads');
   assert.equal(metaTool.params.type, 'object');
-  assert.deepEqual(metaTool.params.required, ['names']);
+  assert.deepEqual(metaTool.params.required, ['names', 'coverageStatus']);
   assert.equal(metaTool.params.properties.names.type, 'array');
   assert.equal(metaTool.params.properties.names.items.type, 'string');
+  // Review Finding #8 — coverage self-assessment is part of the schema
+  // contract, not a bolt-on freeform field.
+  assert.deepEqual(metaTool.params.properties.coverageStatus.enum, ['complete', 'uncertain', 'insufficient']);
+  assert.equal(metaTool.params.properties.uncoveredRequirements.type, 'array');
 });
 
 test('discoverRelevantTools: an empty roleTools set short-circuits to the fallback shape with no calls at all', async () => {
@@ -270,4 +292,206 @@ test('discoverRelevantTools: an empty roleTools set short-circuits to the fallba
     assert.deepEqual(result, { tools: [], viaToolSearch: false, usage: undefined });
   });
   assert.equal(configResolved, false, 'nothing to search for zero tools — never even resolves a Tool Search config');
+});
+
+// --- Review Finding #8: coverage-status honesty and recovery ---------
+//
+// A valid selected tool name is not the same claim as "this set is
+// sufficient". The tests below use a stand-in multi-domain question
+// (attendance + fee-due) to exercise the three coverageStatus values the
+// model can now self-report, and the broader-retrieval recovery attempt
+// that follows an uncertain/insufficient one.
+
+test('coverage complete: valid selection proceeds normally, no broader-catalogue fallback is attempted', async () => {
+  const tools = makeTools(5);
+  let retrievalCalled = false;
+  await withStub(aiToolRetrievalService, 'retrieveRelevantTools', async () => { retrievalCalled = true; return []; }, () => withStub(
+    configurationService,
+    'getToolSearchConfig',
+    () => enabledConfig(async () => toolCallDecision(['tool_0', 'tool_1'], { coverageStatus: 'complete' })),
+    async () => {
+      const result = await aiToolSearchService.discoverRelevantTools({}, { roleTools: tools, question: 'attendance only' });
+      assert.deepEqual(result.tools.map((t) => t.name), ['tool_0', 'tool_1']);
+      assert.equal(result.viaToolSearch, true);
+      assert.equal(result.coverageStatus, 'complete');
+      assert.deepEqual(result.uncoveredRequirements, []);
+    },
+  ));
+  assert.equal(retrievalCalled, false, 'an ordinary complete selection must not trigger the broader-catalogue path');
+});
+
+test('coverage insufficient, no recovery: attendance+identity selected but no fee tool anywhere — broader fallback attempted, finds nothing new, insufficiency is preserved', async () => {
+  // Deliberately no fee tool exists in roleTools at all — a truly
+  // unsupported requirement (spec Test 4), so the broader retrieval path
+  // cannot recover it either.
+  const tools = [
+    { name: 'attendance_summary', description: 'reports attendance percentages.', params: {} },
+    { name: 'student_profile', description: 'looks up student identity.', params: {} },
+  ];
+  let retrievalCalled = false;
+  await withStub(aiToolRetrievalService, 'retrieveRelevantTools', async () => {
+    retrievalCalled = true;
+    // Returns the same subset Tool Search already picked — nothing new.
+    return [tools[0], tools[1]];
+  }, () => withStub(
+    configurationService,
+    'getToolSearchConfig',
+    () => enabledConfig(async () => toolCallDecision(['attendance_summary', 'student_profile'], {
+      coverageStatus: 'insufficient',
+      uncoveredRequirements: ['No selected tool provides current fee-due data.'],
+    })),
+    async () => {
+      const result = await aiToolSearchService.discoverRelevantTools({}, {
+        roleTools: tools,
+        question: 'List students whose attendance is below 75% and whose fee due is above 10000.',
+      });
+      assert.deepEqual(result.tools.map((t) => t.name), ['attendance_summary', 'student_profile']);
+      assert.equal(result.viaToolSearch, true, 'a valid subset, even if incomplete, is not treated as an outright Tool Search failure');
+      assert.equal(result.coverageStatus, 'insufficient', 'coverage gap must not be silently upgraded to complete');
+      assert.deepEqual(result.uncoveredRequirements, ['No selected tool provides current fee-due data.']);
+    },
+  ));
+  assert.equal(retrievalCalled, true, 'broader/full catalogue fallback must be attempted for an insufficient result');
+});
+
+test('coverage recovery: broader-catalogue fallback surfaces the missing fee tool, final coverage becomes complete', async () => {
+  const feeTool = { name: 'fee_due_lookup', description: 'reports outstanding fee dues.', params: {} };
+  const tools = [
+    { name: 'attendance_summary', description: 'reports attendance percentages.', params: {} },
+    { name: 'student_profile', description: 'looks up student identity.', params: {} },
+    feeTool,
+  ];
+  await withStub(aiToolRetrievalService, 'retrieveRelevantTools', async () => [feeTool], () => withStub(
+    configurationService,
+    'getToolSearchConfig',
+    () => enabledConfig(async () => toolCallDecision(['attendance_summary', 'student_profile'], {
+      coverageStatus: 'insufficient',
+      uncoveredRequirements: ['No selected tool provides current fee-due data.'],
+    })),
+    async () => {
+      const result = await aiToolSearchService.discoverRelevantTools({}, {
+        roleTools: tools,
+        question: 'List students whose attendance is below 75% and whose fee due is above 10000.',
+      });
+      assert.deepEqual(
+        result.tools.map((t) => t.name).sort(),
+        ['attendance_summary', 'fee_due_lookup', 'student_profile'],
+        'the recovered fee tool must be merged into the final selection',
+      );
+      assert.equal(result.coverageStatus, 'complete', 'coverage becomes complete once the broader path actually finds the missing capability');
+      assert.deepEqual(result.uncoveredRequirements, []);
+    },
+  ));
+});
+
+test('coverage uncertain: attempts broader-catalogue recovery, and when it finds nothing new the uncertainty is preserved (not silently upgraded to complete)', async () => {
+  const tools = makeTools(4);
+  let retrievalCalled = false;
+  await withStub(aiToolRetrievalService, 'retrieveRelevantTools', async () => { retrievalCalled = true; return [tools[0]]; }, () => withStub(
+    configurationService,
+    'getToolSearchConfig',
+    () => enabledConfig(async () => toolCallDecision(['tool_0'], { coverageStatus: 'uncertain' })),
+    async () => {
+      const result = await aiToolSearchService.discoverRelevantTools({}, { roleTools: tools, question: 'q' });
+      assert.equal(result.coverageStatus, 'uncertain', 'the broader path re-confirmed the same tool_0 with nothing new — the original uncertainty stands');
+      assert.deepEqual(result.tools.map((t) => t.name), ['tool_0']);
+    },
+  ));
+  assert.equal(retrievalCalled, true, 'broader/full catalogue fallback must be attempted for an uncertain result too');
+});
+
+test('coverage uncertain with genuine recovery: broader-catalogue fallback surfaces a new tool, coverage becomes complete', async () => {
+  const tools = makeTools(4);
+  await withStub(aiToolRetrievalService, 'retrieveRelevantTools', async () => [tools[0], tools[1]], () => withStub(
+    configurationService,
+    'getToolSearchConfig',
+    () => enabledConfig(async () => toolCallDecision(['tool_0'], { coverageStatus: 'uncertain' })),
+    async () => {
+      const result = await aiToolSearchService.discoverRelevantTools({}, { roleTools: tools, question: 'q' });
+      assert.equal(result.coverageStatus, 'complete');
+      assert.deepEqual(result.tools.map((t) => t.name).sort(), ['tool_0', 'tool_1']);
+    },
+  ));
+});
+
+test('coverage hallucinated names remain rejected regardless of coverageStatus', async () => {
+  const tools = makeTools(5);
+  await withStub(aiToolRetrievalService, 'retrieveRelevantTools', async () => [tools[0], tools[1]], () => withStub(
+    configurationService,
+    'getToolSearchConfig',
+    () => enabledConfig(async () => toolCallDecision(['hallucinated_tool_a', 'hallucinated_tool_b'], { coverageStatus: 'complete' })),
+    async () => {
+      const result = await aiToolSearchService.discoverRelevantTools({}, { roleTools: tools, question: 'q' });
+      assert.equal(result.viaToolSearch, false, 'all-invalid names must still fall back regardless of the reported coverageStatus');
+      assert.deepEqual(result.tools.map((t) => t.name), ['tool_0', 'tool_1']);
+    },
+  ));
+});
+
+test('malformed coverageStatus (missing) defaults to uncertain, not complete, and triggers broader-catalogue recovery', async () => {
+  const tools = makeTools(3);
+  let retrievalCalled = false;
+  await withStub(aiToolRetrievalService, 'retrieveRelevantTools', async () => { retrievalCalled = true; return []; }, () => withStub(
+    configurationService,
+    'getToolSearchConfig',
+    () => enabledConfig(async () => ({
+      type: 'tool_call',
+      toolName: aiToolSearchService.SELECT_TOOLS_META_TOOL_NAME,
+      arguments: { names: ['tool_0'] },
+    })),
+    async () => {
+      const result = await aiToolSearchService.discoverRelevantTools({}, { roleTools: tools, question: 'q' });
+      assert.equal(result.coverageStatus, 'uncertain', 'a missing coverageStatus must never be treated as an implicit "complete"');
+      assert.deepEqual(result.tools.map((t) => t.name), ['tool_0']);
+    },
+  ));
+  assert.equal(retrievalCalled, true);
+});
+
+test('malformed coverageStatus (invalid enum value) is normalized to uncertain rather than trusted as-is', async () => {
+  const tools = makeTools(3);
+  await withStub(aiToolRetrievalService, 'retrieveRelevantTools', async () => [], () => withStub(
+    configurationService,
+    'getToolSearchConfig',
+    () => enabledConfig(async () => toolCallDecision(['tool_0'], { coverageStatus: 'super-duper-sure' })),
+    async () => {
+      const result = await aiToolSearchService.discoverRelevantTools({}, { roleTools: tools, question: 'q' });
+      assert.equal(result.coverageStatus, 'uncertain');
+    },
+  ));
+});
+
+test('malformed uncoveredRequirements (wrong type) is normalized to an empty array rather than propagated as-is', async () => {
+  const tools = makeTools(3);
+  await withStub(aiToolRetrievalService, 'retrieveRelevantTools', async () => [], () => withStub(
+    configurationService,
+    'getToolSearchConfig',
+    () => enabledConfig(async () => toolCallDecision(['tool_0'], {
+      coverageStatus: 'insufficient',
+      uncoveredRequirements: 'fee data is missing',
+    })),
+    async () => {
+      const result = await aiToolSearchService.discoverRelevantTools({}, { roleTools: tools, question: 'q' });
+      assert.deepEqual(result.uncoveredRequirements, [], 'a non-array uncoveredRequirements must be normalized away, not passed through');
+    },
+  ));
+});
+
+test('malformed uncoveredRequirements is bounded to a safe count and per-item length', async () => {
+  const tools = makeTools(3);
+  const longItem = 'x'.repeat(500);
+  const manyItems = Array.from({ length: 20 }, (_, i) => `requirement ${i}`);
+  await withStub(aiToolRetrievalService, 'retrieveRelevantTools', async () => [], () => withStub(
+    configurationService,
+    'getToolSearchConfig',
+    () => enabledConfig(async () => toolCallDecision(['tool_0'], {
+      coverageStatus: 'insufficient',
+      uncoveredRequirements: [longItem, ...manyItems],
+    })),
+    async () => {
+      const result = await aiToolSearchService.discoverRelevantTools({}, { roleTools: tools, question: 'q' });
+      assert.ok(result.uncoveredRequirements.length <= 5, 'uncoveredRequirements must be capped, never unbounded');
+      assert.ok(result.uncoveredRequirements[0].length <= 200, 'each uncoveredRequirements item must be bounded in length');
+    },
+  ));
 });

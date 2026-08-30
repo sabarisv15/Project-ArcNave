@@ -3864,6 +3864,116 @@ test('askAgent: the schema-fetch/continuation system prompt is byte-identical to
   assert.equal(systemOf(bodies[0]), systemOf(bodies[1]), 'ADL-050: system segments must stay byte-identical, even with the compact user segment');
 });
 
+// --- Review Finding #12 — a focused specialization of Finding #2 above:
+// proves the exclusion holds across EVERY schema-fetch retry up to
+// MAX_SCHEMA_FETCHES, not just the first one (line 3832 above only
+// exercises a single describe_tools round trip), and that the excluded
+// context is materially smaller, not just missing one marker string.
+// No production code changes were needed for this finding — inspection
+// found continuationContext (the same Finding #2 compact-context variable
+// line 3832's own test already covers) is the ONLY context object every
+// completeWithTools call after the initial one reads, with no retry-count
+// branch or special case to bypass — so a 2nd/3rd retry already can't
+// regress independently of the 1st. These tests exist to prove that
+// property explicitly rather than leave it implied by construction.
+
+test('askAgent: EVERY schema-fetch retry (not just the first) up to MAX_SCHEMA_FETCHES omits the raw attachment text', async (t) => {
+  const bodies = await captureRequestBodies(t, { attachmentIds: ['att-1'] }, [
+    () => mockToolCallResponse('describe_tools', { names: ['get_college_profile'] }),
+    () => mockToolCallResponse('describe_tools', { names: ['analyze_document_table'] }),
+    () => mockToolCallResponse('describe_tools', { names: ['finance_status_summary'] }),
+    () => mockToolCallResponse('get_college_profile', {}),
+    () => mockAnswerResponse('Here is the college profile.'),
+  ]);
+  assert.equal(bodies.length, 5);
+  assert.ok(bodyText(bodies[0]).includes(ATTACHMENT_TEXT_MARKER), 'the initial decision call must still carry the full document');
+  // bodies[1..3] are schema-fetch retries #1, #2, #3 (MAX_SCHEMA_FETCHES=3),
+  // still inside the decision loop (continuationContext). bodies[4] is the
+  // SEPARATE answer-synthesis call (summarizeToolResult, once the loop
+  // exits at maxToolCallsPerTurn=1) — it correctly drops attachment
+  // identity entirely by existing, already-tested design (see "the ANSWER
+  // call omits the attached document text" above), not just this
+  // finding's scope, so it's checked only for marker absence, not
+  // metadata presence.
+  [1, 2, 3].forEach((i) => {
+    assert.ok(!bodyText(bodies[i]).includes(ATTACHMENT_TEXT_MARKER), `schema-fetch retry #${i} must not resend the raw document`);
+    assert.ok(bodyText(bodies[i]).includes('att-1'), `schema-fetch retry #${i} must still carry attachment identity/metadata`);
+  });
+  assert.ok(!bodyText(bodies[4]).includes(ATTACHMENT_TEXT_MARKER), 'the answer-synthesis call must not resend the raw document either');
+});
+
+// A realistically large attachment (this finding's own "~200,000
+// attachment characters" framing), not the small fixture
+// captureRequestBodies/ATTACHMENT_TEXT_MARKER use elsewhere in this
+// file — with a short document, the shared system prompt/tool catalogue
+// (tens of thousands of chars, byte-identical either way per ADL-050)
+// dwarfs the saving and a percentage assertion would be meaningless
+// (fragile, exactly what this finding's own test guidance warns
+// against). A large, distinctive fixture makes "materially smaller" an
+// honest, non-fragile assertion instead.
+test('askAgent: a schema-fetch retry context is materially smaller than the initial document-attached call once the attachment is realistically large', async (t) => {
+  const LARGE_MARKER = 'RAW_ATTACHMENT_MUST_NOT_APPEAR_IN_SCHEMA_FETCH_CONTEXT';
+  const largeDocumentText = `${LARGE_MARKER} ${'STUDENT ROW 819 25400122 RA\n'.repeat(2000)}`;
+  t.mock.method(documentService, 'downloadDocument', async () => fakeDocumentDownload());
+  t.mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: largeDocumentText, method: 'text_layer' }));
+
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const bodies = [];
+  const queue = [
+    () => mockToolCallResponse('describe_tools', { names: ['get_college_profile'] }),
+    () => mockToolCallResponse('get_college_profile', {}),
+    () => mockAnswerResponse('Here is the college profile.'),
+  ];
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(async (url, options) => {
+      bodies.push(JSON.parse(options.body));
+      return queue.shift()();
+    }, async () => {
+      await aiService.askAgent(client, 'How many arrears are in the ECE Sandwich section?', { identityContext, attachmentIds: ['att-1'] });
+    });
+  });
+
+  const initialBody = bodyText(bodies[0]);
+  const retryBody = bodyText(bodies[1]);
+  assert.ok(initialBody.includes(LARGE_MARKER), 'the initial call must carry the large document');
+  assert.ok(!retryBody.includes(LARGE_MARKER), 'the schema-fetch retry must not carry the large document');
+  const initialSize = initialBody.length;
+  const retrySize = retryBody.length;
+  assert.ok(retrySize < initialSize * 0.5, `schema-fetch retry context (${retrySize} chars) must be materially smaller than the initial call (${initialSize} chars) once the attachment is realistically large`);
+});
+
+test('askAgent: exceeding MAX_SCHEMA_FETCHES with a document attached still never leaks the raw attachment text in the refusal turn', async (t) => {
+  const fetchCall = () => mockToolCallResponse('describe_tools', { names: ['academic_class_timetable'] });
+  const bodies = await captureRequestBodies(t, { attachmentIds: ['att-1'] }, [
+    fetchCall, fetchCall, fetchCall, fetchCall, () => mockAnswerResponse('Answered without it.'),
+  ]);
+  assert.match(bodyText(bodies[bodies.length - 1]), /No more tool lookups are available/);
+  bodies.slice(1).forEach((body, i) => {
+    assert.ok(!bodyText(body).includes(ATTACHMENT_TEXT_MARKER), `call #${i + 1} (including the over-limit refusal turn) must not resend the raw document`);
+  });
+});
+
+test('askAgent: a tool that needs a schema fetch first (analyze_document_table) still resolves and can still read the real document once invoked', async (t) => {
+  t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
+    status: 'ok', strategy: 'sequential_id', total: 77, matchedCount: 21, scopedCount: 41,
+    sample: [{ key: '819:25400122', serialNo: '819', regNo: '25400122', count: 4 }],
+    sampleShown: 1, sampleOmitted: 20,
+  }));
+  const bodies = await captureRequestBodies(t, { attachmentIds: ['att-1'] }, [
+    () => mockToolCallResponse('describe_tools', { names: ['analyze_document_table'] }),
+    () => mockToolCallResponse('analyze_document_table', { attachmentId: 'att-1', filter: { pattern: 'RA' }, operation: 'count' }),
+    () => mockAnswerResponse('There are 77 arrears across 21 students.'),
+  ]);
+  assert.equal(bodies.length, 3);
+  // The schema-fetch retry itself excludes the raw text...
+  assert.ok(!bodyText(bodies[1]).includes(ATTACHMENT_TEXT_MARKER));
+  // ...but the tool the schema fetch unlocked still ran against the REAL
+  // document (via its own attachmentId-based retrieval, not the trimmed
+  // context) — the trimming never disabled the actual document read.
+  assert.ok(bodyText(bodies[2]).includes('77'), 'the deterministic total computed from the real document must still reach the answer call');
+});
+
 test('askAgent: the answer call still carries the deterministic tool result it must answer from', async (t) => {
   t.mock.method(documentAnalysisService, 'analyzeAttachment', async () => ({
     status: 'ok', strategy: 'sequential_id', total: 77, matchedCount: 21, scopedCount: 41,

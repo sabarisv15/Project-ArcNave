@@ -270,6 +270,27 @@ function buildCoverageRefusal({ analysed, uncovered }) {
     + 'Ask about one document at a time, or tell me which single document you want analysed.';
 }
 
+// Review Finding #8: replaces the plain tool-catalogue-omitted-note when
+// Tool Search itself (after its own broader-catalogue recovery attempt —
+// see aiToolSearchService.js) still reports uncertain/insufficient
+// coverage. Composed deterministically, same reasoning as
+// buildCoverageRefusal above: the model gets the short, factual list of
+// what is NOT covered and an explicit instruction not to claim
+// completeness, rather than being trusted to infer a gap on its own.
+// uncoveredRequirements is already bounded/sanitized by
+// aiToolSearchService — safe to fold into a system segment as-is.
+function buildToolCatalogueOmittedNote(coverageStatus, uncoveredRequirements) {
+  const base = 'You were given only the tools judged relevant to this question, not every tool that exists. '
+    + 'If none of them fit, say so plainly rather than answering as if you had checked further.';
+  if (coverageStatus === 'complete') return base;
+  const gapNote = uncoveredRequirements.length > 0
+    ? ` Specifically, no available tool covers: ${uncoveredRequirements.join('; ')}.`
+    : '';
+  return `${base} The tool selection step itself was not confident it found everything this question needs.`
+    + `${gapNote} Do not claim to have fully answered or verified every part of the question — state plainly `
+    + 'which part(s) you could not check.';
+}
+
 function pinDocumentAnalysisTool(tools, roleTools, documents) {
   // documents, never attachments generally: resolveChatAttachments already
   // splits images out, and this tool cannot operate on an image.
@@ -1424,6 +1445,219 @@ function verifyNumericClaims(answerText, evidence) {
   return { status: 'PASS' };
 }
 
+// --- Research-mode verification boundary (Review Finding #10) -----------
+//
+// verifyNumericClaims above already does exactly what a direct count
+// claim ("124 students appeared") needs — a claimed integer must appear
+// somewhere among known evidence values, or the answer is flagged. It is
+// REUSED verbatim below (never duplicated) for that one case. It has no
+// percentage/ranking awareness at all — a narrower job, built only for
+// Curriculum's own count-noun claims — so this section adds exactly two
+// more narrow, deterministic checks a Research-mode numeric claim can
+// need: a percentage recomputation and a superlative/ranking membership
+// check. Neither is a general NLP claim extractor — both are literal,
+// bounded pattern/arithmetic checks, same spirit as COUNT_CLAIM_PATTERN
+// itself.
+//
+// Research mode structurally never builds Curriculum's own `evidence`
+// array — askGeneralChat offers no tool at all (see that function's own
+// top comment), so there is no live analyze_document_table/tool-result
+// pipeline to draw from today. The shape here is deliberately smaller
+// and generic instead: a flat list of { label, value, trusted, status }
+// facts a caller can supply once a real evidence source exists for this
+// mode. `status: 'unreliable_extraction'` is the exact field/value
+// Finding #3's own document-trust gate already uses (documentAnalysisService.js) —
+// recognized here so a caller passing real analyze_document_table-shaped
+// facts needs no translation layer, without this file re-deriving any
+// extraction/trust logic itself. Today, in real production Research-mode
+// traffic, this list is always empty ([]) — the correct, safe default
+// per this finding's own product principle (no tool ran, so there is
+// nothing to verify against), not a gap in this implementation.
+const PERCENT_CLAIM_PATTERN = /(\d+(?:\.\d+)?)\s*%/g;
+const SUPERLATIVE_PATTERN = /\b(highest|lowest|maximum|minimum|best|worst|top)\b/i;
+// A value rounded to one decimal place (this codebase's own reporting
+// convention, e.g. "82.5%") can be off from a raw division by up to
+// 0.05 of a percentage point — the tolerance below, never looser.
+const PERCENT_ROUNDING_TOLERANCE = 0.05;
+
+const RESEARCH_VERIFICATION_STATUS = {
+  NOT_APPLICABLE: 'not_applicable',
+  VERIFIED: 'verified',
+  PARTIALLY_VERIFIED: 'partially_verified',
+  NOT_VERIFIABLE: 'not_verifiable',
+  VERIFICATION_FAILED: 'verification_failed',
+};
+
+function extractPercentClaims(answerText) {
+  if (typeof answerText !== 'string') return [];
+  return [...answerText.matchAll(PERCENT_CLAIM_PATTERN)].map((m) => Number(m[1]));
+}
+
+// Whether this Research-mode answer makes ANY claim worth checking at
+// all — a count-noun claim or a percentage. Deliberately NOT triggered
+// by a bare superlative word alone ("best practices," "top priority,"
+// "the worst approach" are ordinary English with zero data claim in
+// them) — SUPERLATIVE_PATTERN is only ever consulted as a MODIFIER on an
+// already-detected count/percent claim elsewhere in the same answer
+// (see verifyResearchNumericClaims below), never as its own trigger.
+// Anything with no count/percent claim at all (methodology advice, a
+// rewritten abstract, "explain X") skips verification entirely:
+// NOT_APPLICABLE, no disclaimer — the product principle this finding
+// exists to enforce is "don't present an unverifiable NUMBER as fact,"
+// never "refuse research assistance because nothing is verifiable."
+function researchAnswerMakesNumericClaim(answerText) {
+  if (typeof answerText !== 'string') return false;
+  if ([...answerText.matchAll(COUNT_CLAIM_PATTERN)].length > 0) return true;
+  return extractPercentClaims(answerText).length > 0;
+}
+
+// Finding #3's own gate, respected rather than re-implemented: an entry
+// marked untrusted (either convention — the boolean this file's own
+// facts use, or the real 'unreliable_extraction' status string
+// documentAnalysisService.js uses) is treated exactly as if it doesn't
+// exist. Arithmetic performed on an uncertain PDF-row reconstruction
+// must never be promoted to "verified" merely because the arithmetic
+// itself is correct.
+function trustedResearchFacts(evidence) {
+  return (Array.isArray(evidence) ? evidence : []).filter(
+    (f) => f && typeof f.value === 'number' && f.trusted !== false && f.status !== 'unreliable_extraction',
+  );
+}
+
+// Every value a claimed percentage can legitimately match: either a
+// fact's OWN value directly (a fact can already BE a percentage — e.g.
+// a per-year pass-percentage figure) or a derivable ratio (i/j) between
+// two facts, as a percentage (e.g. passed/appeared*100) — the smallest
+// generic way to recompute a claim without hardcoding label names like
+// "appeared"/"passed" (this codebase's real field names vary by tool/
+// report). A claimed percentage is verified if it matches ANY of these
+// within PERCENT_ROUNDING_TOLERANCE.
+function derivablePercentages(facts) {
+  const out = facts.map((f) => f.value);
+  facts.forEach((a) => {
+    facts.forEach((b) => {
+      if (a === b || b.value === 0) return;
+      out.push((a.value / b.value) * 100);
+    });
+  });
+  return out;
+}
+
+// A superlative claim ("2024 had the highest pass percentage") is
+// verified only when the label it names is BOTH present in the SAME
+// SENTENCE as the superlative wording AND genuinely holds the extreme
+// value — narrowed to the sentence, not the whole answer, precisely so
+// a supporting rundown of every year's figure earlier in the same
+// answer ("2022 was 70.1%, 2023 was 75.2%, 2024 was 82.5%.") doesn't
+// make every other year's label look "named" by the ranking claim too.
+// A literal label-substring check within that sentence, never free-text
+// claim parsing. Returns null when there's nothing to check (no
+// superlative wording, or zero facts) so the caller can tell "not
+// applicable" apart from "checked and failed."
+function superlativeClaimOutcome(answerText, facts) {
+  const isHighest = /\b(highest|maximum|best|top)\b/i.test(answerText);
+  const isLowest = /\b(lowest|minimum|worst)\b/i.test(answerText);
+  if (!isHighest && !isLowest) return null;
+  if (facts.length === 0) return false;
+  const claimSentences = answerText
+    .split(/(?<=[.!?])\s+/)
+    .filter((s) => SUPERLATIVE_PATTERN.test(s));
+  const named = facts.filter((f) => claimSentences.some((s) => s.includes(String(f.label))));
+  if (named.length === 0) return false;
+  const values = facts.map((f) => f.value);
+  const extreme = isHighest ? Math.max(...values) : Math.min(...values);
+  return named.every((f) => f.value === extreme);
+}
+
+// The Research-mode verification boundary itself. `evidence` is the flat
+// { label, value, trusted, status } fact list described above — [] in
+// virtually all of today's real Research-mode traffic, which is exactly
+// what routes every numeric-claim-bearing answer to NOT_VERIFIABLE
+// rather than silently trusting it.
+function verifyResearchNumericClaims(answerText, evidence = []) {
+  if (!researchAnswerMakesNumericClaim(answerText)) {
+    return { status: RESEARCH_VERIFICATION_STATUS.NOT_APPLICABLE };
+  }
+
+  const facts = trustedResearchFacts(evidence);
+  const outcomes = [];
+
+  // Count-noun claims — delegated verbatim to the existing Curriculum
+  // verifier (never re-implemented), fed the same trusted facts wrapped
+  // in ITS existing evidence shape ({fieldValues}).
+  const countClaims = [...answerText.matchAll(COUNT_CLAIM_PATTERN)];
+  if (countClaims.length > 0) {
+    const countResult = verifyNumericClaims(answerText, facts.length > 0 ? [{ fieldValues: facts.map((f) => f.value) }] : []);
+    if (countResult.status === 'PASS') outcomes.push('verified');
+    else if (countResult.status === 'CONFLICT') outcomes.push('failed');
+    else outcomes.push('unverifiable');
+  }
+
+  const percentClaims = extractPercentClaims(answerText);
+  if (percentClaims.length > 0) {
+    if (facts.length < 2) {
+      outcomes.push('unverifiable');
+    } else {
+      const derived = derivablePercentages(facts);
+      percentClaims.forEach((claimed) => {
+        outcomes.push(derived.some((d) => Math.abs(d - claimed) <= PERCENT_ROUNDING_TOLERANCE) ? 'verified' : 'failed');
+      });
+    }
+  }
+
+  // Superlative wording is only ever consulted as a MODIFIER here, gated
+  // behind an already-detected count/percent claim elsewhere in the same
+  // answer — never a standalone trigger (researchAnswerMakesNumericClaim's
+  // own comment explains why: "best," "top," "worst" are ordinary English
+  // on their own). A ranking sentence itself rarely repeats a number
+  // ("2024 had the highest pass percentage") — the supporting figures
+  // are what the count/percent check above already found elsewhere in
+  // the same text.
+  if (countClaims.length > 0 || percentClaims.length > 0) {
+    const superlativeOutcome = superlativeClaimOutcome(answerText, facts);
+    if (superlativeOutcome !== null) {
+      outcomes.push(superlativeOutcome ? 'verified' : 'failed');
+    }
+  }
+
+  if (outcomes.length === 0) {
+    // A claim pattern matched but nothing above could actually evaluate
+    // it (shouldn't normally happen given researchAnswerMakesNumericClaim
+    // gates entry, but conservative rather than assumed unreachable).
+    return { status: RESEARCH_VERIFICATION_STATUS.NOT_VERIFIABLE };
+  }
+  if (outcomes.includes('failed')) {
+    return { status: RESEARCH_VERIFICATION_STATUS.VERIFICATION_FAILED };
+  }
+  if (outcomes.every((o) => o === 'verified')) {
+    return { status: RESEARCH_VERIFICATION_STATUS.VERIFIED };
+  }
+  if (outcomes.includes('verified') && outcomes.includes('unverifiable')) {
+    return { status: RESEARCH_VERIFICATION_STATUS.PARTIALLY_VERIFIED };
+  }
+  return { status: RESEARCH_VERIFICATION_STATUS.NOT_VERIFIABLE };
+}
+
+// Composed here, deterministically, same "cannot be talked out of"
+// reasoning buildCoverageRefusal above already documents — never asked
+// of the model itself. Only the two statuses that must change what the
+// user sees get a note; VERIFIED and NOT_APPLICABLE return null (no
+// unnecessary disclaimer on an ordinary or already-supported answer).
+function buildResearchVerificationNote(status) {
+  if (status === RESEARCH_VERIFICATION_STATUS.NOT_VERIFIABLE) {
+    return 'Note: I cannot verify the specific figures above against a trusted source in this mode, so treat any '
+      + 'exact numbers as unconfirmed — ask in Curriculum mode for a verified figure.';
+  }
+  if (status === RESEARCH_VERIFICATION_STATUS.VERIFICATION_FAILED) {
+    return 'Note: at least one specific figure above does not match the available source data, so I cannot confirm '
+      + 'it as accurate — please verify independently or ask in Curriculum mode.';
+  }
+  if (status === RESEARCH_VERIFICATION_STATUS.PARTIALLY_VERIFIED) {
+    return 'Note: some figures above could not be independently verified from a trusted source — treat those as unconfirmed.';
+  }
+  return null;
+}
+
 // Runs an already-resolved, already-confirmed-if-needed plan: each
 // step through the real invokeTool (so Policy Gate/audit/Context
 // Builder/Prompt Safety Layer all still apply exactly as a single-tool
@@ -2061,7 +2295,23 @@ async function askGeneralChat(client, question, promptQuestion, {
   // default status with no real signal at all. One event, right before
   // the only LLM call this path makes.
   onStep({ phase: 'synthesizing' });
-  const { text: answer, usage } = await completeMaybeStreaming(client, identityContext, adapter, aiConfig, arcnaveContext, 'general_chat', onDelta);
+  const { text: rawAnswer, usage } = await completeMaybeStreaming(client, identityContext, adapter, aiConfig, arcnaveContext, 'general_chat', onDelta);
+
+  // Review Finding #10 — Research mode has no tool/evidence pipeline of
+  // its own (this function never builds Curriculum's `evidence` array —
+  // see this function's own top comment), so `evidence` is always []
+  // here today: the correct, conservative default per this finding's own
+  // product principle, not a placeholder for future work. Runs
+  // regardless of which adapter/model produced rawAnswer (experimental
+  // reasoning-model override included — the check is on the OUTPUT TEXT,
+  // never on provider identity), so that override can never bypass this
+  // boundary. A general/non-numeric research answer (the common case)
+  // returns NOT_APPLICABLE and rawAnswer is returned completely
+  // untouched — this must never turn into a blanket "can't verify"
+  // disclaimer on ordinary Research-mode traffic.
+  const researchVerification = verifyResearchNumericClaims(rawAnswer, []);
+  const researchVerificationNote = buildResearchVerificationNote(researchVerification.status);
+  const answer = researchVerificationNote ? `${rawAnswer}\n\n${researchVerificationNote}` : rawAnswer;
 
   const sanitizedContext = aiPromptSafetyLayer.buildSanitizedContext([]);
   const presentation = aiExperienceLayer.buildPresentation({
@@ -2074,6 +2324,7 @@ async function askGeneralChat(client, question, promptQuestion, {
     question,
     toolUsed: null,
     answer,
+    verification: researchVerification,
     usage,
     presentation,
   };
@@ -2225,6 +2476,7 @@ async function askAgent(client, question, {
   // buildToolCatalogue's own comment on catalogue token cost).
   const {
     tools: retrievedTools, viaToolSearch, usage: toolSearchUsage, provider: toolSearchProvider, model: toolSearchModel,
+    coverageStatus: toolCoverageStatus, uncoveredRequirements: toolUncoveredRequirements,
   } = await aiToolSearchService.discoverRelevantTools(client, { roleTools, question });
   // ADR-030 P0/P1 telemetry, same convention every other LLM call in
   // this turn already gets (see logLlmCall's own comment) — a no-op
@@ -2321,8 +2573,7 @@ async function askAgent(client, question, {
       source: 'tool-catalogue-omitted-note',
       stability: aiContextAssembly.STABILITY.CONVERSATION,
       target: 'system',
-      content: 'You were given only the tools judged relevant to this question, not every tool that exists. '
-        + 'If none of them fit, say so plainly rather than answering as if you had checked further.',
+      content: buildToolCatalogueOmittedNote(toolCoverageStatus, toolUncoveredRequirements || []),
     })] : [aiContextAssembly.segment({
       source: 'tool-catalogue',
       stability: aiContextAssembly.STABILITY.CONVERSATION,
@@ -2869,4 +3120,9 @@ module.exports = {
   buildAttachmentHint,
   buildHistoryHint,
   buildMemoryHint,
+  // Review Finding #10 — exported for direct unit testing only, same
+  // precedent as buildAttachmentHint/buildHistoryHint/buildMemoryHint
+  // above (narrow internals this file already exports for that reason).
+  verifyResearchNumericClaims,
+  RESEARCH_VERIFICATION_STATUS,
 };

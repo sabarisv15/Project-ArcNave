@@ -24,7 +24,7 @@ const aiToolRegistry = require('../src/services/aiToolRegistry');
 
 const PRINCIPAL_USER_ID = '32b4721e-e58a-4aa1-9c7d-81d5865be9b2';
 const COLLEGE_ID = 'demo';
-const REPETITIONS = 3;
+const REPETITIONS = 7;
 
 const VARIANTS = [
   { key: 'current', configValue: null },
@@ -37,6 +37,18 @@ const VARIANTS = [
 
 // Exact wording from this session's approved plan (same Test A/B/C used
 // for the Tool Search benchmark, for direct comparability).
+//
+// Test D/E added after a real concern raised this session: A/B/C only
+// ever test "a tool IS genuinely needed" questions — recall/precision
+// against a real expected set. They say nothing about the opposite
+// failure mode a shortened catalogue text risks: over-triggering (a
+// tool fired when none should be) or picking the WRONG one of two
+// overlapping-capability tools once their full-description caveats get
+// compressed away. Both are real risks specific to the shortened
+// variants (oneLine/keywords/category/hybrid all strip the "never use
+// X for Y, prefer Y" exclusion language the full 'current' description
+// carries — confirmed live this session for execute_code vs
+// analyze_document_table specifically).
 const TESTS = [
   {
     label: 'Test A', question: '3rd Sem CSE-A attendance percentage enna?', expectedTools: ['attendance_summary'],
@@ -50,6 +62,33 @@ const TESTS = [
     label: 'Test C',
     question: 'low attendance, fee pending, attendance summary moonrayum kudu',
     expectedTools: ['students_low_attendance', 'finance_status_summary', 'attendance_summary'],
+  },
+  {
+    // Meta/capability question — no data need at all. A shortened
+    // catalogue that drops nuance could tempt the model into invoking a
+    // tool (even a harmless lookup one) just because tool names now read
+    // as more generic/action-flavored once compressed. expectedTools: []
+    // — any invocation at all is a precision miss.
+    label: 'Test D (meta, no tool needed)',
+    question: 'Unga kitta enna features irukku, enna panna mudiyum?',
+    expectedTools: [],
+  },
+  {
+    // Overlapping-capability request with NO attachment actually
+    // present — execute_code and analyze_document_table both explicitly
+    // require an already-uploaded chat attachment to operate on (see
+    // their real registry descriptions). The correct behavior with no
+    // file attached is to ask the user for the file, not guess-invoke
+    // either tool. This is exactly the execute_code/analyze_document_table
+    // ambiguity whose disambiguating caveat gets compressed away in
+    // every shortened variant (verified this session — 'keywords'
+    // renders execute_code as "Runs a short computation in an", 'hybrid'
+    // as "computation", neither keeps the "prefer analyze_document_table
+    // when it fits" rule). expectedTools: [] — any tool call without a
+    // real attachment present is a false positive.
+    label: 'Test E (overlapping tools, no attachment)',
+    question: 'Oru PDF file-la irukura table-a Excel-ah maathi tharuveengala? Epdi pannuveenga?',
+    expectedTools: [],
   },
 ];
 

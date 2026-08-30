@@ -30,6 +30,7 @@
 // demonstrated convention, not fabricated, but exercise it against a
 // real project before trusting it in a live turn.
 
+const crypto = require('crypto');
 const { GoogleAuth } = require('google-auth-library');
 const {
   LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError,
@@ -46,11 +47,32 @@ const MAX_TOTAL_LATENCY_MS = 30000;
 // if a specific MaaS model turns out to need a real region.
 const DEFAULT_LOCATION = 'global';
 const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
-// Tool Search's own output is small (a short list of tool names) — no
-// business reason for a large ceiling the way gemini.js's chat answers
-// need MAX_OUTPUT_TOKENS=65536. Matches selfHosted.js/openai.js's own
-// MAX_TOKENS=1024 default for the same reason.
-const MAX_TOKENS = 1024;
+// Was 1024 (matching selfHosted.js/openai.js's own default, on the
+// reasoning that Tool Search's own output is small) — WRONG for a
+// "thinking" model (qwen3-next-80b-a3b-thinking-maas): its
+// reasoning_content shares this same budget with the real answer, and a
+// live-caught failure (this session) showed it spending the ENTIRE 1024
+// tokens on internal reasoning for a TRIVIAL single-tool question,
+// finish_reason: "length", zero tool call, zero content — every real
+// call was silently falling back before ever reaching this service's
+// schema/coverage logic. Exact same failure class gemini.js's own
+// MAX_OUTPUT_TOKENS comment already documents for Gemini 3.x's hybrid
+// reasoning, and the same fix: raise the ceiling so reasoning never
+// crowds out the answer. 65536 chosen to match Gemini's own ceiling on
+// this same Vertex AI surface — live-probed this session (real API
+// call, max_tokens: 65536) and confirmed accepted (status 200,
+// finish_reason: "tool_calls", not rejected the way a value past a
+// real per-model ceiling would 400).
+//
+// NOT paired with a lowered "thinking level" the way gemini.js's
+// GENERATION_CONFIG.thinkingConfig is: also live-probed this session
+// (reasoning_effort: 'low' in the request body) and it made no
+// measurable difference — the model still burned its entire budget
+// reasoning on a three-word answer, finish_reason: "length" again. This
+// MaaS OpenAI-compatible endpoint does not appear to expose a working
+// reasoning-depth control for this model; a large MAX_TOKENS ceiling is
+// the only lever confirmed to actually work.
+const MAX_TOKENS = 65_536;
 
 // A MaaS deployment's vision support varies per underlying model and
 // isn't documented uniformly across them — no vision-capable convention
@@ -191,6 +213,76 @@ function sanitizeModelOutput(content) {
     .trim();
 }
 
+// Review Finding #9 (2026-08-30) — a response can be cut off by the
+// output-length limit (finish_reason: "length") while still holding
+// visible text, or even a syntactically-parseable partial tool call.
+// Neither may ever be trusted as a genuine completed answer/tool call: a
+// truncated student list ("Arun, Bala, and...") returned as complete is
+// a wrong-data bug, not a formatting one, and a truncated tool-call JSON
+// that happens to parse cleanly (e.g. missing a trailing argument) would
+// execute with fabricated/missing arguments. Checked in both
+// completeWithMeta and completeWithTools BEFORE any content/tool_calls
+// parsing runs, so a truncated response is refused up front — it never
+// reaches, and can never bypass, the parsing logic below it.
+const FINISH_REASON = {
+  COMPLETE: 'complete',
+  TOOL_CALL: 'tool_call',
+  TRUNCATED: 'truncated',
+  CONTENT_FILTER: 'content_filter',
+  UNKNOWN: 'unknown',
+};
+
+// Real values observed live this session against the actual endpoint
+// (qwen/qwen3-next-80b-a3b-thinking-maas, during MAX_TOKENS's own
+// incident above): "length" on a truncated response, "tool_calls" on a
+// genuinely completed tool call — both consistent with this file's own
+// header-comment claim that the wire shape is the OpenAI-compatible
+// convention selfHosted.js/openai.js already speak, whose documented
+// normal-completion value is "stop". "max_tokens"/"content_filter" are
+// that same convention's other documented values, included defensively
+// even though never directly observed against this specific endpoint —
+// same "accommodate documented vendor behavior without assuming it's
+// exercised yet" precedent extractToolCallFromContent's own comment
+// already sets for this file. A missing or unrecognized reason
+// normalizes to UNKNOWN, never COMPLETE or TRUNCATED by guesswork — the
+// existing content/tool_calls-shape checks already downstream of this
+// are what continue to gate a genuinely reason-less response, exactly as
+// they did before this finding (a provider that omits finish_reason on
+// an otherwise-valid response must not have that response rejected).
+function normalizeFinishReason(rawFinishReason) {
+  const reason = typeof rawFinishReason === 'string' ? rawFinishReason.toLowerCase() : null;
+  if (reason === 'length' || reason === 'max_tokens') return FINISH_REASON.TRUNCATED;
+  if (reason === 'tool_calls' || reason === 'function_call') return FINISH_REASON.TOOL_CALL;
+  if (reason === 'content_filter') return FINISH_REASON.CONTENT_FILTER;
+  if (reason === 'stop' || reason === 'end_turn') return FINISH_REASON.COMPLETE;
+  return FINISH_REASON.UNKNOWN;
+}
+
+// Shared by completeWithMeta and completeWithTools — both throw the
+// SAME LlmRequestError shape every other malformed-response case in
+// this file already throws (e.g. "tool call arguments were not valid
+// JSON" a few lines below), never a distinct `type: "truncated"` return
+// value. Deliberately NOT a new return shape: completeWithMeta's return
+// contract ({text, usage}) is shared verbatim across every provider
+// adapter with no `type` field precedent to extend, and
+// completeWithTools's decision.type IS locally extensible, but
+// aiService.js's own "no tool was picked" answer path (the final block
+// of askAgent) reads decision.text unconditionally with no type check at
+// all — a new trusted-looking type value would silently reach it. A
+// thrown error, by contrast, can never be silently rendered as a
+// completed answer by any existing caller — every caller of
+// completeWithMeta/completeWithTools already has to handle this class of
+// throw today, for the exact "call failed" reason (rule 9 in spirit
+// again: even the PROVIDER's own claimed length/cut-off state is
+// re-verified here — the finish_reason field is trusted, not the
+// content that follows it).
+function truncationError(rawFinishReason) {
+  return new LlmRequestError(
+    `Vertex AI MaaS response was cut off before completion (finish_reason: ${rawFinishReason}) — `
+    + 'refusing to treat partial text or a partial tool call as a completed result',
+  );
+}
+
 async function completeWithMeta(cfg, arcnaveContext) {
   const { systemPrompt, userPrompt } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
@@ -208,6 +300,10 @@ async function completeWithMeta(cfg, arcnaveContext) {
   });
 
   const choice = payload && Array.isArray(payload.choices) ? payload.choices[0] : null;
+  const finishReason = normalizeFinishReason(choice && choice.finish_reason);
+  if (finishReason === FINISH_REASON.TRUNCATED || finishReason === FINISH_REASON.CONTENT_FILTER) {
+    throw truncationError(choice.finish_reason);
+  }
   const rawAnswer = choice && choice.message ? choice.message.content : undefined;
   if (typeof rawAnswer !== 'string') {
     throw new LlmRequestError('Vertex AI MaaS response did not contain choices[0].message.content');
@@ -225,20 +321,67 @@ async function complete(cfg, prompts) {
   return text;
 }
 
+// Review Finding #11 (2026-08-30) — a native tool_calls entry always
+// carries the provider's own `id`, preserved unchanged (just trimmed —
+// never a business decision, only whitespace hygiene). A
+// content-embedded call (extractToolCallFromContent below) has no ID at
+// all: MiniMax M2/Qwen3-Next both emit a tool call this way when they
+// don't populate the structured message.tool_calls field (see that
+// function's own comment), and an `undefined` callId silently vanishes
+// under JSON.stringify — the key is OMITTED, not serialized as null —
+// so the eventual `{ role: 'tool', tool_call_id: undefined, ... }`
+// continuation message would reach the wire with no tool_call_id at
+// all, leaving the model no way to associate the result with its own
+// prior call. Called once per parsed tool call, at the earliest stable
+// parsing boundary (inside completeWithTools, immediately where each
+// path already builds its return value) — never re-derived later, so
+// the same ID a caller sees in the returned `callId` is guaranteed to
+// be the exact one buildPriorTurnMessages uses below on the next turn.
+// No second "existingCallId" fallback tier: unlike some adapters, this
+// one has no notion of a previously-known ID to fall back to before
+// generating a fresh one — a native call always has the provider's own
+// id, and a content-embedded call never has any id at all, so there is
+// nothing meaningful to pass as a second tier.
+function resolveToolCallId(rawId) {
+  if (typeof rawId === 'string' && rawId.trim().length > 0) {
+    return rawId.trim();
+  }
+  return `local_${crypto.randomUUID()}`;
+}
+
 // ADR-030 P2(c)-equivalent continuation shape — identical to
 // selfHosted.js's own buildPriorTurnMessages, same OpenAI-compatible
 // wire convention this adapter targets.
 function buildPriorTurnMessages(priorTurns) {
-  return priorTurns.flatMap((turn) => [
-    {
-      role: 'assistant',
-      content: null,
-      tool_calls: [turn.rawToolCall || {
-        id: turn.callId, type: 'function', function: { name: turn.toolName, arguments: JSON.stringify(turn.arguments || {}) },
-      }],
-    },
-    { role: 'tool', tool_call_id: turn.callId, content: turn.resultText },
-  ]);
+  return priorTurns.flatMap((turn) => {
+    // Defense in depth only (Review Finding #11) — completeWithTools
+    // below already normalizes every returned callId via
+    // resolveToolCallId before a caller can ever construct a priorTurns
+    // entry from it, so this should never actually fire. Deliberately
+    // NOT a silent regeneration here: turn.rawToolCall (used for the
+    // assistant tool_calls entry immediately below, when present) may
+    // carry its OWN id — generating a fresh replacement ID only for
+    // tool_call_id while rawToolCall.id stays whatever it already was
+    // would create a NEW mismatch between the two messages, worse than
+    // the one this finding exists to fix. A thrown, existing-convention
+    // LlmRequestError is the safe choice for a state normalization
+    // itself already rules out.
+    if (typeof turn.callId !== 'string' || turn.callId.trim().length === 0) {
+      throw new LlmRequestError(
+        'Vertex AI MaaS: a prior tool turn has no valid call ID to associate its result with — refusing to send an unassociated tool-result message',
+      );
+    }
+    return [
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [turn.rawToolCall || {
+          id: turn.callId, type: 'function', function: { name: turn.toolName, arguments: JSON.stringify(turn.arguments || {}) },
+        }],
+      },
+      { role: 'tool', tool_call_id: turn.callId, content: turn.resultText },
+    ];
+  });
 }
 
 // Some Vertex MaaS models — measured live this session against the
@@ -300,6 +443,24 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
     throw new LlmRequestError('Vertex AI MaaS response did not contain choices[0].message');
   }
 
+  // Checked before ANY parsing below — native tool_calls, the
+  // content-embedded <tool_call>/bare-JSON fallback, and the plain-text
+  // answer path all skip entirely once a truncated/filtered finish
+  // reason is seen, so a cut-off response can never reach, and never
+  // execute through, any of them (Review Finding #9).
+  const finishReason = normalizeFinishReason(choice.finish_reason);
+  if (finishReason === FINISH_REASON.TRUNCATED || finishReason === FINISH_REASON.CONTENT_FILTER) {
+    throw truncationError(choice.finish_reason);
+  }
+
+  // Only toolCalls[0] is ever read here — this adapter's return contract
+  // ({type: 'tool_call', toolName, ...}, a single call) has never
+  // supported multiple simultaneous tool calls, native or
+  // content-embedded (extractToolCallFromContent below also only ever
+  // returns parsed[0]). Pre-existing scope, not something Review Finding
+  // #11 changes or extends — that finding is about the ONE call this
+  // path already returns always having a valid, stable ID, not about
+  // adding multi-call support.
   const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
   const usage = extractUsage(payload && payload.usage);
   if (toolCalls.length > 0) {
@@ -310,15 +471,27 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
     } catch (err) {
       throw new LlmRequestError(`Vertex AI MaaS tool call arguments were not valid JSON: ${err.message}`);
     }
+    // toolCalls[0].id is the provider's own native ID — resolveToolCallId
+    // preserves it unchanged (trimmed) whenever it's a valid non-empty
+    // string; a native response missing even this would be unusual, but
+    // is still covered rather than assumed impossible.
     return {
-      type: 'tool_call', toolName: fn.name, arguments: toolArguments, callId: toolCalls[0].id, rawToolCall: toolCalls[0], usage,
+      type: 'tool_call', toolName: fn.name, arguments: toolArguments, callId: resolveToolCallId(toolCalls[0].id), rawToolCall: toolCalls[0], usage,
     };
   }
 
   const fallbackCall = extractToolCallFromContent(message.content);
   if (fallbackCall) {
+    // No provider ID exists for a content-embedded call at all (see
+    // extractToolCallFromContent's own comment) — resolveToolCallId(undefined)
+    // always generates a fresh local_<uuid> here, exactly the case
+    // Review Finding #11 exists to fix. rawToolCall stays undefined
+    // (unchanged from before this finding): there is no real native
+    // tool_calls entry to replay verbatim on the next turn, so
+    // buildPriorTurnMessages's own `turn.rawToolCall ||` fallback
+    // constructs a synthetic one FROM this same resolved callId instead.
     return {
-      type: 'tool_call', toolName: fallbackCall.name, arguments: fallbackCall.arguments, callId: undefined, rawToolCall: undefined, usage,
+      type: 'tool_call', toolName: fallbackCall.name, arguments: fallbackCall.arguments, callId: resolveToolCallId(undefined), rawToolCall: undefined, usage,
     };
   }
 
@@ -358,4 +531,8 @@ module.exports = {
   // iterateSseLines) — not part of the adapter-wide provider contract
   // other files should import.
   sanitizeModelOutput,
+  normalizeFinishReason,
+  FINISH_REASON,
+  resolveToolCallId,
+  buildPriorTurnMessages,
 };

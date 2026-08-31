@@ -46,9 +46,7 @@ const FLAG_DEFINITIONS = [
     parse(raw) {
       if (raw === undefined || raw === '') return null;
       if (!['keywords', 'hybrid'].includes(raw)) {
-        throw new Error(
-          `EXPERIMENTAL_CATALOGUE_VARIANT must be one of keywords, hybrid (got ${JSON.stringify(raw)})`,
-        );
+        throw new Error(`EXPERIMENTAL_CATALOGUE_VARIANT must be one of keywords, hybrid (got ${JSON.stringify(raw)})`);
       }
       return raw;
     },

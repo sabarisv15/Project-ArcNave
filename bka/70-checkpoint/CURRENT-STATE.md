@@ -4,6 +4,105 @@ _Last updated: 2026-08-31._
 
 ---
 
+# ⛔ NEW BANNER — ARCNAVE modernization P2 IN PROGRESS, 2026-08-31.
+Same standing mandate: `arcnave-p0-p5-rewrite-mandate.md` (session
+memory). Source plan: `ARCNAVE-modernization-english.md` (repo root),
+P2 section + clashes C1/C2/C3/C4/C8/C9.
+
+**P2 is being built slice-by-slice on branch
+`p0-modernization-foundation` (not merged, no PR). Full backend suite
+in Docker after slices 1–2: 2718/2718, clean.**
+
+**Shipped + Docker-verified this session:**
+1. **1.14 — feature-flag registry.** `backend/src/featureFlags.js`
+   (new): the six `EXPERIMENTAL_*` AI behaviour trials
+   (`experimentalCatalogueVariant`, `experimentalReasoningModel`,
+   `experimentalAttachmentDiscipline`, `experimentalFullInstructionsDocument`,
+   `experimentalThinkingTraceVisibility`, `experimentalZeroToolFastPath`)
+   move out of inline `process.env` expressions in `config.js` into one
+   declarative, validated (enum membership + strict-boolean), introspectable
+   table. `config.js` spreads `resolveFlags()` — `config.experimentalX`
+   still resolves byte-identically and stays a writable data property
+   (tests/scripts assign-then-restore it). New read-only
+   `GET /api/v1/ai-config/feature-flags`. `tests/feature-flags.test.js`.
+2. **1.3 / 1.10 / clash C1 — greeting fast path.**
+   `backend/src/services/aiGreetingClassifier.js` (new): deterministic
+   whitelist match (no model call, no I/O), false-positive-biased. In
+   `askAgent`, a conversational turn with no attachment/focus/project
+   context skips the per-turn embedding tool-shortlist call entirely
+   (1.10) and folds into the existing `experimentalZeroToolFastPath`
+   structural no-tool state (no catalogue, no `describe_tools`, no
+   `tools` field). **Clash C1 honoured**: this selects TOOLS ONLY —
+   `decisionPolicy`/`buildPolicy` untouched, rule/instruction-chunk
+   selection byte-identical to any other turn. Ships ON
+   (`config.aiGreetingFastPath`, `AI_GREETING_FAST_PATH=false` to
+   disable). `tests/ai-greeting-classifier.test.js` + 4 `askAgent` cases.
+
+Both committed: `4f2f186`.
+
+**Found already-satisfied (no code needed, same as P1's 1.17):**
+- **1.7 — stream normal replies.** `POST /api/v1/ai/ask/stream` already
+  exists and streams the final answer as SSE `delta` events for BOTH
+  curriculum and general modes; all four adapters (`gemini`, `claude`,
+  `openai`, `selfHosted`) already implement `completeStream`;
+  `completeMaybeStreaming` already routes to it whenever `onDelta` is
+  given. Only remaining gap is frontend adoption (frontend still calls
+  non-stream `/ai/ask`) — a `/wire-frontend` pass, not backend work,
+  and the frontend visual design is locked.
+
+**Remaining P2 items — each needs its own scoped pass; do NOT build
+straight off this banner:**
+- **C3 — tool-search benchmark GO/NO-GO.** `backend/scripts/tool-search-benchmark.js`
+  exists but running it needs **real paid Vertex calls + a reachable
+  GCP endpoint** (this dev env can't — same wall P1 hit). Owner said
+  (2026-08-31) they will provide GCP access/budget; until then this is
+  blocked on that. When unblocked: run it against `demo`, record the
+  numbers as a ledger entry, flip `TOOL_SEARCH_ENABLED` only on GO.
+- **C2 — explicit prompt caching (1.4).** Vertex context caching bills
+  per cached-token-hour; needs the same GCP access. Build the mechanism
+  in `gemini.js` + wiring OFF by default, verify live once GCP is
+  reachable, record a new ledger entry re-opening ADL-054/055's "only
+  build caching when cost is a demonstrated problem" (the PDF's
+  "hi = 4,500 words" is the re-open trigger). Couples with 1.6 below —
+  the "reusable front block" only pays off with explicit caching.
+- **1.6 — history as an add-only front block.** Today `buildHistoryHint`
+  flattens the whole history into one text blob prepended to the user
+  segment every turn. Target: pass history as real prior conversation
+  turns to the adapters (extend the `priorTurns` param, map to each
+  provider's message array). Deep, multi-adapter, and interacts with
+  clash C10 ("identical prompt within a turn") — its own focused
+  session, ideally alongside C2.
+- **1.2 / C4 — margin-based tool-search cutoff.** `aiToolRetrievalService.js`:
+  drop the `roleTools.length <= TOP_K` bypass (this IS the PDF's "role
+  with ≤8 tools sends all" bug) and replace the fixed
+  `SIMILARITY_DISTANCE_THRESHOLD = 0.8` with a relative drop-off margin.
+  Plan says "tuned by the test set" — needs the billable AI
+  retrieval-accuracy measurement, so also gated on GCP access. Keep the
+  `describe_tools` recovery path (C4); put the "wrongly-excluded tool"
+  incident in the test set.
+- **4.5 / clash C8 — DB-backed job queue.** `migrations/1754000000000_background-jobs.js`
+  + `1758300000000_background-jobs-progress-fields.js` tables already
+  exist; needs the worker loop + moving file-extraction / media work
+  off the request path onto it. No new infra (DB-backed, deliberately).
+  No GCP needed — buildable next.
+- **D4 — running counter table for usage limits.** `aiCostControlService`
+  currently `SUM()`s over `audit_log` `ai_llm_call` rows every turn
+  (`auditLogRepository.getAiUsageWindow`). Target: an incremental
+  `ai_usage_counters` table (PK `college_id, period_month`) incremented
+  in `logLlmCall`, read O(1) for the monthly quota; the 1-minute rate
+  window stays on `audit_log` (needs per-row timestamps). Reversible
+  migration (rule 6). No GCP needed — buildable next.
+- **3.3 — put skills in the AI test set.** Add skill-invocation
+  scenarios to `scripts/ai-behavioral-suite.js`. No GCP to write; a run
+  is billable.
+
+**Exact next action:** build **4.5/C8 (job queue worker)** and **D4
+(usage counter)** next — the two remaining P2 items that need no GCP
+access — each its own scoped pass, then Docker full-suite. The GCP-gated
+items (C3, C2, 1.2/C4) wait on the owner's promised Vertex access.
+
+---
+
 ## Session handover (2026-08-31) — starting P2 in a new session
 
 **Read this section, then the P1 banner immediately below it, then

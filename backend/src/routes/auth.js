@@ -7,12 +7,26 @@
 // non-enforcing).
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
 const { requireAuth } = require('../middleware/rbac');
 const { createCredentialRateLimiter } = require('../middleware/rateLimit');
+const validate = require('../middleware/validate');
 const authService = require('../services/authService');
 const identityService = require('../services/identityService');
 const { setRefreshCookie, clearRefreshCookie, getRefreshTokenFromRequest } = require('../middleware/refreshCookie');
+
+// ARCNAVE modernization P1 (PDF 4.2/4.8) — the first real schema in
+// this codebase, and the source routes/openapi.js reads to generate
+// real API documentation for this one endpoint. See middleware/validate.js
+// for the scope statement (this is a demonstrated pattern for one
+// route, not a claim that every route now has a schema).
+const loginSchema = z.object({
+  body: z.object({
+    username: z.string().min(1),
+    password: z.string().min(1),
+  }),
+});
 
 function createAuthRouter() {
   const router = express.Router();
@@ -46,6 +60,7 @@ function createAuthRouter() {
   router.post(
     '/auth/login',
     loginLimiter,
+    validate(loginSchema),
     asyncHandler(async (req, res) => {
       if (req.collegeId === null) {
         res.status(400).json({ detail: 'No tenant could be resolved for this request' });
@@ -291,3 +306,9 @@ function createAuthRouter() {
 }
 
 module.exports = createAuthRouter;
+// Attached to the factory function itself (not a second named export)
+// so every existing `const createAuthRouter = require('./routes/auth')`
+// call site is unaffected — only routes/openapi.js reads this.
+module.exports.schemas = {
+  '/auth/login': { post: loginSchema },
+};

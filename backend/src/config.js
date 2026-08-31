@@ -190,6 +190,18 @@ module.exports = {
   // documents with a key visible in this file's own git history.
   documentStorageEncryptionKey: required('DOCUMENT_STORAGE_ENCRYPTION_KEY'),
 
+  // ARCNAVE modernization P1 (PDF D7: "container volume only" today —
+  // no real backup). scripts/backup-database.js/restore-database.js
+  // read this. Local-disk only, deliberately (owner decision,
+  // 2026-08-31) — an off-host destination (cloud storage) was set up
+  // and then intentionally torn down the same session; revisit once a
+  // real deploy target exists to protect, not before.
+  dbBackup: {
+    // How many local pg_dump files scripts/backup-database.js keeps
+    // in documentBackupRoot before pruning the oldest.
+    localRetentionCount: Number(process.env.DB_BACKUP_LOCAL_RETENTION_COUNT || 3),
+  },
+
   // NotificationService's real email channel (Module 8). Deliberately
   // NOT required() like the connection strings/JWT secrets above:
   // this session's own task asks for "a stub/log-only fallback if no

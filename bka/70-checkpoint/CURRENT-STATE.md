@@ -4,6 +4,101 @@ _Last updated: 2026-08-31._
 
 ---
 
+# ⛔ NEW BANNER — ARCNAVE modernization P1 shipped, 2026-08-31. Same
+mandate as the P0 banner below: `arcnave-p0-p5-rewrite-mandate.md`
+(session memory).
+
+**P1 shipped and verified, 2026-08-31:**
+1. **D2** (RLS forced + matching indexes) — forced isolation confirmed
+   already-correct on every table (live query, zero gaps). The real
+   gap: 60 RLS-scoped tables had no index with `college_id` leading —
+   every RLS-filtered query on them fell back to a full scan. Fixed:
+   `migrations/1788172292000_tenant-column-indexes.js`, `CONCURRENTLY`
+   + `noTransaction()`, reversibility-verified (60 indexes created,
+   dropped, recreated).
+2. **D7** (real backups) — `scripts/backup-database.js`/
+   `restore-database.js` (new), real `pg_dump -Fc`/`pg_restore`.
+   **Local-disk only, deliberately** — cloud storage (GCS bucket +
+   service account) was set up, then the owner reversed that decision
+   same-session; both were torn down. Off-host storage is a named
+   follow-up once a real deploy target exists. Real end-to-end tested
+   restore run: 95 tables, 154 college rows, verified.
+3. **1.9** (fire-and-forget monitoring writes) — `aiService.js`'s
+   `logLlmCall` no longer `await`s its audit INSERT; same connection
+   (not a separate pool connection — that approach was tried, broke 8
+   unit tests' mocked-client assertions, reverted), so ordering with a
+   later COMMIT/pause is still guaranteed by node-postgres's own
+   per-connection query queue.
+4. **D5** (migration safety rails) — `scripts/migrate.js` now sets
+   `PGOPTIONS lock_timeout=5000` (override via
+   `MIGRATION_LOCK_TIMEOUT_MS`) before every migration run. Guidance
+   for the multi-step-column-change rule (no table here has needed it
+   yet): `backend/MIGRATIONS-SAFETY.md` (NOT `backend/migrations/README.md`
+   — node-pg-migrate globs every file in that directory as a
+   migration, including non-`.js` ones; a `.md` there crashes the
+   runner).
+5. **D6** (query-stats + dashboard) — `pg_stat_statements` now in
+   `shared_preload_libraries` (`docker-compose.yml`'s `db` service
+   `command:`) + `migrations/1788172400000_pg-stat-statements.js` +
+   `scripts/query-stats-report.js` (a report script, deliberately not
+   a hosted Grafana stack — no new always-on service). Live-tested,
+   real output.
+6. **4.2/4.8** (schemas + generated API doc + framework upgrade) —
+   **Express upgraded 4→5** (full suite clean, 2701/2701, no route
+   breakage — no wildcard routes existed to hit path-to-regexp v8's
+   stricter syntax). `middleware/validate.js` (new, zod — same library
+   the frontend already uses) + `routes/openapi.js` (new, real
+   generated OpenAPI 3.1 from each router's own `.schemas` export, zod's
+   built-in `z.toJSONSchema()`, no extra dependency) — demonstrated on
+   `/auth/login` only; converting the other ~335 routes is its own
+   separate, large pass, explicitly not attempted here (matches this
+   project's own "P0 turns the mechanism on, doesn't convert
+   everything" pattern already used for jsx-a11y in the P0 banner).
+7. **1.15/4.4** (tracing) — `tracing/tracer.js` (new): a minimal,
+   OpenTelemetry-SHAPED span recorder (traceId/spanId/parentSpanId),
+   deliberately NOT the full `@opentelemetry/sdk-node` auto-
+   instrumentation package (real compatibility surface against a
+   3500-line hand-written agent loop, no budget to fully verify this
+   session). `aiService.js`'s `invokeTool`/`completeMaybeStreaming` —
+   the two choke points every tool call and LLM call already funnel
+   through — now each open a span; same traceId as the request's own
+   `requestId` (`logging/context.js`), so one AI turn's spans already
+   form one real tree in the structured logs today. New
+   `tests/tracer.test.js` (4 tests) proves the parent/child claim, not
+   just asserted.
+8. **1.17** (AI test set) — found already substantially satisfied:
+   `scripts/ai-behavioral-suite.js` (772 lines, ~50 real-bug-seeded
+   scenarios) already existed; 223 AI-related tests in
+   `ai-service.test.js` alone already run in `npm test`, now CI-blocking
+   via the P0 pipeline. Added: a `workflow_dispatch`-only CI job for
+   the behavioral suite (`.github/workflows/ci.yml`) — a manual "Run
+   workflow" button, deliberately never on push/PR (real Gemini API
+   cost per run; ADR-030/ADL-049's own reasoning for keeping it manual
+   respected, not overridden).
+
+**Explicitly NOT built, both by owner decision (asked, not assumed):**
+- Off-host backup storage (cloud bucket) — see D7 above.
+- A persistent AI-tracing viewer (self-hosted Langfuse or similar) —
+  span data already flows to structured logs; standing up a
+  multi-container observability stack with no deploy target to
+  protect yet was declined. Revisit once a real deploy target exists.
+
+**Verification:** full backend suite in Docker, **2701/2701, clean**
+(zero failures — including the flaky `department-class-generation.test.js`
+teardown the P0 banner noted, which passed clean this run too).
+Frontend lint/build unaffected (no frontend changes this phase).
+
+**Exact next action:** P2 (AI cost + files — greeting classifier, tool-
+search GO/NO-GO rerun, explicit prompt caching, native PDF reading,
+streaming, experiment-flag registry, job queue). Give it its own
+scoping pass first, per this project's established pattern — do not
+build P2 straight off this banner without reviewing
+`ARCNAVE-modernization-english.md`'s P2 section and re-reading the 11
+clashes (Part 6) relevant to it (C1 greeting classifier, C2 caching,
+C3 tool-search, C8 job queue) first.
+
+---
+
 # ⛔ NEW BANNER — ARCNAVE modernization P0 shipped, 2026-08-31. Standing
 mandate + full P0-P5 plan: see the memory file
 `arcnave-p0-p5-rewrite-mandate.md` (this session's own persistent

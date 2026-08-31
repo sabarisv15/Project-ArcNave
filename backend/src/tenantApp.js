@@ -14,6 +14,7 @@ const { sessionRevocationMiddleware } = require('./middleware/sessionRevocation'
 const { identityMiddleware } = require('./middleware/identity');
 const errorHandler = require('./middleware/errorHandler');
 const createAuthRouter = require('./routes/auth');
+const createOpenApiRouter = require('./routes/openapi');
 const createConfigurationsRouter = require('./routes/configurations');
 const createAiConfigRouter = require('./routes/aiConfig');
 const createInvitationsRouter = require('./routes/invitations');
@@ -146,6 +147,11 @@ function createTenantApp({ registerExtraRoutes } = {}) {
       res.json({ status: 'ok' });
     }),
   );
+
+  // ARCNAVE modernization P1 (PDF 4.8) — generated API documentation,
+  // same "no tenant/transaction needed" reasoning as /health above:
+  // reading the schema shape a route enforces isn't tenant data.
+  app.use(createOpenApiRouter());
 
   // POST /invitations/accept — also registered before authMiddleware/
   // tenantMiddleware, same reasoning as /health: this route resolves

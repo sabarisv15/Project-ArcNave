@@ -27,6 +27,7 @@ const configurationService = require('./configurationService');
 const config = require('../config');
 const documentService = require('./documentService');
 const auditLogRepository = require('../repositories/auditLogRepository');
+const tracer = require('../tracing/tracer');
 const idempotencyKeyRepository = require('../repositories/idempotencyKeyRepository');
 const documentTextExtractionService = require('./documentTextExtractionService');
 const fileIntelligenceRouter = require('./fileIntelligenceRouter');
@@ -35,7 +36,7 @@ const aiMemoryService = require('./aiMemoryService');
 const artifactService = require('./artifactService');
 const aiCostControlService = require('./aiCostControlService');
 const aiModelVersionService = require('./aiModelVersionService');
-const { logWarn } = require('../logging/logger');
+const { logWarn, logError } = require('../logging/logger');
 // AI Experience Layer (AIX) — presentation only, added after the real
 // pipeline above has already produced its final, authorized result.
 // Every field this file already returns (entries, preamble, question,
@@ -972,7 +973,15 @@ function extractDocumentAttachment(toolName, result) {
 }
 
 async function invokeTool(client, toolName, params, { identityContext, provider, model } = {}) {
-  const result = await aiToolRegistry.invokeTool(toolName, { client, identityContext, params });
+  // ARCNAVE modernization P1 (PDF 1.15: "one turn shows as one tree")
+  // — every tool call an AI turn makes becomes its own span, sharing
+  // the request's traceId (tracer.js) with every LLM-call span
+  // completeMaybeStreaming opens, so a real trace viewer (once one is
+  // wired to an exporter) renders one turn as one tree, not
+  // disconnected log lines.
+  const result = await tracer.withSpan('ai_tool_call', { toolName }, () =>
+    aiToolRegistry.invokeTool(toolName, { client, identityContext, params }),
+  );
   const tool = aiToolRegistry.getTool(toolName);
   const document = extractDocumentAttachment(toolName, result);
 
@@ -2368,47 +2377,65 @@ async function logLlmCall(
   },
 ) {
   if (!usage && !imageCount && systemPromptChars === undefined && toolCount === undefined && !attempted) return;
-  await auditLogRepository.createAuditLogEntry(client, {
-    collegeId: identityContext.collegeId,
-    userId: identityContext.userId,
-    action: 'ai_llm_call',
-    entity: 'ai_llm',
-    entityId: null,
-    metadata: {
-      provider: adapter.name,
-      model: aiConfig.model,
-      purpose,
-      inputTokens: usage ? usage.inputTokens : undefined,
-      outputTokens: usage ? usage.outputTokens : undefined,
-      // ADR-030 P3 — only ever populated by gemini.js today (Vertex AI's
-      // automatic implicit context caching, see that adapter's own
-      // extractUsage comment); undefined for every other provider/purpose,
-      // never coerced to 0, so a `NULL`/absent value in a query genuinely
-      // means "no signal," not "confirmed zero cache hit."
-      cachedTokens: usage ? usage.cachedTokens : undefined,
-      // Only populated when a caller passes `attempted` (currently
-      // tool_search only) — an explicit false/null signal, never a
-      // fabricated 0, distinguishing "provider responded but reported no
-      // usage" from "usage present" for a purpose where a completed call
-      // can legitimately carry no usage block at all.
-      usageAvailable: attempted !== undefined ? Boolean(usage) : undefined,
-      latencyMs,
-      imageCount: imageCount || undefined,
-      systemPromptChars,
-      toolCount,
-      attempted,
-      completed,
-      fallbackTriggered,
-      // CEO Vertex/Gemini audit #40 (2026-08-30) — deliberately a
-      // DIFFERENT field from `fallbackTriggered` above, which already
-      // means "Tool Search fell back to keyword routing" (an unrelated
-      // concept that happens to share the word "fallback"). This one
-      // means "this specific call's cross-provider fallback fired" —
-      // aiProviderFallbackService's own onFallback callback.
-      providerFallbackTriggered,
-      providerFallbackReason,
-    },
-  });
+  // ARCNAVE modernization P1 (PDF 1.9: "monitoring writes... 2-4
+  // writes per turn, each waited on. Fix: fire and forget"). Not
+  // awaited — the caller (completeMaybeStreaming) continues
+  // immediately rather than blocking on this INSERT's round trip.
+  // Deliberately still the SAME `client`/connection (not a separate
+  // pool connection): node-postgres serializes queries per connection
+  // in submission order regardless of whether the caller awaits, so
+  // this can never reorder against a later COMMIT/pauseForExternalCall
+  // on the same client, and every existing test's fake-client query
+  // capture (client.queries) still sees this call synchronously —
+  // only the actual DB round-trip latency moves off the turn's
+  // critical path, not the write itself. Errors are swallowed+logged
+  // rather than thrown, since nothing downstream awaits this promise
+  // to report to.
+  auditLogRepository
+    .createAuditLogEntry(client, {
+      collegeId: identityContext.collegeId,
+      userId: identityContext.userId,
+      action: 'ai_llm_call',
+      entity: 'ai_llm',
+      entityId: null,
+      metadata: {
+        provider: adapter.name,
+        model: aiConfig.model,
+        purpose,
+        inputTokens: usage ? usage.inputTokens : undefined,
+        outputTokens: usage ? usage.outputTokens : undefined,
+        // ADR-030 P3 — only ever populated by gemini.js today (Vertex AI's
+        // automatic implicit context caching, see that adapter's own
+        // extractUsage comment); undefined for every other provider/purpose,
+        // never coerced to 0, so a `NULL`/absent value in a query genuinely
+        // means "no signal," not "confirmed zero cache hit."
+        cachedTokens: usage ? usage.cachedTokens : undefined,
+        // Only populated when a caller passes `attempted` (currently
+        // tool_search only) — an explicit false/null signal, never a
+        // fabricated 0, distinguishing "provider responded but reported no
+        // usage" from "usage present" for a purpose where a completed call
+        // can legitimately carry no usage block at all.
+        usageAvailable: attempted !== undefined ? Boolean(usage) : undefined,
+        latencyMs,
+        imageCount: imageCount || undefined,
+        systemPromptChars,
+        toolCount,
+        attempted,
+        completed,
+        fallbackTriggered,
+        // CEO Vertex/Gemini audit #40 (2026-08-30) — deliberately a
+        // DIFFERENT field from `fallbackTriggered` above, which already
+        // means "Tool Search fell back to keyword routing" (an unrelated
+        // concept that happens to share the word "fallback"). This one
+        // means "this specific call's cross-provider fallback fired" —
+        // aiProviderFallbackService's own onFallback callback.
+        providerFallbackTriggered,
+        providerFallbackReason,
+      },
+    })
+    .catch((err) => {
+      logError('ai_llm_call_audit_write_failed', { collegeId: identityContext.collegeId, error: err.message });
+    });
 }
 
 // Returns { text, usage } — usage undefined when genuinely unknown
@@ -2437,7 +2464,27 @@ async function withPausedConnection(client, fn) {
   }
 }
 
+// ARCNAVE modernization P1 (PDF 1.15/4.4) — every LLM provider call in
+// this file funnels through this one function (see the P0 comment
+// just above it), which makes it the other natural span boundary
+// alongside invokeTool's own 'ai_tool_call' span — together, one AI
+// turn's spans (however many tool calls + LLM calls it made) all
+// share the request's traceId and form one real tree.
 async function completeMaybeStreaming(client, identityContext, adapter, aiConfig, arcnaveContext, purpose, onDelta) {
+  return tracer.withSpan('ai_llm_call', { purpose, provider: adapter.name, model: aiConfig.model }, () =>
+    completeMaybeStreamingInner(client, identityContext, adapter, aiConfig, arcnaveContext, purpose, onDelta),
+  );
+}
+
+async function completeMaybeStreamingInner(
+  client,
+  identityContext,
+  adapter,
+  aiConfig,
+  arcnaveContext,
+  purpose,
+  onDelta,
+) {
   const startedAt = Date.now();
   // ADR-030 P2(a): arcnaveContext no longer carries a top-level
   // systemPrompt string (only .segments) — flattened once here, purely

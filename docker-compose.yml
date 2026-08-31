@@ -7,6 +7,15 @@ services:
     # data in the pgdata volume is unaffected by this swap — same
     # Postgres major version, only an additional extension available.
     image: pgvector/pgvector:pg16
+    # ARCNAVE modernization P1 (PDF D6: "no slow-query dashboard" ->
+    # query-stats extension + dashboard). pg_stat_statements needs to
+    # be in shared_preload_libraries at server START, not just
+    # CREATE EXTENSION'd — that alone only registers the SQL-visible
+    # view, the library actually has to be loaded into the postmaster
+    # process to collect anything. scripts/query-stats-report.js reads
+    # the view this enables; migrations/*_pg-stat-statements.js is
+    # what actually CREATE EXTENSIONs it once the library is loaded.
+    command: postgres -c shared_preload_libraries=pg_stat_statements
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-arcnave_admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}

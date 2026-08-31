@@ -236,6 +236,64 @@ test('claude adapter.completeWithTools: a cache_control breakpoint is set on the
   assert.deepEqual(capturedBody.tools[1].cache_control, { type: 'ephemeral' });
 });
 
+// ARCNAVE modernization P2 (PDF 1.4 / clash C2) — explicit Vertex prompt caching.
+test('gemini adapter.completeWithTools: a cachedSystemInstructionName references the cache and drops the inline systemInstruction', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const originalFetch = global.fetch;
+  let body;
+  global.fetch = async (_url, options) => {
+    body = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }) };
+  };
+  try {
+    await gemini.completeWithTools(
+      { projectId: 'p', accessToken: 't', model: 'gemini-3.7-flash', location: 'global' },
+      contextFromFlatPrompts({
+        systemPrompt: 'the big stable policy + catalogue prefix',
+        userPrompt: 'Question: attendance?',
+        tools: [{ name: 'attendance_summary', description: 'A', params: {} }],
+        cachedSystemInstructionName: 'projects/x/locations/global/cachedContents/42',
+      }),
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+  assert.equal(body.cachedContent, 'projects/x/locations/global/cachedContents/42');
+  assert.equal(body.systemInstruction, undefined, 'system text is not re-sent when the cache is referenced');
+  assert.ok(body.tools, 'tools are still sent inline (they can grow within a turn)');
+});
+
+test('gemini adapter.completeWithTools: a stale cachedContent (HTTP 404) is retried once inline, turn does not fail', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const originalFetch = global.fetch;
+  const bodies = [];
+  let n = 0;
+  global.fetch = async (_url, options) => {
+    bodies.push(JSON.parse(options.body));
+    n += 1;
+    if (n === 1) return { ok: false, status: 404, text: async () => 'CachedContent not found' };
+    return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: 'recovered' }] } }] }) };
+  };
+  try {
+    const res = await gemini.completeWithTools(
+      { projectId: 'p', accessToken: 't', model: 'gemini-3.7-flash', location: 'global' },
+      contextFromFlatPrompts({
+        systemPrompt: 'the big stable policy + catalogue prefix',
+        userPrompt: 'Question: attendance?',
+        tools: [{ name: 'attendance_summary', description: 'A', params: {} }],
+        cachedSystemInstructionName: 'projects/x/locations/global/cachedContents/stale',
+      }),
+    );
+    assert.equal(res.text, 'recovered');
+  } finally {
+    global.fetch = originalFetch;
+  }
+  assert.equal(bodies.length, 2, 'one cached attempt, one inline retry');
+  assert.equal(bodies[0].cachedContent, 'projects/x/locations/global/cachedContents/stale');
+  assert.equal(bodies[1].cachedContent, undefined);
+  assert.equal(bodies[1].systemInstruction.parts[0].text, 'the big stable policy + catalogue prefix');
+});
+
 // Claude-on-Vertex (added 2026-08-22) — the request-shape contract
 // live-verified against a real project (project-8bcf740a-a7bd-4aea-974,
 // claude-sonnet-5: a 429 RESOURCE_EXHAUSTED naming the real base model

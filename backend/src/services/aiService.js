@@ -19,6 +19,7 @@ const crypto = require('crypto');
 const aiToolRegistry = require('./aiToolRegistry');
 const aiToolSearchService = require('./aiToolSearchService');
 const aiGreetingClassifier = require('./aiGreetingClassifier');
+const aiExplicitCache = require('./aiExplicitCache');
 const aiContextBuilder = require('./aiContextBuilder');
 const aiPromptSafetyLayer = require('./aiPromptSafetyLayer');
 const aiActorContext = require('./aiActorContext');
@@ -3538,12 +3539,33 @@ async function askAgent(
   // exact-query-count tests by adding a query to every single askAgent
   // call, caught during this same session's own second pass.
   const includeThoughts = config.experimentalThinkingTraceVisibility;
+  // ARCNAVE modernization P2 / clash C2 — explicit Vertex prompt caching
+  // (config.aiExplicitCache, off by default). Resolved ONCE here, from
+  // this turn's stable system prefix (mode prefix + policy + catalogue —
+  // every system-targeted shared segment), and handed to every
+  // completeWithTools call in the loop below, so the ADL-050 "system
+  // prefix byte-identical across the whole turn" guarantee holds
+  // structurally. Gemini/Vertex only; a non-empty catalogue prefix only
+  // (the greeting/zero-tool path's short prefix is below aiExplicitCache's
+  // own size floor and returns null). Never throws — a cache failure
+  // degrades to the inline system prompt.
+  const cachedSystemInstructionName =
+    adapter.name === 'gemini'
+      ? await aiExplicitCache.resolveCachedSystemInstruction(
+          aiConfig,
+          decisionSegments
+            .filter((s) => s.target === 'system')
+            .map((s) => s.content)
+            .join('\n\n'),
+        )
+      : null;
   const decisionContext = aiContextAssembly.buildContext(decisionSegments, {
     tools: offeredTools,
     images: decisionImages,
     media: decisionMedia,
     thinkingLevel,
     includeThoughts,
+    cachedSystemInstructionName,
   });
   let continuationContext = aiContextAssembly.buildContext(continuationSegments, {
     tools: offeredTools,
@@ -3551,6 +3573,7 @@ async function askAgent(
     media: decisionMedia,
     thinkingLevel,
     includeThoughts,
+    cachedSystemInstructionName,
   });
 
   const decisionStartedAt = Date.now();
@@ -3671,6 +3694,7 @@ async function askAgent(
             images: decisionImages,
             media: decisionMedia,
             thinkingLevel,
+            cachedSystemInstructionName,
           });
         }
         const unknown = requested.filter((n) => !resolvedTools.some((t) => t.name === n));

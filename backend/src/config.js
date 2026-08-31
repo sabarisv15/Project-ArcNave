@@ -329,6 +329,20 @@ module.exports = {
   // AI_GREETING_FAST_PATH=false to disable without a code change.
   aiGreetingFastPath: process.env.AI_GREETING_FAST_PATH !== 'false',
 
+  // ARCNAVE modernization P2 (PDF 1.4 / clash C2) — explicit Vertex AI
+  // prompt caching for askAgent's stable decision-call system prefix
+  // (mode prefix + policy + tool-routing catalogue). Measured GO
+  // (backend/scripts/explicit-cache-viability-probe.js, 2026-08-31, real
+  // Vertex calls): billed input on the cached portion drops ~4,678 -> ~13
+  // tokens (99.7%) for gemini-3.7-flash @ global, no minimum-token
+  // rejection — which meets ADL-054/055's own re-open condition. OFF by
+  // default: the mechanism ships, flipping it on is a per-deploy decision
+  // once the ledger numbers (ADL-071) are reviewed, same posture as
+  // config.toolSearch. Vertex/Gemini only (aiExplicitCache.js degrades to
+  // an inline system prompt for every other adapter and on any cache
+  // failure). `=== 'true'` — a stray truthy string never enables it.
+  aiExplicitCache: process.env.AI_EXPLICIT_CACHE === 'true',
+
   // ARCNAVE modernization P2 (PDF 1.14) — the six EXPERIMENTAL_* AI
   // behaviour trials (experimentalCatalogueVariant, experimentalReasoningModel,
   // experimentalAttachmentDiscipline, experimentalFullInstructionsDocument,

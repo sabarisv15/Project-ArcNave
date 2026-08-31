@@ -117,7 +117,16 @@ function computeFingerprint(segments) {
 // itself already set.
 function buildContext(
   segments,
-  { tools, images, media, responseSchema, thinkingLevel, includeThoughts, logprobsTopK } = {},
+  {
+    tools,
+    images,
+    media,
+    responseSchema,
+    thinkingLevel,
+    includeThoughts,
+    logprobsTopK,
+    cachedSystemInstructionName,
+  } = {},
 ) {
   return {
     segments,
@@ -128,6 +137,13 @@ function buildContext(
     thinkingLevel,
     includeThoughts,
     logprobsTopK,
+    // ARCNAVE modernization P2 / clash C2 — when set, a Vertex
+    // `cachedContents` resource name the adapter references INSTEAD of
+    // re-sending the system-instruction text (aiExplicitCache.js). Every
+    // completeWithTools call in one askAgent turn is given the SAME name,
+    // so the ADL-050 "system prefix byte-identical across a turn"
+    // guarantee is preserved structurally.
+    cachedSystemInstructionName: cachedSystemInstructionName || undefined,
     fingerprint: computeFingerprint(segments),
   };
 }
@@ -160,6 +176,7 @@ function flattenToPrompts(context) {
     thinkingLevel: context.thinkingLevel,
     includeThoughts: context.includeThoughts,
     logprobsTopK: context.logprobsTopK,
+    cachedSystemInstructionName: context.cachedSystemInstructionName,
   };
 }
 
@@ -180,6 +197,7 @@ function contextFromFlatPrompts({
   thinkingLevel,
   includeThoughts,
   logprobsTopK,
+  cachedSystemInstructionName,
 } = {}) {
   const segments = [];
   if (systemPrompt) {
@@ -210,6 +228,7 @@ function contextFromFlatPrompts({
     thinkingLevel,
     includeThoughts,
     logprobsTopK,
+    cachedSystemInstructionName,
   });
 }
 

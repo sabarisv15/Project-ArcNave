@@ -5905,3 +5905,148 @@ migration.
 **Migration impact.** None — both decisions preserve the status quo.
 
 **Verification.** N/A — decision-only entry, nothing built.
+
+---
+
+## ADL-070
+
+### C3 (PDF 1.1 / modernization P2) — tool-search benchmark re-run: NO-GO, `TOOL_SEARCH_ENABLED` stays off
+
+**What prompted this.** The ARCNAVE modernization plan
+(`ARCNAVE-modernization-english.md`, P2, clash C3) requires the
+tool-search GO/NO-GO benchmark to be re-run against the real `demo`
+college with real (billable) Vertex calls before `TOOL_SEARCH_ENABLED`
+is flipped — "the app never flips it on itself" (config.js). Owner
+authorised the paid run this session (2026-08-31) and confirmed the
+MaaS tool-search model `qwen/qwen3-next-80b-a3b-thinking-maas` is
+enabled in the project.
+
+**How it was run.** `backend/scripts/tool-search-benchmark.js` inside
+the app container, `TOOL_SEARCH_MODEL=qwen/qwen3-next-80b-a3b-thinking-maas`,
+reasoning model `gemini-3.7-flash` (Vertex, location `global` — the only
+region this project's `gemini-3.7-flash` publisher model resolves in;
+`us-east1`/`us-central1` both 404). 3 tests × 3 reps × 2 paths (OLD =
+Tool Search disabled, NEW = enabled), same reasoning model both paths.
+`demo`'s `ai_quota.monthlyTokenQuota` was temporarily widened to
+500,000,000 for the run via `backend/scripts/set-college-ai-quota.js`
+and restored to the 2,000,000 platform default afterward.
+
+**Result (averages across reps, real `ai_llm_call` usage rows):**
+
+| test | path | toolSearch in/out | reasoning in/out | synthesis in/out | grand total | calls | latency ms | coverage | recall | precision |
+|---|---|---|---|---|---|---|---|---|---|---|
+| A | old | 0 | 3768 / 10 | 1687 / 20 | **5455** | 2 | 6396 | 100% | 1.00 | 1.00 |
+| A | new | 2805 / ~0 | 2335 / 10 | 1688 / 20 | **6829** | 3 | 4967 | 100% | 1.00 | 1.00 |
+| B | old | 0 | 3728 | 1884 | **5612** | 2 | 8610 | 100% | 1.00 | 1.00 |
+| B | new | 0 | 3724 | 1881 | **5605** | 3 | 8132 | 100% | 1.00 | 1.00 |
+| C | old | 0 | 3633 | 2020 | **5653** | 2 | 8264 | 100% | 1.00 | 1.00 |
+| C | new | 0 | 3635 | 2022 | **5657** | 3 | 8368 | 100% | 1.00 | 1.00 |
+
+**Reading it.**
+- On the ONE test where Tool Search actually engaged (Test A), it cut
+  the reasoning-call input by ~1,400 tokens (no full catalogue) but the
+  tool-search call itself cost **2,805 input tokens**, for a net
+  **+1,373 tokens (+25%)** and one extra LLM call per turn. Latency
+  improved (~1.4s faster) but token cost is the benchmark's GO/NO-GO
+  axis.
+- On Tests B and C, `toolSearch in/out = 0` on the NEW path: Tool Search
+  was attempted and the service **distrusted the MaaS response and fell
+  back** to the normal path (its designed safety behaviour), so those
+  rows are the OLD path plus a wasted call — no real NEW measurement.
+- **Zero accuracy gain**: every path on every test already scored 100%
+  coverage / recall 1.00 / precision 1.00. This 3-test set gives Tool
+  Search no headroom to demonstrate the retrieval-miss recovery that is
+  its actual reason to exist.
+
+**Decision: NO-GO.** Tool Search adds ~25% token cost and a call per
+turn on the case where it runs, falls back 2 of 3 times, and shows no
+accuracy improvement on this set. `config.toolSearch.enabled` stays
+`false`; `TOOL_SEARCH_ENABLED` is not set. Consistent with the prior
+NO-GO the config comment already references.
+
+**Re-open condition.** A measured retrieval-accuracy gap on the normal
+path (a real turn where semantic retrieval misses a needed tool and the
+answer is wrong) against a larger, harder tool set — not this
+already-saturated 3-test set. The catalogue-routing work (ADL-064) and
+the P2 1.2/C4 margin-cutoff item are the more promising levers for the
+same "smaller decision-call payload" goal without a second model in the
+loop.
+
+**Affected artefacts.** `bka/70-checkpoint/CURRENT-STATE.md` (P2 banner —
+C3 marked resolved NO-GO). New operator script
+`backend/scripts/set-college-ai-quota.js`. No app code change, no
+migration.
+
+**Verification.** The benchmark run itself is the verification. `demo`
+`ai_quota` confirmed restored to `{monthlyTokenQuota: 2000000}` after
+the run.
+
+---
+
+## ADL-071
+
+### C2 (PDF 1.4 / modernization P2) — explicit Vertex prompt caching: mechanism built, OFF by default; real prefix is below Vertex's 4,096-token floor today
+
+**What prompted this.** ADL-054/055 closed "build explicit caching" as
+not-yet-justified (implicit Vertex caching returns ~0 signal for this
+deployment; a controlled experiment exonerated tool-declaration variance
+as a cache-miss cause). The ARCNAVE modernization plan (clash C2)
+re-opens it on the "hi = 4,500 words" cost observation. Owner authorised
+the paid measurement this session (2026-08-31).
+
+**Measured, real Vertex calls.**
+1. `backend/scripts/explicit-cache-viability-probe.js` — a ~4,674-token
+   synthetic prefix: `gemini-3.7-flash` @ `global` **accepts an explicit
+   `cachedContents` resource** and referencing it on the next
+   `generateContent` cut **billed input from ~4,678 to ~13 tokens
+   (99.7%)** on the cached portion. `us-central1`/`us-east1` 404 for this
+   model — `global` is the only endpoint it serves from.
+2. `backend/scripts/explicit-cache-live-turn-probe.js` — the REAL
+   askAgent decision-call prefix (mode prefix + curriculum policy +
+   tool-routing catalogue) for a `principal` on a real question is
+   **2,578 tokens**. Vertex rejects a cache create below **4,096 tokens**
+   (`HTTP 400 INVALID_ARGUMENT, "minimum token count to start explicit
+   caching is 4096"`). So on real traffic today the create is refused and
+   the adapter degrades to the inline system prompt — billed input
+   unchanged at ~3,924, **no turn failure, no regression** (verified
+   across 3 live turns).
+
+**Decision: build the mechanism, ship it OFF (`config.aiExplicitCache`,
+`AI_EXPLICIT_CACHE=true` to enable), do NOT enable it now.**
+- `backend/src/services/aiExplicitCache.js` (new) — in-memory handle
+  store keyed by `sha256(model + location + systemPrompt)`, 60-min TTL
+  with proactive refresh, `MIN_CACHEABLE_CHARS = 17_500` (~4,300 tokens,
+  above Vertex's floor so a doomed create is never even attempted),
+  degrade-to-null on any failure (never throws).
+- `gemini.js` `completeWithTools` — references `cachedContent` instead of
+  re-sending `systemInstruction` when a handle is supplied; a stale
+  handle (4xx) is invalidated and retried once inline.
+- `aiService.js` — resolves ONE handle per turn from the stable system
+  prefix and hands the same name to every `completeWithTools` call in the
+  loop, preserving ADL-050's "system prefix byte-identical across a turn"
+  guarantee structurally. Gemini/Vertex only; the greeting/zero-tool
+  path's short prefix is below the floor and never caches.
+- `aiContextAssembly` — `cachedSystemInstructionName` threaded through
+  `buildContext`/`contextFromFlatPrompts`/`flattenToPrompts`.
+
+**Why keep it if it no-ops today.** It is the prerequisite for PDF 1.6
+(fold conversation history into the cached front block) — once history
+joins the stable prefix it crosses the 4,096-token floor and this
+mechanism starts paying the 99.7% cut measured above. A very large role's
+catalogue can also cross it. Turning it on is a per-deploy decision once
+1.6 lands.
+
+**Re-open / enable condition.** The stable per-turn prefix (system
+segments, optionally + history once 1.6 ships) exceeds ~4,096 tokens for
+real roles, measured — then flip `AI_EXPLICIT_CACHE=true` and re-run
+`explicit-cache-live-turn-probe.js` to confirm `cachedTokens > 0` on the
+`tool_select` audit rows.
+
+**Affected artefacts.** New: `aiExplicitCache.js`, `config.aiExplicitCache`,
+3 probe/operator scripts, `tests/ai-explicit-cache.test.js`, 2 gemini
+adapter tests. Modified: `gemini.js`, `aiService.js`, `aiContextAssembly.js`.
+No migration.
+
+**Verification.** Unit + adapter tests green; full backend suite in
+Docker (see CURRENT-STATE P2 banner). `demo` `ai_quota` confirmed
+restored to `{monthlyTokenQuota: 2000000}` after the paid runs.

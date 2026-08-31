@@ -19,6 +19,7 @@ const { withRetry } = require('./retry');
 const { iterateSseLines } = require('./sse');
 const { flattenToPrompts } = require('../aiContextAssembly');
 const vertexCapabilityRegistry = require('../vertexCapabilityRegistry');
+const aiExplicitCache = require('../aiExplicitCache');
 
 const REQUEST_TIMEOUT_MS = 30000;
 // Overall wall-clock budget for ONE logical postJson-based call
@@ -608,8 +609,16 @@ function buildPriorTurnContents(priorTurns) {
 }
 
 async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
-  const { systemPrompt, userPrompt, tools, images, media, thinkingLevel, includeThoughts } =
-    flattenToPrompts(arcnaveContext);
+  const {
+    systemPrompt,
+    userPrompt,
+    tools,
+    images,
+    media,
+    thinkingLevel,
+    includeThoughts,
+    cachedSystemInstructionName,
+  } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
   }
@@ -625,32 +634,56 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   // (the describe_tools/plan meta-tools alone guarantee that today), so
   // this is additive for the one new zero-tool caller, zero behavior
   // change for every other one.
-  const payload = await postJson(
-    cfg,
-    modelUrl(cfg, model(cfg), 'generateContent'),
-    {
-      systemInstruction: { parts: [{ text: systemPrompt }] },
-      contents: [
-        { role: 'user', parts: buildUserParts(userPrompt, images, media) },
-        ...buildPriorTurnContents(priorTurns),
-      ],
-      ...(tools.length > 0
-        ? {
-            tools: [
-              {
-                functionDeclarations: tools.map((tool) => ({
-                  name: tool.name,
-                  description: tool.description,
-                  parameters: stripAdditionalProperties(tool.params),
-                })),
-              },
-            ],
-          }
-        : {}),
-      generationConfig: generationConfigFor(undefined, thinkingLevel, includeThoughts),
-    },
-    { hasMedia: Boolean(media && media.length) },
-  );
+  // ARCNAVE modernization P2 / clash C2 — when the caller supplied a
+  // Vertex `cachedContents` name (aiExplicitCache.js, off by default),
+  // reference it INSTEAD of re-sending the system-instruction text: on a
+  // real turn that drops ~3.7k billed input tokens off this call
+  // (measured 99.7% of the cached portion). Tools and the user turn are
+  // always sent inline — the tool set can still grow later in the turn,
+  // which a cached tools block could not follow. A stale handle
+  // (expired/deleted server-side) is non-fatal: catch the 4xx, tell
+  // aiExplicitCache to forget it, and retry once with the system text
+  // inline — byte-identical to caching being off.
+  const buildBody = (useCache) => ({
+    ...(useCache && cachedSystemInstructionName
+      ? { cachedContent: cachedSystemInstructionName }
+      : { systemInstruction: { parts: [{ text: systemPrompt }] } }),
+    contents: [
+      { role: 'user', parts: buildUserParts(userPrompt, images, media) },
+      ...buildPriorTurnContents(priorTurns),
+    ],
+    ...(tools.length > 0
+      ? {
+          tools: [
+            {
+              functionDeclarations: tools.map((tool) => ({
+                name: tool.name,
+                description: tool.description,
+                parameters: stripAdditionalProperties(tool.params),
+              })),
+            },
+          ],
+        }
+      : {}),
+    generationConfig: generationConfigFor(undefined, thinkingLevel, includeThoughts),
+  });
+  const url = modelUrl(cfg, model(cfg), 'generateContent');
+  const requestOpts = { hasMedia: Boolean(media && media.length) };
+  let payload;
+  if (cachedSystemInstructionName) {
+    try {
+      payload = await postJson(cfg, url, buildBody(true), requestOpts);
+    } catch (err) {
+      if (err instanceof LlmRequestError && /returned 4\d\d/.test(err.message)) {
+        aiExplicitCache.invalidate(cfg, systemPrompt);
+        payload = await postJson(cfg, url, buildBody(false), requestOpts);
+      } else {
+        throw err;
+      }
+    }
+  } else {
+    payload = await postJson(cfg, url, buildBody(false), requestOpts);
+  }
 
   const rawParts =
     payload &&

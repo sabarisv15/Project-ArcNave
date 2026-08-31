@@ -4,6 +4,49 @@ _Last updated: 2026-08-31._
 
 ---
 
+## Session handover (2026-08-31) — starting P2 in a new session
+
+**Read this section, then the P1 banner immediately below it, then
+stop reading — do not reconstruct prior chat history or re-read the
+PDF from scratch.** Everything needed to resume is written down here
+or linked from it.
+
+- **P0 and P1 are both shipped, committed, and pushed.** Branch
+  `p0-modernization-foundation` (2 commits: P0, then P1), pushed to
+  `origin/p0-modernization-foundation`. Not yet merged to `master` and
+  no PR opened — do that only if asked.
+- **The standing mandate is still in force for P2-P5**: session memory
+  file `arcnave-p0-p5-rewrite-mandate.md` — full owner authorization to
+  bypass any `bka/` "don't go/deferred/decided" banner for this
+  specific rewrite, EXCEPT two stop conditions: (1) an actual business
+  rule conflict (CLAUDE.md's numbered rules), (2) a change that needs
+  new investment (paid service/infra) — ask, don't silently build. Two
+  real examples of that second condition already fired this session:
+  DB backup cloud storage (owner said yes then reversed to local-only)
+  and a persistent AI-tracing viewer/Langfuse (owner said skip).
+- **Source plan**: `ARCNAVE-modernization-english.md` (repo root) — P2
+  is its own section, read that before starting. P2 touches clashes
+  C1 (greeting classifier), C2 (explicit caching), C3 (tool-search
+  GO/NO-GO), C8 (job queue) from Part 6 — re-read those before writing
+  code, they each have a specific resolution already worked out in the
+  plan, not a blank decision.
+- **Full backend test suite must be run in Docker at the end of P2**
+  too (same as P0/P1) — `docker compose up -d db app` (rebuild the
+  image first if `backend/package.json` changed:
+  `docker compose build app`, then `docker compose up -d --force-recreate --renew-anon-volumes app`
+  — a stale anonymous `/app/node_modules` volume silently masks a
+  fresh `npm install` otherwise, see the P1 banner's own trail if this
+  bites again), then `docker compose exec -T app npm test`.
+- **Two unrelated loose ends, flagged not fixed, still sitting on disk
+  (not committed, not gitignored at their current path):**
+  `perplexity api.txt` (repo root) has a live Perplexity API key in
+  plain text — should be rotated and removed. `storage/`/`storage-backups/`
+  at the repo ROOT (not `backend/storage/`, which IS gitignored) hold
+  real tenant document data — should be deleted or moved, not committed.
+  Neither blocks P2.
+
+---
+
 # ⛔ NEW BANNER — ARCNAVE modernization P1 shipped, 2026-08-31. Same
 mandate as the P0 banner below: `arcnave-p0-p5-rewrite-mandate.md`
 (session memory).

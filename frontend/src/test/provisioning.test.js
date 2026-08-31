@@ -38,7 +38,7 @@ describe('Provisioning — the single read-only source', () => {
 
   it('provisions unequal sections, so nothing may assume an even split', () => {
     const unequal = PROVISIONED_DEPARTMENTS.filter(
-      (d) => d.sections.length > 1 && new Set(d.sections.map((s) => s.capacity)).size > 1
+      (d) => d.sections.length > 1 && new Set(d.sections.map((s) => s.capacity)).size > 1,
     );
     expect(unequal.length).toBeGreaterThan(0);
 

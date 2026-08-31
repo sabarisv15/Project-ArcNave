@@ -25,8 +25,18 @@ export function ProjectDetail() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
-  const { chats, projects, threads, projConv, sendMessage, togglePin, deleteProject, renameChat, deleteChat, editMessage } =
-    useWorkspace();
+  const {
+    chats,
+    projects,
+    threads,
+    projConv,
+    sendMessage,
+    togglePin,
+    deleteProject,
+    renameChat,
+    deleteChat,
+    editMessage,
+  } = useWorkspace();
 
   const project = projects.find((p) => p.id === projectId) ?? projects[0];
   const convId = params.get('c') || projConv[projectId] || null;
@@ -55,7 +65,13 @@ export function ProjectDetail() {
 
   const send = async () => {
     const id = await sendMessage({
-      scope: 'project', convId, projectId, text: composer.text, attachments: composer.attachments, mode: composer.mode, thinkingLevel: composer.thinkingLevel,
+      scope: 'project',
+      convId,
+      projectId,
+      text: composer.text,
+      attachments: composer.attachments,
+      mode: composer.mode,
+      thinkingLevel: composer.thinkingLevel,
     });
     if (id) composer.reset(); // clears this project conversation's draft only
   };
@@ -66,7 +82,7 @@ export function ProjectDetail() {
         <ChatHeader
           chatId={convId}
           contextPrefix={convId ? project.title : undefined}
-          title={convId ? chatRecord?.title ?? project.title : project.title}
+          title={convId ? (chatRecord?.title ?? project.title) : project.title}
           onRename={convId ? (next) => renameChat(convId, next) : undefined}
           onDelete={
             convId &&
@@ -98,10 +114,7 @@ export function ProjectDetail() {
                 <Archive size={14} strokeWidth={1.9} />
                 Archive project
               </DropdownMenu.Item>
-              <DropdownMenu.Item
-                onSelect={() => setContextOpen(true)}
-                className={cn(MENU_ITEM, 'md:hidden')}
-              >
+              <DropdownMenu.Item onSelect={() => setContextOpen(true)} className={cn(MENU_ITEM, 'md:hidden')}>
                 <PanelRight size={14} strokeWidth={1.9} />
                 Project context
               </DropdownMenu.Item>
@@ -131,7 +144,9 @@ export function ProjectDetail() {
            * yet. Same gutter scale, same left alignment, same 780px column as
            * every other chat surface.
            */
-          <div className={cn('flex-1 min-h-0 overflow-y-auto scroll-quiet flex flex-col pt-[28px] pb-[34px]', CHAT_GUTTER)}>
+          <div
+            className={cn('flex-1 min-h-0 overflow-y-auto scroll-quiet flex flex-col pt-[28px] pb-[34px]', CHAT_GUTTER)}
+          >
             <div className="w-full max-w-[780px] mr-auto">
               {/* Compact context, at interface scale — deliberately smaller
                   than the chat title in the header above it. */}
@@ -164,9 +179,16 @@ export function ProjectDetail() {
                   onSelect={setSelectedId}
                   onEdit={
                     convId
-                      ? (id, text) => editMessage({
-                        scope: 'project', convId, projectId, messageId: id, text, mode: composer.mode, thinkingLevel: composer.thinkingLevel,
-                      })
+                      ? (id, text) =>
+                          editMessage({
+                            scope: 'project',
+                            convId,
+                            projectId,
+                            messageId: id,
+                            text,
+                            mode: composer.mode,
+                            thinkingLevel: composer.thinkingLevel,
+                          })
                       : undefined
                   }
                 />

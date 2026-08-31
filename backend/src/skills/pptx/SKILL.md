@@ -1,6 +1,6 @@
 ---
 name: pptx
-description: "Use this skill any time a .pptx or .potx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from any .pptx or .potx file (even if the extracted content will be used elsewhere, like in an email or summary); editing, modifying, or updating existing presentations; combining or splitting slide files; working with templates (.potx), layouts, speaker notes, or comments. Trigger whenever the user mentions \"deck,\" \"slides,\" \"presentation,\" or references a .pptx or .potx filename, regardless of what they plan to do with the content afterward. If a .pptx or .potx file needs to be opened, created, or touched, use this skill."
+description: 'Use this skill any time a .pptx or .potx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from any .pptx or .potx file (even if the extracted content will be used elsewhere, like in an email or summary); editing, modifying, or updating existing presentations; combining or splitting slide files; working with templates (.potx), layouts, speaker notes, or comments. Trigger whenever the user mentions "deck," "slides," "presentation," or references a .pptx or .potx filename, regardless of what they plan to do with the content afterward. If a .pptx or .potx file needs to be opened, created, or touched, use this skill.'
 license: Proprietary. LICENSE.txt has complete terms
 ---
 
@@ -67,23 +67,23 @@ writes that archive for you — you should never need to unzip/rezip
 one by hand in this sandbox, except via `add_slide.py` for the one
 case it exists to cover.
 
-| Task | Approach |
-|---|---|
-| **Create** a new deck | `python-pptx`'s `Presentation()` — see gotchas below |
-| **Edit** an existing deck, or build from a template | `python-pptx`'s `Presentation(path)` — mutate shapes/text frames in place; `scripts/add_slide.py` for duplicating a slide |
-| **Read** content | `python-pptx`'s `Presentation(path)`, iterate `.slides`/`.shapes`; visual look: render via `soffice` + `pdftoppm` (see Converting to Images) |
+| Task                                                | Approach                                                                                                                                     |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Create** a new deck                               | `python-pptx`'s `Presentation()` — see gotchas below                                                                                         |
+| **Edit** an existing deck, or build from a template | `python-pptx`'s `Presentation(path)` — mutate shapes/text frames in place; `scripts/add_slide.py` for duplicating a slide                    |
+| **Read** content                                    | `python-pptx`'s `Presentation(path)`, iterate `.slides`/`.shapes`; visual look: render via `soffice` + `pdftoppm` (see Converting to Images) |
 
 ## Scripts
 
 Paths are relative to this skill's directory.
 
-| Script | What it does | Safe here? |
-|---|---|---|
-| `scripts/office/soffice.py` | LibreOffice wrapper (auto-generates a writable profile dir) | Yes |
-| `scripts/add_slide.py unpacked/ slide2.xml [--after slideN.xml]` | Duplicate a slide (or a `slideLayoutN.xml`) with all the package bookkeeping. Also takes a `.pptx` directly with `-o out.pptx` | Yes |
-| `scripts/clean.py` | Delete orphaned slides/media/rels | **No** — imports `defusedxml`, not installed |
-| `scripts/office/validate.py` | Schema/relationship/content-type/chart checks | **No** — imports `defusedxml`, not installed |
-| `scripts/thumbnail.py` | Labeled grid of every slide | **No** — imports `defusedxml` AND `PIL` (Pillow), neither installed |
+| Script                                                           | What it does                                                                                                                   | Safe here?                                                          |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| `scripts/office/soffice.py`                                      | LibreOffice wrapper (auto-generates a writable profile dir)                                                                    | Yes                                                                 |
+| `scripts/add_slide.py unpacked/ slide2.xml [--after slideN.xml]` | Duplicate a slide (or a `slideLayoutN.xml`) with all the package bookkeeping. Also takes a `.pptx` directly with `-o out.pptx` | Yes                                                                 |
+| `scripts/clean.py`                                               | Delete orphaned slides/media/rels                                                                                              | **No** — imports `defusedxml`, not installed                        |
+| `scripts/office/validate.py`                                     | Schema/relationship/content-type/chart checks                                                                                  | **No** — imports `defusedxml`, not installed                        |
+| `scripts/thumbnail.py`                                           | Labeled grid of every slide                                                                                                    | **No** — imports `defusedxml` AND `PIL` (Pillow), neither installed |
 
 For the three that don't run here:
 
@@ -215,10 +215,10 @@ cleaned up, since `clean.py` doesn't run here (see above).
   duplicating after you edit clones the edited content.
 - **Never copy a slide file by hand** — `add_slide.py` does every
   registration a new slide needs and reports what it made (`Created
-  ppt/slides/slide17.xml from slide2.xml`). It also works directly on
+ppt/slides/slide17.xml from slide2.xml`). It also works directly on
   a file: `add_slide.py deck.pptx slide2.xml -o out.pptx` — **pass
   `-o`, or it rewrites the input deck in place.** A duplicated slide
-  still *references* its source's chart/SmartArt/embedded-object parts
+  still _references_ its source's chart/SmartArt/embedded-object parts
   rather than cloning them, so editing one slide's chart changes the
   other's.
 - **`python-pptx` won't do three things**: duplicate a slide (its only
@@ -276,35 +276,38 @@ When filling in a template:
 
 Choose colors that match your topic — don't default to generic blue. Use these palettes as inspiration:
 
-| Theme | Primary | Secondary | Accent |
-|-------|---------|-----------|--------|
-| **Midnight Executive** | `1E2761` (navy) | `CADCFC` (ice blue) | `FFFFFF` (white) |
-| **Forest & Moss** | `2C5F2D` (forest) | `97BC62` (moss) | `F5F5F5` (cream) |
-| **Coral Energy** | `F96167` (coral) | `F9E795` (gold) | `2F3C7E` (navy) |
-| **Warm Terracotta** | `B85042` (terracotta) | `E7E8D1` (sand) | `A7BEAE` (sage) |
-| **Ocean Gradient** | `065A82` (deep blue) | `1C7293` (teal) | `21295C` (midnight) |
-| **Charcoal Minimal** | `36454F` (charcoal) | `F2F2F2` (off-white) | `212121` (black) |
-| **Teal Trust** | `028090` (teal) | `00A896` (seafoam) | `02C39A` (mint) |
-| **Berry & Cream** | `6D2E46` (berry) | `A26769` (dusty rose) | `ECE2D0` (cream) |
-| **Sage Calm** | `84B59F` (sage) | `69A297` (eucalyptus) | `50808E` (slate) |
-| **Cherry Bold** | `990011` (cherry) | `FCF6F5` (off-white) | `2F3C7E` (navy) |
+| Theme                  | Primary               | Secondary             | Accent              |
+| ---------------------- | --------------------- | --------------------- | ------------------- |
+| **Midnight Executive** | `1E2761` (navy)       | `CADCFC` (ice blue)   | `FFFFFF` (white)    |
+| **Forest & Moss**      | `2C5F2D` (forest)     | `97BC62` (moss)       | `F5F5F5` (cream)    |
+| **Coral Energy**       | `F96167` (coral)      | `F9E795` (gold)       | `2F3C7E` (navy)     |
+| **Warm Terracotta**    | `B85042` (terracotta) | `E7E8D1` (sand)       | `A7BEAE` (sage)     |
+| **Ocean Gradient**     | `065A82` (deep blue)  | `1C7293` (teal)       | `21295C` (midnight) |
+| **Charcoal Minimal**   | `36454F` (charcoal)   | `F2F2F2` (off-white)  | `212121` (black)    |
+| **Teal Trust**         | `028090` (teal)       | `00A896` (seafoam)    | `02C39A` (mint)     |
+| **Berry & Cream**      | `6D2E46` (berry)      | `A26769` (dusty rose) | `ECE2D0` (cream)    |
+| **Sage Calm**          | `84B59F` (sage)       | `69A297` (eucalyptus) | `50808E` (slate)    |
+| **Cherry Bold**        | `990011` (cherry)     | `FCF6F5` (off-white)  | `2F3C7E` (navy)     |
 
 ### For Each Slide
 
 **Every slide needs a visual element** — image, chart, icon, or shape. Text-only slides are forgettable.
 
 **Layout options:**
+
 - Two-column (text left, illustration on right)
 - Icon + text rows (icon in colored circle, bold header, description below)
 - 2x2 or 2x3 grid (image on one side, grid of content blocks on other)
 - Half-bleed image (full left or right side) with content overlay
 
 **Data display:**
+
 - Large stat callouts (big numbers 60-72pt with small labels below)
 - Comparison columns (before/after, pros/cons, side-by-side options)
 - Timeline or process flow (numbered steps, arrows)
 
 **Visual polish:**
+
 - Icons in small colored circles next to section headers
 - Italic accent text for key stats or taglines
 
@@ -312,18 +315,18 @@ Choose colors that match your topic — don't default to generic blue. Use these
 
 **Font names you write into the .pptx are rendered by the user's PowerPoint, not by this environment.** Your visual QA renders via LibreOffice, which substitutes fonts it doesn't have — and for some fonts the substitute has different widths, so your QA preview can show text overflow (or fit) that the real deck won't have. To keep your QA trustworthy:
 
-- **Safe fonts** (render true-to-width in QA *and* ship with Office): **Arial, Calibri, Cambria, Times New Roman, Courier New, Bookman Old Style, Century Schoolbook**. Use these for body text and anything where fit matters.
+- **Safe fonts** (render true-to-width in QA _and_ ship with Office): **Arial, Calibri, Cambria, Times New Roman, Courier New, Bookman Old Style, Century Schoolbook**. Use these for body text and anything where fit matters.
 - **Headers with personality at zero QA risk**: pair a safe-list serif header (Cambria, Bookman Old Style, Century Schoolbook) with a safe-list sans body (Calibri or Arial). You get visual contrast without giving up reliable overflow checks.
 - **If the user asks for a font outside the safe list** (e.g. Georgia or Trebuchet MS): use it where the user asked, but size those containers with extra slack (~10%) and don't trust QA text-fit on those elements — the preview of that font is approximate. If the user hasn't specified, prefer safe-list fonts for body text.
 - **QA-unreliable fonts** (substitute has different widths — overflow checks can be wrong): Georgia, Trebuchet MS, Impact, Arial Black, Garamond, Consolas, Palatino Linotype. Calibri Light substitution varies by environment; treat as QA-unreliable. Fine for titles/accents with slack; don't trust QA text-fit on these.
-- **Never default to Aptos** — Office's post-2023 default has no metric-compatible substitute here *and* is missing from older Office installs, so it's unreliable on both ends.
+- **Never default to Aptos** — Office's post-2023 default has no metric-compatible substitute here _and_ is missing from older Office installs, so it's unreliable on both ends.
 
-| Element | Size |
-|---------|------|
-| Slide title | 36-44pt bold |
-| Section header | 20-24pt bold |
-| Body text | 14-16pt |
-| Captions | 10-12pt muted |
+| Element        | Size          |
+| -------------- | ------------- |
+| Slide title    | 36-44pt bold  |
+| Section header | 20-24pt bold  |
+| Body text      | 14-16pt       |
+| Captions       | 10-12pt muted |
 
 ### Spacing
 

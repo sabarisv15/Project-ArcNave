@@ -76,7 +76,7 @@ function buildRows(seed, { gaps = true } = {}) {
   let k = 0;
   return [1, 2, 3, 4, 5].map((hour) => ({
     hour: `Hour ${hour}`,
-    // eslint-disable-next-line no-plusplus -- dealing sequentially from the shuffled pool
+
     cells: Object.fromEntries(DAYS.map((d) => [d, pool[k++]])),
   }));
 }

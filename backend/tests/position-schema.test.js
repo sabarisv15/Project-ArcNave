@@ -32,26 +32,26 @@ const MIGRATION_DATABASE_URL = process.env.MIGRATION_DATABASE_URL;
 async function seedFixtures(pool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const collegeId = `pos${suffix}`;
-  await pool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $1)',
-    [collegeId],
-  );
+  await pool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $1)', [collegeId]);
   const userResult = await pool.query(
     `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
      VALUES ($1, 'creator', 'creator@example.com', 'x', 'principal', true)
      RETURNING id`,
     [collegeId],
   );
-  const deptResult = await pool.query(
-    'INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id',
-    [collegeId, `CSE-${suffix}`],
-  );
-  const classResult = await pool.query(
-    'INSERT INTO classes (college_id, class_name) VALUES ($1, $2) RETURNING id',
-    [collegeId, `ECE-2nd-${suffix}`],
-  );
+  const deptResult = await pool.query('INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id', [
+    collegeId,
+    `CSE-${suffix}`,
+  ]);
+  const classResult = await pool.query('INSERT INTO classes (college_id, class_name) VALUES ($1, $2) RETURNING id', [
+    collegeId,
+    `ECE-2nd-${suffix}`,
+  ]);
   return {
-    collegeId, createdBy: userResult.rows[0].id, departmentId: deptResult.rows[0].id, classId: classResult.rows[0].id,
+    collegeId,
+    createdBy: userResult.rows[0].id,
+    departmentId: deptResult.rows[0].id,
+    classId: classResult.rows[0].id,
   };
 }
 
@@ -79,16 +79,23 @@ test('position schema constraints (Phase 1)', async (t) => {
 
   await t.test('level must be between 1 and 4', async () => {
     await assert.rejects(
-      () => positionRepository.createPosition(pool, {
-        collegeId: fixtures.collegeId, level: 5, title: 'Bad Level', createdBy: fixtures.createdBy,
-      }),
+      () =>
+        positionRepository.createPosition(pool, {
+          collegeId: fixtures.collegeId,
+          level: 5,
+          title: 'Bad Level',
+          createdBy: fixtures.createdBy,
+        }),
       /violates check constraint/,
     );
   });
 
   await t.test('a position can only ever have one position_accounts row', async () => {
     const position = await positionRepository.createPosition(pool, {
-      collegeId: fixtures.collegeId, level: 1, title: 'Principal', createdBy: fixtures.createdBy,
+      collegeId: fixtures.collegeId,
+      level: 1,
+      title: 'Principal',
+      createdBy: fixtures.createdBy,
     });
 
     const account = await positionRepository.createPositionAccount(pool, {
@@ -100,19 +107,23 @@ test('position schema constraints (Phase 1)', async (t) => {
     assert.ok(account.id);
 
     await assert.rejects(
-      () => positionRepository.createPositionAccount(pool, {
-        collegeId: fixtures.collegeId,
-        positionId: position.id,
-        officialEmail: 'principal-2@example.edu',
-        passwordHash: 'hashed',
-      }),
+      () =>
+        positionRepository.createPositionAccount(pool, {
+          collegeId: fixtures.collegeId,
+          positionId: position.id,
+          officialEmail: 'principal-2@example.edu',
+          passwordHash: 'hashed',
+        }),
       /duplicate key value violates unique constraint/,
     );
   });
 
   await t.test('at most one active occupant per position_account, revoke-then-reassign works', async () => {
     const position = await positionRepository.createPosition(pool, {
-      collegeId: fixtures.collegeId, level: 3, title: 'HOD', createdBy: fixtures.createdBy,
+      collegeId: fixtures.collegeId,
+      level: 3,
+      title: 'HOD',
+      createdBy: fixtures.createdBy,
     });
     const account = await positionRepository.createPositionAccount(pool, {
       collegeId: fixtures.collegeId,
@@ -131,12 +142,13 @@ test('position schema constraints (Phase 1)', async (t) => {
     assert.equal(occupantA.revoked_at, null);
 
     await assert.rejects(
-      () => positionRepository.createPositionOccupant(pool, {
-        collegeId: fixtures.collegeId,
-        positionAccountId: account.id,
-        userId: fixtures.createdBy,
-        assignedBy: fixtures.createdBy,
-      }),
+      () =>
+        positionRepository.createPositionOccupant(pool, {
+          collegeId: fixtures.collegeId,
+          positionAccountId: account.id,
+          userId: fixtures.createdBy,
+          assignedBy: fixtures.createdBy,
+        }),
       /duplicate key value violates unique constraint/,
     );
 
@@ -164,56 +176,88 @@ test('position schema constraints (Phase 1)', async (t) => {
 
   await t.test('a module can only be actively assigned to one position per college at a time', async () => {
     const positionA = await positionRepository.createPosition(pool, {
-      collegeId: fixtures.collegeId, level: 2, title: 'Exam Coordinator', createdBy: fixtures.createdBy,
+      collegeId: fixtures.collegeId,
+      level: 2,
+      title: 'Exam Coordinator',
+      createdBy: fixtures.createdBy,
     });
     const positionB = await positionRepository.createPosition(pool, {
-      collegeId: fixtures.collegeId, level: 2, title: 'Another Coordinator', createdBy: fixtures.createdBy,
+      collegeId: fixtures.collegeId,
+      level: 2,
+      title: 'Another Coordinator',
+      createdBy: fixtures.createdBy,
     });
 
     const assignmentA = await positionRepository.createPositionModuleAssignment(pool, {
-      collegeId: fixtures.collegeId, positionId: positionA.id, moduleKey: 'examination', assignedBy: fixtures.createdBy,
+      collegeId: fixtures.collegeId,
+      positionId: positionA.id,
+      moduleKey: 'examination',
+      assignedBy: fixtures.createdBy,
     });
     assert.ok(assignmentA.id);
 
     await assert.rejects(
-      () => positionRepository.createPositionModuleAssignment(pool, {
-        collegeId: fixtures.collegeId, positionId: positionB.id, moduleKey: 'examination', assignedBy: fixtures.createdBy,
-      }),
+      () =>
+        positionRepository.createPositionModuleAssignment(pool, {
+          collegeId: fixtures.collegeId,
+          positionId: positionB.id,
+          moduleKey: 'examination',
+          assignedBy: fixtures.createdBy,
+        }),
       /duplicate key value violates unique constraint/,
     );
 
     await positionRepository.revokePositionModuleAssignment(pool, assignmentA.id, { revokedBy: fixtures.createdBy });
 
     const assignmentB = await positionRepository.createPositionModuleAssignment(pool, {
-      collegeId: fixtures.collegeId, positionId: positionB.id, moduleKey: 'examination', assignedBy: fixtures.createdBy,
+      collegeId: fixtures.collegeId,
+      positionId: positionB.id,
+      moduleKey: 'examination',
+      assignedBy: fixtures.createdBy,
     });
     assert.ok(assignmentB.id);
   });
 
   await t.test('a department can only have one active position mapping at a time', async () => {
     const positionA = await positionRepository.createPosition(pool, {
-      collegeId: fixtures.collegeId, level: 3, title: 'HOD A', createdBy: fixtures.createdBy,
+      collegeId: fixtures.collegeId,
+      level: 3,
+      title: 'HOD A',
+      createdBy: fixtures.createdBy,
     });
     const positionB = await positionRepository.createPosition(pool, {
-      collegeId: fixtures.collegeId, level: 3, title: 'HOD B', createdBy: fixtures.createdBy,
+      collegeId: fixtures.collegeId,
+      level: 3,
+      title: 'HOD B',
+      createdBy: fixtures.createdBy,
     });
 
     const mappingA = await positionRepository.createPositionDepartmentAssignment(pool, {
-      collegeId: fixtures.collegeId, positionId: positionA.id, departmentId: fixtures.departmentId, assignedBy: fixtures.createdBy,
+      collegeId: fixtures.collegeId,
+      positionId: positionA.id,
+      departmentId: fixtures.departmentId,
+      assignedBy: fixtures.createdBy,
     });
     assert.ok(mappingA.id);
 
     await assert.rejects(
-      () => positionRepository.createPositionDepartmentAssignment(pool, {
-        collegeId: fixtures.collegeId, positionId: positionB.id, departmentId: fixtures.departmentId, assignedBy: fixtures.createdBy,
-      }),
+      () =>
+        positionRepository.createPositionDepartmentAssignment(pool, {
+          collegeId: fixtures.collegeId,
+          positionId: positionB.id,
+          departmentId: fixtures.departmentId,
+          assignedBy: fixtures.createdBy,
+        }),
       /duplicate key value violates unique constraint/,
     );
 
     await positionRepository.revokePositionDepartmentAssignment(pool, mappingA.id, { revokedBy: fixtures.createdBy });
 
     const mappingB = await positionRepository.createPositionDepartmentAssignment(pool, {
-      collegeId: fixtures.collegeId, positionId: positionB.id, departmentId: fixtures.departmentId, assignedBy: fixtures.createdBy,
+      collegeId: fixtures.collegeId,
+      positionId: positionB.id,
+      departmentId: fixtures.departmentId,
+      assignedBy: fixtures.createdBy,
     });
     assert.ok(mappingB.id);
   });
@@ -222,21 +266,34 @@ test('position schema constraints (Phase 1)', async (t) => {
   // above, FK'd to classes(id) instead.
   await t.test('a class can only have one active position mapping at a time', async () => {
     const positionA = await positionRepository.createPosition(pool, {
-      collegeId: fixtures.collegeId, level: 4, title: 'Class Tutor A', createdBy: fixtures.createdBy,
+      collegeId: fixtures.collegeId,
+      level: 4,
+      title: 'Class Tutor A',
+      createdBy: fixtures.createdBy,
     });
     const positionB = await positionRepository.createPosition(pool, {
-      collegeId: fixtures.collegeId, level: 4, title: 'Class Tutor B', createdBy: fixtures.createdBy,
+      collegeId: fixtures.collegeId,
+      level: 4,
+      title: 'Class Tutor B',
+      createdBy: fixtures.createdBy,
     });
 
     const mappingA = await positionRepository.createPositionClassAssignment(pool, {
-      collegeId: fixtures.collegeId, positionId: positionA.id, classId: fixtures.classId, assignedBy: fixtures.createdBy,
+      collegeId: fixtures.collegeId,
+      positionId: positionA.id,
+      classId: fixtures.classId,
+      assignedBy: fixtures.createdBy,
     });
     assert.ok(mappingA.id);
 
     await assert.rejects(
-      () => positionRepository.createPositionClassAssignment(pool, {
-        collegeId: fixtures.collegeId, positionId: positionB.id, classId: fixtures.classId, assignedBy: fixtures.createdBy,
-      }),
+      () =>
+        positionRepository.createPositionClassAssignment(pool, {
+          collegeId: fixtures.collegeId,
+          positionId: positionB.id,
+          classId: fixtures.classId,
+          assignedBy: fixtures.createdBy,
+        }),
       /duplicate key value violates unique constraint/,
     );
 
@@ -247,12 +304,18 @@ test('position schema constraints (Phase 1)', async (t) => {
     assert.equal(await positionRepository.findActiveClassAssignment(pool, fixtures.classId), null);
 
     const mappingB = await positionRepository.createPositionClassAssignment(pool, {
-      collegeId: fixtures.collegeId, positionId: positionB.id, classId: fixtures.classId, assignedBy: fixtures.createdBy,
+      collegeId: fixtures.collegeId,
+      positionId: positionB.id,
+      classId: fixtures.classId,
+      assignedBy: fixtures.createdBy,
     });
     assert.ok(mappingB.id);
 
     const assignmentsForB = await positionRepository.findActiveClassAssignmentsForPosition(pool, positionB.id);
-    assert.deepEqual(assignmentsForB.map((row) => row.class_id), [fixtures.classId]);
+    assert.deepEqual(
+      assignmentsForB.map((row) => row.class_id),
+      [fixtures.classId],
+    );
   });
 });
 
@@ -270,7 +333,10 @@ test('position account auth repository additions (Phase 2 step 2)', async (t) =>
   });
 
   const position = await positionRepository.createPosition(pool, {
-    collegeId: fixtures.collegeId, level: 1, title: 'Principal', createdBy: fixtures.createdBy,
+    collegeId: fixtures.collegeId,
+    level: 1,
+    title: 'Principal',
+    createdBy: fixtures.createdBy,
   });
   const account = await positionRepository.createPositionAccount(pool, {
     collegeId: fixtures.collegeId,
@@ -281,7 +347,9 @@ test('position account auth repository additions (Phase 2 step 2)', async (t) =>
 
   await t.test('findPositionAccountByOfficialEmail / findPositionAccountById', async () => {
     const byEmail = await positionRepository.findPositionAccountByOfficialEmail(
-      pool, fixtures.collegeId, 'principal@example.edu',
+      pool,
+      fixtures.collegeId,
+      'principal@example.edu',
     );
     assert.equal(byEmail.id, account.id);
 
@@ -289,7 +357,9 @@ test('position account auth repository additions (Phase 2 step 2)', async (t) =>
     assert.equal(byId.id, account.id);
 
     const missing = await positionRepository.findPositionAccountByOfficialEmail(
-      pool, fixtures.collegeId, 'nobody@example.edu',
+      pool,
+      fixtures.collegeId,
+      'nobody@example.edu',
     );
     assert.equal(missing, null);
   });

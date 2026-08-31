@@ -86,10 +86,10 @@ function hostFor(subdomain) {
 async function seedTenant(adminPool, label) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const collegeId = `analyticsapi${label}${suffix}`;
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [collegeId, `analyticsapitenant${label}${suffix}`],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    collegeId,
+    `analyticsapitenant${label}${suffix}`,
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userIds = {};
   for (const [username, role] of [
@@ -106,12 +106,15 @@ async function seedTenant(adminPool, label) {
     userIds[username] = result.rows[0].id;
   }
   await seedPrincipalPosition(adminPool, { collegeId, userId: userIds.principaluser, passwordHash });
-  const dept = await adminPool.query(
-    'INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id',
-    [collegeId, `Analytics API Dept ${suffix}`],
-  );
+  const dept = await adminPool.query('INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id', [
+    collegeId,
+    `Analytics API Dept ${suffix}`,
+  ]);
   await seedHodPosition(adminPool, {
-    collegeId, userId: userIds.hoduser, departmentId: dept.rows[0].id, passwordHash,
+    collegeId,
+    userId: userIds.hoduser,
+    departmentId: dept.rows[0].id,
+    passwordHash,
   });
 
   const classA = await adminPool.query(
@@ -158,7 +161,12 @@ async function seedTenant(adminPool, label) {
     [collegeId, classA.rows[0].id, period.rows[0].id, userIds.staffuser],
   );
 
-  return { collegeId, subdomain: `analyticsapitenant${label}${suffix}`, userIds, classIds: { a: classA.rows[0].id, b: classB.rows[0].id } };
+  return {
+    collegeId,
+    subdomain: `analyticsapitenant${label}${suffix}`,
+    userIds,
+    classIds: { a: classA.rows[0].id, b: classB.rows[0].id },
+  };
 }
 
 async function cleanupTenant(adminPool, tenant) {
@@ -198,7 +206,12 @@ test('analytics API', async (t) => {
   });
 
   async function login(college, username) {
-    const resp = await post(baseUrl, '/api/v1/auth/login', { host: hostFor(college.subdomain) }, { username, password: PASSWORD });
+    const resp = await post(
+      baseUrl,
+      '/api/v1/auth/login',
+      { host: hostFor(college.subdomain) },
+      { username, password: PASSWORD },
+    );
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -219,7 +232,7 @@ test('analytics API', async (t) => {
   // (getAttendanceRateForActor) — staffuser is faculty-allocated to
   // Class A only (seedTenant's own fixture), so they see Class A's real
   // rate and nothing from Class B, never a 403.
-  await t.test('staff (neither principal nor hod) sees only their own allocated class\'s rate, not a 403', async () => {
+  await t.test("staff (neither principal nor hod) sees only their own allocated class's rate, not a 403", async () => {
     const token = await login(collegeA, 'staffuser');
     const resp = await get(baseUrl, '/api/v1/analytics/attendance-rate', headersFor(collegeA, token));
     assert.equal(resp.status, 200);
@@ -260,31 +273,38 @@ test('analytics API', async (t) => {
 
   await t.test('class_id filters to one class', async () => {
     const token = await login(collegeA, 'principaluser');
-    const resp = await get(baseUrl, `/api/v1/analytics/attendance-rate?class_id=${collegeA.classIds.b}`, headersFor(collegeA, token));
+    const resp = await get(
+      baseUrl,
+      `/api/v1/analytics/attendance-rate?class_id=${collegeA.classIds.b}`,
+      headersFor(collegeA, token),
+    );
     assert.equal(resp.status, 200);
     assert.equal(resp.body.length, 1);
     assert.equal(resp.body[0].classId, collegeA.classIds.b);
   });
 
-  await t.test('start_date/end_date narrows the window (class A has one session on each of 2026-07-01 and 2026-07-02)', async () => {
-    const token = await login(collegeA, 'principaluser');
-    const resp = await get(
-      baseUrl,
-      `/api/v1/analytics/attendance-rate?class_id=${collegeA.classIds.a}&start_date=2026-07-01&end_date=2026-07-01`,
-      headersFor(collegeA, token),
-    );
-    assert.equal(resp.status, 200);
-    assert.equal(resp.body.length, 1);
-    assert.equal(resp.body[0].sessionsCount, 1);
+  await t.test(
+    'start_date/end_date narrows the window (class A has one session on each of 2026-07-01 and 2026-07-02)',
+    async () => {
+      const token = await login(collegeA, 'principaluser');
+      const resp = await get(
+        baseUrl,
+        `/api/v1/analytics/attendance-rate?class_id=${collegeA.classIds.a}&start_date=2026-07-01&end_date=2026-07-01`,
+        headersFor(collegeA, token),
+      );
+      assert.equal(resp.status, 200);
+      assert.equal(resp.body.length, 1);
+      assert.equal(resp.body[0].sessionsCount, 1);
 
-    const outOfRange = await get(
-      baseUrl,
-      `/api/v1/analytics/attendance-rate?class_id=${collegeA.classIds.a}&start_date=1900-01-01&end_date=1900-01-02`,
-      headersFor(collegeA, token),
-    );
-    assert.equal(outOfRange.status, 200);
-    assert.equal(outOfRange.body.length, 0);
-  });
+      const outOfRange = await get(
+        baseUrl,
+        `/api/v1/analytics/attendance-rate?class_id=${collegeA.classIds.a}&start_date=1900-01-01&end_date=1900-01-02`,
+        headersFor(collegeA, token),
+      );
+      assert.equal(outOfRange.status, 200);
+      assert.equal(outOfRange.body.length, 0);
+    },
+  );
 
   await t.test('a tenant with zero attendance_sessions gets 200 with an empty array, not an error', async () => {
     const token = await login(emptyCollege, 'principaluser');

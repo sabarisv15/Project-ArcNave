@@ -42,7 +42,7 @@ function renderApp(route = '/curriculum') {
           </WorkspaceProvider>
         </Tooltip.Provider>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -68,7 +68,13 @@ const readiness = deriveInstitutionReadiness({
   tutorCoverage: tutorCoverage(),
   hodCoverage: hodCoverage(),
   promotionProgress: [
-    { departmentId: DEPARTMENT_ID, total: REVIEW_CANDIDATES.length, reviewed: 0, pending: REVIEW_CANDIDATES.length, byOutcome: {} },
+    {
+      departmentId: DEPARTMENT_ID,
+      total: REVIEW_CANDIDATES.length,
+      reviewed: 0,
+      pending: REVIEW_CANDIDATES.length,
+      byOutcome: {},
+    },
   ],
   departmentName: departmentLabel,
   timetableStateOf: timetableStateOfClass,
@@ -152,7 +158,7 @@ describe('Every institution figure derives from a canonical layer', () => {
         { departmentId: 'a', total: 4, reviewed: 1, pending: 3 },
         { departmentId: 'b', total: 6, reviewed: 6, pending: 0 },
       ],
-      () => 'Department'
+      () => 'Department',
     );
     expect(progress.total).toBe(10);
     expect(progress.reviewed).toBe(7);
@@ -200,9 +206,7 @@ describe('Provisioning is not presented as this seat’s work', () => {
 
     const panel = await screen.findByRole('region', { name: /operational readiness/i });
     expect(within(panel).getByText(/departments provisioned/i)).toBeInTheDocument();
-    expect(
-      within(panel).getByText(/structure, intake and section capacities are provisioned/i)
-    ).toBeInTheDocument();
+    expect(within(panel).getByText(/structure, intake and section capacities are provisioned/i)).toBeInTheDocument();
 
     // The old first-login framing is gone.
     expect(within(panel).queryByText(/complete these foundations/i)).not.toBeInTheDocument();
@@ -217,11 +221,9 @@ describe('Provisioning is not presented as this seat’s work', () => {
 
     for (const item of [/^institution$/i, /^departments$/i, /^academic year$/i]) {
       await navigateVia(user, item);
-      [/add a department/i, /new department/i, /edit intake/i, /edit capacity/i, /add section/i].forEach(
-        (name) => {
-          expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
-        }
-      );
+      [/add a department/i, /new department/i, /edit intake/i, /edit capacity/i, /add section/i].forEach((name) => {
+        expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+      });
     }
   });
 });
@@ -233,9 +235,7 @@ describe('Promotion outcomes are not this seat’s to choose', () => {
     await useView(user, /principal/i);
     await navigateVia(user, /^institution$/i);
 
-    const block = (await screen.findByRole('heading', { name: /promotion review/i })).closest(
-      'section'
-    );
+    const block = (await screen.findByRole('heading', { name: /promotion review/i })).closest('section');
     expect(within(block).getByText(/confirmed by the department head/i)).toBeInTheDocument();
 
     [/^promote$/i, /^detain$/i, /^transfer$/i, /section change/i].forEach((name) => {
@@ -254,17 +254,13 @@ describe('The delegated seat is a summary on the institution screen', () => {
 
     const summary = await screen.findByRole('region', { name: /dean — academic affairs/i });
     expect(within(summary).getByText(/in the timetable approval chain/i)).toBeInTheDocument();
-    expect(
-      within(summary).getByText(new RegExp(level2Scope().areas[0], 'i'))
-    ).toBeInTheDocument();
+    expect(within(summary).getByText(new RegExp(level2Scope().areas[0], 'i'))).toBeInTheDocument();
     /*
      * The seat has a workspace of its own now, and this panel still is not a
      * way into it: what an institution head needs here is configuration and
      * occupancy, not somebody else's screens.
      */
-    expect(
-      within(summary).getByText(/works in its own workspace/i)
-    ).toBeInTheDocument();
+    expect(within(summary).getByText(/works in its own workspace/i)).toBeInTheDocument();
     expect(within(summary).queryByRole('link')).not.toBeInTheDocument();
   });
 
@@ -294,9 +290,7 @@ describe('The delegated seat is a summary on the institution screen', () => {
      * gets the delegated gate's own explanation — not Home, and not a redirect
      * that would have silently produced the Staff workspace.
      */
-    expect(
-      await screen.findByText(/delegated workspace is not part of the workspace view/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/delegated workspace is not part of the workspace view/i)).toBeInTheDocument();
   });
 
   it('renders nothing at all for an institution provisioned without one', () => {

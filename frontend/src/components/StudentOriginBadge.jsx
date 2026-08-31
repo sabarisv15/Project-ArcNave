@@ -32,11 +32,7 @@ const ORIGIN_TONE = {
 
 export function StudentOriginBadge({ origin, className }) {
   const label = ORIGIN_LABELS[origin] ?? ORIGIN_LABELS.promoted;
-  return (
-    <span className={cn('text-[11.5px]', ORIGIN_TONE[origin] ?? ORIGIN_TONE.promoted, className)}>
-      {label}
-    </span>
-  );
+  return <span className={cn('text-[11.5px]', ORIGIN_TONE[origin] ?? ORIGIN_TONE.promoted, className)}>{label}</span>;
 }
 
 /**
@@ -55,7 +51,7 @@ export function DocumentsPendingBadge({ className }) {
     <span
       className={cn(
         'inline-flex items-center h-[19px] px-[6px] rounded-[6px] text-[10.5px] font-[500] text-pending bg-pending-soft',
-        className
+        className,
       )}
     >
       Documents pending

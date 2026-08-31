@@ -76,10 +76,10 @@ async function findByIds(client, ids) {
 }
 
 async function findByCollegeAndClassName(client, collegeId, className) {
-  const result = await client.query(
-    'SELECT * FROM classes WHERE college_id = $1 AND class_name = $2',
-    [collegeId, className],
-  );
+  const result = await client.query('SELECT * FROM classes WHERE college_id = $1 AND class_name = $2', [
+    collegeId,
+    className,
+  ]);
   return result.rows[0] || null;
 }
 
@@ -89,10 +89,9 @@ async function findByCollegeAndClassName(client, collegeId, className) {
 // choice studentRepository.findByDepartmentId already makes for the
 // structurally identical lookup.
 async function findByDepartmentId(client, departmentId) {
-  const result = await client.query(
-    'SELECT * FROM classes WHERE department_id = $1 ORDER BY created_at',
-    [departmentId],
-  );
+  const result = await client.query('SELECT * FROM classes WHERE department_id = $1 ORDER BY created_at', [
+    departmentId,
+  ]);
   return result.rows;
 }
 
@@ -119,10 +118,7 @@ async function remove(client, id) {
 }
 
 async function list(client, { limit = 50, offset = 0 } = {}) {
-  const result = await client.query(
-    'SELECT * FROM classes ORDER BY created_at LIMIT $1 OFFSET $2',
-    [limit, offset],
-  );
+  const result = await client.query('SELECT * FROM classes ORDER BY created_at LIMIT $1 OFFSET $2', [limit, offset]);
   return result.rows;
 }
 

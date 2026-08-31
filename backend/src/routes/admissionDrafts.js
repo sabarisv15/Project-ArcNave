@@ -86,50 +86,70 @@ function mapStudentServiceError(err, res) {
 function createAdmissionDraftsRouter() {
   const router = express.Router();
 
-  router.post('/students/admission-drafts', requirePermission('students.create'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const draft = await studentAdmissionDraftService.createDraft(req.dbClient, {
-        collegeId: req.collegeId,
+  router.post(
+    '/students/admission-drafts',
+    requirePermission('students.create'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const draft = await studentAdmissionDraftService.createDraft(req.dbClient, {
+          collegeId: req.collegeId,
+          userId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+        });
+        res.status(201).json(draft);
+      } catch (err) {
+        if (mapDraftServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
+
+  router.get(
+    '/students/admission-drafts',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const drafts = await studentAdmissionDraftService.listMyDrafts(req.dbClient, {
         userId: identityService.resolveActorUserId(req.capabilities),
-        actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
       });
-      res.status(201).json(draft);
-    } catch (err) {
-      if (mapDraftServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+      res.json(drafts);
+    }),
+  );
 
-  router.get('/students/admission-drafts', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const drafts = await studentAdmissionDraftService.listMyDrafts(req.dbClient, { userId: identityService.resolveActorUserId(req.capabilities) });
-    res.json(drafts);
-  }));
+  router.get(
+    '/students/admission-drafts/:draftId',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const state = await studentAdmissionDraftService.getDraft(req.dbClient, req.params.draftId, {
+          userId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.json(state);
+      } catch (err) {
+        if (mapDraftServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.get('/students/admission-drafts/:draftId', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const state = await studentAdmissionDraftService.getDraft(req.dbClient, req.params.draftId, { userId: identityService.resolveActorUserId(req.capabilities) });
-      res.json(state);
-    } catch (err) {
-      if (mapDraftServiceError(err, res)) return;
-      throw err;
-    }
-  }));
-
-  router.patch('/students/admission-drafts/:draftId', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const draft = await studentAdmissionDraftService.updateDraft(
-        req.dbClient, req.params.draftId, req.body || {}, { userId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.json(draft);
-    } catch (err) {
-      if (mapDraftServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.patch(
+    '/students/admission-drafts/:draftId',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const draft = await studentAdmissionDraftService.updateDraft(req.dbClient, req.params.draftId, req.body || {}, {
+          userId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.json(draft);
+      } catch (err) {
+        if (mapDraftServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   router.post(
     '/students/admission-drafts/:draftId/documents',
@@ -161,44 +181,58 @@ function createAdmissionDraftsRouter() {
     }),
   );
 
-  router.delete('/students/admission-drafts/:draftId/documents/:docType', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      await studentAdmissionDraftService.removeDraftDocument(
-        req.dbClient, req.params.draftId, req.params.docType, { userId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(204).end();
-    } catch (err) {
-      if (mapDraftServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.delete(
+    '/students/admission-drafts/:draftId/documents/:docType',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        await studentAdmissionDraftService.removeDraftDocument(req.dbClient, req.params.draftId, req.params.docType, {
+          userId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.status(204).end();
+      } catch (err) {
+        if (mapDraftServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/students/admission-drafts/:draftId/extract', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const job = await studentAdmissionDraftService.runExtraction(req.dbClient, req.params.draftId, { userId: identityService.resolveActorUserId(req.capabilities) });
-      res.status(202).json(job);
-    } catch (err) {
-      if (mapDraftServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/students/admission-drafts/:draftId/extract',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const job = await studentAdmissionDraftService.runExtraction(req.dbClient, req.params.draftId, {
+          userId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.status(202).json(job);
+      } catch (err) {
+        if (mapDraftServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/students/admission-drafts/:draftId/complete', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const student = await studentAdmissionDraftService.completeDraft(req.dbClient, req.params.draftId, {
-        userId: identityService.resolveActorUserId(req.capabilities),
-        actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
-      });
-      res.status(201).json(student);
-    } catch (err) {
-      if (mapDraftServiceError(err, res)) return;
-      if (mapStudentServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/students/admission-drafts/:draftId/complete',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const student = await studentAdmissionDraftService.completeDraft(req.dbClient, req.params.draftId, {
+          userId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+        });
+        res.status(201).json(student);
+      } catch (err) {
+        if (mapDraftServiceError(err, res)) return;
+        if (mapStudentServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   return router;
 }

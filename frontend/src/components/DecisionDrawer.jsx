@@ -101,7 +101,7 @@ export function DecisionDrawer({
               <span
                 className={cn(
                   'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-                  STATUS_TONE[request.status]
+                  STATUS_TONE[request.status],
                 )}
               >
                 {STATUS_LABELS[request.status]}
@@ -172,7 +172,9 @@ export function DecisionDrawer({
               }
             />
           ) : (
-            <DrawerRail meta={<span className="text-[11.5px] text-ink-faint">Your decision is recorded against this seat.</span>}>
+            <DrawerRail
+              meta={<span className="text-[11.5px] text-ink-faint">Your decision is recorded against this seat.</span>}
+            >
               <button type="button" className={GHOST_BTN} onClick={() => onDecide(request.id, 'rejected', note)}>
                 {outcomeLabels.rejected}
               </button>

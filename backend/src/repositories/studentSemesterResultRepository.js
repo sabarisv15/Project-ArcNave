@@ -59,10 +59,9 @@ async function findByStudentIds(client, studentIds) {
   if (studentIds.length === 0) {
     return [];
   }
-  const result = await client.query(
-    'SELECT * FROM student_semester_results WHERE student_id = ANY($1::uuid[])',
-    [studentIds],
-  );
+  const result = await client.query('SELECT * FROM student_semester_results WHERE student_id = ANY($1::uuid[])', [
+    studentIds,
+  ]);
   return result.rows;
 }
 

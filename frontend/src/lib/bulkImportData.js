@@ -54,12 +54,16 @@ export function parseDelimited(text) {
     for (let i = 0; i < line.length; i++) {
       const ch = line[i];
       if (quoted) {
-        if (ch === '"' && line[i + 1] === '"') { cur += '"'; i += 1; }
-        else if (ch === '"') quoted = false;
+        if (ch === '"' && line[i + 1] === '"') {
+          cur += '"';
+          i += 1;
+        } else if (ch === '"') quoted = false;
         else cur += ch;
       } else if (ch === '"') quoted = true;
-      else if (ch === ',') { out.push(cur.trim()); cur = ''; }
-      else cur += ch;
+      else if (ch === ',') {
+        out.push(cur.trim());
+        cur = '';
+      } else cur += ch;
     }
     out.push(cur.trim());
     return out;
@@ -98,7 +102,7 @@ export function valuesFromRow(row, mapping) {
     IMPORT_FIELDS.map((f) => {
       const index = mapping[f.key];
       return [f.key, index == null ? '' : String(row[index] ?? '').trim()];
-    })
+    }),
   );
 }
 
@@ -132,9 +136,7 @@ export function classifyRows(rows, mapping, validate) {
     if (!check.ok) {
       if (check.reason === 'duplicate') {
         issues.push(
-          check.detail === 'promoted'
-            ? 'Already placed in this class by promotion'
-            : 'Already placed in this class'
+          check.detail === 'promoted' ? 'Already placed in this class by promotion' : 'Already placed in this class',
         );
       } else if (check.reason === 'at_capacity') {
         issues.push('No provisioned seat left in this section');

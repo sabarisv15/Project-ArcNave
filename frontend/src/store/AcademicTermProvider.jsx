@@ -106,25 +106,22 @@ export function AcademicTermProvider({ children }) {
    * lives in `timetableState.js` — this only decides which set of states the
    * rule is applied to.
    */
-  const timetableStateOf = useCallback(
-    (classId) => stateIn(timetableStates, classId),
-    [timetableStates]
-  );
+  const timetableStateOf = useCallback((classId) => stateIn(timetableStates, classId), [timetableStates]);
 
   const attendanceLiveFor = useCallback(
     (classId) => attendanceLiveIn(timetableStates, classId, yearActive),
-    [timetableStates, yearActive]
+    [timetableStates, yearActive],
   );
 
   const attendanceLockReason = useCallback(
     (classId) => attendanceLockReasonIn(timetableStates, classId, yearActive),
-    [timetableStates, yearActive]
+    [timetableStates, yearActive],
   );
 
   /** How many classes attendance is actually running for, institution-wide. */
   const attendanceLiveTotal = useMemo(
     () => activeClasses.filter((c) => attendanceLiveIn(timetableStates, c.id, yearActive)).length,
-    [activeClasses, timetableStates, yearActive]
+    [activeClasses, timetableStates, yearActive],
   );
 
   /**
@@ -157,7 +154,7 @@ export function AcademicTermProvider({ children }) {
       commit(next, [previous, ...priorRef.current]);
       return { ok: true, term: next, previous };
     },
-    [commit]
+    [commit],
   );
 
   /** Back to the deterministic baseline — for tests and for a clean review run. */
@@ -206,7 +203,7 @@ export function AcademicTermProvider({ children }) {
       promotionRequired,
       commenceNextSemester,
       resetTerm,
-    ]
+    ],
   );
 
   return <AcademicTermContext.Provider value={value}>{children}</AcademicTermContext.Provider>;

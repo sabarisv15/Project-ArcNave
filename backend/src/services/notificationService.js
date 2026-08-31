@@ -230,9 +230,7 @@ async function resolveChannelProvider(client, collegeId, channel) {
 // under the old hardcoded Twilio calls. `channel` must be one of
 // KNOWN_CHANNELS — checked before any repository call, same "guard
 // before any work" reasoning every other validation in this file uses.
-async function genericSend(client, {
-  collegeId, channel, to, body, subject,
-}) {
+async function genericSend(client, { collegeId, channel, to, body, subject }) {
   if (!to || !body) {
     throw new NotificationValidationError('to and body are required');
   }
@@ -254,12 +252,21 @@ async function genericSend(client, {
       logWarn(`notification_${channel}_failed`, { to, error: result.error });
     }
     return {
-      channel, status: result.status, to, body, providerId: result.providerId, error: result.error,
+      channel,
+      status: result.status,
+      to,
+      body,
+      providerId: result.providerId,
+      error: result.error,
     };
   } catch (err) {
     logWarn(`notification_${channel}_failed`, { to, error: err.message });
     return {
-      channel, status: 'failed', to, body, error: err.message,
+      channel,
+      status: 'failed',
+      to,
+      body,
+      error: err.message,
     };
   }
 }
@@ -328,9 +335,7 @@ async function sendMfaCodeEmail(client, { to, code, expireMinutes }) {
 // college being invited into has no principal at all until this
 // invitation is accepted) — harmless, since sendEmail never actually
 // uses its own client parameter either (see that function's comment).
-async function sendPrincipalInvitationEmail(client, {
-  to, collegeId, token, expiresAt,
-}) {
+async function sendPrincipalInvitationEmail(client, { to, collegeId, token, expiresAt }) {
   const subject = `You've been invited to set up ARCNAVE for ${collegeId}`;
   const body = [
     `You have been invited to become the Principal administrator for college "${collegeId}" on ARCNAVE.`,
@@ -351,9 +356,7 @@ async function sendPrincipalInvitationEmail(client, {
 // (a Platform Admin inviting Level 1/2) — harmless for the same reason
 // sendPrincipalInvitationEmail's own comment gives: sendEmail never
 // actually uses its own client parameter.
-async function sendPositionAccountInvitationEmail(client, {
-  to, collegeId, positionTitle, token, expiresAt,
-}) {
+async function sendPositionAccountInvitationEmail(client, { to, collegeId, positionTitle, token, expiresAt }) {
   const subject = `You've been invited to the ${positionTitle} office account for ${collegeId}`;
   const body = [
     `You have been invited to set up login credentials for the "${positionTitle}" institutional office account at college "${collegeId}" on ARCNAVE.`,
@@ -370,9 +373,7 @@ async function sendPositionAccountInvitationEmail(client, {
 // (a distinct, person-centric account, never a Position Account — see
 // RS-STF-010), same "never return the raw token in an API response,
 // only ever email it" rule as sendPrincipalInvitationEmail above.
-async function sendStaffInvitationEmail(client, {
-  to, collegeId, token, expiresAt,
-}) {
+async function sendStaffInvitationEmail(client, { to, collegeId, token, expiresAt }) {
   const subject = `You've been invited to join ARCNAVE staff at ${collegeId}`;
   const body = [
     `You have been invited to join college "${collegeId}" on ARCNAVE as a staff member.`,
@@ -412,9 +413,11 @@ function assertValidKind(kind) {
 // optional (not every future channel has one; email always supplies
 // it in practice, but this function doesn't require it — see the
 // migration's own file-level comment).
-async function draftNotification(client, {
-  collegeId, channel, toAddress, subject, body, origin = 'human', kind = 'waiting',
-}, { actorUserId } = {}) {
+async function draftNotification(
+  client,
+  { collegeId, channel, toAddress, subject, body, origin = 'human', kind = 'waiting' },
+  { actorUserId } = {},
+) {
   if (!collegeId || !channel || !toAddress || !body || !actorUserId) {
     throw new NotificationValidationError('collegeId, channel, toAddress, body, and actorUserId are required');
   }
@@ -483,7 +486,8 @@ async function submitForApproval(client, notificationId, { requestedByUserId, ac
   }
 
   const approverChain = await workflowChainService.resolveApproverChain(client, {
-    collegeId: notification.college_id, entityType: 'notification',
+    collegeId: notification.college_id,
+    entityType: 'notification',
   });
 
   const request = await workflowService.submitRequest(client, {
@@ -511,7 +515,9 @@ async function loadPendingNotificationApproval(client, notificationId) {
 
   const pending = await workflowService.findPendingForEntity(client, 'notification', notificationId);
   if (pending === null) {
-    throw new NotificationNoPendingRequestError(`notification ${JSON.stringify(notificationId)} has no pending approval request`);
+    throw new NotificationNoPendingRequestError(
+      `notification ${JSON.stringify(notificationId)} has no pending approval request`,
+    );
   }
 
   return { notification, pending };

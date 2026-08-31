@@ -21,7 +21,12 @@ export function CorrectionRequestDrawer({ open, onOpenChange, period, session, o
   const [selected, setSelected] = useState({}); // studentId -> requestedPresent
 
   const {
-    register, handleSubmit, reset, watch, setValue, formState: { errors },
+    register,
+    handleSubmit,
+    reset,
+    watch,
+    setValue,
+    formState: { errors },
   } = useForm({ resolver: zodResolver(schema), defaultValues: { reason: '' } });
 
   /**
@@ -43,7 +48,11 @@ export function CorrectionRequestDrawer({ open, onOpenChange, period, session, o
   const [usedDraft, setUsedDraft] = useState(false);
 
   useEffect(() => {
-    if (!open) { seeded.current = false; setUsedDraft(false); return; }
+    if (!open) {
+      seeded.current = false;
+      setUsedDraft(false);
+      return;
+    }
     if (seeded.current) return;
     seeded.current = true;
     const d = restored?.value;
@@ -154,7 +163,7 @@ export function CorrectionRequestDrawer({ open, onOpenChange, period, session, o
                     key={s.id}
                     className={cn(
                       'flex items-center gap-[10px] py-[8px] border-t border-line-light first:border-t-0',
-                      isSelected && 'bg-accent-soft/40 -mx-[8px] px-[8px] rounded-[8px]'
+                      isSelected && 'bg-accent-soft/40 -mx-[8px] px-[8px] rounded-[8px]',
                     )}
                   >
                     <input
@@ -166,10 +175,16 @@ export function CorrectionRequestDrawer({ open, onOpenChange, period, session, o
                     />
                     <div className="min-w-0 flex-1">
                       <div className="text-[12.5px] font-[500] text-ink truncate">{s.name}</div>
-                      <div className="text-[10.5px] text-ink-faint">Roll {s.roll} · recorded {existingPresent ? 'Present' : 'Absent'}</div>
+                      <div className="text-[10.5px] text-ink-faint">
+                        Roll {s.roll} · recorded {existingPresent ? 'Present' : 'Absent'}
+                      </div>
                     </div>
                     {isSelected && (
-                      <PresentAbsentPill size="sm" present={selected[s.id]} onToggle={() => toggleRequestedValue(s.id)} />
+                      <PresentAbsentPill
+                        size="sm"
+                        present={selected[s.id]}
+                        onToggle={() => toggleRequestedValue(s.id)}
+                      />
                     )}
                   </div>
                 );
@@ -180,12 +195,20 @@ export function CorrectionRequestDrawer({ open, onOpenChange, period, session, o
             </div>
 
             <div className="px-[18px] pt-[12px] pb-[18px] border-t border-line bg-surface">
-              <label htmlFor="correction-reason" className="block text-[11.5px] font-[500] uppercase tracking-[.05em] text-ink-faint mb-[6px]">
+              <label
+                htmlFor="correction-reason"
+                className="block text-[11.5px] font-[500] uppercase tracking-[.05em] text-ink-faint mb-[6px]"
+              >
                 Reason (required)
               </label>
               <textarea
                 id="correction-reason"
-                {...register('reason', { onChange: () => { setUsedDraft(false); autosave.schedule(); } })}
+                {...register('reason', {
+                  onChange: () => {
+                    setUsedDraft(false);
+                    autosave.schedule();
+                  },
+                })}
                 placeholder="Explain what was recorded incorrectly and why…"
                 className="w-full min-h-[74px] px-[12px] py-[9px] border border-line rounded-[10px] bg-paper font-sans text-[12.5px] leading-[1.5] text-ink outline-none resize-none focus:border-accent-line focus:shadow-[0_0_0_3px_rgba(11,114,133,.1)]"
               />
@@ -194,16 +217,20 @@ export function CorrectionRequestDrawer({ open, onOpenChange, period, session, o
               <div className="flex items-center justify-between mt-[14px]">
                 <span className="flex items-center gap-[7px] text-[11.5px] text-ink-faint">
                   {selectedCount} student{selectedCount === 1 ? '' : 's'} selected
-                  {usedDraft
-                    ? <DraftRestoredNote show />
-                    : <AutosaveStatus status={autosave.status} onRetry={autosave.retry} />}
+                  {usedDraft ? (
+                    <DraftRestoredNote show />
+                  ) : (
+                    <AutosaveStatus status={autosave.status} onRetry={autosave.retry} />
+                  )}
                 </span>
                 <button
                   type="submit"
                   disabled={selectedCount === 0}
                   className={cn(
                     'h-[34px] px-[16px] border-0 rounded-[10px] font-sans text-[13px] font-[500]',
-                    selectedCount === 0 ? 'bg-frame text-ink-disabled cursor-not-allowed' : 'bg-accent text-white cursor-pointer hover:bg-accent-hover'
+                    selectedCount === 0
+                      ? 'bg-frame text-ink-disabled cursor-not-allowed'
+                      : 'bg-accent text-white cursor-pointer hover:bg-accent-hover',
                   )}
                 >
                   Submit request

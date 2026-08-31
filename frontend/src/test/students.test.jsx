@@ -16,13 +16,13 @@ function renderApp(route = '/curriculum/students') {
       <MemoryRouter initialEntries={[route]}>
         <Tooltip.Provider>
           <WorkspaceProvider>
-              <ComposerProvider>
-                <App />
-              </ComposerProvider>
+            <ComposerProvider>
+              <App />
+            </ComposerProvider>
           </WorkspaceProvider>
         </Tooltip.Provider>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -33,9 +33,7 @@ describe('Students — staff teaching scope', () => {
     expect(live.when).toBe('live');
     const tab = await screen.findByRole('tab', { name: new RegExp(live.code.replace(/[-—]/g, '.'), 'i') });
     expect(tab).toHaveAttribute('aria-selected', 'true');
-    expect(
-      await screen.findByText(`${live.studentIds.length} students in ${live.code}`)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(`${live.studentIds.length} students in ${live.code}`)).toBeInTheDocument();
   });
 
   it('switches scope in one click and re-counts', async () => {
@@ -43,9 +41,7 @@ describe('Students — staff teaching scope', () => {
     renderApp();
     const other = STAFF_CLASSES.find((c) => c.when === 'next');
     await user.click(await screen.findByRole('tab', { name: new RegExp(other.subject, 'i') }));
-    expect(
-      await screen.findByText(`${other.studentIds.length} students in ${other.code}`)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(`${other.studentIds.length} students in ${other.code}`)).toBeInTheDocument();
   });
 
   it('shows the class column and the full staff scope in All my students', async () => {
@@ -53,7 +49,7 @@ describe('Students — staff teaching scope', () => {
     renderApp();
     await user.click(await screen.findByRole('tab', { name: /all my students/i }));
     expect(
-      await screen.findByText(`${SCOPE_TOTAL} students across ${STAFF_CLASSES.length} assigned classes`)
+      await screen.findByText(`${SCOPE_TOTAL} students across ${STAFF_CLASSES.length} assigned classes`),
     ).toBeInTheDocument();
     expect(screen.getByText('Class & subject')).toBeInTheDocument();
   });

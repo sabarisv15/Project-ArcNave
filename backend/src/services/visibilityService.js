@@ -63,7 +63,10 @@ async function resolveActorContext(client, input, tenantIdOverride) {
   // would re-introduce the leak this architecture removes). Never
   // applied for actorRole 'staff' — that would be exactly the leak.
   if (actorRole === 'class_tutor' && tenantId !== undefined) {
-    const tutorClassId = await identityService.resolveActiveClassTutorPosition(client, { userId: actorUserId, collegeId: tenantId });
+    const tutorClassId = await identityService.resolveActiveClassTutorPosition(client, {
+      userId: actorUserId,
+      collegeId: tenantId,
+    });
     if (tutorClassId !== null && !actorContext.assignedClassIds.includes(tutorClassId)) {
       return { ...actorContext, assignedClassIds: [...actorContext.assignedClassIds, tutorClassId] };
     }
@@ -102,7 +105,9 @@ async function assertIsHodOfDepartment(client, collegeId, departmentId, actorUse
     throw err;
   }
   if (hod.user_id !== actorUserId) {
-    throw new VisibilityForbiddenError(`user ${JSON.stringify(actorUserId)} is not the hod of department ${JSON.stringify(departmentId)}`);
+    throw new VisibilityForbiddenError(
+      `user ${JSON.stringify(actorUserId)} is not the hod of department ${JSON.stringify(departmentId)}`,
+    );
   }
 }
 
@@ -117,7 +122,9 @@ async function assertIsPrincipalOfCollege(client, collegeId, actorUserId) {
     throw err;
   }
   if (principal.user_id !== actorUserId) {
-    throw new VisibilityForbiddenError(`user ${JSON.stringify(actorUserId)} is not the principal of college ${JSON.stringify(collegeId)}`);
+    throw new VisibilityForbiddenError(
+      `user ${JSON.stringify(actorUserId)} is not the principal of college ${JSON.stringify(collegeId)}`,
+    );
   }
 }
 
@@ -208,13 +215,17 @@ async function assertCanViewStudent(client, studentOrId, input) {
         return;
       }
     }
-    throw new VisibilityForbiddenError(`user ${JSON.stringify(actorId)} does not tutor or teach student ${JSON.stringify(student.id)}'s class`);
+    throw new VisibilityForbiddenError(
+      `user ${JSON.stringify(actorId)} does not tutor or teach student ${JSON.stringify(student.id)}'s class`,
+    );
   }
 
   if (actorRole === 'hod') {
     const sourceClass = student.class_id ? await classRepository.findById(client, student.class_id) : null;
     if (sourceClass === null || !sourceClass.department_id) {
-      throw new VisibilityForbiddenError(`student ${JSON.stringify(student.id)} has no department-linked class to authorize against`);
+      throw new VisibilityForbiddenError(
+        `student ${JSON.stringify(student.id)} has no department-linked class to authorize against`,
+      );
     }
     // Kept as a direct call to assertIsHodOfDepartment (forward
     // direction: department -> its one real hod, via

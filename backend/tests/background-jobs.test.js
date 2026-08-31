@@ -51,13 +51,16 @@ async function seedTenant(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const collegeId = `bjob${suffix}`;
   const subdomain = `bjobtenant${suffix}`;
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [collegeId, subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    collegeId,
+    subdomain,
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userIds = {};
-  for (const [username, role] of [['principaluser', 'principal'], ['staffuser', 'staff']]) {
+  for (const [username, role] of [
+    ['principaluser', 'principal'],
+    ['staffuser', 'staff'],
+  ]) {
     // eslint-disable-next-line no-await-in-loop
     const result = await adminPool.query(
       `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
@@ -97,12 +100,10 @@ test('background jobs', async (t) => {
   });
 
   async function login(username) {
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/auth/login',
-      'POST',
-      { headers: { host: `${college.subdomain}.arcnave.test` }, body: { username, password: PASSWORD } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/auth/login', 'POST', {
+      headers: { host: `${college.subdomain}.arcnave.test` },
+      body: { username, password: PASSWORD },
+    });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -115,12 +116,10 @@ test('background jobs', async (t) => {
 
   await t.test('principal starts and checks a background job', async () => {
     const token = await login('principaluser');
-    const created = await requestJson(
-      baseUrl,
-      '/api/v1/background-jobs',
-      'POST',
-      { headers: headersFor(token), body: { name: 'test_job' } },
-    );
+    const created = await requestJson(baseUrl, '/api/v1/background-jobs', 'POST', {
+      headers: headersFor(token),
+      body: { name: 'test_job' },
+    });
     assert.equal(created.status, 202);
     assert.equal(created.body.name, 'test_job');
     assert.ok(['queued', 'running', 'completed'].includes(created.body.status));
@@ -128,14 +127,13 @@ test('background jobs', async (t) => {
     let fetched = null;
     for (let i = 0; i < 10; i += 1) {
       // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => { setTimeout(resolve, 10); });
+      await new Promise((resolve) => {
+        setTimeout(resolve, 10);
+      });
       // eslint-disable-next-line no-await-in-loop
-      fetched = await requestJson(
-        baseUrl,
-        `/api/v1/background-jobs/${created.body.id}`,
-        'GET',
-        { headers: headersFor(token) },
-      );
+      fetched = await requestJson(baseUrl, `/api/v1/background-jobs/${created.body.id}`, 'GET', {
+        headers: headersFor(token),
+      });
       if (fetched.body.status === 'completed') break;
     }
     assert.equal(fetched.status, 200);
@@ -148,12 +146,10 @@ test('background jobs', async (t) => {
 
   await t.test('staff cannot start a background job', async () => {
     const token = await login('staffuser');
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/background-jobs',
-      'POST',
-      { headers: headersFor(token), body: { name: 'blocked' } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/background-jobs', 'POST', {
+      headers: headersFor(token),
+      body: { name: 'blocked' },
+    });
     assert.equal(resp.status, 403);
   });
 });

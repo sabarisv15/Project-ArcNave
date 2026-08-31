@@ -5,9 +5,7 @@
 // action is a permanent fact (see the migration's file-level comment);
 // markRestored() sets restored_at, it never removes the row.
 
-async function create(client, {
-  collegeId, entityType, entityId, reason, archivedByUserId, workflowRequestId,
-}) {
+async function create(client, { collegeId, entityType, entityId, reason, archivedByUserId, workflowRequestId }) {
   const result = await client.query(
     `INSERT INTO archived_records
        (college_id, entity_type, entity_id, reason, archived_by_user_id, workflow_request_id)
@@ -53,10 +51,10 @@ async function listForCollege(client, collegeId, { entityType } = {}) {
 // needs no approval (BusinessRules.md only names restoration), so this
 // column starts NULL at create() and is attached here, not there.
 async function attachWorkflowRequest(client, id, workflowRequestId) {
-  const result = await client.query(
-    'UPDATE archived_records SET workflow_request_id = $2 WHERE id = $1 RETURNING *',
-    [id, workflowRequestId],
-  );
+  const result = await client.query('UPDATE archived_records SET workflow_request_id = $2 WHERE id = $1 RETURNING *', [
+    id,
+    workflowRequestId,
+  ]);
   return result.rows[0] || null;
 }
 
@@ -71,5 +69,10 @@ async function markRestored(client, id, { restoredByUserId, restoreReason }) {
 }
 
 module.exports = {
-  create, findById, findActiveForEntity, listForCollege, attachWorkflowRequest, markRestored,
+  create,
+  findById,
+  findActiveForEntity,
+  listForCollege,
+  attachWorkflowRequest,
+  markRestored,
 };

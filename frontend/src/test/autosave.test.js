@@ -24,7 +24,7 @@ describe('draft store', () => {
     expect(readDraft(KEY)).toBeNull();
   });
 
-  it('lists a user\'s drafts of one kind, newest first', () => {
+  it("lists a user's drafts of one kind, newest first", () => {
     writeDraft(draftKey('staff-me', 'test', 'a'), 1);
     writeDraft(draftKey('staff-me', 'test', 'b'), 2);
     writeDraft(draftKey('staff-other', 'test', 'c'), 3);
@@ -42,17 +42,23 @@ describe('useAutosave', () => {
     const onSave = vi.fn();
     const { result, rerender } = renderHook(
       ({ value }) => useAutosave({ value, onSave, storageKey: KEY, delay: 400 }),
-      { initialProps: { value: 'a' } }
+      { initialProps: { value: 'a' } },
     );
 
     for (const v of ['ab', 'abc', 'abcd']) {
       rerender({ value: v });
-      act(() => { result.current.schedule(); });
-      act(() => { vi.advanceTimersByTime(100); });
+      act(() => {
+        result.current.schedule();
+      });
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
     }
     expect(onSave).not.toHaveBeenCalled();
 
-    await act(async () => { vi.advanceTimersByTime(400); });
+    await act(async () => {
+      vi.advanceTimersByTime(400);
+    });
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(onSave).toHaveBeenCalledWith('abcd');
   });
@@ -61,10 +67,12 @@ describe('useAutosave', () => {
     vi.useFakeTimers();
     const { result, rerender } = renderHook(
       ({ value }) => useAutosave({ value, onSave: () => {}, storageKey: KEY, delay: 600 }),
-      { initialProps: { value: 'draft text' } }
+      { initialProps: { value: 'draft text' } },
     );
     rerender({ value: 'draft text' });
-    act(() => { result.current.schedule(); });
+    act(() => {
+      result.current.schedule();
+    });
     expect(readDraft(KEY).value).toBe('draft text');
   });
 
@@ -72,8 +80,12 @@ describe('useAutosave', () => {
     vi.useFakeTimers();
     const onSave = vi.fn();
     const { result } = renderHook(() => useAutosave({ value: 'x', onSave, storageKey: KEY, delay: 600 }));
-    act(() => { result.current.schedule(); });
-    await act(async () => { await result.current.flush(); });
+    act(() => {
+      result.current.schedule();
+    });
+    await act(async () => {
+      await result.current.flush();
+    });
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(result.current.status).toBe('saved');
   });
@@ -81,18 +93,28 @@ describe('useAutosave', () => {
   it('clears the local draft only once the save succeeds', async () => {
     vi.useFakeTimers();
     const { result } = renderHook(() => useAutosave({ value: 'x', onSave: () => {}, storageKey: KEY, delay: 10 }));
-    act(() => { result.current.schedule(); });
+    act(() => {
+      result.current.schedule();
+    });
     expect(readDraft(KEY)).not.toBeNull();
-    await act(async () => { await result.current.flush(); });
+    await act(async () => {
+      await result.current.flush();
+    });
     expect(readDraft(KEY)).toBeNull();
   });
 
   it('keeps the draft recoverable when the save fails, and reports the error', async () => {
     vi.useFakeTimers();
-    const onSave = vi.fn(() => { throw new Error('offline'); });
+    const onSave = vi.fn(() => {
+      throw new Error('offline');
+    });
     const { result } = renderHook(() => useAutosave({ value: 'unsent', onSave, storageKey: KEY, delay: 10 }));
-    act(() => { result.current.schedule(); });
-    await act(async () => { await result.current.flush(); });
+    act(() => {
+      result.current.schedule();
+    });
+    await act(async () => {
+      await result.current.flush();
+    });
     expect(result.current.status).toBe('error');
     expect(readDraft(KEY).value).toBe('unsent');
   });
@@ -100,14 +122,22 @@ describe('useAutosave', () => {
   it('retry re-sends the same draft and can succeed', async () => {
     vi.useFakeTimers();
     let fail = true;
-    const onSave = vi.fn(() => { if (fail) throw new Error('offline'); });
+    const onSave = vi.fn(() => {
+      if (fail) throw new Error('offline');
+    });
     const { result } = renderHook(() => useAutosave({ value: 'unsent', onSave, storageKey: KEY, delay: 10 }));
-    act(() => { result.current.schedule(); });
-    await act(async () => { await result.current.flush(); });
+    act(() => {
+      result.current.schedule();
+    });
+    await act(async () => {
+      await result.current.flush();
+    });
     expect(result.current.status).toBe('error');
 
     fail = false;
-    await act(async () => { await result.current.retry(); });
+    await act(async () => {
+      await result.current.retry();
+    });
     expect(result.current.status).toBe('saved');
     expect(readDraft(KEY)).toBeNull();
   });
@@ -115,8 +145,12 @@ describe('useAutosave', () => {
   it('markClean drops the draft — used after an explicit submit/publish', async () => {
     vi.useFakeTimers();
     const { result } = renderHook(() => useAutosave({ value: 'x', onSave: () => {}, storageKey: KEY, delay: 600 }));
-    act(() => { result.current.schedule(); });
-    act(() => { result.current.markClean(); });
+    act(() => {
+      result.current.schedule();
+    });
+    act(() => {
+      result.current.markClean();
+    });
     expect(readDraft(KEY)).toBeNull();
     expect(result.current.status).toBe('idle');
   });
@@ -124,9 +158,15 @@ describe('useAutosave', () => {
   it('does nothing at all when disabled (published/locked records)', async () => {
     vi.useFakeTimers();
     const onSave = vi.fn();
-    const { result } = renderHook(() => useAutosave({ value: 'x', onSave, storageKey: KEY, delay: 10, enabled: false }));
-    act(() => { result.current.schedule(); });
-    await act(async () => { vi.advanceTimersByTime(100); });
+    const { result } = renderHook(() =>
+      useAutosave({ value: 'x', onSave, storageKey: KEY, delay: 10, enabled: false }),
+    );
+    act(() => {
+      result.current.schedule();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+    });
     expect(onSave).not.toHaveBeenCalled();
     expect(readDraft(KEY)).toBeNull();
   });

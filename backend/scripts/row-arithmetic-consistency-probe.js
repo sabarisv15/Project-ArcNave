@@ -70,7 +70,7 @@ with pdfplumber.open("attachment.pdf") as pdf:
 print('\\n'.join(lines))
 `.trim();
 
-const DOB_SUBSTRING = /DoB\s*:?\s*[\d/.\-]+/gi;
+const DOB_SUBSTRING = /DoB\s*:?\s*[\d/.-]+/gi;
 const SEMESTER_MARKER = /\b\d{1,2}\s+R\d{4}\b/gi;
 const NUMBER_TOKEN = /-?\d+(?:\.\d+)?/g;
 
@@ -93,7 +93,10 @@ function modalLength(vectors) {
   let best = 0;
   let bestFreq = 0;
   counts.forEach((freq, len) => {
-    if (freq > bestFreq) { bestFreq = freq; best = len; }
+    if (freq > bestFreq) {
+      bestFreq = freq;
+      best = len;
+    }
   });
   return best;
 }
@@ -119,9 +122,13 @@ function discoverRelations(vectors, len) {
       for (let k = 0; k < len; k += 1) {
         if (i === j || j === k || i === k) continue;
         const holds = vectors.every((v) => v[k] === v[i] + v[j]);
-        if (holds) found.push({
-          type: 'additive', i, j, k,
-        });
+        if (holds)
+          found.push({
+            type: 'additive',
+            i,
+            j,
+            k,
+          });
       }
     }
   }
@@ -153,9 +160,7 @@ async function main() {
     process.exit(1);
   }
 
-  const {
-    strategy, records, coverage,
-  } = documentTableExtractionService.extractRecords(reconstructed);
+  const { strategy, records, coverage } = documentTableExtractionService.extractRecords(reconstructed);
   console.log(`strategy: ${strategy}`);
   console.log(`records: ${records.length}`);
   console.log(`coverage: ${JSON.stringify(coverage)}\n`);
@@ -168,7 +173,9 @@ async function main() {
   const len = modalLength(vectors);
   const modalVectors = vectors.filter((v) => v.length === len);
   const offCount = vectors.length - modalVectors.length;
-  console.log(`\nmodal numeric-token count: ${len} (${modalVectors.length}/${vectors.length} records match, ${offCount} off-modal)`);
+  console.log(
+    `\nmodal numeric-token count: ${len} (${modalVectors.length}/${vectors.length} records match, ${offCount} off-modal)`,
+  );
 
   if (modalVectors.length < 2) {
     console.log('\nVERDICT: FAIL — not enough modal-length rows to test a relation against.');
@@ -182,16 +189,25 @@ async function main() {
     else console.log(`  v[${r.k}] = v[${r.i}] + v[${r.j}]`);
   });
 
-  console.log(`\nVERDICT: ${relations.length > 0 ? 'PASS' : 'FAIL'} — ${relations.length > 0
-    ? 'a generic, blind relation-discovery pass recovers real row-level arithmetic consistency on this document.'
-    : 'no relation was found; a generic check of this shape does not validate this document.'}`);
+  console.log(
+    `\nVERDICT: ${relations.length > 0 ? 'PASS' : 'FAIL'} — ${
+      relations.length > 0
+        ? 'a generic, blind relation-discovery pass recovers real row-level arithmetic consistency on this document.'
+        : 'no relation was found; a generic check of this shape does not validate this document.'
+    }`,
+  );
 
   console.log('\n--- documentRowIntegrityService.assessRowIntegrity (the actual production module) ---');
   const integrity = documentRowIntegrityService.assessRowIntegrity(records);
   console.log(JSON.stringify(integrity, null, 2));
-  console.log(`\nPRODUCTION VERDICT: ${integrity.verified ? 'VERIFIED — full trust would be granted' : 'NOT VERIFIED — stays capped at unreliable_extraction'}`);
+  console.log(
+    `\nPRODUCTION VERDICT: ${integrity.verified ? 'VERIFIED — full trust would be granted' : 'NOT VERIFIED — stays capped at unreliable_extraction'}`,
+  );
 
   process.exit(relations.length > 0 ? 0 : 1);
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

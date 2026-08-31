@@ -73,7 +73,9 @@ export function buildSubjectLedger(subjectKey, { now, datePreset, customFrom, cu
   if (!subject) return null;
 
   const inScope = REPORT_SESSIONS.filter(
-    (s) => s.subjectKey === subjectKey && (!datePreset || inDateRange(s.date, now ?? new Date(), datePreset, customFrom, customTo))
+    (s) =>
+      s.subjectKey === subjectKey &&
+      (!datePreset || inDateRange(s.date, now ?? new Date(), datePreset, customFrom, customTo)),
   );
 
   // The one place the completeness rule is applied — everything below derives from `submitted`.

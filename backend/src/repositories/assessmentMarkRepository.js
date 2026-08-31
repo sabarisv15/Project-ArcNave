@@ -32,19 +32,14 @@ async function create(client, fields) {
 }
 
 async function findById(client, id) {
-  const result = await client.query(
-    'SELECT * FROM assessment_marks WHERE id = $1 AND deleted_at IS NULL',
-    [id],
-  );
+  const result = await client.query('SELECT * FROM assessment_marks WHERE id = $1 AND deleted_at IS NULL', [id]);
   return result.rows[0] || null;
 }
 
 // The exact-slot lookup recordMark's own find-then-create/update flow
 // needs — mirrors attendanceRepository.findByClassSessionAndHour's
 // "was this already marked" precedent.
-async function findOne(client, {
-  studentId, assessmentTypeId, classId, subject,
-}) {
+async function findOne(client, { studentId, assessmentTypeId, classId, subject }) {
   const result = await client.query(
     `SELECT * FROM assessment_marks
      WHERE student_id = $1 AND assessment_type_id = $2 AND class_id = $3 AND subject = $4
@@ -87,9 +82,10 @@ async function update(client, id, fields) {
 // row count.
 const DEFAULT_FILTER_LIMIT = 5000;
 
-async function findByFilters(client, {
-  academicYear, classId, classIds, subject, assessmentTypeId, limit = DEFAULT_FILTER_LIMIT,
-} = {}) {
+async function findByFilters(
+  client,
+  { academicYear, classId, classIds, subject, assessmentTypeId, limit = DEFAULT_FILTER_LIMIT } = {},
+) {
   const conditions = ['deleted_at IS NULL'];
   const values = [];
 
@@ -133,5 +129,10 @@ async function softDelete(client, id) {
 }
 
 module.exports = {
-  create, findById, findOne, update, findByFilters, softDelete,
+  create,
+  findById,
+  findOne,
+  update,
+  findByFilters,
+  softDelete,
 };

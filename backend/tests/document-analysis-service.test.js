@@ -77,42 +77,69 @@ test.afterEach(() => {
 test('analyzeAttachment: a non-UUID attachmentId (e.g. the model echoing its own param description) throws a clean validation error, never reaches the DB', async () => {
   const downloadMock = mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
   await assert.rejects(
-    () => analyzeAttachment({}, {
-      attachmentId: 'the chat attachment id of the uploaded file', filter: { pattern: 'RA' }, operation: 'count',
-    }, IDENTITY),
+    () =>
+      analyzeAttachment(
+        {},
+        {
+          attachmentId: 'the chat attachment id of the uploaded file',
+          filter: { pattern: 'RA' },
+          operation: 'count',
+        },
+        IDENTITY,
+      ),
     DocumentAnalysisValidationError,
   );
   assert.equal(downloadMock.mock.callCount(), 0);
 });
 
 test('analyzeAttachment: an attachment not owned by this user throws DocumentAnalysisValidationError, never silently proceeds', async () => {
-  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment({ uploaded_by_user_id: 'someone-else' }));
+  mock.method(documentService, 'downloadDocument', async () =>
+    ownedChatAttachment({ uploaded_by_user_id: 'someone-else' }),
+  );
   await assert.rejects(
-    () => analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY),
+    () =>
+      analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY),
     DocumentAnalysisValidationError,
   );
 });
 
 test('analyzeAttachment: a non-chat-attachment document (wrong doc_type) is rejected the same way', async () => {
-  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment({ doc_type: 'institutional_document' }));
+  mock.method(documentService, 'downloadDocument', async () =>
+    ownedChatAttachment({ doc_type: 'institutional_document' }),
+  );
   await assert.rejects(
-    () => analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY),
+    () =>
+      analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY),
     DocumentAnalysisValidationError,
   );
 });
 
 test('analyzeAttachment: extraction failure (corrupt/password-protected) degrades honestly, never throws', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: null, failureReason: 'corrupt_or_unreadable' }));
-  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: null,
+    failureReason: 'corrupt_or_unreadable',
+  }));
+  const result = await analyzeAttachment(
+    {},
+    { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' },
+    IDENTITY,
+  );
   assert.deepEqual(result, { status: 'extraction_failed', reason: 'corrupt_or_unreadable' });
 });
 
 test('analyzeAttachment: a document with no recognizable tabular layout degrades to unrecognized_layout, not a guessed answer', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: 'Just an ordinary letter, no table.', method: 'text_layer' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: 'Just an ordinary letter, no table.',
+    method: 'text_layer',
+  }));
   mockSandboxUnavailable();
-  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' },
+    IDENTITY,
+  );
   assert.deepEqual(result, { status: 'unrecognized_layout', fallbackUsed: false });
 });
 
@@ -122,16 +149,25 @@ test('analyzeAttachment: happy path — real result-sheet-shaped text is structu
     text: '819 25400122 ANBARASAN V\nDoB: 24.04.2008 2 R2023 Absent\nRA RA\n3 R2023 RA\n4 R2023 RA B A+ A+ A O O',
     method: 'text_layer',
   }));
-  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' },
+    IDENTITY,
+  );
   assert.equal(result.status, 'ok');
   assert.equal(result.strategy, 'sequential_id');
   // The deterministic cross-record answer, computed here and not left for
   // the LLM to obtain by adding up rows it was handed.
   assert.equal(result.total, 4);
   assert.equal(result.matchedCount, 1);
-  assert.deepEqual(result.sample, [{
-    key: '819:25400122', serialNo: '819', regNo: '25400122', count: 4,
-  }]);
+  assert.deepEqual(result.sample, [
+    {
+      key: '819:25400122',
+      serialNo: '819',
+      regNo: '25400122',
+      count: 4,
+    },
+  ]);
   assert.equal(result.sampleShown, 1);
   assert.equal(result.sampleOmitted, 0);
 });
@@ -142,9 +178,16 @@ test('analyzeAttachment: serialRange narrows results to the requested range, mat
     text: '818 25400121 AKASH B\n4 R2023 B\n\n819 25400122 ANBARASAN V\n4 R2023 RA',
     method: 'text_layer',
   }));
-  const result = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count', serialRange: { from: 819, to: 819 },
-  }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: 'RA' },
+      operation: 'count',
+      serialRange: { from: 819, to: 819 },
+    },
+    IDENTITY,
+  );
   assert.equal(result.status, 'ok');
   assert.equal(result.sample.length, 1);
   assert.equal(result.sample[0].serialNo, '819');
@@ -161,9 +204,16 @@ test('analyzeAttachment: a serialRange matching nothing degrades to no_matching_
     text: '818 25400121 AKASH B\n4 R2023 B',
     method: 'text_layer',
   }));
-  const result = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count', serialRange: { from: 9000, to: 9001 },
-  }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: 'RA' },
+      operation: 'count',
+      serialRange: { from: 9000, to: 9001 },
+    },
+    IDENTITY,
+  );
   assert.deepEqual(result, { status: 'no_matching_records', fallbackUsed: false });
 });
 
@@ -183,20 +233,43 @@ const TWO_SECTION_DOC = `818 25400121 AKASH B
 
 test('analyzeAttachment: sectionPattern scopes to a named cohort without the caller knowing its serial range', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: TWO_SECTION_DOC, method: 'text_layer' }));
-  const result = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count', sectionPattern: 'sandwich',
-  }, IDENTITY);
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: TWO_SECTION_DOC,
+    method: 'text_layer',
+  }));
+  const result = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: 'RA' },
+      operation: 'count',
+      sectionPattern: 'sandwich',
+    },
+    IDENTITY,
+  );
   assert.equal(result.status, 'ok');
-  assert.deepEqual(result.sample.map((r) => r.serialNo), ['1133']);
+  assert.deepEqual(
+    result.sample.map((r) => r.serialNo),
+    ['1133'],
+  );
 });
 
 test('analyzeAttachment: a sectionPattern matching no real section degrades to no_matching_records, never a hallucinated cohort', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: TWO_SECTION_DOC, method: 'text_layer' }));
-  const result = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count', sectionPattern: 'no such cohort',
-  }, IDENTITY);
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: TWO_SECTION_DOC,
+    method: 'text_layer',
+  }));
+  const result = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: 'RA' },
+      operation: 'count',
+      sectionPattern: 'no such cohort',
+    },
+    IDENTITY,
+  );
   assert.deepEqual(result, { status: 'no_matching_records', fallbackUsed: false });
 });
 
@@ -208,10 +281,20 @@ test('analyzeAttachment: a sectionPattern matching no real section degrades to n
 // says which of the two regex parameters was rejected.
 test('analyzeAttachment: an uncompilable sectionPattern returns invalid_pattern instead of throwing out of the turn', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: TWO_SECTION_DOC, method: 'text_layer' }));
-  const result = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count', sectionPattern: '(?i)SANDWICH',
-  }, IDENTITY);
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: TWO_SECTION_DOC,
+    method: 'text_layer',
+  }));
+  const result = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: 'RA' },
+      operation: 'count',
+      sectionPattern: '(?i)SANDWICH',
+    },
+    IDENTITY,
+  );
   assert.equal(result.status, 'invalid_pattern');
   assert.equal(result.parameter, 'sectionPattern');
 });
@@ -219,13 +302,20 @@ test('analyzeAttachment: an uncompilable sectionPattern returns invalid_pattern 
 // The exact pattern from the live run recorded in ADL-056.
 test('analyzeAttachment: the measured live (?i) sectionPattern is explained as a JS-syntax fault, and the redundant flag is called out', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: TWO_SECTION_DOC, method: 'text_layer' }));
-  const result = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID,
-    filter: { pattern: 'RA' },
-    operation: 'count',
-    sectionPattern: '(?i)ELECTRONICS AND COMMUNICATION ENGINEERING \\(SANDWICH\\)|2040',
-  }, IDENTITY);
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: TWO_SECTION_DOC,
+    method: 'text_layer',
+  }));
+  const result = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: 'RA' },
+      operation: 'count',
+      sectionPattern: '(?i)ELECTRONICS AND COMMUNICATION ENGINEERING \\(SANDWICH\\)|2040',
+    },
+    IDENTITY,
+  );
   assert.equal(result.status, 'invalid_pattern');
   assert.match(result.reason, /JavaScript/);
   assert.match(result.reason, /already matched\s+case-insensitively/);
@@ -233,10 +323,19 @@ test('analyzeAttachment: the measured live (?i) sectionPattern is explained as a
 
 test('analyzeAttachment: an uncompilable filter.pattern returns invalid_pattern naming filter.pattern, a DIFFERENT parameter from sectionPattern', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: TWO_SECTION_DOC, method: 'text_layer' }));
-  const result = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID, filter: { pattern: '(?i)RA' }, operation: 'count',
-  }, IDENTITY);
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: TWO_SECTION_DOC,
+    method: 'text_layer',
+  }));
+  const result = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: '(?i)RA' },
+      operation: 'count',
+    },
+    IDENTITY,
+  );
   assert.equal(result.status, 'invalid_pattern');
   assert.equal(result.parameter, 'filter.pattern');
   // filter.pattern's remedy is the OPPOSITE of sectionPattern's — it is
@@ -250,13 +349,30 @@ test('analyzeAttachment: an uncompilable filter.pattern returns invalid_pattern 
 // looking for data when the real fix is its own argument.
 test('analyzeAttachment: invalid_pattern is distinct from no_matching_records', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: TWO_SECTION_DOC, method: 'text_layer' }));
-  const invalid = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count', sectionPattern: '(?i)SANDWICH',
-  }, IDENTITY);
-  const empty = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count', sectionPattern: 'no such cohort',
-  }, IDENTITY);
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: TWO_SECTION_DOC,
+    method: 'text_layer',
+  }));
+  const invalid = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: 'RA' },
+      operation: 'count',
+      sectionPattern: '(?i)SANDWICH',
+    },
+    IDENTITY,
+  );
+  const empty = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: 'RA' },
+      operation: 'count',
+      sectionPattern: 'no such cohort',
+    },
+    IDENTITY,
+  );
   assert.equal(invalid.status, 'invalid_pattern');
   assert.equal(empty.status, 'no_matching_records');
   assert.notEqual(invalid.status, empty.status);
@@ -265,25 +381,41 @@ test('analyzeAttachment: invalid_pattern is distinct from no_matching_records', 
 // The pattern check must not run before the ownership check — an unowned
 // attachment fails on authorization, never on the shape of its arguments.
 test('analyzeAttachment: an unowned attachment with a bad pattern still fails on ownership, not invalid_pattern', async () => {
-  mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment({ uploaded_by_user_id: 'someone-else' }));
+  mock.method(documentService, 'downloadDocument', async () =>
+    ownedChatAttachment({ uploaded_by_user_id: 'someone-else' }),
+  );
   await assert.rejects(
-    () => analyzeAttachment({}, {
-      attachmentId: ATTACHMENT_ID, filter: { pattern: '(?i)RA' }, operation: 'count',
-    }, IDENTITY),
+    () =>
+      analyzeAttachment(
+        {},
+        {
+          attachmentId: ATTACHMENT_ID,
+          filter: { pattern: '(?i)RA' },
+          operation: 'count',
+        },
+        IDENTITY,
+      ),
     DocumentAnalysisValidationError,
   );
 });
 
 test('analyzeAttachment: sectionPattern combines with serialRange as an AND, not an OR', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: TWO_SECTION_DOC, method: 'text_layer' }));
-  const result = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID,
-    filter: { pattern: 'RA' },
-    operation: 'count',
-    sectionPattern: 'sandwich',
-    serialRange: { from: 1, to: 900 },
-  }, IDENTITY);
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: TWO_SECTION_DOC,
+    method: 'text_layer',
+  }));
+  const result = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: 'RA' },
+      operation: 'count',
+      sectionPattern: 'sandwich',
+      serialRange: { from: 1, to: 900 },
+    },
+    IDENTITY,
+  );
   assert.deepEqual(result, { status: 'no_matching_records', fallbackUsed: false });
 });
 
@@ -293,19 +425,31 @@ test('analyzeAttachment: operation "breakdown" returns per-semester counts, not 
     text: '819 25400122 ANBARASAN V\nDoB: 24.04.2008 2 R2023 Absent\nRA RA\n3 R2023 RA\n4 R2023 RA B A+ A+ A O O',
     method: 'text_layer',
   }));
-  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'breakdown' }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'breakdown' },
+    IDENTITY,
+  );
   assert.equal(result.status, 'ok');
-  assert.deepEqual(result.sample, [{
-    key: '819:25400122',
-    serialNo: '819',
-    regNo: '25400122',
-    breakdown: [{ semester: 2, count: 2 }, { semester: 3, count: 1 }, { semester: 4, count: 1 }],
-    total: 4,
-  }]);
+  assert.deepEqual(result.sample, [
+    {
+      key: '819:25400122',
+      serialNo: '819',
+      regNo: '25400122',
+      breakdown: [
+        { semester: 2, count: 2 },
+        { semester: 3, count: 1 },
+        { semester: 4, count: 1 },
+      ],
+      total: 4,
+    },
+  ]);
   // The cross-record per-semester rollup — present only for 'breakdown',
   // never an empty array for count/sum (see rollupBySemester's comment).
   assert.deepEqual(result.bySemester, [
-    { semester: 2, count: 2 }, { semester: 3, count: 1 }, { semester: 4, count: 1 },
+    { semester: 2, count: 2 },
+    { semester: 3, count: 1 },
+    { semester: 4, count: 1 },
   ]);
   assert.equal(result.total, 4);
 });
@@ -335,7 +479,9 @@ test('analyzeAttachment: a recognized-but-misread layout refuses instead of retu
   }));
   mockSandboxUnavailable();
   const result = await analyzeAttachment(
-    {}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY,
+    {},
+    { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' },
+    IDENTITY,
   );
   assert.equal(result.status, 'unreliable_extraction');
   // The shortfall is reported, not just the refusal — a caller (and the
@@ -347,10 +493,15 @@ test('analyzeAttachment: a recognized-but-misread layout refuses instead of retu
 
 test('analyzeAttachment: unreliable_extraction is distinct from unrecognized_layout', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: 'An ordinary letter.', method: 'text_layer' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: 'An ordinary letter.',
+    method: 'text_layer',
+  }));
   mockSandboxUnavailable();
   const result = await analyzeAttachment(
-    {}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY,
+    {},
+    { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' },
+    IDENTITY,
   );
   assert.equal(result.status, 'unrecognized_layout');
 });
@@ -369,7 +520,9 @@ test('analyzeAttachment: a correctly-read roster still returns ok, page-break me
     method: 'text_layer',
   }));
   const result = await analyzeAttachment(
-    {}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY,
+    {},
+    { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' },
+    IDENTITY,
   );
   assert.equal(result.status, 'ok');
   assert.equal(result.scopedCount, 2);
@@ -385,7 +538,9 @@ test('analyzeAttachment: a roster with no identity marker is not refused', async
     method: 'text_layer',
   }));
   const result = await analyzeAttachment(
-    {}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY,
+    {},
+    { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' },
+    IDENTITY,
   );
   assert.equal(result.status, 'ok');
 });
@@ -409,23 +564,36 @@ const PARTY = '([A-Z]{2,}(?: [A-Z]{2,})*)';
 
 function daybookAttachment() {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: DAYBOOK_TEXT, method: 'text_layer' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: DAYBOOK_TEXT,
+    method: 'text_layer',
+  }));
 }
 
 test('analyzeAttachment: compare over a delimited source returns only the rows under the threshold, each identified', async () => {
   daybookAttachment();
-  const result = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID,
-    filter: { pattern: AMOUNT },
-    operation: 'compare',
-    comparison: { operator: 'lt', value: 5000 },
-    identityPattern: PARTY,
-  }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: AMOUNT },
+      operation: 'compare',
+      comparison: { operator: 'lt', value: 5000 },
+      identityPattern: PARTY,
+    },
+    IDENTITY,
+  );
   assert.equal(result.status, 'ok');
   assert.equal(result.strategy, 'delimited');
   assert.equal(result.matchedCount, 2);
-  assert.deepEqual(result.sample.map((r) => r.identity), ['ANBU TRADERS', 'DEEPA SUPPLIES']);
-  assert.deepEqual(result.sample.map((r) => r.value), [4500, 1250]);
+  assert.deepEqual(
+    result.sample.map((r) => r.identity),
+    ['ANBU TRADERS', 'DEEPA SUPPLIES'],
+  );
+  assert.deepEqual(
+    result.sample.map((r) => r.value),
+    [4500, 1250],
+  );
   assert.equal(result.total, 5750);
 });
 
@@ -434,12 +602,16 @@ test('analyzeAttachment: compare over a delimited source returns only the rows u
 // filtered list came back as rows of nulls. Refusing is the honest form.
 test('analyzeAttachment: compare on a delimited source with no identityPattern returns identity_required, never a list of anonymous rows', async () => {
   daybookAttachment();
-  const result = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID,
-    filter: { pattern: AMOUNT },
-    operation: 'compare',
-    comparison: { operator: 'lt', value: 5000 },
-  }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: AMOUNT },
+      operation: 'compare',
+      comparison: { operator: 'lt', value: 5000 },
+    },
+    IDENTITY,
+  );
   assert.deepEqual(result, { status: 'identity_required', fallbackUsed: false });
 });
 
@@ -452,25 +624,36 @@ test('analyzeAttachment: compare on a sequential_id source needs no identityPatt
     text: '819 25400122 ANBARASAN V\nDoB: 24.04.2008 Fee 4500\n820 25400123 BHARATH K\nDoB: 11.02.2008 Fee 9000',
     method: 'text_layer',
   }));
-  const result = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID,
-    filter: { pattern: 'Fee\\s+(\\d+)' },
-    operation: 'compare',
-    comparison: { operator: 'lt', value: 5000 },
-  }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: 'Fee\\s+(\\d+)' },
+      operation: 'compare',
+      comparison: { operator: 'lt', value: 5000 },
+    },
+    IDENTITY,
+  );
   assert.equal(result.status, 'ok');
-  assert.deepEqual(result.sample.map((r) => r.serialNo), ['819']);
+  assert.deepEqual(
+    result.sample.map((r) => r.serialNo),
+    ['819'],
+  );
 });
 
 test('analyzeAttachment: compare where no row clears the threshold degrades to no_matching_records', async () => {
   daybookAttachment();
-  const result = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID,
-    filter: { pattern: AMOUNT },
-    operation: 'compare',
-    comparison: { operator: 'lt', value: 10 },
-    identityPattern: PARTY,
-  }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: AMOUNT },
+      operation: 'compare',
+      comparison: { operator: 'lt', value: 10 },
+      identityPattern: PARTY,
+    },
+    IDENTITY,
+  );
   assert.deepEqual(result, { status: 'no_matching_records', fallbackUsed: false });
 });
 
@@ -478,13 +661,17 @@ test('analyzeAttachment: compare where no row clears the threshold degrades to n
 // tool-level status naming the parameter, never a throw out of the turn.
 test('analyzeAttachment: an uncompilable identityPattern returns invalid_pattern naming identityPattern', async () => {
   daybookAttachment();
-  const result = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID,
-    filter: { pattern: AMOUNT },
-    operation: 'compare',
-    comparison: { operator: 'lt', value: 5000 },
-    identityPattern: '(?i)ANBU',
-  }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: AMOUNT },
+      operation: 'compare',
+      comparison: { operator: 'lt', value: 5000 },
+      identityPattern: '(?i)ANBU',
+    },
+    IDENTITY,
+  );
   assert.equal(result.status, 'invalid_pattern');
   assert.equal(result.parameter, 'identityPattern');
 });
@@ -493,17 +680,28 @@ test('analyzeAttachment: an uncompilable identityPattern returns invalid_pattern
 // out of the turn either — the ADL-056 rule applied to the new param.
 test('analyzeAttachment: a malformed comparison returns invalid_comparison instead of throwing out of the turn', async () => {
   daybookAttachment();
-  const missing = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID, filter: { pattern: AMOUNT }, operation: 'compare', identityPattern: PARTY,
-  }, IDENTITY);
+  const missing = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: AMOUNT },
+      operation: 'compare',
+      identityPattern: PARTY,
+    },
+    IDENTITY,
+  );
   assert.equal(missing.status, 'invalid_comparison');
-  const badOperator = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID,
-    filter: { pattern: AMOUNT },
-    operation: 'compare',
-    comparison: { operator: 'roughly', value: 5000 },
-    identityPattern: PARTY,
-  }, IDENTITY);
+  const badOperator = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: AMOUNT },
+      operation: 'compare',
+      comparison: { operator: 'roughly', value: 5000 },
+      identityPattern: PARTY,
+    },
+    IDENTITY,
+  );
   assert.equal(badOperator.status, 'invalid_comparison');
   assert.match(badOperator.reason, /comparison\.operator/);
 });
@@ -512,22 +710,35 @@ test('analyzeAttachment: a malformed comparison returns invalid_comparison inste
 // and, as with the pattern checks, after the ownership check.
 test('analyzeAttachment: comparison is validated before the document is extracted', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  const extractMock = mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: DAYBOOK_TEXT, method: 'text_layer' }));
-  await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID, filter: { pattern: AMOUNT }, operation: 'compare',
-  }, IDENTITY);
+  const extractMock = mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: DAYBOOK_TEXT,
+    method: 'text_layer',
+  }));
+  await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: AMOUNT },
+      operation: 'compare',
+    },
+    IDENTITY,
+  );
   assert.equal(extractMock.mock.callCount(), 0);
 });
 
 test('analyzeAttachment: compare reports what it could not read, so a partial total is never presented as complete', async () => {
   daybookAttachment();
-  const result = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID,
-    filter: { pattern: '(\\S+)$' },
-    operation: 'compare',
-    comparison: { operator: 'lt', value: 5000 },
-    identityPattern: PARTY,
-  }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: '(\\S+)$' },
+      operation: 'compare',
+      comparison: { operator: 'lt', value: 5000 },
+      identityPattern: PARTY,
+    },
+    IDENTITY,
+  );
   assert.equal(result.status, 'ok');
   assert.ok(result.nonNumericRows > 0);
   assert.equal(typeof result.unmatchedRows, 'number');
@@ -542,9 +753,15 @@ test('analyzeAttachment: count/sum/breakdown are unaffected by the compare addit
     text: '819 25400122 ANBARASAN V\nDoB: 24.04.2008 2 R2023 RA\n3 R2023 RA',
     method: 'text_layer',
   }));
-  const counted = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count',
-  }, IDENTITY);
+  const counted = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: 'RA' },
+      operation: 'count',
+    },
+    IDENTITY,
+  );
   assert.equal(counted.status, 'ok');
   assert.equal(counted.total, 2);
   assert.equal(counted.sample[0].identity, undefined);
@@ -580,7 +797,11 @@ const PDFPLUMBER_RECONSTRUCTED_TEXT = [
 
 function mockSandboxReturning(stdout) {
   return mock.method(sandboxExecutionService, 'executeCode', async () => ({
-    stdout, stderr: '', exitCode: 0, files: [], verification: null,
+    stdout,
+    stderr: '',
+    exitCode: 0,
+    files: [],
+    verification: null,
   }));
 }
 
@@ -591,16 +812,27 @@ test('ADL-063: a reliable flat-text extraction never invokes the sandbox', async
     method: 'text_layer',
   }));
   const executeCodeMock = mockSandboxReturning('irrelevant');
-  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' },
+    IDENTITY,
+  );
   assert.equal(result.status, 'ok');
   assert.equal(executeCodeMock.mock.callCount(), 0);
 });
 
 test('ADL-063: a non-PDF attachment never invokes the sandbox, even with an unrecognized layout', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment({ mime_type: 'text/csv' }));
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: 'Just an ordinary letter, no table.', method: 'text_layer' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: 'Just an ordinary letter, no table.',
+    method: 'text_layer',
+  }));
   const executeCodeMock = mockSandboxReturning('irrelevant');
-  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' },
+    IDENTITY,
+  );
   assert.deepEqual(result, { status: 'unrecognized_layout', fallbackUsed: false });
   assert.equal(executeCodeMock.mock.callCount(), 0);
 });
@@ -611,9 +843,16 @@ test('ADL-063: a non-PDF attachment never invokes the sandbox, even with an unre
 // check. Identity coverage alone must not upgrade this to full trust.
 test('ADL-063 / Finding #3: a verified-by-coverage pdfplumber reconstruction is still capped at unreliable_extraction, never full trust', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: MISREAD_FLAT_TEXT,
+    method: 'text_layer',
+  }));
   mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
-  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' },
+    IDENTITY,
+  );
   assert.equal(result.status, 'unreliable_extraction');
   assert.equal(result.reason, 'row_integrity_unverified');
   // The reconstruction strategy is still surfaced (metadata/audit), and
@@ -627,14 +866,21 @@ test('ADL-063 / Finding #3: a verified-by-coverage pdfplumber reconstruction is 
 
 test('ADL-063 / Finding #3: compare on a verified-by-coverage pdfplumber reconstruction is also capped, never reaches the aggregate service', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: MISREAD_FLAT_TEXT,
+    method: 'text_layer',
+  }));
   mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
-  const compared = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID,
-    filter: { pattern: 'DoB: \\d{2}\\.(\\d{2})' },
-    operation: 'compare',
-    comparison: { operator: 'gte', value: 1 },
-  }, IDENTITY);
+  const compared = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: 'DoB: \\d{2}\\.(\\d{2})' },
+      operation: 'compare',
+      comparison: { operator: 'gte', value: 1 },
+    },
+    IDENTITY,
+  );
   assert.equal(compared.status, 'unreliable_extraction');
   assert.equal(compared.reason, 'row_integrity_unverified');
   assert.ok(compared.matchedCount === undefined, 'must not return a compare result it cannot stand behind');
@@ -667,9 +913,16 @@ const PDFPLUMBER_RECONSTRUCTED_FEES_TEXT = [
 
 test('ADL-063 / Finding #3 (row integrity extension): a pdfplumber reconstruction whose numbers verify earns full trust, count runs', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FEES_FLAT_TEXT, method: 'text_layer' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: MISREAD_FEES_FLAT_TEXT,
+    method: 'text_layer',
+  }));
   mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_FEES_TEXT);
-  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'DoB' }, operation: 'count' }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    { attachmentId: ATTACHMENT_ID, filter: { pattern: 'DoB' }, operation: 'count' },
+    IDENTITY,
+  );
   assert.equal(result.status, 'ok');
   assert.equal(result.strategy, 'sequential_id_pdfplumber');
   assert.equal(result.scopedCount, 5);
@@ -678,21 +931,35 @@ test('ADL-063 / Finding #3 (row integrity extension): a pdfplumber reconstructio
 
 test('ADL-063 / Finding #3 (row integrity extension): sum also runs on a row-integrity-verified reconstruction, not just count', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FEES_FLAT_TEXT, method: 'text_layer' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: MISREAD_FEES_FLAT_TEXT,
+    method: 'text_layer',
+  }));
   mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_FEES_TEXT);
-  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'Total:\\s*(\\d+)' }, operation: 'sum' }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    { attachmentId: ATTACHMENT_ID, filter: { pattern: 'Total:\\s*(\\d+)' }, operation: 'sum' },
+    IDENTITY,
+  );
   assert.equal(result.status, 'ok');
   assert.equal(result.total, 690 + 625 + 755 + 625 + 820);
 });
 
 test('ADL-063: a pdfplumber reconstruction that is STILL not reliable leaves unreliable_extraction unchanged', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: MISREAD_FLAT_TEXT,
+    method: 'text_layer',
+  }));
   // The sandbox ran, but its own reconstruction is just as misattributed
   // as the original — e.g. a scanned/garbled page pdfplumber cannot help
   // with either.
   mockSandboxReturning(MISREAD_FLAT_TEXT);
-  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' },
+    IDENTITY,
+  );
   assert.equal(result.status, 'unreliable_extraction');
   assert.equal(result.strategy, 'sequential_id');
   assert.ok(result.total === undefined);
@@ -703,23 +970,37 @@ test('ADL-063: a pdfplumber reconstruction that is STILL not reliable leaves unr
   assert.equal(result.reason, undefined);
 });
 
-test('ADL-063: the sandbox being unreachable (SandboxExecutionError) degrades to today\'s status, never a thrown error out of the turn', async () => {
+test("ADL-063: the sandbox being unreachable (SandboxExecutionError) degrades to today's status, never a thrown error out of the turn", async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: MISREAD_FLAT_TEXT,
+    method: 'text_layer',
+  }));
   mock.method(sandboxExecutionService, 'executeCode', async () => {
     throw new sandboxExecutionService.SandboxExecutionError('sandbox returned 503');
   });
-  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' },
+    IDENTITY,
+  );
   assert.equal(result.status, 'unreliable_extraction');
 });
 
-test('ADL-063: a PDF exceeding the sandbox size limit (SandboxValidationError) degrades to today\'s status, not a thrown error', async () => {
+test("ADL-063: a PDF exceeding the sandbox size limit (SandboxValidationError) degrades to today's status, not a thrown error", async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: MISREAD_FLAT_TEXT,
+    method: 'text_layer',
+  }));
   mock.method(sandboxExecutionService, 'executeCode', async () => {
     throw new sandboxExecutionService.SandboxValidationError('file exceeds the 5MB limit');
   });
-  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' },
+    IDENTITY,
+  );
   assert.equal(result.status, 'unreliable_extraction');
 });
 
@@ -731,7 +1012,10 @@ test('ADL-063: a PDF exceeding the sandbox size limit (SandboxValidationError) d
 // otherwise pass every other test here undetected.
 test('ADL-063: the sandbox script joins row cells with a single space, never a pipe or tab', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: MISREAD_FLAT_TEXT,
+    method: 'text_layer',
+  }));
   const executeCodeMock = mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
   await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
   const sentCode = executeCodeMock.mock.calls[0].arguments[0].code;
@@ -743,9 +1027,12 @@ test('ADL-063: the sandbox script joins row cells with a single space, never a p
 // ADL-058 addendum 2's own explicit warning: the 'text'/'text' strategy
 // reproduces the exact original defect. Pinned so it can never be
 // reintroduced as a "tuning" change.
-test('ADL-063: the sandbox script never overrides pdfplumber\'s default table_settings', async () => {
+test("ADL-063: the sandbox script never overrides pdfplumber's default table_settings", async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: MISREAD_FLAT_TEXT,
+    method: 'text_layer',
+  }));
   const executeCodeMock = mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
   await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
   const sentCode = executeCodeMock.mock.calls[0].arguments[0].code;
@@ -758,9 +1045,15 @@ test('ADL-063: the sandbox script never overrides pdfplumber\'s default table_se
 test('ADL-063: a delimited (day-book-shaped) source never invokes the sandbox', async () => {
   daybookAttachment();
   const executeCodeMock = mockSandboxReturning('irrelevant');
-  const result = await analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID, filter: { pattern: AMOUNT }, operation: 'count',
-  }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      filter: { pattern: AMOUNT },
+      operation: 'count',
+    },
+    IDENTITY,
+  );
   assert.equal(result.status, 'ok');
   assert.equal(result.strategy, 'delimited');
   assert.equal(executeCodeMock.mock.callCount(), 0);
@@ -780,9 +1073,16 @@ function auditLogMock() {
 test('Finding #6: disabled flag never invokes the sandbox — the primary unreliable result is returned unchanged', async () => {
   config.pdfPlumberFallbackEnabled = false;
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: MISREAD_FLAT_TEXT,
+    method: 'text_layer',
+  }));
   const executeCodeMock = mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
-  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' },
+    IDENTITY,
+  );
   assert.equal(executeCodeMock.mock.callCount(), 0, 'reconstructViaPdfplumber must never run when the flag is off');
   // Same status/strategy/reason a flat-text-only extraction has always
   // returned for this exact defect (see "a recognized-but-misread layout
@@ -792,13 +1092,20 @@ test('Finding #6: disabled flag never invokes the sandbox — the primary unreli
   assert.equal(result.status, 'unreliable_extraction');
   assert.equal(result.strategy, 'sequential_id');
   assert.equal(result.fallbackUsed, false);
-  assert.equal(result.reason, undefined, 'this is the coverage-shortfall reason, never row_integrity_unverified — that reason only exists once a fallback actually ran');
+  assert.equal(
+    result.reason,
+    undefined,
+    'this is the coverage-shortfall reason, never row_integrity_unverified — that reason only exists once a fallback actually ran',
+  );
 });
 
 test('Finding #6: disabled flag still logs the event, as "skipped" — never silently invisible', async () => {
   config.pdfPlumberFallbackEnabled = false;
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: MISREAD_FLAT_TEXT,
+    method: 'text_layer',
+  }));
   mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
   const auditMock = auditLogMock();
   await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
@@ -815,11 +1122,22 @@ test('Finding #6: disabled flag still logs the event, as "skipped" — never sil
 
 test('Finding #6: enabled flag invokes the sandbox and the result carries structured fallback provenance, not just the _pdfplumber suffix', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: MISREAD_FLAT_TEXT,
+    method: 'text_layer',
+  }));
   const executeCodeMock = mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
-  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' },
+    IDENTITY,
+  );
   assert.equal(executeCodeMock.mock.callCount(), 1);
-  assert.equal(result.strategy, 'sequential_id_pdfplumber', 'the existing suffix is preserved for backward compatibility');
+  assert.equal(
+    result.strategy,
+    'sequential_id_pdfplumber',
+    'the existing suffix is preserved for backward compatibility',
+  );
   assert.equal(result.fallbackUsed, true);
   assert.equal(result.fallbackProvider, 'pdfplumber');
   assert.equal(result.reconstructionType, 'layout_based');
@@ -834,7 +1152,10 @@ test('Finding #6: enabled flag invokes the sandbox and the result carries struct
 
 test('Finding #6: enabled flag logs "completed" with the fallback\'s own resultStatus/reason, no document content', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: MISREAD_FLAT_TEXT,
+    method: 'text_layer',
+  }));
   mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
   const auditMock = auditLogMock();
   await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
@@ -850,12 +1171,19 @@ test('Finding #6: enabled flag logs "completed" with the fallback\'s own resultS
 
 test('Finding #6: a sandbox failure while enabled logs "failed" and degrades exactly as before, no fallbackUsed', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: MISREAD_FLAT_TEXT,
+    method: 'text_layer',
+  }));
   mock.method(sandboxExecutionService, 'executeCode', async () => {
     throw new sandboxExecutionService.SandboxNotConfiguredError('not configured in tests');
   });
   const auditMock = auditLogMock();
-  const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
+  const result = await analyzeAttachment(
+    {},
+    { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' },
+    IDENTITY,
+  );
   assert.equal(result.status, 'unreliable_extraction');
   assert.equal(result.fallbackUsed, false);
   const [, fields] = auditMock.mock.calls[0].arguments;
@@ -864,14 +1192,24 @@ test('Finding #6: a sandbox failure while enabled logs "failed" and degrades exa
 
 test('Finding #6 (Test 3 — Finding #3 remains enforced): even with the flag enabled, a verified-by-coverage-only reconstruction never reaches "ok", and aggregate/compare never run over it', async () => {
   mock.method(documentService, 'downloadDocument', async () => ownedChatAttachment());
-  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({ text: MISREAD_FLAT_TEXT, method: 'text_layer' }));
+  mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: MISREAD_FLAT_TEXT,
+    method: 'text_layer',
+  }));
   mockSandboxReturning(PDFPLUMBER_RECONSTRUCTED_TEXT);
   const [countResult, sumResult, compareResult] = await Promise.all([
     analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY),
     analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: '(\\d+)' }, operation: 'sum' }, IDENTITY),
-    analyzeAttachment({}, {
-      attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'compare', comparison: { operator: 'gte', value: 0 },
-    }, IDENTITY),
+    analyzeAttachment(
+      {},
+      {
+        attachmentId: ATTACHMENT_ID,
+        filter: { pattern: 'RA' },
+        operation: 'compare',
+        comparison: { operator: 'gte', value: 0 },
+      },
+      IDENTITY,
+    ),
   ]);
   for (const result of [countResult, sumResult, compareResult]) {
     assert.equal(result.status, 'unreliable_extraction');
@@ -891,8 +1229,16 @@ test('Finding #6 (Test 4 — native extraction unaffected): a reliable flat-text
     }));
     const executeCodeMock = mockSandboxReturning('irrelevant');
     // eslint-disable-next-line no-await-in-loop
-    const result = await analyzeAttachment({}, { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' }, IDENTITY);
-    assert.equal(executeCodeMock.mock.callCount(), 0, `flag=${flagValue}: native extraction must never reach for the sandbox`);
+    const result = await analyzeAttachment(
+      {},
+      { attachmentId: ATTACHMENT_ID, filter: { pattern: 'RA' }, operation: 'count' },
+      IDENTITY,
+    );
+    assert.equal(
+      executeCodeMock.mock.callCount(),
+      0,
+      `flag=${flagValue}: native extraction must never reach for the sandbox`,
+    );
     assert.equal(result.status, 'ok');
     assert.equal(result.fallbackUsed, false);
     mock.restoreAll();

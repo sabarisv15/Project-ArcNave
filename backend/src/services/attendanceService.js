@@ -259,13 +259,21 @@ async function assertCanMark(client, cls, sessionDate, hourIndex, actorUserId, a
   // this on a personal Staff login. That login still reaches the
   // scheduled-faculty/substitute legs below, unconditionally, exactly
   // as before.
-  const tutorUserId = await identityService.resolvePositionOccupant(client, { collegeId: cls.college_id, classId: cls.id });
+  const tutorUserId = await identityService.resolvePositionOccupant(client, {
+    collegeId: cls.college_id,
+    classId: cls.id,
+  });
   const isTutor = tutorUserId !== null && tutorUserId === actorUserId && actorRole === 'class_tutor';
   if (isTutor) {
     return;
   }
 
-  const period = await academicService.getTimetablePeriodByDayAndHour(client, cls.college_id, dayOfWeekName(sessionDate), hourIndex);
+  const period = await academicService.getTimetablePeriodByDayAndHour(
+    client,
+    cls.college_id,
+    dayOfWeekName(sessionDate),
+    hourIndex,
+  );
   if (period !== null) {
     const allocation = await academicService.getFacultyAllocationForClassAndPeriod(client, cls.id, period.id);
     if (allocation !== null && allocation.staff_user_id === actorUserId) {
@@ -315,8 +323,14 @@ async function markAttendance(
   { classId, sessionDate, hourIndex, absentStudentIds, totalStudents },
   { actorUserId, actorRole } = {},
 ) {
-  if (!classId || !sessionDate || hourIndex === undefined || hourIndex === null
-    || totalStudents === undefined || totalStudents === null) {
+  if (
+    !classId ||
+    !sessionDate ||
+    hourIndex === undefined ||
+    hourIndex === null ||
+    totalStudents === undefined ||
+    totalStudents === null
+  ) {
     throw new AttendanceValidationError('classId, sessionDate, hourIndex, and totalStudents are required');
   }
   if (!actorUserId || !actorRole) {
@@ -496,7 +510,10 @@ async function raiseAbsenceFlag(client, cls, studentId, consecutiveAbsentDays) {
   let flag;
   try {
     flag = await attendanceAbsenceFlagRepository.create(client, {
-      collegeId: cls.college_id, studentId, classId: cls.id, consecutiveAbsentDays,
+      collegeId: cls.college_id,
+      studentId,
+      classId: cls.id,
+      consecutiveAbsentDays,
     });
   } catch (err) {
     if (err.code === '23505' && err.constraint === 'attendance_absence_flags_student_outstanding_key') {
@@ -519,7 +536,10 @@ async function raiseAbsenceFlag(client, cls, studentId, consecutiveAbsentDays) {
   // action (review and close), same no-draft-no-approve exception
   // sendClassAlert already uses via sendViaChannel. Best-effort: a HOD
   // not yet resolvable (department vacancy) never blocks the flag itself.
-  const hodUserId = await identityService.resolvePositionOccupant(client, { collegeId: cls.college_id, departmentId: cls.department_id });
+  const hodUserId = await identityService.resolvePositionOccupant(client, {
+    collegeId: cls.college_id,
+    departmentId: cls.department_id,
+  });
   if (hodUserId) {
     const hod = await authRepository.getUserById(client, hodUserId);
     if (hod && hod.email) {
@@ -547,12 +567,17 @@ async function closeAbsenceFlag(client, flagId, { actorUserId, actorRole, remark
     throw new AttendanceAbsenceFlagNotFoundError(`attendance absence flag ${JSON.stringify(flagId)} does not exist`);
   }
   if (flag.closed_at !== null) {
-    throw new AttendanceAbsenceFlagAlreadyClosedError(`attendance absence flag ${JSON.stringify(flagId)} is already closed`);
+    throw new AttendanceAbsenceFlagAlreadyClosedError(
+      `attendance absence flag ${JSON.stringify(flagId)} is already closed`,
+    );
   }
 
   if (actorRole !== 'principal') {
     const cls = await academicService.getClass(client, flag.class_id);
-    const hodUserId = await identityService.resolvePositionOccupant(client, { collegeId: flag.college_id, departmentId: cls.department_id });
+    const hodUserId = await identityService.resolvePositionOccupant(client, {
+      collegeId: flag.college_id,
+      departmentId: cls.department_id,
+    });
     if (hodUserId !== actorUserId) {
       throw new AttendanceAbsenceFlagNotAuthorizedError(
         `user ${JSON.stringify(actorUserId)} is not the hod of attendance absence flag ${JSON.stringify(flagId)}'s own department`,
@@ -584,7 +609,9 @@ async function listOutstandingAbsenceFlagsForActor(client, actorInput) {
   if (classIds !== null && classIds.length === 0) {
     return [];
   }
-  return attendanceAbsenceFlagRepository.listOutstanding(client, { classIds: classIds !== null ? classIds : undefined });
+  return attendanceAbsenceFlagRepository.listOutstanding(client, {
+    classIds: classIds !== null ? classIds : undefined,
+  });
 }
 
 // null means no session exists with this id — not an error. The
@@ -656,9 +683,12 @@ async function lockAttendanceSession(client, id, { actorUserId } = {}) {
 // the one routine (Tutor-only) chain until that engine exists to
 // decide what counts as "high-risk" — a real, flagged gap, not a
 // silent narrowing of the rule.
-async function requestAttendanceCorrection(client, sessionId, {
-  proposedAbsentStudentIds, proposedTotalStudents, reason,
-}, { requestedByUserId, origin = 'human' } = {}) {
+async function requestAttendanceCorrection(
+  client,
+  sessionId,
+  { proposedAbsentStudentIds, proposedTotalStudents, reason },
+  { requestedByUserId, origin = 'human' } = {},
+) {
   if (proposedTotalStudents === undefined || proposedTotalStudents === null) {
     throw new AttendanceCorrectionValidationError('proposedTotalStudents is required');
   }
@@ -680,7 +710,10 @@ async function requestAttendanceCorrection(client, sessionId, {
   // Phase 2 step 15: same swap as assertCanMark above — the vacant-seat
   // case (null) is handled identically to classes.tutor_user_id: null
   // was before, a valid approver-chain state, not an error.
-  const tutorUserId = await identityService.resolvePositionOccupant(client, { collegeId: session.college_id, classId: cls.id });
+  const tutorUserId = await identityService.resolvePositionOccupant(client, {
+    collegeId: session.college_id,
+    classId: cls.id,
+  });
 
   const workflowRequest = await workflowService.submitRequest(client, {
     collegeId: session.college_id,
@@ -710,11 +743,15 @@ async function loadPendingCorrectionApproval(client, correctionId) {
     throw new AttendanceCorrectionNotFoundError(`attendance correction ${JSON.stringify(correctionId)} does not exist`);
   }
   if (correction.workflow_request_id === null) {
-    throw new AttendanceCorrectionNoPendingRequestError(`attendance correction ${JSON.stringify(correctionId)} has no workflow request`);
+    throw new AttendanceCorrectionNoPendingRequestError(
+      `attendance correction ${JSON.stringify(correctionId)} has no workflow request`,
+    );
   }
   const pending = await workflowService.getRequest(client, correction.workflow_request_id);
   if (pending === null || pending.status !== 'Pending') {
-    throw new AttendanceCorrectionNoPendingRequestError(`attendance correction ${JSON.stringify(correctionId)} has no pending approval request`);
+    throw new AttendanceCorrectionNoPendingRequestError(
+      `attendance correction ${JSON.stringify(correctionId)} has no pending approval request`,
+    );
   }
   return { correction, pending };
 }
@@ -729,7 +766,9 @@ async function loadPendingCorrectionApproval(client, correctionId) {
 // not a separate recalculation step to remember to run.
 async function approveAttendanceCorrection(client, correctionId, { actorUserId, actorRole, remarks } = {}) {
   if (actorRole !== 'class_tutor') {
-    throw new AttendanceCorrectionNotAuthorizedError(`user ${JSON.stringify(actorUserId)}'s current login (role ${JSON.stringify(actorRole)}) is not a Class Tutor Position Account`);
+    throw new AttendanceCorrectionNotAuthorizedError(
+      `user ${JSON.stringify(actorUserId)}'s current login (role ${JSON.stringify(actorRole)}) is not a Class Tutor Position Account`,
+    );
   }
   const { correction, pending } = await loadPendingCorrectionApproval(client, correctionId);
   await workflowService.approveRequest(client, pending.id, { actorUserId, remarks });
@@ -759,11 +798,15 @@ async function approveAttendanceCorrection(client, correctionId, { actorUserId, 
 // (workflowService.escalateRequest) rather than closing this one and
 // submitting a new one — the correction is still the one under review,
 // just with one more approver now required before it can apply.
-async function escalateAttendanceCorrection(client, correctionId, {
-  actorUserId, actorRole, escalateToRole, remarks,
-} = {}) {
+async function escalateAttendanceCorrection(
+  client,
+  correctionId,
+  { actorUserId, actorRole, escalateToRole, remarks } = {},
+) {
   if (actorRole !== 'class_tutor') {
-    throw new AttendanceCorrectionNotAuthorizedError(`user ${JSON.stringify(actorUserId)}'s current login (role ${JSON.stringify(actorRole)}) is not a Class Tutor Position Account`);
+    throw new AttendanceCorrectionNotAuthorizedError(
+      `user ${JSON.stringify(actorUserId)}'s current login (role ${JSON.stringify(actorRole)}) is not a Class Tutor Position Account`,
+    );
   }
   if (!['hod', 'principal'].includes(escalateToRole)) {
     throw new AttendanceCorrectionInvalidEscalationError(
@@ -776,11 +819,15 @@ async function escalateAttendanceCorrection(client, correctionId, {
   const cls = await academicService.getClass(client, session.class_id);
 
   const escalateToUserId = await workflowChainService.resolveRoleUserId(client, escalateToRole, {
-    collegeId: correction.college_id, departmentId: cls.department_id,
+    collegeId: correction.college_id,
+    departmentId: cls.department_id,
   });
 
   const updated = await workflowService.escalateRequest(client, pending.id, {
-    actorUserId, escalateToRole, escalateToUserId, remarks,
+    actorUserId,
+    escalateToRole,
+    escalateToUserId,
+    remarks,
   });
 
   await auditLogRepository.createAuditLogEntry(client, {
@@ -797,7 +844,9 @@ async function escalateAttendanceCorrection(client, correctionId, {
 
 async function rejectAttendanceCorrection(client, correctionId, { actorUserId, actorRole, remarks } = {}) {
   if (actorRole !== 'class_tutor') {
-    throw new AttendanceCorrectionNotAuthorizedError(`user ${JSON.stringify(actorUserId)}'s current login (role ${JSON.stringify(actorRole)}) is not a Class Tutor Position Account`);
+    throw new AttendanceCorrectionNotAuthorizedError(
+      `user ${JSON.stringify(actorUserId)}'s current login (role ${JSON.stringify(actorRole)}) is not a Class Tutor Position Account`,
+    );
   }
   const { correction, pending } = await loadPendingCorrectionApproval(client, correctionId);
   await workflowService.rejectRequest(client, pending.id, { actorUserId, remarks });
@@ -896,13 +945,17 @@ async function markAttendanceByRollNumbers(client, { absentRollNumbers }, { acto
     }
   }
 
-  const markedSession = await markAttendance(client, {
-    classId: session.classId,
-    sessionDate: session.sessionDate,
-    hourIndex: session.hourIndex,
-    absentStudentIds,
-    totalStudents: roster.length,
-  }, { actorUserId, actorRole });
+  const markedSession = await markAttendance(
+    client,
+    {
+      classId: session.classId,
+      sessionDate: session.sessionDate,
+      hourIndex: session.hourIndex,
+      absentStudentIds,
+      totalStudents: roster.length,
+    },
+    { actorUserId, actorRole },
+  );
 
   return { session: markedSession, unknownRollNumbers };
 }
@@ -939,7 +992,7 @@ async function computeAttendancePercentageForStudents(client, students) {
 
   const result = new Map();
   for (const student of students) {
-    const classSessions = student.classId ? (sessionsByClassId.get(student.classId) || []) : [];
+    const classSessions = student.classId ? sessionsByClassId.get(student.classId) || [] : [];
     if (classSessions.length === 0) {
       result.set(student.id, null);
       continue;
@@ -1002,9 +1055,7 @@ async function listSubstituteAssignmentsWithMarkingStatus(client, classId) {
   const startDate = assignmentDates.reduce((min, d) => (d < min ? d : min));
   const endDate = assignmentDates.reduce((max, d) => (d > max ? d : max));
   const sessions = await attendanceRepository.findByClassAndDateRange(client, classId, { startDate, endDate });
-  const sessionByDateHour = new Map(
-    sessions.map((s) => [`${dateKey(s.session_date)}|${s.hour_index}`, s]),
-  );
+  const sessionByDateHour = new Map(sessions.map((s) => [`${dateKey(s.session_date)}|${s.hour_index}`, s]));
 
   return assignments.map((assignment) => {
     const period = periodById.get(assignment.timetable_period_id) || null;

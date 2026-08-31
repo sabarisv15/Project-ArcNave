@@ -116,7 +116,11 @@ export function ScholarshipDecisionPanel({ student, advisory, decision, onClose,
 
                 <div>
                   <Label>Your decision</Label>
-                  <div role="radiogroup" aria-label="Eligibility decision" className="mt-[6px] flex items-center gap-[6px]">
+                  <div
+                    role="radiogroup"
+                    aria-label="Eligibility decision"
+                    className="mt-[6px] flex items-center gap-[6px]"
+                  >
                     {[
                       { value: true, label: 'Eligible' },
                       { value: false, label: 'Not eligible' },
@@ -131,7 +135,7 @@ export function ScholarshipDecisionPanel({ student, advisory, decision, onClose,
                           'flex-none h-[32px] px-[13px] border rounded-[9px] font-sans text-[12.5px] cursor-pointer transition-colors duration-200',
                           eligible === o.value
                             ? 'border-accent-line bg-accent-soft text-accent font-[600]'
-                            : 'border-line bg-paper text-ink-muted font-[500] hover:bg-tint2 hover:text-ink'
+                            : 'border-line bg-paper text-ink-muted font-[500] hover:bg-tint2 hover:text-ink',
                         )}
                       >
                         {o.label}
@@ -162,12 +166,14 @@ export function ScholarshipDecisionPanel({ student, advisory, decision, onClose,
 
           {alreadyDecided ? (
             <DrawerRail
-              meta={<span className="text-[11.5px] text-ink-faint">Recorded decisions are changed through a correction.</span>}
+              meta={
+                <span className="text-[11.5px] text-ink-faint">
+                  Recorded decisions are changed through a correction.
+                </span>
+              }
             />
           ) : (
-            <DrawerRail
-              meta={<span className="text-[11.5px] text-ink-faint">Recorded as You · Class Tutor.</span>}
-            >
+            <DrawerRail meta={<span className="text-[11.5px] text-ink-faint">Recorded as You · Class Tutor.</span>}>
               <button type="button" className={GHOST_BTN} onClick={onClose}>
                 Cancel
               </button>

@@ -1,6 +1,6 @@
 ---
 name: pdf-reading
-description: "When and how to reach for pdfplumber inside execute_code for a PDF attachment — specifically when a merged or misaligned table needs real column-boundary detection that reading the attachment directly cannot reliably give you."
+description: 'When and how to reach for pdfplumber inside execute_code for a PDF attachment — specifically when a merged or misaligned table needs real column-boundary detection that reading the attachment directly cannot reliably give you.'
 ---
 
 # Reading PDFs — when the sandbox is actually needed

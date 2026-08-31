@@ -28,7 +28,9 @@ const { sanitizeModelOutput } = vertexMaasAdapter;
 function withMockFetch(mockFetch, fn) {
   const original = global.fetch;
   global.fetch = mockFetch;
-  return fn().finally(() => { global.fetch = original; });
+  return fn().finally(() => {
+    global.fetch = original;
+  });
 }
 
 function fakeJsonResponse(body, { ok = true, status = 200 } = {}) {
@@ -77,7 +79,10 @@ test('sanitizeModelOutput: an unclosed think block leaves no visible text at all
 });
 
 test('sanitizeModelOutput: visible text before an unclosed think block is preserved, the tag and everything after it is dropped', () => {
-  assert.equal(sanitizeModelOutput('Visible answer before tag<think>unfinished internal reasoning'), 'Visible answer before tag');
+  assert.equal(
+    sanitizeModelOutput('Visible answer before tag<think>unfinished internal reasoning'),
+    'Visible answer before tag',
+  );
 });
 
 test('sanitizeModelOutput: a stray unmatched closing tag is removed on its own', () => {
@@ -94,77 +99,101 @@ test('sanitizeModelOutput: non-string content (null/undefined/object) is handed 
 // --- completeWithMeta() ---
 
 test('completeWithMeta: a think block never reaches the returned text', async () => {
-  await withMockFetch(async () => chatResponse('<think>\nI am uncertain about whether the extracted values align correctly.\n</think>\n\nThe total fee due is ₹48,000.'), async () => {
-    const { text } = await vertexMaasAdapter.completeWithMeta(CFG, CTX());
-    assert.equal(text, 'The total fee due is ₹48,000.');
-  });
+  await withMockFetch(
+    async () =>
+      chatResponse(
+        '<think>\nI am uncertain about whether the extracted values align correctly.\n</think>\n\nThe total fee due is ₹48,000.',
+      ),
+    async () => {
+      const { text } = await vertexMaasAdapter.completeWithMeta(CFG, CTX());
+      assert.equal(text, 'The total fee due is ₹48,000.');
+    },
+  );
 });
 
 test('completeWithMeta: content that is ONLY internal reasoning throws LlmRequestError rather than returning raw thought', async () => {
-  await withMockFetch(async () => chatResponse('<think>only internal reasoning</think>'), async () => {
-    await assert.rejects(
-      () => vertexMaasAdapter.completeWithMeta(CFG, CTX()),
-      LlmRequestError,
-    );
-  });
+  await withMockFetch(
+    async () => chatResponse('<think>only internal reasoning</think>'),
+    async () => {
+      await assert.rejects(() => vertexMaasAdapter.completeWithMeta(CFG, CTX()), LlmRequestError);
+    },
+  );
 });
 
 // --- completeWithTools(): normal/fallback 'answer' path ---
 
 test('completeWithTools: a think block never reaches the returned answer text', async () => {
-  await withMockFetch(async () => chatResponse('<think>I should possibly use another tool.</think>The total fee due is ₹48,000.'), async () => {
-    const result = await vertexMaasAdapter.completeWithTools(CFG, CTX());
-    assert.equal(result.type, 'answer');
-    assert.equal(result.text, 'The total fee due is ₹48,000.');
-  });
+  await withMockFetch(
+    async () => chatResponse('<think>I should possibly use another tool.</think>The total fee due is ₹48,000.'),
+    async () => {
+      const result = await vertexMaasAdapter.completeWithTools(CFG, CTX());
+      assert.equal(result.type, 'answer');
+      assert.equal(result.text, 'The total fee due is ₹48,000.');
+    },
+  );
 });
 
 test('completeWithTools: an unclosed think block with no visible text after it throws rather than returning raw thought', async () => {
-  await withMockFetch(async () => chatResponse('<think>unfinished internal reasoning'), async () => {
-    await assert.rejects(
-      () => vertexMaasAdapter.completeWithTools(CFG, CTX()),
-      LlmRequestError,
-    );
-  });
+  await withMockFetch(
+    async () => chatResponse('<think>unfinished internal reasoning'),
+    async () => {
+      await assert.rejects(() => vertexMaasAdapter.completeWithTools(CFG, CTX()), LlmRequestError);
+    },
+  );
 });
 
 test('completeWithTools: visible text before an unclosed think block is still returned, the tag is dropped', async () => {
-  await withMockFetch(async () => chatResponse('Final answer before tag<think>unfinished internal reasoning'), async () => {
-    const result = await vertexMaasAdapter.completeWithTools(CFG, CTX());
-    assert.equal(result.type, 'answer');
-    assert.equal(result.text, 'Final answer before tag');
-  });
+  await withMockFetch(
+    async () => chatResponse('Final answer before tag<think>unfinished internal reasoning'),
+    async () => {
+      const result = await vertexMaasAdapter.completeWithTools(CFG, CTX());
+      assert.equal(result.type, 'answer');
+      assert.equal(result.text, 'Final answer before tag');
+    },
+  );
 });
 
 // --- completeWithTools(): tool-call compatibility ---
 
 test('completeWithTools: a structured tool_calls response is unaffected by sanitization (no text content involved)', async () => {
-  await withMockFetch(async () => chatResponse(null, {
-    toolCalls: [{ id: 'call_1', type: 'function', function: { name: 'do_thing', arguments: '{"x":1}' } }],
-  }), async () => {
-    const result = await vertexMaasAdapter.completeWithTools(CFG, CTX());
-    assert.equal(result.type, 'tool_call');
-    assert.equal(result.toolName, 'do_thing');
-    assert.deepEqual(result.arguments, { x: 1 });
-  });
+  await withMockFetch(
+    async () =>
+      chatResponse(null, {
+        toolCalls: [{ id: 'call_1', type: 'function', function: { name: 'do_thing', arguments: '{"x":1}' } }],
+      }),
+    async () => {
+      const result = await vertexMaasAdapter.completeWithTools(CFG, CTX());
+      assert.equal(result.type, 'tool_call');
+      assert.equal(result.toolName, 'do_thing');
+      assert.deepEqual(result.arguments, { x: 1 });
+    },
+  );
 });
 
 test('completeWithTools: a content-embedded tool call preceded by a think block is still detected, never returned as answer text', async () => {
-  const content = '<think>I should call the tool.</think>[{"name":"select_relevant_tools","parameters":{"names":["a","b"]}}]';
-  await withMockFetch(async () => chatResponse(content), async () => {
-    const result = await vertexMaasAdapter.completeWithTools(CFG, CTX());
-    assert.equal(result.type, 'tool_call');
-    assert.equal(result.toolName, 'select_relevant_tools');
-    assert.deepEqual(result.arguments, { names: ['a', 'b'] });
-  });
+  const content =
+    '<think>I should call the tool.</think>[{"name":"select_relevant_tools","parameters":{"names":["a","b"]}}]';
+  await withMockFetch(
+    async () => chatResponse(content),
+    async () => {
+      const result = await vertexMaasAdapter.completeWithTools(CFG, CTX());
+      assert.equal(result.type, 'tool_call');
+      assert.equal(result.toolName, 'select_relevant_tools');
+      assert.deepEqual(result.arguments, { names: ['a', 'b'] });
+    },
+  );
 });
 
 test('completeWithTools: a content-embedded tool call followed by a think block is still detected', async () => {
-  const content = '<tool_call>{"name":"select_relevant_tools","arguments":{"names":["a"]}}</tool_call><think>trailing reasoning</think>';
-  await withMockFetch(async () => chatResponse(content), async () => {
-    const result = await vertexMaasAdapter.completeWithTools(CFG, CTX());
-    assert.equal(result.type, 'tool_call');
-    assert.equal(result.toolName, 'select_relevant_tools');
-    assert.deepEqual(result.arguments, { names: ['a'] });
-  });
+  const content =
+    '<tool_call>{"name":"select_relevant_tools","arguments":{"names":["a"]}}</tool_call><think>trailing reasoning</think>';
+  await withMockFetch(
+    async () => chatResponse(content),
+    async () => {
+      const result = await vertexMaasAdapter.completeWithTools(CFG, CTX());
+      assert.equal(result.type, 'tool_call');
+      assert.equal(result.toolName, 'select_relevant_tools');
+      assert.deepEqual(result.arguments, { names: ['a'] });
+    },
+  );
 });

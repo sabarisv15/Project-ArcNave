@@ -1,6 +1,7 @@
 # ARCNAVE Tool Catalogue
 
 ## Rules
+
 - No tool fits → answer plainly. Never invent a tool name.
 - Never guess an ID → resolve via `list_*` / `*_roster` / `search_*` first.
 - **`submit` in the name = approval request.** Does NOT take effect. Report as pending, never done. Verify with `workflow_pending_summary`.
@@ -11,6 +12,7 @@
 - Tool not found → `capability_search` before saying unsupported.
 
 ## Attendance
+
 - `mark_attendance_nl` — mark attendance, current session
 - `attendance_summary` — attendance rate numbers
 - `students_low_attendance` — students below threshold
@@ -18,12 +20,14 @@
 - `reports_generate_attendance` — report file
 
 ## Assessment
+
 - `assessment_marks_summary` — read marks
 - `assessment_record_mark` — NEW mark
 - `assessment_submit_mark_correction` — change EXISTING mark
 - `reports_generate_assessment_marks` — report file
 
 ## Timetable & substitution
+
 - `academic_class_timetable` — read allocation/timetable
 - `academic_generate_timetable` — create draft
 - `academic_revise_timetable` — edit draft
@@ -35,6 +39,7 @@
 Order: generate → revise → submit. No submit without a draft.
 
 ## Students
+
 - `students_roster` — list/find, resolve student ID
 - `students_update_profile` — routine fields (contact, address)
 - `students_submit_lifecycle_change` — admission, promotion, dropout, graduation
@@ -45,6 +50,7 @@ Order: generate → revise → submit. No submit without a draft.
 Status change ≠ profile update.
 
 ## Staff
+
 - `staff_roster` — list/find, resolve staff ID
 - `staff_self_profile_get` / `staff_self_profile_update` — read / edit MY OWN profile
 - `staff_update_profile` — edit SOMEONE ELSE's routine fields
@@ -53,17 +59,20 @@ Status change ≠ profile update.
 Self ≠ other. Wrong pick = privilege violation.
 
 ## Finance
+
 - `finance_status_summary` — fee status counts
 - `finance_record_payment` — NEW payment
 - `finance_submit_fee_correction` — fix EXISTING payment
 - `reports_generate_finance` — report file
 
 ## Calendar & workflow
+
 - `list_calendar_events` — read academic calendar
 - `calendar_create_event` / `calendar_update_event` — create / edit event
 - `workflow_pending_summary` — pending approval requests
 
 ## Documents
+
 - `search_documents` — semantic search over institutional docs (default)
 - `list_institutional_documents` — browsable list
 - `resolve_document_destination` — where a category is filed
@@ -72,6 +81,7 @@ Self ≠ other. Wrong pick = privilege violation.
 - `manage_project_document` — attach/detach doc to my project
 
 ## Artifacts & generation
+
 - `list_own_artifacts` — my artifacts
 - `update_artifact_content` — replace artifact body
 - `export_artifact` — publish existing artifact as-is
@@ -80,6 +90,7 @@ Self ≠ other. Wrong pick = privilege violation.
 - `generate_image` — image from prompt
 
 ## Presentation (output shape only)
+
 - `present_featured` — exactly 1 record
 - `present_comparison` — 2-4 items, shared attributes
 - `present_carousel` — 2-12 entries
@@ -92,6 +103,7 @@ Self ≠ other. Wrong pick = privilege violation.
 - `decide_output_format` / `decide_image_route` — answer shape / visual needed
 
 ## Memory & preferences
+
 - `ai_memory_consent_status` — GATE: call before any ai_memory write
 - `ai_memory_remember` — how user wants me to behave
 - `ai_memory_remember_fact` — freeform fact about user
@@ -102,6 +114,7 @@ Self ≠ other. Wrong pick = privilege violation.
 - `update_project_instructions` — replace project instructions (read first)
 
 ## Conversation history
+
 - `conversation_search` — past chats by topic
 - `conversation_recent` — past chats by time
 - `conversation_read` — ONE chat, needs ID from above
@@ -111,10 +124,12 @@ Self ≠ other. Wrong pick = privilege violation.
 Past-tense reference without context → search before answering.
 
 ## Personal
+
 - `class_log_list` / `class_log_create` — my teaching journal
 - `personal_notes_list` / `personal_notes_create` — my private notes
 
 ## External & compute
+
 - `web_search` — open-ended web question
 - `web_search_fast` — single quick fact
 - `web_fetch` — read one URL
@@ -124,17 +139,20 @@ Past-tense reference without context → search before answering.
 - `execute_code` — computation
 
 ## Notifications
+
 - `draft_notification` — compose, show the draft
 - `request_notification_send` — send AFTER user approves
 
 Never both in the same turn.
 
 ## Context & capability
+
 - `get_college_profile` — my institution context
 - `capability_search` / `capability_explain` — what ARCNAVE can do / why restricted
 - `ask_user_choice` — required parameter genuinely ambiguous
 - `list_skills` / `describe_skill` — file-handling skills
 
 ## Admin (confirm every time)
+
 - `departments_create` / `departments_update` — new / edit department
 - `academic_year_create` — new academic year (Draft)

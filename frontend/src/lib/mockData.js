@@ -3,31 +3,137 @@ export const CHATS = [
      judged against real content — headings, paragraphs, both list types, a
      table and a code block in one response, not a three-line demo answer. */
   { id: 'c0', title: 'Walk me through the full mid-semester academic review', kind: 'chat', meta: '20 minutes ago' },
-  { id: 'c1', title: 'Create an attendance summary for second-year CSE students this week', kind: 'chat', meta: '2 hours ago' },
-  { id: 'c2', title: 'Identify students with low internal marks and attendance patterns', kind: 'chat', meta: 'Yesterday' },
-  { id: 'c3', title: 'Summarize faculty workload distribution for the current academic week', kind: 'project', project: 'CSE Department Review', projectId: 'p3', meta: 'Yesterday' },
+  {
+    id: 'c1',
+    title: 'Create an attendance summary for second-year CSE students this week',
+    kind: 'chat',
+    meta: '2 hours ago',
+  },
+  {
+    id: 'c2',
+    title: 'Identify students with low internal marks and attendance patterns',
+    kind: 'chat',
+    meta: 'Yesterday',
+  },
+  {
+    id: 'c3',
+    title: 'Summarize faculty workload distribution for the current academic week',
+    kind: 'project',
+    project: 'CSE Department Review',
+    projectId: 'p3',
+    meta: 'Yesterday',
+  },
   { id: 'c4', title: 'Draft a reminder notice for pending semester fee payments', kind: 'chat', meta: '2 days ago' },
-  { id: 'c5', title: 'Generate a parent meeting list for students needing academic support', kind: 'chat', meta: '3 days ago' },
-  { id: 'c6', title: 'Prepare a department report for the upcoming principal review', kind: 'project', project: 'NAAC Cycle 4 Documentation', projectId: 'p1', meta: 'Last week' },
-  { id: 'c7', title: 'Compare internal assessment results across the three CSE sections', kind: 'chat', meta: 'Last week' },
+  {
+    id: 'c5',
+    title: 'Generate a parent meeting list for students needing academic support',
+    kind: 'chat',
+    meta: '3 days ago',
+  },
+  {
+    id: 'c6',
+    title: 'Prepare a department report for the upcoming principal review',
+    kind: 'project',
+    project: 'NAAC Cycle 4 Documentation',
+    projectId: 'p1',
+    meta: 'Last week',
+  },
+  {
+    id: 'c7',
+    title: 'Compare internal assessment results across the three CSE sections',
+    kind: 'chat',
+    meta: 'Last week',
+  },
 ];
 
 export const PROJECTS = [
-  { id: 'p1', title: 'NAAC Cycle 4 Documentation', desc: 'Assemble criterion-wise evidence, verify data sheets and prepare the self-study submission.', updated: 'Updated 2 hours ago', count: '14 files', pinned: true },
-  { id: 'p2', title: 'Semester Preparation', desc: 'Timetables, lab allocations and course plans for the odd semester.', updated: 'Updated yesterday', count: '9 files', pinned: false },
-  { id: 'p3', title: 'CSE Department Review', desc: 'Faculty workload, results analysis and improvement actions for the principal review.', updated: 'Updated 2 days ago', count: '6 files', pinned: false },
-  { id: 'p4', title: 'Placement Drive 2027', desc: 'Company coordination, student readiness tracking and training schedules.', updated: 'Updated 4 days ago', count: '11 files', pinned: false },
-  { id: 'p5', title: 'Academic Calendar 2026–27', desc: 'Term dates, examination windows and institutional events.', updated: 'Updated last week', count: '4 files', pinned: false },
-  { id: 'p6', title: 'Student Support Follow-up', desc: 'Mentoring records for students flagged on attendance and internal marks.', updated: 'Updated last week', count: '7 files', pinned: false },
+  {
+    id: 'p1',
+    title: 'NAAC Cycle 4 Documentation',
+    desc: 'Assemble criterion-wise evidence, verify data sheets and prepare the self-study submission.',
+    updated: 'Updated 2 hours ago',
+    count: '14 files',
+    pinned: true,
+  },
+  {
+    id: 'p2',
+    title: 'Semester Preparation',
+    desc: 'Timetables, lab allocations and course plans for the odd semester.',
+    updated: 'Updated yesterday',
+    count: '9 files',
+    pinned: false,
+  },
+  {
+    id: 'p3',
+    title: 'CSE Department Review',
+    desc: 'Faculty workload, results analysis and improvement actions for the principal review.',
+    updated: 'Updated 2 days ago',
+    count: '6 files',
+    pinned: false,
+  },
+  {
+    id: 'p4',
+    title: 'Placement Drive 2027',
+    desc: 'Company coordination, student readiness tracking and training schedules.',
+    updated: 'Updated 4 days ago',
+    count: '11 files',
+    pinned: false,
+  },
+  {
+    id: 'p5',
+    title: 'Academic Calendar 2026–27',
+    desc: 'Term dates, examination windows and institutional events.',
+    updated: 'Updated last week',
+    count: '4 files',
+    pinned: false,
+  },
+  {
+    id: 'p6',
+    title: 'Student Support Follow-up',
+    desc: 'Mentoring records for students flagged on attendance and internal marks.',
+    updated: 'Updated last week',
+    count: '7 files',
+    pinned: false,
+  },
 ];
 
 export const ARTIFACTS = [
-  { id: 'a1', title: 'Semester Fee Reminder Notice', type: 'Notice', edited: 'Edited 1 hour ago', link: 'Academic Calendar 2026–27' },
-  { id: 'a2', title: 'CSE Internal Assessment Analysis', type: 'Report', edited: 'Edited yesterday', link: 'CSE Department Review' },
+  {
+    id: 'a1',
+    title: 'Semester Fee Reminder Notice',
+    type: 'Notice',
+    edited: 'Edited 1 hour ago',
+    link: 'Academic Calendar 2026–27',
+  },
+  {
+    id: 'a2',
+    title: 'CSE Internal Assessment Analysis',
+    type: 'Report',
+    edited: 'Edited yesterday',
+    link: 'CSE Department Review',
+  },
   { id: 'a3', title: 'Attendance Follow-up Sheet', type: 'Spreadsheet', edited: 'Edited yesterday', link: '' },
-  { id: 'a4', title: 'NAAC Criterion 2 Summary', type: 'Document', edited: 'Edited 2 days ago', link: 'NAAC Cycle 4 Documentation' },
-  { id: 'a5', title: 'Parent Meeting Invitation Draft', type: 'Notice', edited: 'Edited 3 days ago', link: 'Student Support Follow-up' },
-  { id: 'a6', title: 'Placement Readiness Dashboard', type: 'Dashboard / Analysis', edited: 'Edited last week', link: 'Placement Drive 2027' },
+  {
+    id: 'a4',
+    title: 'NAAC Criterion 2 Summary',
+    type: 'Document',
+    edited: 'Edited 2 days ago',
+    link: 'NAAC Cycle 4 Documentation',
+  },
+  {
+    id: 'a5',
+    title: 'Parent Meeting Invitation Draft',
+    type: 'Notice',
+    edited: 'Edited 3 days ago',
+    link: 'Student Support Follow-up',
+  },
+  {
+    id: 'a6',
+    title: 'Placement Readiness Dashboard',
+    type: 'Dashboard / Analysis',
+    edited: 'Edited last week',
+    link: 'Placement Drive 2027',
+  },
 ];
 
 export const CONTEXT_FILES = [
@@ -56,9 +162,18 @@ export const ARTIFACT_TYPES = [
 ];
 
 export const IDEAS = [
-  { title: 'Prepare today’s attendance', sub: 'Review incomplete attendance entries and create a follow-up list for each class.' },
-  { title: 'Generate an assessment insight', sub: 'Identify students who need support using recent marks, attendance, and assessment patterns.' },
-  { title: 'Create a department notice', sub: 'Draft a clear academic notice, then export it as a shareable document.' },
+  {
+    title: 'Prepare today’s attendance',
+    sub: 'Review incomplete attendance entries and create a follow-up list for each class.',
+  },
+  {
+    title: 'Generate an assessment insight',
+    sub: 'Identify students who need support using recent marks, attendance, and assessment patterns.',
+  },
+  {
+    title: 'Create a department notice',
+    sub: 'Draft a clear academic notice, then export it as a shareable document.',
+  },
 ];
 
 export const SCHEDULE = [
@@ -80,25 +195,55 @@ export const SCHEDULE = [
  */
 export const ARTIFACT_CONTEXT = {
   a1: [
-    { id: 'ac1', name: 'Fee Circular — Odd Semester 2026.pdf', kind: 'institutional', meta: 'Accounts office · Clause 2', size: '412 KB' },
+    {
+      id: 'ac1',
+      name: 'Fee Circular — Odd Semester 2026.pdf',
+      kind: 'institutional',
+      meta: 'Accounts office · Clause 2',
+      size: '412 KB',
+    },
     { id: 'ac2', name: 'Notice_Template_Institutional.docx', kind: 'personal', meta: 'Your documents', size: '86 KB' },
     { id: 'ac3', name: 'Academic Calendar 2026–27', kind: 'record', meta: 'Linked · Term dates' },
   ],
   a2: [
     { id: 'ac4', name: 'CSE_IA_Marks_2026.xlsx', kind: 'uploaded', meta: 'Uploaded for this artifact', size: '248 KB' },
     { id: 'ac5', name: 'Internal assessment register', kind: 'record', meta: 'Linked · IA-I & IA-II' },
-    { id: 'ac6', name: 'Mentoring Guidelines.pdf', kind: 'institutional', meta: 'Academic office · Section 2', size: '190 KB' },
+    {
+      id: 'ac6',
+      name: 'Mentoring Guidelines.pdf',
+      kind: 'institutional',
+      meta: 'Academic office · Section 2',
+      size: '190 KB',
+    },
   ],
   a3: [
-    { id: 'ac7', name: 'CSE_Attendance_2026.xlsx', kind: 'uploaded', meta: 'Uploaded for this artifact', size: '380 KB' },
+    {
+      id: 'ac7',
+      name: 'CSE_Attendance_2026.xlsx',
+      kind: 'uploaded',
+      meta: 'Uploaded for this artifact',
+      size: '380 KB',
+    },
     { id: 'ac8', name: 'Attendance Shortfall Policy 2026', kind: 'institutional', meta: 'Academic office · Section 4' },
   ],
   a4: [
-    { id: 'ac9', name: 'NAAC_Criterion_2_Evidence.pdf', kind: 'institutional', meta: 'NAAC Cycle 4 · Criterion 2', size: '2.4 MB' },
+    {
+      id: 'ac9',
+      name: 'NAAC_Criterion_2_Evidence.pdf',
+      kind: 'institutional',
+      meta: 'NAAC Cycle 4 · Criterion 2',
+      size: '2.4 MB',
+    },
     { id: 'ac10', name: 'Semester_Action_Plan.docx', kind: 'personal', meta: 'Your documents', size: '118 KB' },
   ],
   a6: [
-    { id: 'ac11', name: 'Placement_Readiness_2027.xlsx', kind: 'uploaded', meta: 'Uploaded for this artifact', size: '512 KB' },
+    {
+      id: 'ac11',
+      name: 'Placement_Readiness_2027.xlsx',
+      kind: 'uploaded',
+      meta: 'Uploaded for this artifact',
+      size: '512 KB',
+    },
     { id: 'ac12', name: 'Training schedule — Placement Drive 2027', kind: 'record', meta: 'Linked · 11 files' },
   ],
   // `a5` deliberately has none — the widget must hide rather than sit empty.
@@ -113,7 +258,9 @@ export const DOC_PARAGRAPHS = [
 
 export const CURRICULUM = {
   students: {
-    label: 'Students', title: 'Students', sub: 'Enrolment across departments for the 2026–27 academic year.',
+    label: 'Students',
+    title: 'Students',
+    sub: 'Enrolment across departments for the 2026–27 academic year.',
     cols: ['Student', 'Programme', 'Semester', 'Attendance'],
     rows: [
       { a: 'Aarthi Balakrishnan', b: 'B.E. Computer Science', c: 'Semester 4', d: '92%' },
@@ -125,7 +272,9 @@ export const CURRICULUM = {
     ],
   },
   attendance: {
-    label: 'Attendance', title: 'Attendance', sub: 'Entries recorded against timetable sessions this week.',
+    label: 'Attendance',
+    title: 'Attendance',
+    sub: 'Entries recorded against timetable sessions this week.',
     cols: ['Class', 'Session', 'Recorded by', 'Status'],
     rows: [
       { a: 'CSE Semester 4 — A', b: 'Mon · Period 2', c: 'Prof. Anand Kulkarni', d: 'Complete' },
@@ -136,7 +285,9 @@ export const CURRICULUM = {
     ],
   },
   assessments: {
-    label: 'Assessments', title: 'Assessments', sub: 'Internal assessments scheduled and evaluated this semester.',
+    label: 'Assessments',
+    title: 'Assessments',
+    sub: 'Internal assessments scheduled and evaluated this semester.',
     cols: ['Assessment', 'Course', 'Date', 'Status'],
     rows: [
       { a: 'Internal Assessment II', b: 'Data Structures', c: '14 Aug 2026', d: 'Scheduled' },
@@ -147,7 +298,9 @@ export const CURRICULUM = {
     ],
   },
   documents: {
-    label: 'Documents', title: 'Documents', sub: 'Institutional records maintained by the coordination office.',
+    label: 'Documents',
+    title: 'Documents',
+    sub: 'Institutional records maintained by the coordination office.',
     cols: ['Document', 'Category', 'Updated', 'Owner'],
     rows: [
       { a: 'NAAC Criterion 2 Evidence', b: 'Accreditation', c: '09 Aug 2026', d: 'Priya R.' },
@@ -158,7 +311,9 @@ export const CURRICULUM = {
     ],
   },
   calendar: {
-    label: 'Calendar', title: 'Calendar', sub: 'Key academic dates for the current term.',
+    label: 'Calendar',
+    title: 'Calendar',
+    sub: 'Key academic dates for the current term.',
     cols: ['Event', 'Type', 'Date', 'Scope'],
     rows: [
       { a: 'Internal Assessment II window', b: 'Examination', c: '14–19 Aug', d: 'All departments' },
@@ -174,4 +329,14 @@ export const CURRICULUM_ORDER = ['students', 'staff', 'attendance', 'assessments
 
 export const RECENT_FILTERS = ['All conversations', 'Normal chats', 'Project chats', 'Today', 'This week'];
 export const PROJECT_SORTS = ['Last updated', 'Date created', 'Alphabetical', 'Recently opened'];
-export const ARTIFACT_FILTERS = ['All artifacts', 'Documents', 'Reports', 'Spreadsheets', 'Dashboards', 'Notices', 'Forms and surveys', 'Generated today', 'Linked to a project'];
+export const ARTIFACT_FILTERS = [
+  'All artifacts',
+  'Documents',
+  'Reports',
+  'Spreadsheets',
+  'Dashboards',
+  'Notices',
+  'Forms and surveys',
+  'Generated today',
+  'Linked to a project',
+];

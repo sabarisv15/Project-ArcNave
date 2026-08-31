@@ -11,25 +11,28 @@ const PERSONAS = {
     label: 'Tutor',
     scopeNote: 'your class',
     detailLevel: 'full',
-    insight: (metrics) => (metrics.length > 0
-      ? `Figures reflect your own class(es) only — use the details below to see which students or sessions need attention.`
-      : null),
+    insight: (metrics) =>
+      metrics.length > 0
+        ? `Figures reflect your own class(es) only — use the details below to see which students or sessions need attention.`
+        : null,
   },
   hod: {
     label: 'HOD',
     scopeNote: 'your department',
     detailLevel: 'full',
-    insight: (metrics) => (metrics.length > 0
-      ? `Figures are department-wide. Compare classes in the table below to spot ones trailing the department average.`
-      : null),
+    insight: (metrics) =>
+      metrics.length > 0
+        ? `Figures are department-wide. Compare classes in the table below to spot ones trailing the department average.`
+        : null,
   },
   principal: {
     label: 'Principal',
     scopeNote: 'the college',
     detailLevel: 'aggregate',
-    insight: (metrics) => (metrics.length > 0
-      ? `Figures are college-wide. Drill into a specific department or class if one of these numbers needs a closer look.`
-      : null),
+    insight: (metrics) =>
+      metrics.length > 0
+        ? `Figures are college-wide. Drill into a specific department or class if one of these numbers needs a closer look.`
+        : null,
   },
   platform_admin: {
     label: 'Platform Admin',
@@ -40,7 +43,10 @@ const PERSONAS = {
 };
 
 const DEFAULT_PERSONA = {
-  label: 'User', scopeNote: 'your scope', detailLevel: 'full', insight: () => null,
+  label: 'User',
+  scopeNote: 'your scope',
+  detailLevel: 'full',
+  insight: () => null,
 };
 
 function personaFor(role) {

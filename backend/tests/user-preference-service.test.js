@@ -27,24 +27,31 @@ test('userPreferenceService.setPreference', async (t) => {
     t.after(() => upsertMock.mock.restore());
 
     await assert.rejects(
-      () => userPreferenceService.setPreference({}, 'dashboard_layout', undefined, { actorUserId: 'u1', collegeId: 'c1' }),
+      () =>
+        userPreferenceService.setPreference({}, 'dashboard_layout', undefined, { actorUserId: 'u1', collegeId: 'c1' }),
       userPreferenceService.UserPreferenceValidationError,
     );
     assert.equal(upsertMock.mock.callCount(), 0);
   });
 
   await t.test('upserts a preference scoped to the actor', async () => {
-    const upsertMock = t.mock.method(userPreferenceRepository, 'upsert', async (client, fields) => ({ id: 'pref-1', ...fields }));
+    const upsertMock = t.mock.method(userPreferenceRepository, 'upsert', async (client, fields) => ({
+      id: 'pref-1',
+      ...fields,
+    }));
     t.after(() => upsertMock.mock.restore());
 
-    const result = await userPreferenceService.setPreference({}, 'dashboard_layout', ['widget-a', 'widget-b'], { actorUserId: 'u1', collegeId: 'c1' });
+    const result = await userPreferenceService.setPreference({}, 'dashboard_layout', ['widget-a', 'widget-b'], {
+      actorUserId: 'u1',
+      collegeId: 'c1',
+    });
     assert.equal(result.userId, 'u1');
     assert.deepEqual(result.value, ['widget-a', 'widget-b']);
   });
 });
 
 test('userPreferenceService.getPreference / listPreferences / deletePreference', async (t) => {
-  await t.test('getPreference passes the actor\'s own userId through, not any caller-supplied one', async () => {
+  await t.test("getPreference passes the actor's own userId through, not any caller-supplied one", async () => {
     const findMock = t.mock.method(userPreferenceRepository, 'findByUserAndKey', async (client, userId, key) => {
       assert.equal(userId, 'u1');
       assert.equal(key, 'notification_channels');
@@ -56,7 +63,7 @@ test('userPreferenceService.getPreference / listPreferences / deletePreference',
     assert.deepEqual(result.value, { email: true });
   });
 
-  await t.test('listPreferences lists only the actor\'s own preferences', async () => {
+  await t.test("listPreferences lists only the actor's own preferences", async () => {
     const listMock = t.mock.method(userPreferenceRepository, 'listByUser', async (client, userId) => {
       assert.equal(userId, 'u1');
       return [{ id: 'pref-1' }];

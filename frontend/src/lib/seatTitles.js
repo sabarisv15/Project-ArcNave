@@ -16,13 +16,7 @@
  */
 
 import { PROVISIONING } from './provisioning';
-import {
-  CLASS_TUTOR_L4,
-  HOD_L3,
-  LEVEL_2,
-  PRINCIPAL_L1,
-  TEACHING_STAFF,
-} from './roles';
+import { CLASS_TUTOR_L4, HOD_L3, LEVEL_2, PRINCIPAL_L1, TEACHING_STAFF } from './roles';
 
 /**
  * The fallback title for a seat whose configured title is missing.

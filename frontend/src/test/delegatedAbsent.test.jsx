@@ -60,7 +60,7 @@ function renderApp(route = '/') {
           </WorkspaceProvider>
         </Tooltip.Provider>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -97,9 +97,7 @@ describe('L2 absent — the structure collapses entirely', () => {
 
   it('can decide nothing through the delegated path', () => {
     expect(canDelegatedReview('endorsed_pending_l2', delegatedScope(ABSENT))).toBe(false);
-    expect(delegatedBlockReason('endorsed_pending_l2', delegatedScope(ABSENT))).toMatch(
-      /no delegated position/i
-    );
+    expect(delegatedBlockReason('endorsed_pending_l2', delegatedScope(ABSENT))).toMatch(/no delegated position/i);
   });
 });
 
@@ -144,11 +142,7 @@ describe('L2 configured but vacant', () => {
     expect(scope.seat.state).toBe('vacant');
     expect(scope.seat.holderName).toBeNull();
     expect(scope.inTimetableChain).toBe(true);
-    expect(endorsementChain(VACANT).map((s) => s.key)).toEqual([
-      'hod_l3',
-      LEVEL_2,
-      PRINCIPAL_L1,
-    ]);
+    expect(endorsementChain(VACANT).map((s) => s.key)).toEqual(['hod_l3', LEVEL_2, PRINCIPAL_L1]);
   });
 
   it('registers the workspace but admits nobody into it', () => {
@@ -159,12 +153,14 @@ describe('L2 configured but vacant', () => {
   it('keeps a routed revision waiting on the empty seat rather than skipping ahead', () => {
     expect(endorsedStateFor(VACANT)).toBe('endorsed_pending_l2');
     expect(canFinalApprove(endorsedStateFor(VACANT))).toBe(false);
-    expect(canDelegatedReview('endorsed_pending_l2', delegatedScope(VACANT), {
-      departmentId: 'dept-ece',
-    })).toBe(false);
     expect(
-      delegatedBlockReason('endorsed_pending_l2', delegatedScope(VACANT), { departmentId: 'dept-ece' })
-    ).toMatch(/vacant/i);
+      canDelegatedReview('endorsed_pending_l2', delegatedScope(VACANT), {
+        departmentId: 'dept-ece',
+      }),
+    ).toBe(false);
+    expect(delegatedBlockReason('endorsed_pending_l2', delegatedScope(VACANT), { departmentId: 'dept-ece' })).toMatch(
+      /vacant/i,
+    );
   });
 });
 

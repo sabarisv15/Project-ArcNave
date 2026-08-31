@@ -18,32 +18,56 @@ test('getLastObservedVersion: undefined before any call has been recorded for a 
 });
 
 test('recordObservedVersion: the FIRST observation is a baseline, never reported as drift', () => {
-  const result = aiModelVersionService.recordObservedVersion('c1', 'gemini', 'gemini-3.7-flash', 'gemini-3.7-flash-002');
+  const result = aiModelVersionService.recordObservedVersion(
+    'c1',
+    'gemini',
+    'gemini-3.7-flash',
+    'gemini-3.7-flash-002',
+  );
   assert.equal(result.drifted, false);
-  assert.equal(aiModelVersionService.getLastObservedVersion('c1', 'gemini', 'gemini-3.7-flash'), 'gemini-3.7-flash-002');
+  assert.equal(
+    aiModelVersionService.getLastObservedVersion('c1', 'gemini', 'gemini-3.7-flash'),
+    'gemini-3.7-flash-002',
+  );
 });
 
 test('recordObservedVersion: the SAME version observed again is not drift', () => {
   aiModelVersionService.recordObservedVersion('c1', 'gemini', 'gemini-3.7-flash', 'gemini-3.7-flash-002');
-  const result = aiModelVersionService.recordObservedVersion('c1', 'gemini', 'gemini-3.7-flash', 'gemini-3.7-flash-002');
+  const result = aiModelVersionService.recordObservedVersion(
+    'c1',
+    'gemini',
+    'gemini-3.7-flash',
+    'gemini-3.7-flash-002',
+  );
   assert.equal(result.drifted, false);
 });
 
 test('recordObservedVersion: a DIFFERENT version than last observed is reported as drift, with both versions named', () => {
   aiModelVersionService.recordObservedVersion('c1', 'gemini', 'gemini-3.7-flash', 'gemini-3.7-flash-002');
-  const result = aiModelVersionService.recordObservedVersion('c1', 'gemini', 'gemini-3.7-flash', 'gemini-3.7-flash-003');
+  const result = aiModelVersionService.recordObservedVersion(
+    'c1',
+    'gemini',
+    'gemini-3.7-flash',
+    'gemini-3.7-flash-003',
+  );
   assert.equal(result.drifted, true);
   assert.equal(result.previousVersion, 'gemini-3.7-flash-002');
   assert.equal(result.observedVersion, 'gemini-3.7-flash-003');
   // The new version becomes the baseline for the NEXT comparison.
-  assert.equal(aiModelVersionService.getLastObservedVersion('c1', 'gemini', 'gemini-3.7-flash'), 'gemini-3.7-flash-003');
+  assert.equal(
+    aiModelVersionService.getLastObservedVersion('c1', 'gemini', 'gemini-3.7-flash'),
+    'gemini-3.7-flash-003',
+  );
 });
 
 test('recordObservedVersion: a falsy/undefined observedVersion is a no-op — never overwrites an existing baseline, never reported as drift', () => {
   aiModelVersionService.recordObservedVersion('c1', 'gemini', 'gemini-3.7-flash', 'gemini-3.7-flash-002');
   const result = aiModelVersionService.recordObservedVersion('c1', 'gemini', 'gemini-3.7-flash', undefined);
   assert.equal(result.drifted, false);
-  assert.equal(aiModelVersionService.getLastObservedVersion('c1', 'gemini', 'gemini-3.7-flash'), 'gemini-3.7-flash-002');
+  assert.equal(
+    aiModelVersionService.getLastObservedVersion('c1', 'gemini', 'gemini-3.7-flash'),
+    'gemini-3.7-flash-002',
+  );
 });
 
 test('recordObservedVersion: different (collegeId, provider, model) keys are tracked independently, never cross-contaminating', () => {

@@ -66,10 +66,16 @@ export function SourcePreviewDrawer({ source, open, onClose }) {
 
       <DrawerRail>
         <button type="button" className={GHOST_BTN} onClick={() => toast(`Opening ${source.title}`)}>
-          <span className="inline-flex items-center gap-[6px]"><ExternalLink size={13} strokeWidth={2} />Open</span>
+          <span className="inline-flex items-center gap-[6px]">
+            <ExternalLink size={13} strokeWidth={2} />
+            Open
+          </span>
         </button>
         <button type="button" className={PRIMARY_BTN} onClick={() => toast(`Downloading ${source.title}`)}>
-          <span className="inline-flex items-center gap-[6px]"><Download size={13} strokeWidth={2} />Download</span>
+          <span className="inline-flex items-center gap-[6px]">
+            <Download size={13} strokeWidth={2} />
+            Download
+          </span>
         </button>
       </DrawerRail>
     </DrawerShell>

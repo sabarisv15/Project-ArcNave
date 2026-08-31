@@ -51,6 +51,17 @@ const SUMMARY = `
     count(*) FILTER (WHERE (metadata->>'cachedTokens')::int = 0)  AS confirmed_zero,
     count(*) FILTER (WHERE metadata->>'cachedTokens' IS NULL)     AS no_signal,
     round(avg((metadata->>'inputTokens')::int))        AS avg_input_tok,
+    round(avg((metadata->>'outputTokens')::int))       AS avg_output_tok,
+    -- "Tokens per unit of user intent" proxy (Static System Prompt Overhead
+    -- doc, "What to measure" #3): we don't log the user question's own
+    -- token count today, so outputTokens stands in for it — a trivial
+    -- question ("hi") gets a trivial reply, a real data question gets a
+    -- real one, so a HIGH ratio here means a lot of prefix was paid for
+    -- relative to what the turn actually produced. Proxy, not exact; a
+    -- genuinely short-answer-but-hard-question turn will also score high
+    -- here and that's a false positive, not a bug in this metric.
+    round(avg((metadata->>'inputTokens')::int)
+      / NULLIF(avg((metadata->>'outputTokens')::int), 0), 1)      AS overhead_ratio,
     round(avg((metadata->>'cachedTokens')::int)
       FILTER (WHERE (metadata->>'cachedTokens')::int > 0))        AS avg_cached_when_hit,
     round(avg((metadata->>'toolCount')::int))          AS avg_tools,
@@ -59,6 +70,29 @@ const SUMMARY = `
   WHERE action = 'ai_llm_call'
   GROUP BY 1, 2, 3
   ORDER BY calls DESC
+`;
+
+// Direct surfacing of the doc's "Hi costs 12,000 tokens" scenario — the
+// individual calls where the smallest possible reply (few output tokens,
+// implying a trivial question) still paid the largest input bill. Ordered
+// by ratio, not by input_tok alone, so a genuinely large-but-proportionate
+// call (big attachment, big answer) doesn't crowd out the real offenders.
+const WORST_OFFENDERS = `
+  SELECT
+    created_at,
+    metadata->>'purpose'                          AS purpose,
+    (metadata->>'inputTokens')::int                AS input_tok,
+    (metadata->>'outputTokens')::int                AS output_tok,
+    round((metadata->>'inputTokens')::numeric
+      / NULLIF((metadata->>'outputTokens')::int, 0), 1)  AS ratio,
+    (metadata->>'toolCount')::int                   AS tool_count,
+    (metadata->>'cachedTokens')::int                AS cached_tok
+  FROM audit_log
+  WHERE action = 'ai_llm_call'
+    AND (metadata->>'outputTokens')::int > 0
+    AND (metadata->>'outputTokens')::int <= 30
+  ORDER BY ratio DESC
+  LIMIT 15
 `;
 
 // Groups consecutive calls by (user, 60s window) as a proxy for "one
@@ -113,8 +147,16 @@ async function main() {
   console.log('seq>1 with a stable tool_count = intra-turn growing prefix.');
   console.log('cached_tok still 0/NULL there => NOT a tool-variance problem.\n');
   console.table((await pool.query(BURSTS)).rows);
+
+  console.log('\n=== 3. Worst offenders (trivial reply, disproportionate input bill) ===');
+  console.log('output_tok<=30 (proxy for "trivial question") ranked by input/output ratio.');
+  console.log('High ratio = a lot of prefix paid for what the turn actually produced.\n');
+  console.table((await pool.query(WORST_OFFENDERS)).rows);
 }
 
 main()
-  .catch((err) => { console.error(err); process.exitCode = 1; })
+  .catch((err) => {
+    console.error(err);
+    process.exitCode = 1;
+  })
   .finally(() => pool.end());

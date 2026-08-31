@@ -22,10 +22,17 @@ test('personalNoteService.createNote', async (t) => {
   });
 
   await t.test('creates a note scoped to the actor', async () => {
-    const createMock = t.mock.method(personalNoteRepository, 'create', async (client, fields) => ({ id: 'note-1', ...fields }));
+    const createMock = t.mock.method(personalNoteRepository, 'create', async (client, fields) => ({
+      id: 'note-1',
+      ...fields,
+    }));
     t.after(() => createMock.mock.restore());
 
-    const result = await personalNoteService.createNote({}, { body: 'Remember to submit marks' }, { actorUserId: 'u1', collegeId: 'c1' });
+    const result = await personalNoteService.createNote(
+      {},
+      { body: 'Remember to submit marks' },
+      { actorUserId: 'u1', collegeId: 'c1' },
+    );
     assert.equal(result.userId, 'u1');
     assert.equal(result.body, 'Remember to submit marks');
   });
@@ -43,7 +50,10 @@ test('personalNoteService.updateNote / deleteNote — ownership', async (t) => {
   });
 
   await t.test('throws PersonalNoteForbiddenError for a non-owner', async () => {
-    const findMock = t.mock.method(personalNoteRepository, 'findById', async () => ({ id: 'note-1', user_id: 'other-user' }));
+    const findMock = t.mock.method(personalNoteRepository, 'findById', async () => ({
+      id: 'note-1',
+      user_id: 'other-user',
+    }));
     const updateMock = t.mock.method(personalNoteRepository, 'update');
     t.after(() => {
       findMock.mock.restore();
@@ -58,8 +68,15 @@ test('personalNoteService.updateNote / deleteNote — ownership', async (t) => {
   });
 
   await t.test('updates a note for its owner', async () => {
-    const findMock = t.mock.method(personalNoteRepository, 'findById', async () => ({ id: 'note-1', user_id: 'u1', body: 'Old' }));
-    const updateMock = t.mock.method(personalNoteRepository, 'update', async (client, id, fields) => ({ id, ...fields }));
+    const findMock = t.mock.method(personalNoteRepository, 'findById', async () => ({
+      id: 'note-1',
+      user_id: 'u1',
+      body: 'Old',
+    }));
+    const updateMock = t.mock.method(personalNoteRepository, 'update', async (client, id, fields) => ({
+      id,
+      ...fields,
+    }));
     t.after(() => {
       findMock.mock.restore();
       updateMock.mock.restore();
@@ -70,7 +87,10 @@ test('personalNoteService.updateNote / deleteNote — ownership', async (t) => {
   });
 
   await t.test('deleteNote throws PersonalNoteForbiddenError for a non-owner', async () => {
-    const findMock = t.mock.method(personalNoteRepository, 'findById', async () => ({ id: 'note-1', user_id: 'other-user' }));
+    const findMock = t.mock.method(personalNoteRepository, 'findById', async () => ({
+      id: 'note-1',
+      user_id: 'other-user',
+    }));
     const removeMock = t.mock.method(personalNoteRepository, 'remove');
     t.after(() => {
       findMock.mock.restore();
@@ -86,7 +106,7 @@ test('personalNoteService.updateNote / deleteNote — ownership', async (t) => {
 });
 
 test('personalNoteService.listNotes', async (t) => {
-  await t.test('lists only the actor\'s own notes', async () => {
+  await t.test("lists only the actor's own notes", async () => {
     const listMock = t.mock.method(personalNoteRepository, 'listByUser', async (client, userId) => {
       assert.equal(userId, 'u1');
       return [{ id: 'note-1' }];

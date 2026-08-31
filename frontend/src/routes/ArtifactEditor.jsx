@@ -54,8 +54,17 @@ const hasColumn = (pinned) =>
 export function ArtifactEditor() {
   const { artifactId } = useParams();
   const {
-    artifacts, threads, artConv, sendMessage, seedThread, renameArtifact, publishArtifact, exportArtifactAs,
-    deleteChat, editMessage, sidebarMode,
+    artifacts,
+    threads,
+    artConv,
+    sendMessage,
+    seedThread,
+    renameArtifact,
+    publishArtifact,
+    exportArtifactAs,
+    deleteChat,
+    editMessage,
+    sidebarMode,
   } = useWorkspace();
   const [contextOpen, setContextOpen] = useState(false);
   const [panelHidden, setPanelHidden] = useState(false);
@@ -90,7 +99,10 @@ export function ArtifactEditor() {
   useEffect(() => {
     setDocContent(null);
     if (!artifactId) return;
-    artifactsApi.get(artifactId).then((row) => setDocContent(row.content)).catch(() => {});
+    artifactsApi
+      .get(artifactId)
+      .then((row) => setDocContent(row.content))
+      .catch(() => {});
   }, [artifactId]);
 
   // Refetches the canvas once a turn that may have called
@@ -105,7 +117,10 @@ export function ArtifactEditor() {
     if (!last || last.role !== 'ai' || last.generating) return;
     if (lastSettledAiId.current === last.id) return;
     lastSettledAiId.current = last.id;
-    artifactsApi.get(artifactId).then((row) => setDocContent(row.content)).catch(() => {});
+    artifactsApi
+      .get(artifactId)
+      .then((row) => setDocContent(row.content))
+      .catch(() => {});
   }, [messages, artifactId]);
 
   const context = ARTIFACT_CONTEXT[artifactId] ?? [];
@@ -148,7 +163,7 @@ export function ArtifactEditor() {
    */
   const composer = useComposer(
     convId ? composerScope.artifactRevision(artifactId) : composerScope.artifactCreate(artifactId),
-    { canRestore: Boolean(artifact), defaultMode: 'curriculum' }
+    { canRestore: Boolean(artifact), defaultMode: 'curriculum' },
   );
 
   if (!artifact) return null;
@@ -241,9 +256,16 @@ export function ArtifactEditor() {
                     onSelect={setSelectedId}
                     onEdit={
                       convId
-                        ? (id, text) => editMessage({
-                          scope: 'artifact', convId, artifactId, messageId: id, text, mode: composer.mode, thinkingLevel: composer.thinkingLevel,
-                        })
+                        ? (id, text) =>
+                            editMessage({
+                              scope: 'artifact',
+                              convId,
+                              artifactId,
+                              messageId: id,
+                              text,
+                              mode: composer.mode,
+                              thinkingLevel: composer.thinkingLevel,
+                            })
                         : undefined
                     }
                   />
@@ -259,7 +281,13 @@ export function ArtifactEditor() {
               composer={composer}
               onSend={async () => {
                 const id = await sendMessage({
-                  scope: 'artifact', convId, artifactId, text: composer.text, attachments: composer.attachments, mode: composer.mode, thinkingLevel: composer.thinkingLevel,
+                  scope: 'artifact',
+                  convId,
+                  artifactId,
+                  text: composer.text,
+                  attachments: composer.attachments,
+                  mode: composer.mode,
+                  thinkingLevel: composer.thinkingLevel,
                 });
                 if (id) composer.reset(); // clears this artifact's scope only
               }}
@@ -267,9 +295,7 @@ export function ArtifactEditor() {
           </ChatComposerDock>
         </div>
 
-        {!panelHidden && (
-          <ArtifactContextPanel items={context} pinned={pinned} onClose={() => setPanelHidden(true)} />
-        )}
+        {!panelHidden && <ArtifactContextPanel items={context} pinned={pinned} onClose={() => setPanelHidden(true)} />}
 
         {/* Clear of the context column when that column is docked, rather than
             floating on top of it. */}

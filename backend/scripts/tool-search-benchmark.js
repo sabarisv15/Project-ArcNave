@@ -48,7 +48,9 @@ const REPETITIONS = 3;
 // re-derived or "improved" here.
 const TESTS = [
   {
-    label: 'Test A', question: '3rd Sem CSE-A attendance percentage enna?', expectedTools: ['attendance_summary'],
+    label: 'Test A',
+    question: '3rd Sem CSE-A attendance percentage enna?',
+    expectedTools: ['attendance_summary'],
   },
   {
     label: 'Test B',
@@ -111,7 +113,9 @@ async function runOneTurn(appPool, identityContext, question) {
   let result;
   let threw = null;
   try {
-    result = await withTenantClient(appPool, COLLEGE_ID, (client) => aiService.askAgent(client, question, { identityContext }));
+    result = await withTenantClient(appPool, COLLEGE_ID, (client) =>
+      aiService.askAgent(client, question, { identityContext }),
+    );
   } catch (err) {
     threw = err;
   } finally {
@@ -119,7 +123,10 @@ async function runOneTurn(appPool, identityContext, question) {
   }
   const llmCalls = await fetchLlmCallRows(appPool, since.toISOString());
   return {
-    result, threw, llmCalls, invocationLog,
+    result,
+    threw,
+    llmCalls,
+    invocationLog,
   };
 }
 
@@ -138,7 +145,9 @@ function summarizeAccuracy(expectedTools, invoked) {
 }
 
 function sleep(ms) {
-  return new Promise((resolve) => { setTimeout(resolve, ms); });
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 // A real, live-hit 429 (RESOURCE_EXHAUSTED) mid-run showed this project's
@@ -181,20 +190,30 @@ function reportRep(rep, index) {
   const { llmCalls } = rep;
   const toolSearchIn = sumBy(llmCalls, 'tool_search', 'inputTokens');
   const toolSearchOut = sumBy(llmCalls, 'tool_search', 'outputTokens');
-  const reasoningIn = sumBy(llmCalls, 'tool_select', 'inputTokens') + sumBy(llmCalls, 'tool_select_continue', 'inputTokens');
-  const reasoningOut = sumBy(llmCalls, 'tool_select', 'outputTokens') + sumBy(llmCalls, 'tool_select_continue', 'outputTokens');
+  const reasoningIn =
+    sumBy(llmCalls, 'tool_select', 'inputTokens') + sumBy(llmCalls, 'tool_select_continue', 'inputTokens');
+  const reasoningOut =
+    sumBy(llmCalls, 'tool_select', 'outputTokens') + sumBy(llmCalls, 'tool_select_continue', 'outputTokens');
   const synthesisIn = sumBy(llmCalls, 'tool_answer', 'inputTokens') + sumBy(llmCalls, 'plan_synthesis', 'inputTokens');
-  const synthesisOut = sumBy(llmCalls, 'tool_answer', 'outputTokens') + sumBy(llmCalls, 'plan_synthesis', 'outputTokens');
+  const synthesisOut =
+    sumBy(llmCalls, 'tool_answer', 'outputTokens') + sumBy(llmCalls, 'plan_synthesis', 'outputTokens');
   const totalCalls = llmCalls.length;
   const totalLatency = llmCalls.reduce((s, r) => s + (r.latencyMs || 0), 0);
   console.log(
-    `  rep ${index + 1}: calls=${totalCalls} toolSearch(in=${toolSearchIn},out=${toolSearchOut}) `
-    + `reasoning(in=${reasoningIn},out=${reasoningOut}) synthesis(in=${synthesisIn},out=${synthesisOut}) `
-    + `totalLatencyMs=${totalLatency}`,
+    `  rep ${index + 1}: calls=${totalCalls} toolSearch(in=${toolSearchIn},out=${toolSearchOut}) ` +
+      `reasoning(in=${reasoningIn},out=${reasoningOut}) synthesis(in=${synthesisIn},out=${synthesisOut}) ` +
+      `totalLatencyMs=${totalLatency}`,
   );
   console.log(`           invoked=${JSON.stringify(rep.invocationLog)}`);
   return {
-    toolSearchIn, toolSearchOut, reasoningIn, reasoningOut, synthesisIn, synthesisOut, totalCalls, totalLatency,
+    toolSearchIn,
+    toolSearchOut,
+    reasoningIn,
+    reasoningOut,
+    synthesisIn,
+    synthesisOut,
+    totalCalls,
+    totalLatency,
   };
 }
 
@@ -205,7 +224,9 @@ function avg(values) {
 async function main() {
   const toolSearchModel = process.env.TOOL_SEARCH_MODEL;
   if (!toolSearchModel) {
-    throw new Error('TOOL_SEARCH_MODEL env var is required (e.g. qwen/qwen3-next-80b-a3b-thinking-maas) — no default, per config.js\'s own "never hardcode the model" convention.');
+    throw new Error(
+      'TOOL_SEARCH_MODEL env var is required (e.g. qwen/qwen3-next-80b-a3b-thinking-maas) — no default, per config.js\'s own "never hardcode the model" convention.',
+    );
   }
   const originalEnabled = config.toolSearch.enabled;
   const originalModel = config.toolSearch.model;
@@ -226,7 +247,9 @@ async function main() {
         // eslint-disable-next-line no-await-in-loop
         const reps = await runPath(appPool, identityContext, test, path, toolSearchModel);
         const metrics = reps.map((rep, i) => reportRep(rep, i)).filter(Boolean);
-        const accuracyPerRep = reps.filter((r) => !r.threw).map((r) => summarizeAccuracy(test.expectedTools, r.invocationLog));
+        const accuracyPerRep = reps
+          .filter((r) => !r.threw)
+          .map((r) => summarizeAccuracy(test.expectedTools, r.invocationLog));
 
         const summary = {
           test: test.label,
@@ -241,25 +264,35 @@ async function main() {
           avgSynthesisOut: avg(metrics.map((m) => m.synthesisOut)),
           avgTotalCalls: avg(metrics.map((m) => m.totalCalls)),
           avgTotalLatencyMs: avg(metrics.map((m) => m.totalLatency)),
-          fullCoverageRate: accuracyPerRep.length ? accuracyPerRep.filter((a) => a.fullCoverage).length / accuracyPerRep.length : 0,
+          fullCoverageRate: accuracyPerRep.length
+            ? accuracyPerRep.filter((a) => a.fullCoverage).length / accuracyPerRep.length
+            : 0,
           avgRecall: avg(accuracyPerRep.map((a) => a.recall)),
           avgPrecision: avg(accuracyPerRep.map((a) => a.precision)),
         };
-        summary.grandTotalTokens = summary.avgToolSearchIn + summary.avgToolSearchOut
-          + summary.avgReasoningIn + summary.avgReasoningOut + summary.avgSynthesisIn + summary.avgSynthesisOut;
+        summary.grandTotalTokens =
+          summary.avgToolSearchIn +
+          summary.avgToolSearchOut +
+          summary.avgReasoningIn +
+          summary.avgReasoningOut +
+          summary.avgSynthesisIn +
+          summary.avgSynthesisOut;
         allSummaries.push(summary);
         console.log(`  SUMMARY: ${JSON.stringify(summary, null, 2)}`);
       }
     }
 
     console.log('\n\n========== FINAL COMPARISON TABLE (averages across repetitions) ==========');
-    console.log('test  | path | toolSearch(io) | reasoning(io) | synthesis(io) | grandTotal | avgCalls | avgLatencyMs | fullCoverage | recall | precision');
+    console.log(
+      'test  | path | toolSearch(io) | reasoning(io) | synthesis(io) | grandTotal | avgCalls | avgLatencyMs | fullCoverage | recall | precision',
+    );
     allSummaries.forEach((s) => {
       console.log(
-        `${s.test.padEnd(6)}| ${s.path.padEnd(5)}| ${(s.avgToolSearchIn + s.avgToolSearchOut).toFixed(0).padEnd(15)}| `
-        + `${(s.avgReasoningIn + s.avgReasoningOut).toFixed(0).padEnd(14)}| ${(s.avgSynthesisIn + s.avgSynthesisOut).toFixed(0).padEnd(14)}| `
-        + `${s.grandTotalTokens.toFixed(0).padEnd(11)}| ${s.avgTotalCalls.toFixed(1).padEnd(9)}| ${s.avgTotalLatencyMs.toFixed(0).padEnd(13)}| `
-        + `${(s.fullCoverageRate * 100).toFixed(0)}%`.padEnd(13) + `| ${s.avgRecall.toFixed(2)} | ${s.avgPrecision.toFixed(2)}`,
+        `${s.test.padEnd(6)}| ${s.path.padEnd(5)}| ${(s.avgToolSearchIn + s.avgToolSearchOut).toFixed(0).padEnd(15)}| ` +
+          `${(s.avgReasoningIn + s.avgReasoningOut).toFixed(0).padEnd(14)}| ${(s.avgSynthesisIn + s.avgSynthesisOut).toFixed(0).padEnd(14)}| ` +
+          `${s.grandTotalTokens.toFixed(0).padEnd(11)}| ${s.avgTotalCalls.toFixed(1).padEnd(9)}| ${s.avgTotalLatencyMs.toFixed(0).padEnd(13)}| ` +
+          `${(s.fullCoverageRate * 100).toFixed(0)}%`.padEnd(13) +
+          `| ${s.avgRecall.toFixed(2)} | ${s.avgPrecision.toFixed(2)}`,
       );
     });
 
@@ -270,8 +303,8 @@ async function main() {
       const delta = newS.grandTotalTokens - oldS.grandTotalTokens;
       const verdict = delta < 0 ? 'NEW IS CHEAPER' : 'OLD IS CHEAPER OR EQUAL — NEW ADDS COST';
       console.log(
-        `${test.label}: OLD TOTAL=${oldS.grandTotalTokens.toFixed(0)} tok, NEW TOTAL=${newS.grandTotalTokens.toFixed(0)} tok, `
-        + `delta=${delta.toFixed(0)} tok -> ${verdict} | OLD coverage=${(oldS.fullCoverageRate * 100).toFixed(0)}% NEW coverage=${(newS.fullCoverageRate * 100).toFixed(0)}%`,
+        `${test.label}: OLD TOTAL=${oldS.grandTotalTokens.toFixed(0)} tok, NEW TOTAL=${newS.grandTotalTokens.toFixed(0)} tok, ` +
+          `delta=${delta.toFixed(0)} tok -> ${verdict} | OLD coverage=${(oldS.fullCoverageRate * 100).toFixed(0)}% NEW coverage=${(newS.fullCoverageRate * 100).toFixed(0)}%`,
       );
     });
   } finally {
@@ -281,4 +314,7 @@ async function main() {
   }
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

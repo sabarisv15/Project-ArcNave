@@ -99,10 +99,10 @@ function hostFor(subdomain) {
 async function seedTenant(adminPool, label) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const college = { collegeId: `att${label}${suffix}`, subdomain: `atttenant${label}${suffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [college.collegeId, college.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    college.collegeId,
+    college.subdomain,
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userIds = {};
   for (const [username, role] of [
@@ -137,7 +137,10 @@ async function seedTenant(adminPool, label) {
   // resolvePositionOccupant) reads position_class_assignments now, not
   // this column.
   const { officialEmail: tutorEmail } = await seedClassTutorPosition(adminPool, {
-    collegeId: college.collegeId, userId: userIds.tutoruser, classId: approvedClass.rows[0].id, passwordHash,
+    collegeId: college.collegeId,
+    userId: userIds.tutoruser,
+    classId: approvedClass.rows[0].id,
+    passwordHash,
   });
 
   // Hour 3, Saturday — the one real, structured link a "scheduled
@@ -191,12 +194,10 @@ test('attendance', async (t) => {
   });
 
   async function login(college, username) {
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/auth/login',
-      'POST',
-      { headers: { host: hostFor(college.subdomain) }, body: { username, password: PASSWORD } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/auth/login', 'POST', {
+      headers: { host: hostFor(college.subdomain) },
+      body: { username, password: PASSWORD },
+    });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -212,12 +213,10 @@ test('attendance', async (t) => {
   // Position Account login (actorRole 'class_tutor') — Position
   // Occupancy alone (tutoruser's personal login) no longer suffices.
   async function loginTutor(college) {
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/position-accounts/login',
-      'POST',
-      { headers: { host: hostFor(college.subdomain) }, body: { official_email: college.classTutorEmail, password: PASSWORD } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/position-accounts/login', 'POST', {
+      headers: { host: hostFor(college.subdomain) },
+      body: { official_email: college.classTutorEmail, password: PASSWORD },
+    });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -227,8 +226,11 @@ test('attendance', async (t) => {
   await t.test('the class tutor can mark attendance: 200 with the created row, snake_case', async () => {
     const token = await loginTutor(collegeA);
     const resp = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.approved, session_date: SESSION_DATE, hour_index: 1,
-      absent_student_ids: ['11111111-1111-1111-1111-111111111111'], total_students: 40,
+      class_id: collegeA.classIds.approved,
+      session_date: SESSION_DATE,
+      hour_index: 1,
+      absent_student_ids: ['11111111-1111-1111-1111-111111111111'],
+      total_students: 40,
     });
     assert.equal(resp.status, 200);
     assert.equal(resp.body.class_id, collegeA.classIds.approved);
@@ -243,13 +245,19 @@ test('attendance', async (t) => {
   // L4 seat, but this request uses tutoruser's PERSONAL login, marking
   // an hour they're not otherwise scheduled/substituted for. Position
   // Occupancy alone must not grant the tutor's blanket reach here.
-  await t.test('tutoruser\'s personal login cannot blanket-mark an hour they are not scheduled for, even though they occupy the class\'s L4 seat', async () => {
-    const token = await login(collegeA, 'tutoruser');
-    const resp = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.approved, session_date: SESSION_DATE, hour_index: 5, total_students: 40,
-    });
-    assert.equal(resp.status, 403);
-  });
+  await t.test(
+    "tutoruser's personal login cannot blanket-mark an hour they are not scheduled for, even though they occupy the class's L4 seat",
+    async () => {
+      const token = await login(collegeA, 'tutoruser');
+      const resp = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
+        class_id: collegeA.classIds.approved,
+        session_date: SESSION_DATE,
+        hour_index: 5,
+        total_students: 40,
+      });
+      assert.equal(resp.status, 403);
+    },
+  );
 
   // RS-ATT-002/RS-CLS-009 (D3, Stage 5): ownership-based, never title-
   // based — an HOD with no ownership over this specific hour is
@@ -257,34 +265,52 @@ test('attendance', async (t) => {
   await t.test('an HOD cannot force-mark a class they do not tutor: 403 (D3)', async () => {
     const token = await login(collegeA, 'hoduser');
     const resp = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.approved, session_date: SESSION_DATE, hour_index: 2, total_students: 40,
+      class_id: collegeA.classIds.approved,
+      session_date: SESSION_DATE,
+      hour_index: 2,
+      total_students: 40,
     });
     assert.equal(resp.status, 403);
   });
 
-  await t.test('the staff member genuinely scheduled for the period can mark it: 200, closing the flagged gap end-to-end', async () => {
-    const token = await login(collegeA, 'scheduledstaffuser');
-    const resp = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.approved, session_date: SESSION_DATE, hour_index: 3, total_students: 40,
-    });
-    assert.equal(resp.status, 200);
-    assert.equal(resp.body.marked_by_user_id, collegeA.userIds.scheduledstaffuser);
-  });
+  await t.test(
+    'the staff member genuinely scheduled for the period can mark it: 200, closing the flagged gap end-to-end',
+    async () => {
+      const token = await login(collegeA, 'scheduledstaffuser');
+      const resp = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
+        class_id: collegeA.classIds.approved,
+        session_date: SESSION_DATE,
+        hour_index: 3,
+        total_students: 40,
+      });
+      assert.equal(resp.status, 200);
+      assert.equal(resp.body.marked_by_user_id, collegeA.userIds.scheduledstaffuser);
+    },
+  );
 
-  await t.test('an unrelated staff member (not tutor, not HOD, not scheduled) is rejected with 403, not a 500', async () => {
-    const token = await login(collegeA, 'randomstaffuser');
-    const resp = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.approved, session_date: SESSION_DATE, hour_index: 4, total_students: 40,
-    });
-    assert.equal(resp.status, 403);
-  });
+  await t.test(
+    'an unrelated staff member (not tutor, not HOD, not scheduled) is rejected with 403, not a 500',
+    async () => {
+      const token = await login(collegeA, 'randomstaffuser');
+      const resp = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
+        class_id: collegeA.classIds.approved,
+        session_date: SESSION_DATE,
+        hour_index: 4,
+        total_students: 40,
+      });
+      assert.equal(resp.status, 403);
+    },
+  );
 
   // --- Basic mechanics ---
 
   await t.test('mark on a class whose timetable is not Approved returns 409, not a 500', async () => {
     const token = await loginTutor(collegeA);
     const resp = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.pending, session_date: SESSION_DATE, hour_index: 1, total_students: 40,
+      class_id: collegeA.classIds.pending,
+      session_date: SESSION_DATE,
+      hour_index: 1,
+      total_students: 40,
     });
     assert.equal(resp.status, 409);
   });
@@ -292,7 +318,9 @@ test('attendance', async (t) => {
   await t.test('mark rejects a missing class_id with 400, not a 500', async () => {
     const token = await loginTutor(collegeA);
     const resp = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
-      session_date: SESSION_DATE, hour_index: 1, total_students: 40,
+      session_date: SESSION_DATE,
+      hour_index: 1,
+      total_students: 40,
     });
     assert.equal(resp.status, 400);
   });
@@ -300,7 +328,10 @@ test('attendance', async (t) => {
   await t.test('mark with a nonexistent class_id returns 404, not a 500', async () => {
     const token = await loginTutor(collegeA);
     const resp = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
-      class_id: crypto.randomUUID(), session_date: SESSION_DATE, hour_index: 1, total_students: 40,
+      class_id: crypto.randomUUID(),
+      session_date: SESSION_DATE,
+      hour_index: 1,
+      total_students: 40,
     });
     assert.equal(resp.status, 404);
   });
@@ -308,13 +339,19 @@ test('attendance', async (t) => {
   await t.test('re-marking the same (class, date, hour) updates the existing session, not a new one', async () => {
     const token = await loginTutor(collegeA);
     const first = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.approved, session_date: SESSION_DATE, hour_index: 5, total_students: 40,
+      class_id: collegeA.classIds.approved,
+      session_date: SESSION_DATE,
+      hour_index: 5,
+      total_students: 40,
     });
     assert.equal(first.status, 200);
 
     const second = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.approved, session_date: SESSION_DATE, hour_index: 5,
-      absent_student_ids: ['22222222-2222-2222-2222-222222222222'], total_students: 41,
+      class_id: collegeA.classIds.approved,
+      session_date: SESSION_DATE,
+      hour_index: 5,
+      absent_student_ids: ['22222222-2222-2222-2222-222222222222'],
+      total_students: 41,
     });
     assert.equal(second.status, 200);
     assert.equal(second.body.id, first.body.id);
@@ -325,7 +362,10 @@ test('attendance', async (t) => {
   await t.test('a locked session cannot be modified: 409, not a 500', async () => {
     const token = await loginTutor(collegeA);
     const created = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.approved, session_date: SESSION_DATE, hour_index: 6, total_students: 40,
+      class_id: collegeA.classIds.approved,
+      session_date: SESSION_DATE,
+      hour_index: 6,
+      total_students: 40,
     });
     assert.equal(created.status, 200);
 
@@ -336,7 +376,10 @@ test('attendance', async (t) => {
     await adminPool.query('UPDATE attendance_sessions SET locked_at = now() WHERE id = $1', [created.body.id]);
 
     const resp = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.approved, session_date: SESSION_DATE, hour_index: 6, total_students: 99,
+      class_id: collegeA.classIds.approved,
+      session_date: SESSION_DATE,
+      hour_index: 6,
+      total_students: 99,
     });
     assert.equal(resp.status, 409);
   });
@@ -344,7 +387,10 @@ test('attendance', async (t) => {
   await t.test('get by id returns 200 for an existing session, 404 for an unknown id', async () => {
     const token = await loginTutor(collegeA);
     const created = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.approved, session_date: SESSION_DATE, hour_index: 7, total_students: 40,
+      class_id: collegeA.classIds.approved,
+      session_date: SESSION_DATE,
+      hour_index: 7,
+      total_students: 40,
     });
     const found = await get(baseUrl, `/api/v1/attendance/${created.body.id}`, headersFor(collegeA, token));
     assert.equal(found.status, 200);
@@ -360,7 +406,7 @@ test('attendance', async (t) => {
     assert.equal(missingClassId.status, 400);
   });
 
-  await t.test('list by class_id and session_date returns this class\'s marked periods that day', async () => {
+  await t.test("list by class_id and session_date returns this class's marked periods that day", async () => {
     const token = await loginTutor(collegeA);
     const resp = await get(
       baseUrl,
@@ -375,7 +421,11 @@ test('attendance', async (t) => {
 
   await t.test('list by class_id alone (no date filter) returns all-time sessions for that class', async () => {
     const token = await loginTutor(collegeA);
-    const resp = await get(baseUrl, `/api/v1/attendance?class_id=${collegeA.classIds.approved}`, headersFor(collegeA, token));
+    const resp = await get(
+      baseUrl,
+      `/api/v1/attendance?class_id=${collegeA.classIds.approved}`,
+      headersFor(collegeA, token),
+    );
     assert.equal(resp.status, 200);
     assert.ok(Array.isArray(resp.body));
     assert.ok(resp.body.length >= 1);
@@ -405,13 +455,20 @@ test('attendance', async (t) => {
 
   await t.test('mark requires authentication', async () => {
     const resp = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA), {
-      class_id: collegeA.classIds.approved, session_date: SESSION_DATE, hour_index: 8, total_students: 40,
+      class_id: collegeA.classIds.approved,
+      session_date: SESSION_DATE,
+      hour_index: 8,
+      total_students: 40,
     });
     assert.equal(resp.status, 401);
   });
 
   await t.test('read requires authentication', async () => {
-    const resp = await get(baseUrl, `/api/v1/attendance?class_id=${collegeA.classIds.approved}&session_date=${SESSION_DATE}`, headersFor(collegeA));
+    const resp = await get(
+      baseUrl,
+      `/api/v1/attendance?class_id=${collegeA.classIds.approved}&session_date=${SESSION_DATE}`,
+      headersFor(collegeA),
+    );
     assert.equal(resp.status, 401);
   });
 
@@ -422,7 +479,10 @@ test('attendance', async (t) => {
     const tokenB = await loginTutor(collegeB);
 
     const created = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, tokenA), {
-      class_id: collegeA.classIds.approved, session_date: SESSION_DATE, hour_index: 9, total_students: 40,
+      class_id: collegeA.classIds.approved,
+      session_date: SESSION_DATE,
+      hour_index: 9,
+      total_students: 40,
     });
     assert.equal(created.status, 200);
 
@@ -432,27 +492,36 @@ test('attendance', async (t) => {
 
   // --- Audit attribution ---
 
-  await t.test('mark then re-mark writes exactly two audit_log rows, attributed correctly and named correctly', async () => {
-    const token = await loginTutor(collegeA);
-    const created = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.approved, session_date: SESSION_DATE, hour_index: 10, total_students: 40,
-    });
-    assert.equal(created.status, 200);
+  await t.test(
+    'mark then re-mark writes exactly two audit_log rows, attributed correctly and named correctly',
+    async () => {
+      const token = await loginTutor(collegeA);
+      const created = await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
+        class_id: collegeA.classIds.approved,
+        session_date: SESSION_DATE,
+        hour_index: 10,
+        total_students: 40,
+      });
+      assert.equal(created.status, 200);
 
-    await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.approved, session_date: SESSION_DATE, hour_index: 10, total_students: 41,
-    });
+      await post(baseUrl, '/api/v1/attendance', headersFor(collegeA, token), {
+        class_id: collegeA.classIds.approved,
+        session_date: SESSION_DATE,
+        hour_index: 10,
+        total_students: 41,
+      });
 
-    const rows = await adminPool.query(
-      `SELECT action, user_id, entity FROM audit_log
+      const rows = await adminPool.query(
+        `SELECT action, user_id, entity FROM audit_log
        WHERE college_id = $1 AND entity_id = $2 ORDER BY created_at`,
-      [collegeA.collegeId, created.body.id],
-    );
-    assert.equal(rows.rows.length, 2);
-    assert.equal(rows.rows[0].action, 'attendance_marked');
-    assert.equal(rows.rows[1].action, 'attendance_remarked');
-    assert.equal(rows.rows[0].entity, 'attendance_sessions');
-    assert.equal(rows.rows[0].user_id, collegeA.userIds.tutoruser);
-    assert.equal(rows.rows[1].user_id, collegeA.userIds.tutoruser);
-  });
+        [collegeA.collegeId, created.body.id],
+      );
+      assert.equal(rows.rows.length, 2);
+      assert.equal(rows.rows[0].action, 'attendance_marked');
+      assert.equal(rows.rows[1].action, 'attendance_remarked');
+      assert.equal(rows.rows[0].entity, 'attendance_sessions');
+      assert.equal(rows.rows[0].user_id, collegeA.userIds.tutoruser);
+      assert.equal(rows.rows[1].user_id, collegeA.userIds.tutoruser);
+    },
+  );
 });

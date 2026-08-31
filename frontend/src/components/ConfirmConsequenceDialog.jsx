@@ -81,9 +81,7 @@ export function ConfirmConsequenceDialog({
           </ol>
 
           <div className="flex flex-wrap items-center gap-[10px] px-[24px] py-[16px] mt-[6px] border-t border-line bg-tint">
-            {footnote && (
-              <span className="min-w-0 flex-1 text-[11.5px] text-ink-faint">{footnote}</span>
-            )}
+            {footnote && <span className="min-w-0 flex-1 text-[11.5px] text-ink-faint">{footnote}</span>}
             <div className={cn('flex gap-[10px]', footnote ? 'flex-none' : 'flex-1 justify-end')}>
               <AlertDialog.Cancel asChild>
                 <button type="button" className={ghostBtn}>

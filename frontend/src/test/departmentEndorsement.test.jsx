@@ -21,12 +21,7 @@ import { PROVISIONING, PROVISIONING_WITHOUT_LEVEL_2 } from '../lib/provisioning'
 import { LIVE_VERSION_ID, TIMETABLE_VERSIONS, findConflicts } from '../lib/departmentTimetableData';
 import { DEPT_FACULTY } from '../lib/departmentData';
 import { FACULTY_LOAD } from '../lib/departmentSignals';
-import {
-  FACULTY_LIFECYCLE_STATES,
-  LIFECYCLE_KEYS,
-  isAssignable,
-  reassignmentPreflight,
-} from '../lib/facultyLifecycle';
+import { FACULTY_LIFECYCLE_STATES, LIFECYCLE_KEYS, isAssignable, reassignmentPreflight } from '../lib/facultyLifecycle';
 import { CLASS_TUTOR_SEATS } from '../lib/seatState';
 
 /**
@@ -52,7 +47,7 @@ function renderApp(route = '/department/timetable') {
           </WorkspaceProvider>
         </Tooltip.Provider>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -70,7 +65,7 @@ describe('The approval chain is configuration', () => {
     const chain = endorsementChain(PROVISIONING);
     expect(chain).toHaveLength(3);
     expect(endorsementChainLabel(PROVISIONING)).toBe(
-      'Head of Department endorsement → Dean — Academic Affairs review → Principal final approval'
+      'Head of Department endorsement → Dean — Academic Affairs review → Principal final approval',
     );
     expect(endorsedStateFor(PROVISIONING)).toBe('endorsed_pending_l2');
     expect(nextSeatFor('endorsed_pending_l2', PROVISIONING)).toBe('Dean — Academic Affairs review');
@@ -81,7 +76,7 @@ describe('The approval chain is configuration', () => {
     expect(chain).toHaveLength(2);
     // Configured titles, never an L-number and never a second product concept.
     expect(endorsementChainLabel(PROVISIONING_WITHOUT_LEVEL_2)).toBe(
-      'Department Head endorsement → Director final approval'
+      'Department Head endorsement → Director final approval',
     );
     expect(endorsedStateFor(PROVISIONING_WITHOUT_LEVEL_2)).toBe('endorsed_pending_l1');
     expect(nextSeatFor('endorsed_pending_l1', PROVISIONING_WITHOUT_LEVEL_2)).toBe('Director final approval');
@@ -161,9 +156,7 @@ describe('Department → Timetable', () => {
     const drawer = await screen.findByRole('dialog', { name: /revision/i });
     expect(within(drawer).getByRole('button', { name: 'Endorse' })).toBeInTheDocument();
     expect(within(drawer).queryByRole('button', { name: /^Approve$/ })).not.toBeInTheDocument();
-    expect(
-      within(drawer).getByText(/Endorsement is not final approval/i)
-    ).toBeInTheDocument();
+    expect(within(drawer).getByText(/Endorsement is not final approval/i)).toBeInTheDocument();
   });
 
   it('renders the configured chain, delegated step included', async () => {
@@ -188,9 +181,7 @@ describe('Department → Timetable', () => {
 
     const drawer = await screen.findByRole('dialog', { name: /revision/i });
     expect(within(drawer).queryByRole('button', { name: 'Endorse' })).not.toBeInTheDocument();
-    expect(
-      within(drawer).getByText(/cannot be endorsed until its conflicts are resolved/i)
-    ).toBeInTheDocument();
+    expect(within(drawer).getByText(/cannot be endorsed until its conflicts are resolved/i)).toBeInTheDocument();
   });
 });
 

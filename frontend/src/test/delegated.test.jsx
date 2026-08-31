@@ -21,10 +21,7 @@ import { LEVEL_2, TEACHING_STAFF } from '../lib/roles';
 import { canFinalApprove, endorsementChainLabel } from '../lib/endorsementChain';
 import { AcademicTermProvider } from '../store/AcademicTermProvider';
 import { AcademicRosterProvider } from '../store/AcademicRosterProvider';
-import {
-  InstitutionalLifecycleProvider,
-  useInstitutionalLifecycle,
-} from '../store/InstitutionalLifecycleProvider';
+import { InstitutionalLifecycleProvider, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
 
 const wrapper = ({ children }) => (
   <AcademicTermProvider>
@@ -65,7 +62,7 @@ function renderApp(route = '/') {
           </WorkspaceProvider>
         </Tooltip.Provider>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -95,13 +92,7 @@ describe('delegated scope resolution', () => {
 
   it('builds navigation from configuration, not from a duty list', () => {
     const labels = delegatedNavItems(delegatedScope()).map((i) => i.label);
-    expect(labels).toEqual([
-      'Delegated Overview',
-      'Routed Approvals',
-      'Work Areas',
-      'Documents',
-      'Calendar',
-    ]);
+    expect(labels).toEqual(['Delegated Overview', 'Routed Approvals', 'Work Areas', 'Documents', 'Calendar']);
     // The duty modules a "Dean" is commonly assumed to own are not here.
     expect(labels).not.toContain('Attendance & Class log');
     expect(labels).not.toContain('Assessments');
@@ -132,8 +123,7 @@ describe('no Staff fallthrough', () => {
     renderApp('/delegated');
     await useDelegatedSeat(user);
 
-    expect((await screen.findAllByRole('heading', { name: 'Dean — Academic Affairs' })).length)
-      .toBeGreaterThan(0);
+    expect((await screen.findAllByRole('heading', { name: 'Dean — Academic Affairs' })).length).toBeGreaterThan(0);
     const nav = screen.getByRole('navigation', { name: /curriculum navigation/i });
     expect(within(nav).getByRole('link', { name: /Delegated Overview/i })).toBeTruthy();
     expect(within(nav).queryByRole('link', { name: /^Staff$/i })).toBeNull();
@@ -210,20 +200,15 @@ describe('the boundary of a delegated review', () => {
 
   it('refuses a department outside the delegated scope', () => {
     const scope = delegatedScope();
-    expect(
-      canDelegatedReview('endorsed_pending_l2', scope, { departmentId: 'dept-comm' })
-    ).toBe(false);
-    expect(
-      canDelegatedReview('endorsed_pending_l2', scope, { departmentId: 'dept-ece' })
-    ).toBe(true);
+    expect(canDelegatedReview('endorsed_pending_l2', scope, { departmentId: 'dept-comm' })).toBe(false);
+    expect(canDelegatedReview('endorsed_pending_l2', scope, { departmentId: 'dept-ece' })).toBe(true);
   });
 
   it('refuses every state except the one routed to it', () => {
     const scope = delegatedScope();
-    ['ready_for_endorsement', 'conflict_identified', 'endorsed_pending_l1', 'approved_locked', 'draft']
-      .forEach((state) =>
-        expect(canDelegatedReview(state, scope, { departmentId: ROUTED })).toBe(false)
-      );
+    ['ready_for_endorsement', 'conflict_identified', 'endorsed_pending_l1', 'approved_locked', 'draft'].forEach(
+      (state) => expect(canDelegatedReview(state, scope, { departmentId: ROUTED })).toBe(false),
+    );
   });
 });
 

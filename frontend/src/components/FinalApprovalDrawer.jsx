@@ -83,9 +83,7 @@ export function FinalApprovalDrawer({ row, department, onClose }) {
     if (mode === 'return') {
       const result = returnForRevision(row.departmentId, { reason: note });
       if (!result.ok) {
-        toast.error(
-          result.detail ?? LIFECYCLE_REJECTION[result.reason] ?? 'That revision could not be returned.'
-        );
+        toast.error(result.detail ?? LIFECYCLE_REJECTION[result.reason] ?? 'That revision could not be returned.');
         return;
       }
       toast.success(`Returned for revision · ${department.name}`);
@@ -95,9 +93,7 @@ export function FinalApprovalDrawer({ row, department, onClose }) {
 
     const result = approveFinal(row.departmentId, { note });
     if (!result.ok) {
-      toast.error(
-        result.detail ?? LIFECYCLE_REJECTION[result.reason] ?? 'That revision could not be approved.'
-      );
+      toast.error(result.detail ?? LIFECYCLE_REJECTION[result.reason] ?? 'That revision could not be approved.');
       return;
     }
     toast.success(`Approved — ready to lock · ${department.name}`);
@@ -118,7 +114,7 @@ export function FinalApprovalDrawer({ row, department, onClose }) {
           <span
             className={cn(
               'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-              definition.tone
+              definition.tone,
             )}
           >
             {definition.label}
@@ -152,16 +148,11 @@ export function FinalApprovalDrawer({ row, department, onClose }) {
                 : 'Recomputed from the grid, not read off a stored count.'
             }
           />
-          <Row
-            label="Waiting on"
-            value={waitingOn ?? 'Nobody — this revision is settled'}
-          />
+          <Row label="Waiting on" value={waitingOn ?? 'Nobody — this revision is settled'} />
         </dl>
 
         <div>
-          <div className="text-[11px] font-[500] tracking-[.05em] uppercase text-ink-muted">
-            Approval chain
-          </div>
+          <div className="text-[11px] font-[500] tracking-[.05em] uppercase text-ink-muted">Approval chain</div>
           <div className="mt-[7px]">
             <WorkflowTimeline steps={steps} />
           </div>
@@ -169,9 +160,7 @@ export function FinalApprovalDrawer({ row, department, onClose }) {
 
         {decision ? (
           <div>
-            <div className="text-[11px] font-[500] tracking-[.05em] uppercase text-ink-muted">
-              Decision
-            </div>
+            <div className="text-[11px] font-[500] tracking-[.05em] uppercase text-ink-muted">Decision</div>
             <dl className="m-0 mt-[4px]">
               <Row
                 label="Outcome"
@@ -236,11 +225,7 @@ export function FinalApprovalDrawer({ row, department, onClose }) {
         />
       ) : mode ? (
         <DrawerRail
-          meta={
-            <span className="text-[11.5px] text-ink-faint">
-              The live timetable is unaffected either way.
-            </span>
-          }
+          meta={<span className="text-[11.5px] text-ink-faint">The live timetable is unaffected either way.</span>}
         >
           <button type="button" className={GHOST_BTN} onClick={() => setMode(null)}>
             Cancel

@@ -21,8 +21,21 @@
 // text dump.
 
 const {
-  Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun, HeadingLevel,
-  WidthType, ShadingType, BorderStyle, AlignmentType, Footer, PageNumber, Header,
+  Document,
+  Packer,
+  Paragraph,
+  Table,
+  TableRow,
+  TableCell,
+  TextRun,
+  HeadingLevel,
+  WidthType,
+  ShadingType,
+  BorderStyle,
+  AlignmentType,
+  Footer,
+  PageNumber,
+  Header,
 } = require('docx');
 const { parseTableAt } = require('./markdownTableParser');
 const { HEX } = require('./documentTheme');
@@ -33,9 +46,11 @@ function textCell(text, { bold, color, fill } = {}) {
   return new TableCell({
     shading: fill ? { type: ShadingType.CLEAR, fill } : undefined,
     margins: { top: 80, bottom: 80, left: 100, right: 100 },
-    children: [new Paragraph({
-      children: [new TextRun({ text: text === null || text === undefined ? '' : String(text), bold, color })],
-    })],
+    children: [
+      new Paragraph({
+        children: [new TextRun({ text: text === null || text === undefined ? '' : String(text), bold, color })],
+      }),
+    ],
   });
 }
 
@@ -44,9 +59,12 @@ function tableElement(columns, rows) {
     tableHeader: true,
     children: columns.map((c) => textCell(c.label, { bold: true, color: 'FFFFFF', fill: HEX.accent })),
   });
-  const dataRows = rows.map((row, i) => new TableRow({
-    children: columns.map((c) => textCell(row[c.id], { fill: i % 2 === 1 ? HEX.accentSoft : undefined })),
-  }));
+  const dataRows = rows.map(
+    (row, i) =>
+      new TableRow({
+        children: columns.map((c) => textCell(row[c.id], { fill: i % 2 === 1 ? HEX.accentSoft : undefined })),
+      }),
+  );
   return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [headerRow, ...dataRows] });
 }
 
@@ -56,19 +74,30 @@ function headingParagraph(text, level) {
   // Gemini's own colored section-bar treatment — docx has no "colored
   // block behind text" primitive as simple as pdfkit's rect+fill, but a
   // heavy left border reads the same way in Word.
-  const border = level > 1 ? {
-    left: {
-      color: HEX.accent, space: 8, style: BorderStyle.SINGLE, size: 24,
-    },
-  } : undefined;
+  const border =
+    level > 1
+      ? {
+          left: {
+            color: HEX.accent,
+            space: 8,
+            style: BorderStyle.SINGLE,
+            size: 24,
+          },
+        }
+      : undefined;
   return new Paragraph({
     heading,
     spacing: { before: level === 1 ? 0 : 280, after: 140 },
     border,
     indent: level > 1 ? { left: 160 } : undefined,
-    children: [new TextRun({
-      text, bold: true, color: HEX.ink, size: HEADING_SIZE[level],
-    })],
+    children: [
+      new TextRun({
+        text,
+        bold: true,
+        color: HEX.ink,
+        size: HEADING_SIZE[level],
+      }),
+    ],
   });
 }
 
@@ -81,9 +110,14 @@ async function generate({ title, markdown }) {
     new Paragraph({
       shading: { type: ShadingType.CLEAR, fill: HEX.accent },
       spacing: { before: 0, after: 320 },
-      children: [new TextRun({
-        text: title, bold: true, color: 'FFFFFF', size: 40,
-      })],
+      children: [
+        new TextRun({
+          text: title,
+          bold: true,
+          color: 'FFFFFF',
+          size: 40,
+        }),
+      ],
     }),
   ];
 
@@ -102,42 +136,54 @@ async function generate({ title, markdown }) {
     if (headingMatch) {
       children.push(headingParagraph(headingMatch[2], headingMatch[1].length));
     } else if (line.trim()) {
-      children.push(new Paragraph({
-        spacing: { after: 120 },
-        children: [new TextRun({ text: line, color: HEX.inkSoft })],
-      }));
+      children.push(
+        new Paragraph({
+          spacing: { after: 120 },
+          children: [new TextRun({ text: line, color: HEX.inkSoft })],
+        }),
+      );
     }
     i += 1;
   }
 
   const doc = new Document({
-    sections: [{
-      headers: {
-        default: new Header({
-          children: [new Paragraph({
-            alignment: AlignmentType.RIGHT,
-            children: [new TextRun({ text: title, size: 16, color: HEX.inkMuted })],
-          })],
-        }),
-      },
-      footers: {
-        default: new Footer({
-          children: [new Paragraph({
-            alignment: AlignmentType.CENTER,
+    sections: [
+      {
+        headers: {
+          default: new Header({
             children: [
-              new TextRun({
-                children: [PageNumber.CURRENT], size: 16, color: HEX.inkMuted,
-              }),
-              new TextRun({ text: ' of ', size: 16, color: HEX.inkMuted }),
-              new TextRun({
-                children: [PageNumber.TOTAL_PAGES], size: 16, color: HEX.inkMuted,
+              new Paragraph({
+                alignment: AlignmentType.RIGHT,
+                children: [new TextRun({ text: title, size: 16, color: HEX.inkMuted })],
               }),
             ],
-          })],
-        }),
+          }),
+        },
+        footers: {
+          default: new Footer({
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [
+                  new TextRun({
+                    children: [PageNumber.CURRENT],
+                    size: 16,
+                    color: HEX.inkMuted,
+                  }),
+                  new TextRun({ text: ' of ', size: 16, color: HEX.inkMuted }),
+                  new TextRun({
+                    children: [PageNumber.TOTAL_PAGES],
+                    size: 16,
+                    color: HEX.inkMuted,
+                  }),
+                ],
+              }),
+            ],
+          }),
+        },
+        children,
       },
-      children,
-    }],
+    ],
   });
   const buffer = await Packer.toBuffer(doc);
   return Buffer.from(buffer);

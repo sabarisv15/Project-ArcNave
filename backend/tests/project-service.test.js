@@ -19,7 +19,7 @@ test('ProjectService (no DB)', async (t) => {
     );
   });
 
-  await t.test('createProject trims the name and writes it against the caller\'s own ids', async () => {
+  await t.test("createProject trims the name and writes it against the caller's own ids", async () => {
     const createMock = t.mock.method(projectRepository, 'create', async (client, fields) => {
       assert.deepEqual(fields, { collegeId: 'c1', userId: 'u1', name: 'NAAC prep' });
       return { id: 'p1', ...fields };
@@ -30,7 +30,7 @@ test('ProjectService (no DB)', async (t) => {
     assert.equal(result.id, 'p1');
   });
 
-  await t.test('updateProject throws ProjectForbiddenError for another user\'s project', async () => {
+  await t.test("updateProject throws ProjectForbiddenError for another user's project", async () => {
     const findMock = t.mock.method(projectRepository, 'findById', async () => ({ id: 'p1', user_id: 'OTHER' }));
     t.after(() => findMock.mock.restore());
 
@@ -67,9 +67,17 @@ test('ProjectService (no DB)', async (t) => {
       assert.deepEqual(fields, { instructions: 'Always answer in bullet points' });
       return { id: 'p1', ...fields };
     });
-    t.after(() => { findMock.mock.restore(); updateMock.mock.restore(); });
+    t.after(() => {
+      findMock.mock.restore();
+      updateMock.mock.restore();
+    });
 
-    await projectService.updateProject({}, 'p1', { instructions: '  Always answer in bullet points  ' }, { userId: 'u1' });
+    await projectService.updateProject(
+      {},
+      'p1',
+      { instructions: '  Always answer in bullet points  ' },
+      { userId: 'u1' },
+    );
     assert.equal(updateMock.mock.calls.length, 1);
   });
 
@@ -80,7 +88,10 @@ test('ProjectService (no DB)', async (t) => {
       assert.deepEqual(fields, { pinned: true });
       return { id: 'p1', ...fields };
     });
-    t.after(() => { findMock.mock.restore(); updateMock.mock.restore(); });
+    t.after(() => {
+      findMock.mock.restore();
+      updateMock.mock.restore();
+    });
 
     await projectService.updateProject({}, 'p1', { pinned: true }, { userId: 'u1' });
     assert.equal(updateMock.mock.calls.length, 1);
@@ -91,16 +102,29 @@ test('ProjectService (no DB)', async (t) => {
     const removeMock = t.mock.method(projectRepository, 'remove', async (client, id) => {
       assert.equal(id, 'p1');
     });
-    t.after(() => { findMock.mock.restore(); removeMock.mock.restore(); });
+    t.after(() => {
+      findMock.mock.restore();
+      removeMock.mock.restore();
+    });
 
     await projectService.deleteProject({}, 'p1', { userId: 'u1' });
     assert.equal(removeMock.mock.calls.length, 1);
   });
 
   await t.test('attachProjectDocument rejects a document the acting user does not own', async () => {
-    const findMock = t.mock.method(projectRepository, 'findById', async () => ({ id: 'p1', user_id: 'u1', college_id: 'c1' }));
-    const getDocMock = t.mock.method(documentService, 'getDocument', async () => ({ id: 'd1', uploaded_by_user_id: 'OTHER' }));
-    t.after(() => { findMock.mock.restore(); getDocMock.mock.restore(); });
+    const findMock = t.mock.method(projectRepository, 'findById', async () => ({
+      id: 'p1',
+      user_id: 'u1',
+      college_id: 'c1',
+    }));
+    const getDocMock = t.mock.method(documentService, 'getDocument', async () => ({
+      id: 'd1',
+      uploaded_by_user_id: 'OTHER',
+    }));
+    t.after(() => {
+      findMock.mock.restore();
+      getDocMock.mock.restore();
+    });
 
     await assert.rejects(
       () => projectService.attachProjectDocument({}, 'p1', { documentId: 'd1' }, { userId: 'u1' }),
@@ -109,9 +133,16 @@ test('ProjectService (no DB)', async (t) => {
   });
 
   await t.test('attachProjectDocument rejects a document that does not exist', async () => {
-    const findMock = t.mock.method(projectRepository, 'findById', async () => ({ id: 'p1', user_id: 'u1', college_id: 'c1' }));
+    const findMock = t.mock.method(projectRepository, 'findById', async () => ({
+      id: 'p1',
+      user_id: 'u1',
+      college_id: 'c1',
+    }));
     const getDocMock = t.mock.method(documentService, 'getDocument', async () => null);
-    t.after(() => { findMock.mock.restore(); getDocMock.mock.restore(); });
+    t.after(() => {
+      findMock.mock.restore();
+      getDocMock.mock.restore();
+    });
 
     await assert.rejects(
       () => projectService.attachProjectDocument({}, 'p1', { documentId: 'missing' }, { userId: 'u1' }),
@@ -120,10 +151,23 @@ test('ProjectService (no DB)', async (t) => {
   });
 
   await t.test('attachProjectDocument rejects an already-attached document', async () => {
-    const findMock = t.mock.method(projectRepository, 'findById', async () => ({ id: 'p1', user_id: 'u1', college_id: 'c1' }));
-    const getDocMock = t.mock.method(documentService, 'getDocument', async () => ({ id: 'd1', uploaded_by_user_id: 'u1' }));
-    const findLinkMock = t.mock.method(projectDocumentRepository, 'findByProjectAndDocument', async () => ({ id: 'link1' }));
-    t.after(() => { findMock.mock.restore(); getDocMock.mock.restore(); findLinkMock.mock.restore(); });
+    const findMock = t.mock.method(projectRepository, 'findById', async () => ({
+      id: 'p1',
+      user_id: 'u1',
+      college_id: 'c1',
+    }));
+    const getDocMock = t.mock.method(documentService, 'getDocument', async () => ({
+      id: 'd1',
+      uploaded_by_user_id: 'u1',
+    }));
+    const findLinkMock = t.mock.method(projectDocumentRepository, 'findByProjectAndDocument', async () => ({
+      id: 'link1',
+    }));
+    t.after(() => {
+      findMock.mock.restore();
+      getDocMock.mock.restore();
+      findLinkMock.mock.restore();
+    });
 
     await assert.rejects(
       () => projectService.attachProjectDocument({}, 'p1', { documentId: 'd1' }, { userId: 'u1' }),
@@ -132,24 +176,37 @@ test('ProjectService (no DB)', async (t) => {
   });
 
   await t.test('attachProjectDocument creates the link for an owned, unattached document', async () => {
-    const findMock = t.mock.method(projectRepository, 'findById', async () => ({ id: 'p1', user_id: 'u1', college_id: 'c1' }));
-    const getDocMock = t.mock.method(documentService, 'getDocument', async () => ({ id: 'd1', uploaded_by_user_id: 'u1' }));
+    const findMock = t.mock.method(projectRepository, 'findById', async () => ({
+      id: 'p1',
+      user_id: 'u1',
+      college_id: 'c1',
+    }));
+    const getDocMock = t.mock.method(documentService, 'getDocument', async () => ({
+      id: 'd1',
+      uploaded_by_user_id: 'u1',
+    }));
     const findLinkMock = t.mock.method(projectDocumentRepository, 'findByProjectAndDocument', async () => null);
     const createMock = t.mock.method(projectDocumentRepository, 'create', async (client, fields) => {
       assert.deepEqual(fields, {
-        collegeId: 'c1', projectId: 'p1', documentId: 'd1', addedByUserId: 'u1',
+        collegeId: 'c1',
+        projectId: 'p1',
+        documentId: 'd1',
+        addedByUserId: 'u1',
       });
       return { id: 'link1', ...fields };
     });
     t.after(() => {
-      findMock.mock.restore(); getDocMock.mock.restore(); findLinkMock.mock.restore(); createMock.mock.restore();
+      findMock.mock.restore();
+      getDocMock.mock.restore();
+      findLinkMock.mock.restore();
+      createMock.mock.restore();
     });
 
     const result = await projectService.attachProjectDocument({}, 'p1', { documentId: 'd1' }, { userId: 'u1' });
     assert.equal(result.id, 'link1');
   });
 
-  await t.test('detachProjectDocument rejects another user\'s project', async () => {
+  await t.test("detachProjectDocument rejects another user's project", async () => {
     const findMock = t.mock.method(projectRepository, 'findById', async () => ({ id: 'p1', user_id: 'OTHER' }));
     t.after(() => findMock.mock.restore());
 

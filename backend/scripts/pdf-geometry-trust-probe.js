@@ -48,8 +48,16 @@ async function geometryText(buffer, separator = ' ') {
       if (bucket) bucket.items.push(it);
       else buckets.push({ y: it.y, items: [it] });
     });
-    buckets.sort((a, b) => b.y - a.y)
-      .forEach((b) => lines.push(b.items.sort((p1, q) => p1.x - q.x).map((it) => it.str).join(separator)));
+    buckets
+      .sort((a, b) => b.y - a.y)
+      .forEach((b) =>
+        lines.push(
+          b.items
+            .sort((p1, q) => p1.x - q.x)
+            .map((it) => it.str)
+            .join(separator),
+        ),
+      );
   }
   return lines.join('\n');
 }
@@ -63,15 +71,22 @@ function referenceAnswer(text) {
   const scoped = records.filter((record) => {
     let active = null;
     for (const section of sections) {
-      if (section.startLine <= record.startLine) active = section; else break;
+      if (section.startLine <= record.startLine) active = section;
+      else break;
     }
     return active !== null && matching.has(active.startLine);
   });
   if (scoped.length === 0) return { strategy, sections: sections.length, total: 0, matchedCount: 0 };
-  const rows = documentAggregateService.aggregate(scoped, { filter: { pattern: 'RA', mode: 'include' }, operation: 'count' });
+  const rows = documentAggregateService.aggregate(scoped, {
+    filter: { pattern: 'RA', mode: 'include' },
+    operation: 'count',
+  });
   const s = documentAggregateService.summarize(rows);
   return {
-    strategy, sections: sections.length, total: s.total, matchedCount: s.matchedCount,
+    strategy,
+    sections: sections.length,
+    total: s.total,
+    matchedCount: s.matchedCount,
   };
 }
 
@@ -86,13 +101,17 @@ async function main() {
   console.log('  geometry (space) :', JSON.stringify(geomAnswer));
   const same = flatAnswer.total === geomAnswer.total && flatAnswer.matchedCount === geomAnswer.matchedCount;
   console.log(`  -> ${same ? 'IDENTICAL — no regression' : 'DIFFERENT — this is a regression'}`);
-  console.log(`  (expected 77 arrears / 21 students; sections detected: flat ${flatAnswer.sections}, geometry ${geomAnswer.sections})`);
+  console.log(
+    `  (expected 77 arrears / 21 students; sections detected: flat ${flatAnswer.sections}, geometry ${geomAnswer.sections})`,
+  );
 
   console.log('\n=== 2. THE TRAP — coverage says "reliable" but the columns are misattributed ===\n');
   const fees = fs.readFileSync(path.join(DOWNLOADS, 'EXAM FEES ece(sw) III YR 7 SEM.pdf'));
   const geomFees = await geometryText(fees, ' ');
   const parsed = documentTableExtractionService.extractRecords(geomFees);
-  console.log(`  strategy=${parsed.strategy} records=${parsed.records.length} coverage=${JSON.stringify(parsed.coverage)}\n`);
+  console.log(
+    `  strategy=${parsed.strategy} records=${parsed.records.length} coverage=${JSON.stringify(parsed.coverage)}\n`,
+  );
   parsed.records.slice(1, 5).forEach((r) => {
     console.log(`  --- serial ${r.serialNo} (${r.regNo}) ---`);
     r.block.split('\n').forEach((l) => console.log(`      ${l.slice(0, 100)}`));
@@ -101,10 +120,14 @@ async function main() {
   // What a numeric operation would produce over those records, if the
   // coverage check let it through.
   const fee = documentAggregateService.aggregate(parsed.records, {
-    operation: 'sum', filter: { pattern: '(\\d{3})$' },
+    operation: 'sum',
+    filter: { pattern: '(\\d{3})$' },
   });
   console.log('\n  per-record "sum of a trailing 3-digit number" (i.e. the fee column):');
   fee.slice(0, 6).forEach((r) => console.log(`      serial ${r.serialNo}: ${r.sum}`));
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

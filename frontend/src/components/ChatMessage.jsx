@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, ChevronDown, ChevronUp, Download, FileText, Pencil, Share2, ThumbsDown, ThumbsUp,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Download,
+  FileText,
+  Pencil,
+  Share2,
+  ThumbsDown,
+  ThumbsUp,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Markdown } from './Markdown';
@@ -215,7 +223,9 @@ function DocumentAttachmentCard({ document: doc }) {
         <FileText size={15} strokeWidth={1.9} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-[12.5px] font-[500] text-ink truncate" title={doc.fileName}>{doc.fileName}</span>
+        <span className="block text-[12.5px] font-[500] text-ink truncate" title={doc.fileName}>
+          {doc.fileName}
+        </span>
         <span className="block text-[11px] text-ink-faint">Saved to your Documents</span>
       </span>
       <button
@@ -256,7 +266,10 @@ function DocumentAttachmentCard({ document: doc }) {
  */
 function EvidenceTrail({ trail }) {
   const [expanded, setExpanded] = useState(false);
-  const lines = (trail || '').split('\n').map((l) => l.replace(/^-\s*/, '').trim()).filter(Boolean);
+  const lines = (trail || '')
+    .split('\n')
+    .map((l) => l.replace(/^-\s*/, '').trim())
+    .filter(Boolean);
   if (!lines.length) return null;
   const Chevron = expanded ? ChevronUp : ChevronDown;
 
@@ -330,7 +343,9 @@ function GeneratedImageCard({ document: doc }) {
           <FileText size={15} strokeWidth={1.9} />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-[12.5px] font-[500] text-ink truncate" title={doc.fileName}>{doc.fileName}</span>
+          <span className="block text-[12.5px] font-[500] text-ink truncate" title={doc.fileName}>
+            {doc.fileName}
+          </span>
           <span className="block text-[11px] text-ink-faint">Saved to your Documents</span>
         </span>
         <button
@@ -507,7 +522,7 @@ export function ChatMessage({ message, selected = false, onSelect, onEdit }) {
                 />
               ) : (
                 <SentFileChip key={a.id} attachment={a} />
-              )
+              ),
             )}
           </div>
         )}
@@ -591,7 +606,10 @@ export function ChatMessage({ message, selected = false, onSelect, onEdit }) {
                 {/* A blinking caret at the writing edge — the one thing that
                     still says "still typing" once useTypewriter has already
                     smoothed the text itself into a steady reveal. */}
-                <span className="inline-block w-[2px] h-[15px] -mb-[2px] ml-px bg-ink-faint animate-caretBlink" aria-hidden="true" />
+                <span
+                  className="inline-block w-[2px] h-[15px] -mb-[2px] ml-px bg-ink-faint animate-caretBlink"
+                  aria-hidden="true"
+                />
               </div>
             ) : (
               <GenerationState status={message.status} phase={message.stepPhase} />
@@ -641,11 +659,12 @@ export function ChatMessage({ message, selected = false, onSelect, onEdit }) {
                   The AI model configured for this college can't view images, so the attached photo was not analyzed.
                 </p>
               )}
-              {message.document && (
-                message.document.mimeType?.startsWith('image/')
-                  ? <GeneratedImageCard document={message.document} />
-                  : <DocumentAttachmentCard document={message.document} />
-              )}
+              {message.document &&
+                (message.document.mimeType?.startsWith('image/') ? (
+                  <GeneratedImageCard document={message.document} />
+                ) : (
+                  <DocumentAttachmentCard document={message.document} />
+                ))}
               <VerificationNotice verification={message.verification} />
               <EvidenceTrail trail={message.evidenceTrail} />
               <UsageLine usage={message.usage} />

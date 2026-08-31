@@ -58,7 +58,7 @@ export function useComposerAttachments(composer) {
     (id, changes) => {
       setAttachments?.((list) => list.map((a) => (a.id === id ? { ...a, ...changes } : a)));
     },
-    [setAttachments]
+    [setAttachments],
   );
 
   const runUpload = useCallback(
@@ -68,7 +68,9 @@ export function useComposerAttachments(composer) {
         try {
           const fileBase64 = await readFileAsBase64(attachment.file);
           const uploaded = await aiApi.uploadAttachment({
-            fileBase64, fileName: attachment.name, mimeType: attachment.type,
+            fileBase64,
+            fileName: attachment.name,
+            mimeType: attachment.type,
           });
           if (cancelled.current.has(attachment.id)) return;
           // serverId is the backend-issued document id — the one a later
@@ -103,7 +105,7 @@ export function useComposerAttachments(composer) {
         }
       })();
     },
-    [patchOne]
+    [patchOne],
   );
 
   // A route change unmounts the composer, possibly mid-upload. In-flight
@@ -150,12 +152,10 @@ export function useComposerAttachments(composer) {
 
       // One line, whatever happened: what landed, then the first reason
       // anything didn't. Reading six identical rejections aloud helps nobody.
-      setAnnouncement(
-        [attachedAnnouncement(accepted.length), rejections[0]].filter(Boolean).join('. ')
-      );
+      setAnnouncement([attachedAnnouncement(accepted.length), rejections[0]].filter(Boolean).join('. '));
       return accepted.length;
     },
-    [runUpload, setAttachments]
+    [runUpload, setAttachments],
   );
 
   /**
@@ -174,7 +174,7 @@ export function useComposerAttachments(composer) {
       if (!clipboardHasText(event.clipboardData)) event.preventDefault();
       addFiles(images);
     },
-    [addFiles]
+    [addFiles],
   );
 
   const remove = useCallback(
@@ -188,7 +188,7 @@ export function useComposerAttachments(composer) {
       setAttachments?.((list) => list.filter((a) => a.id !== id));
       setAnnouncement(target ? `${target.name} removed.` : 'Attachment removed.');
     },
-    [setAttachments]
+    [setAttachments],
   );
 
   const retry = useCallback(
@@ -198,7 +198,7 @@ export function useComposerAttachments(composer) {
       patchOne(id, { status: 'uploading', progress: 0 });
       runUpload(target);
     },
-    [patchOne, runUpload]
+    [patchOne, runUpload],
   );
 
   return {

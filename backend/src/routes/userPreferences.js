@@ -30,53 +30,71 @@ function mapUserPreferenceServiceError(err, res) {
 function createUserPreferencesRouter() {
   const router = express.Router();
 
-  router.get('/preferences', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const preferences = await userPreferenceService.listPreferences(req.dbClient, { actorUserId: identityService.resolveActorUserId(req.capabilities) });
-    res.json(preferences);
-  }));
+  router.get(
+    '/preferences',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const preferences = await userPreferenceService.listPreferences(req.dbClient, {
+        actorUserId: identityService.resolveActorUserId(req.capabilities),
+      });
+      res.json(preferences);
+    }),
+  );
 
-  router.get('/preferences/:key', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const preference = await userPreferenceService.getPreference(
-        req.dbClient,
-        req.params.key,
-        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.json(preference);
-    } catch (err) {
-      if (mapUserPreferenceServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.get(
+    '/preferences/:key',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const preference = await userPreferenceService.getPreference(req.dbClient, req.params.key, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.json(preference);
+      } catch (err) {
+        if (mapUserPreferenceServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.put('/preferences/:key', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const preference = await userPreferenceService.setPreference(
-        req.dbClient,
-        req.params.key,
-        (req.body || {}).value,
-        { actorUserId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
-      );
-      res.json(preference);
-    } catch (err) {
-      if (mapUserPreferenceServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.put(
+    '/preferences/:key',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const preference = await userPreferenceService.setPreference(
+          req.dbClient,
+          req.params.key,
+          (req.body || {}).value,
+          { actorUserId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
+        );
+        res.json(preference);
+      } catch (err) {
+        if (mapUserPreferenceServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.delete('/preferences/:key', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      await userPreferenceService.deletePreference(req.dbClient, req.params.key, { actorUserId: identityService.resolveActorUserId(req.capabilities) });
-      res.status(204).end();
-    } catch (err) {
-      if (mapUserPreferenceServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.delete(
+    '/preferences/:key',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        await userPreferenceService.deletePreference(req.dbClient, req.params.key, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.status(204).end();
+      } catch (err) {
+        if (mapUserPreferenceServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   return router;
 }

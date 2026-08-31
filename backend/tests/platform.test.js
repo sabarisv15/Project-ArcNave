@@ -152,10 +152,10 @@ test('platform API', async (t) => {
 
   const tenantSuffix = crypto.randomUUID().slice(0, 8);
   const tenantCollege = { collegeId: `pbound${tenantSuffix}`, subdomain: `pboundtenant${tenantSuffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [tenantCollege.collegeId, tenantCollege.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    tenantCollege.collegeId,
+    tenantCollege.subdomain,
+  ]);
   await adminPool.query(
     `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
      VALUES ($1, 'pbounduser', 'pbounduser@example.com', $2, 'staff', true)`,
@@ -305,7 +305,10 @@ test('platform API', async (t) => {
       '/api/v1/platform/colleges',
       { authorization: `Bearer ${token}` },
       {
-        college_id: collegeId, name: 'Test College', subdomain: collegeId, subscription_status: 'premium',
+        college_id: collegeId,
+        name: 'Test College',
+        subdomain: collegeId,
+        subscription_status: 'premium',
       },
     );
     assert.equal(resp.status, 400);
@@ -324,7 +327,10 @@ test('platform API', async (t) => {
       '/api/v1/platform/colleges',
       { authorization: `Bearer ${token}` },
       {
-        college_id: collegeId, name: 'Before Edit', subdomain: collegeId, level1_position_title: 'Director',
+        college_id: collegeId,
+        name: 'Before Edit',
+        subdomain: collegeId,
+        level1_position_title: 'Director',
       },
     );
     assert.equal(created.status, 201);
@@ -339,7 +345,11 @@ test('platform API', async (t) => {
     assert.equal(resp.body.name, 'Before Edit', 'name is no longer editable through this route');
     assert.equal(resp.body.subscription_status, 'full');
     assert.equal(resp.body.storage_tier, null, 'storage_tier is no longer set by this route');
-    assert.equal(resp.body.level1_position_title, 'Director', 'a field not included in the PATCH body must be untouched');
+    assert.equal(
+      resp.body.level1_position_title,
+      'Director',
+      'a field not included in the PATCH body must be untouched',
+    );
   });
 
   await t.test('PATCH college rejects an invalid license', async () => {

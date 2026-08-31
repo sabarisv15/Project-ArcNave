@@ -62,10 +62,7 @@ function hostFor(subdomain) {
 async function seedScenario(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const collegeId = `posid${suffix}`;
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $1)',
-    [collegeId],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $1)', [collegeId]);
 
   // A person whose PERSONAL standing is plain staff (no permission on
   // the HOD/principal-only route below) — but who also occupies a
@@ -79,17 +76,29 @@ async function seedScenario(adminPool) {
   const userId = userResult.rows[0].id;
 
   const position = await positionRepository.createPosition(adminPool, {
-    collegeId, level: 3, title: 'HOD', createdBy: userId,
+    collegeId,
+    level: 3,
+    title: 'HOD',
+    createdBy: userId,
   });
   const account = await positionRepository.createPositionAccount(adminPool, {
-    collegeId, positionId: position.id, officialEmail: 'hod-office@posid-test.internal', passwordHash,
+    collegeId,
+    positionId: position.id,
+    officialEmail: 'hod-office@posid-test.internal',
+    passwordHash,
   });
   await positionRepository.createPositionOccupant(adminPool, {
-    collegeId, positionAccountId: account.id, userId, assignedBy: userId,
+    collegeId,
+    positionAccountId: account.id,
+    userId,
+    assignedBy: userId,
   });
 
   return {
-    collegeId, subdomain: collegeId, userId, positionAccountId: account.id,
+    collegeId,
+    subdomain: collegeId,
+    userId,
+    positionAccountId: account.id,
   };
 }
 
@@ -103,7 +112,7 @@ async function cleanupScenario(adminPool, scenario) {
   await adminPool.query('DELETE FROM colleges WHERE college_id = $1', [scenario.collegeId]);
 }
 
-test('Position Account identity context is scoped to the office, independent of the same person\'s personal standing', async (t) => {
+test("Position Account identity context is scoped to the office, independent of the same person's personal standing", async (t) => {
   const app = createApp();
   const server = await startServer(app);
   const { port } = server.address();
@@ -118,57 +127,79 @@ test('Position Account identity context is scoped to the office, independent of 
     await adminPool.end();
   });
 
-  await t.test('the same person\'s PERSONAL login already resolves HOD scope too — resolveCapabilities unions every position they occupy, by design', async () => {
-    // Not a bug: decision 4's whole point is that the PERSONAL context
-    // (Phase 1, resolveCapabilities) legitimately unions every
-    // institutional responsibility a person holds, including one held
-    // via a Position Account they also separately have their own
-    // login for. The Institutional Identity Context (next test) is
-    // what stays scoped to ONLY the queried office — that's the
-    // property this suite exists to prove, not that personal login
-    // is somehow blind to positions the person occupies.
-    const personalToken = security.createAccessToken({
-      userId: scenario.userId, collegeId: scenario.collegeId, role: 'staff',
-    });
-    const resp = await requestJson(baseUrl, '/api/v1/analytics/attendance-rate', 'GET', {
-      host: hostFor(scenario.subdomain), authorization: `Bearer ${personalToken}`,
-    });
-    assert.equal(resp.status, 200);
-  });
+  await t.test(
+    "the same person's PERSONAL login already resolves HOD scope too — resolveCapabilities unions every position they occupy, by design",
+    async () => {
+      // Not a bug: decision 4's whole point is that the PERSONAL context
+      // (Phase 1, resolveCapabilities) legitimately unions every
+      // institutional responsibility a person holds, including one held
+      // via a Position Account they also separately have their own
+      // login for. The Institutional Identity Context (next test) is
+      // what stays scoped to ONLY the queried office — that's the
+      // property this suite exists to prove, not that personal login
+      // is somehow blind to positions the person occupies.
+      const personalToken = security.createAccessToken({
+        userId: scenario.userId,
+        collegeId: scenario.collegeId,
+        role: 'staff',
+      });
+      const resp = await requestJson(baseUrl, '/api/v1/analytics/attendance-rate', 'GET', {
+        host: hostFor(scenario.subdomain),
+        authorization: `Bearer ${personalToken}`,
+      });
+      assert.equal(resp.status, 200);
+    },
+  );
 
-  await t.test('logging into the HOD Position Account, as the SAME person, is allowed — the office\'s own standing, not theirs', async () => {
-    const positionToken = security.createPositionAccessToken({
-      positionAccountId: scenario.positionAccountId, collegeId: scenario.collegeId, tokenVersion: 0,
-    });
-    const resp = await requestJson(baseUrl, '/api/v1/analytics/attendance-rate', 'GET', {
-      host: hostFor(scenario.subdomain), authorization: `Bearer ${positionToken}`,
-    });
-    assert.equal(resp.status, 200);
-  });
+  await t.test(
+    "logging into the HOD Position Account, as the SAME person, is allowed — the office's own standing, not theirs",
+    async () => {
+      const positionToken = security.createPositionAccessToken({
+        positionAccountId: scenario.positionAccountId,
+        collegeId: scenario.collegeId,
+        tokenVersion: 0,
+      });
+      const resp = await requestJson(baseUrl, '/api/v1/analytics/attendance-rate', 'GET', {
+        host: hostFor(scenario.subdomain),
+        authorization: `Bearer ${positionToken}`,
+      });
+      assert.equal(resp.status, 200);
+    },
+  );
 
-  await t.test('a position_access token with a stale token_version is rejected by session revocation, independent of users.token_version', async () => {
-    await positionRepository.incrementPositionAccountTokenVersion(adminPool, scenario.positionAccountId);
+  await t.test(
+    'a position_access token with a stale token_version is rejected by session revocation, independent of users.token_version',
+    async () => {
+      await positionRepository.incrementPositionAccountTokenVersion(adminPool, scenario.positionAccountId);
 
-    const staleToken = security.createPositionAccessToken({
-      positionAccountId: scenario.positionAccountId, collegeId: scenario.collegeId, tokenVersion: 0,
-    });
-    const resp = await requestJson(baseUrl, '/api/v1/analytics/attendance-rate', 'GET', {
-      host: hostFor(scenario.subdomain), authorization: `Bearer ${staleToken}`,
-    });
-    assert.equal(resp.status, 401);
+      const staleToken = security.createPositionAccessToken({
+        positionAccountId: scenario.positionAccountId,
+        collegeId: scenario.collegeId,
+        tokenVersion: 0,
+      });
+      const resp = await requestJson(baseUrl, '/api/v1/analytics/attendance-rate', 'GET', {
+        host: hostFor(scenario.subdomain),
+        authorization: `Bearer ${staleToken}`,
+      });
+      assert.equal(resp.status, 401);
 
-    // The same person's personal token, minted with their own
-    // (unrelated, never bumped) users.token_version, is unaffected —
-    // proves the two revocation counters are genuinely independent.
-    // Still 200 (their personal context still unions this same HOD
-    // position, per the first test above), never 401 — the bump only
-    // ever touched position_accounts.token_version.
-    const personalToken = security.createAccessToken({
-      userId: scenario.userId, collegeId: scenario.collegeId, role: 'staff', tokenVersion: 0,
-    });
-    const personalResp = await requestJson(baseUrl, '/api/v1/analytics/attendance-rate', 'GET', {
-      host: hostFor(scenario.subdomain), authorization: `Bearer ${personalToken}`,
-    });
-    assert.equal(personalResp.status, 200);
-  });
+      // The same person's personal token, minted with their own
+      // (unrelated, never bumped) users.token_version, is unaffected —
+      // proves the two revocation counters are genuinely independent.
+      // Still 200 (their personal context still unions this same HOD
+      // position, per the first test above), never 401 — the bump only
+      // ever touched position_accounts.token_version.
+      const personalToken = security.createAccessToken({
+        userId: scenario.userId,
+        collegeId: scenario.collegeId,
+        role: 'staff',
+        tokenVersion: 0,
+      });
+      const personalResp = await requestJson(baseUrl, '/api/v1/analytics/attendance-rate', 'GET', {
+        host: hostFor(scenario.subdomain),
+        authorization: `Bearer ${personalToken}`,
+      });
+      assert.equal(personalResp.status, 200);
+    },
+  );
 });

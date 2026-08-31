@@ -33,8 +33,9 @@ const PDF_PATH = `${__dirname}/../tmp-test-fixture.pdf`;
 const QUESTIONS = [
   {
     label: 'Q1 (extraction/output)',
-    text: "I've attached my transport ledger statement (TN02T0478). Can you list out every transaction category "
-      + 'in it along with how many entries each category has?',
+    text:
+      "I've attached my transport ledger statement (TN02T0478). Can you list out every transaction category " +
+      'in it along with how many entries each category has?',
   },
   {
     // Deliberately phrased with "fee statement"/"credit and debit" —
@@ -43,8 +44,9 @@ const QUESTIONS = [
     // wrongly reaches for that campus tool instead of correctly treating
     // this as a generic attached document with no campus record behind it.
     label: 'Q2 (analysis, deliberately finance-confusable wording)',
-    text: 'Using the same fee statement I uploaded, what is the total IGST amount across all categories, and '
-      + 'which single category contributed the most credit to that IGST total?',
+    text:
+      'Using the same fee statement I uploaded, what is the total IGST amount across all categories, and ' +
+      'which single category contributed the most credit to that IGST total?',
   },
 ];
 
@@ -80,15 +82,20 @@ async function fetchLlmCallRows(appPool, sinceIso) {
 }
 
 function sumTokens(rows) {
-  return rows.reduce((acc, r) => {
-    acc.input += r.inputTokens || 0;
-    acc.output += r.outputTokens || 0;
-    return acc;
-  }, { input: 0, output: 0 });
+  return rows.reduce(
+    (acc, r) => {
+      acc.input += r.inputTokens || 0;
+      acc.output += r.outputTokens || 0;
+      return acc;
+    },
+    { input: 0, output: 0 },
+  );
 }
 
 function sleep(ms) {
-  return new Promise((resolve) => { setTimeout(resolve, ms); });
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 async function runOneTurn(appPool, identityContext, question, mode) {
@@ -115,7 +122,10 @@ async function runOneTurn(appPool, identityContext, question, mode) {
       return result;
     } catch (err) {
       invocationLog.push({
-        toolName, ok: false, error: err.message, latencyMs: Date.now() - startedAt,
+        toolName,
+        ok: false,
+        error: err.message,
+        latencyMs: Date.now() - startedAt,
       });
       throw err;
     }
@@ -125,9 +135,13 @@ async function runOneTurn(appPool, identityContext, question, mode) {
   let result;
   let threw = null;
   try {
-    result = await withTenantClient(appPool, (client) => aiService.askAgent(client, question, {
-      identityContext, attachmentIds: ['fixture-1'], mode,
-    }));
+    result = await withTenantClient(appPool, (client) =>
+      aiService.askAgent(client, question, {
+        identityContext,
+        attachmentIds: ['fixture-1'],
+        mode,
+      }),
+    );
   } catch (err) {
     threw = err;
   } finally {
@@ -137,14 +151,19 @@ async function runOneTurn(appPool, identityContext, question, mode) {
 
   const llmCalls = await fetchLlmCallRows(appPool, since.toISOString());
   return {
-    result, threw, llmCalls, invocationLog,
+    result,
+    threw,
+    llmCalls,
+    invocationLog,
   };
 }
 
 async function main() {
   const appPool = new Pool({ connectionString: config.databaseUrl });
   const identityContext = {
-    userId: PRINCIPAL_USER_ID, role: 'principal', collegeId: COLLEGE_ID,
+    userId: PRINCIPAL_USER_ID,
+    role: 'principal',
+    collegeId: COLLEGE_ID,
   };
   const originalVariant = config.experimentalCatalogueVariant;
 
@@ -188,4 +207,7 @@ async function main() {
   }
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

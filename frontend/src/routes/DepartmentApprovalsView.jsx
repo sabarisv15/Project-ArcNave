@@ -69,7 +69,7 @@ export function DepartmentApprovalsView() {
           ],
         };
       }),
-    [decided]
+    [decided],
   );
 
   const activeTab = DEPT_TABS.find((t) => t.key === tab) ?? DEPT_TABS[0];
@@ -83,7 +83,7 @@ export function DepartmentApprovalsView() {
         if (activeTab.kinds && !activeTab.kinds.includes(r.kind)) return false;
         return true;
       }),
-    [requests, view, activeTab]
+    [requests, view, activeTab],
   );
 
   const pendingCount = requests.filter((r) => r.status === 'pending').length;
@@ -130,7 +130,7 @@ export function DepartmentApprovalsView() {
                 'flex-none h-[27px] px-[10px] border-0 rounded-[8px] bg-transparent font-sans text-[12.5px] cursor-pointer transition-colors duration-200',
                 view === v.key
                   ? 'bg-accent-soft text-accent font-[600]'
-                  : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2'
+                  : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2',
               )}
             >
               {v.label}
@@ -162,7 +162,7 @@ export function DepartmentApprovalsView() {
                 'flex-none h-[26px] px-[9px] border rounded-[8px] font-sans text-[12px] cursor-pointer transition-colors duration-200',
                 tab === t.key
                   ? 'border-accent-line bg-accent-soft text-accent font-[600]'
-                  : 'border-line bg-paper text-ink-muted font-[500] hover:bg-tint2 hover:text-ink'
+                  : 'border-line bg-paper text-ink-muted font-[500] hover:bg-tint2 hover:text-ink',
               )}
             >
               {t.label}
@@ -187,12 +187,7 @@ export function DepartmentApprovalsView() {
         }
       />
 
-      <DecisionDrawer
-        request={open}
-        onClose={() => setOpenId(null)}
-        onDecide={decide}
-        kinds={DEPT_REQUEST_KINDS}
-      />
+      <DecisionDrawer request={open} onClose={() => setOpenId(null)} onDecide={decide} kinds={DEPT_REQUEST_KINDS} />
     </div>
   );
 }

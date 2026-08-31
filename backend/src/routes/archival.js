@@ -55,60 +55,91 @@ function createArchivalRouter() {
   // retention policy") — requirePermission mapped to ['principal'],
   // same conservative default other institution-configuration/
   // compliance actions in this codebase use.
-  router.post('/archived-records', requirePermission('archived_records.create'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { entity_type: entityType, entity_id: entityId, reason } = req.body || {};
-    try {
-      const record = await archivalService.archiveRecord(
-        req.dbClient, { entityType, entityId, reason }, { actorUserId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
-      );
-      res.status(201).json(record);
-    } catch (err) {
-      if (mapArchivalServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/archived-records',
+    requirePermission('archived_records.create'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { entity_type: entityType, entity_id: entityId, reason } = req.body || {};
+      try {
+        const record = await archivalService.archiveRecord(
+          req.dbClient,
+          { entityType, entityId, reason },
+          { actorUserId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
+        );
+        res.status(201).json(record);
+      } catch (err) {
+        if (mapArchivalServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.get('/archived-records', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const records = await archivalService.listArchivedRecords(req.dbClient, req.collegeId, { entityType: req.query.entity_type });
-    res.json(records);
-  }));
+  router.get(
+    '/archived-records',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const records = await archivalService.listArchivedRecords(req.dbClient, req.collegeId, {
+        entityType: req.query.entity_type,
+      });
+      res.json(records);
+    }),
+  );
 
-  router.post('/archived-records/:id/request-restoration', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const result = await archivalService.requestRestoration(
-        req.dbClient, req.params.id, { reason: (req.body || {}).reason }, { requestedByUserId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
-      );
-      res.status(201).json(result);
-    } catch (err) {
-      if (mapArchivalServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/archived-records/:id/request-restoration',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const result = await archivalService.requestRestoration(
+          req.dbClient,
+          req.params.id,
+          { reason: (req.body || {}).reason },
+          { requestedByUserId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
+        );
+        res.status(201).json(result);
+      } catch (err) {
+        if (mapArchivalServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/archived-records/:id/approve-restoration', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const record = await archivalService.approveRestoration(req.dbClient, req.params.id, { actorUserId: identityService.resolveActorUserId(req.capabilities) });
-      res.json(record);
-    } catch (err) {
-      if (mapArchivalServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/archived-records/:id/approve-restoration',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const record = await archivalService.approveRestoration(req.dbClient, req.params.id, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.json(record);
+      } catch (err) {
+        if (mapArchivalServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/archived-records/:id/reject-restoration', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const record = await archivalService.rejectRestoration(req.dbClient, req.params.id, { actorUserId: identityService.resolveActorUserId(req.capabilities) });
-      res.json(record);
-    } catch (err) {
-      if (mapArchivalServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/archived-records/:id/reject-restoration',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const record = await archivalService.rejectRestoration(req.dbClient, req.params.id, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.json(record);
+      } catch (err) {
+        if (mapArchivalServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   return router;
 }

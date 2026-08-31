@@ -1,8 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import {
-  ME, canPublish, initialAssessments, isValidMark, scopeById, studentsForScope,
-} from '../lib/assessmentsData';
+import { ME, canPublish, initialAssessments, isValidMark, scopeById, studentsForScope } from '../lib/assessmentsData';
 import { ACTIVE_VERSION_ID } from '../lib/timetableData';
 
 const AssessmentsContext = createContext(null);
@@ -68,23 +66,29 @@ export function AssessmentsProvider({ children }) {
     return assessment;
   }, []);
 
-  const updateAssessment = useCallback((id, fields) => {
-    patch(id, (a) => {
-      if (a.status === 'published') return {};
-      return { ...fields };
-    });
-  }, [patch]);
+  const updateAssessment = useCallback(
+    (id, fields) => {
+      patch(id, (a) => {
+        if (a.status === 'published') return {};
+        return { ...fields };
+      });
+    },
+    [patch],
+  );
 
   /** Quiet autosave for one student's mark — no toast per keystroke. */
-  const setMark = useCallback((id, studentId, entry) => {
-    patch(id, (a) => {
-      if (a.status === 'published') return {};
-      const marks = { ...a.marks };
-      if (entry === null) delete marks[studentId];
-      else marks[studentId] = entry;
-      return { marks, marksSavedAt: new Date() };
-    });
-  }, [patch]);
+  const setMark = useCallback(
+    (id, studentId, entry) => {
+      patch(id, (a) => {
+        if (a.status === 'published') return {};
+        const marks = { ...a.marks };
+        if (entry === null) delete marks[studentId];
+        else marks[studentId] = entry;
+        return { marks, marksSavedAt: new Date() };
+      });
+    },
+    [patch],
+  );
 
   const publishAssessment = useCallback((id) => {
     let ok = false;
@@ -95,7 +99,7 @@ export function AssessmentsProvider({ children }) {
         if (!canPublish(a, students)) return a;
         ok = true;
         return { ...a, status: 'published', publishedBy: ME.name, publishedAt: new Date() };
-      })
+      }),
     );
     if (ok) toast('Marks published. They are now available in Class Tutor view');
     else toast.error('Every student needs a valid mark before you can publish.');
@@ -130,15 +134,21 @@ export function AssessmentsProvider({ children }) {
           timetableVersionId: a.timetableVersionId,
           marks: a.marks,
         })),
-    [assessments]
+    [assessments],
   );
 
   const value = useMemo(
     () => ({
-      assessments, createAssessment, updateAssessment, setMark, publishAssessment, deleteAssessment,
-      classTutorView, isValidMark,
+      assessments,
+      createAssessment,
+      updateAssessment,
+      setMark,
+      publishAssessment,
+      deleteAssessment,
+      classTutorView,
+      isValidMark,
     }),
-    [assessments, createAssessment, updateAssessment, setMark, publishAssessment, deleteAssessment, classTutorView]
+    [assessments, createAssessment, updateAssessment, setMark, publishAssessment, deleteAssessment, classTutorView],
   );
 
   return <AssessmentsContext.Provider value={value}>{children}</AssessmentsContext.Provider>;

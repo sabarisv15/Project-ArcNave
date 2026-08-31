@@ -39,12 +39,7 @@
  */
 
 import { LEVEL_2 } from './roles';
-import {
-  PROVISIONING,
-  level2InTimetableChain,
-  level2Scope,
-  provisionedDepartment,
-} from './provisioning';
+import { PROVISIONING, level2InTimetableChain, level2Scope, provisionedDepartment } from './provisioning';
 import { level2Seat } from './seatState';
 import { seatTitle } from './seatTitles';
 
@@ -133,7 +128,7 @@ export function delegatedNavItems(scope) {
 
   items.push(
     { to: '/curriculum/documents', label: 'Documents', kind: 'documents' },
-    { to: '/curriculum/calendar', label: 'Calendar', kind: 'calendar' }
+    { to: '/curriculum/calendar', label: 'Calendar', kind: 'calendar' },
   );
 
   return items;
@@ -172,7 +167,8 @@ export function delegatedBlockReason(state, scope, { departmentId } = {}) {
     return 'This department is outside the scope delegated to this position.';
   }
   if (state === DELEGATED_DECIDABLE_STATE) return null;
-  if (state === 'endorsed_pending_l1') return 'This revision has already been reviewed here and is with the institution head.';
+  if (state === 'endorsed_pending_l1')
+    return 'This revision has already been reviewed here and is with the institution head.';
   if (state === 'approved_locked') return 'This revision has been finally approved. There is nothing left to decide.';
   if (state === 'ready_for_endorsement' || state === 'conflict_identified') {
     return 'The department has not endorsed this revision yet.';
@@ -236,6 +232,12 @@ export function routedRevisions(scope, stateOf, { timetableStateOf, departmentNa
         endorsedBy: hodName?.(dept.id) ?? null,
       };
     })
-    .filter((r) => r.state === DELEGATED_DECIDABLE_STATE || r.state === 'endorsed_pending_l1' || r.state === 'approved_locked' || r.state === 'rejected')
+    .filter(
+      (r) =>
+        r.state === DELEGATED_DECIDABLE_STATE ||
+        r.state === 'endorsed_pending_l1' ||
+        r.state === 'approved_locked' ||
+        r.state === 'rejected',
+    )
     .filter((r) => r.revision !== null);
 }

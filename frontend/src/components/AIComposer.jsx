@@ -43,8 +43,22 @@ const HEIGHTS = {
 const LINE_HEIGHT = 22;
 
 export const AIComposer = forwardRef(function AIComposer(
-  { value, onChange, onSend, mode, onMode, thinkingLevel, onThinkingLevel, placeholder, variant = 'start', minHeight, className, bare = false, composer },
-  ref
+  {
+    value,
+    onChange,
+    onSend,
+    mode,
+    onMode,
+    thinkingLevel,
+    onThinkingLevel,
+    placeholder,
+    variant = 'start',
+    minHeight,
+    className,
+    bare = false,
+    composer,
+  },
+  ref,
 ) {
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -54,8 +68,7 @@ export const AIComposer = forwardRef(function AIComposer(
   const { min, max, preview } = HEIGHTS[variant] ?? HEIGHTS.start;
   const restingHeight = minHeight ?? min;
 
-  const { attachments, announcement, addFiles, handlePaste, remove, retry } =
-    useComposerAttachments(composer);
+  const { attachments, announcement, addFiles, handlePaste, remove, retry } = useComposerAttachments(composer);
 
   // Voice input (P1.4) — appends each finished phrase to whatever is already
   // typed, with a separating space/newline only when the existing text
@@ -193,9 +206,7 @@ export const AIComposer = forwardRef(function AIComposer(
       {/* Above the surface, not inside it: the strip owns a fixed band of its
           own, so the composer's own height stays a function of the text and
           nothing else. */}
-      {attachable && (
-        <ComposerAttachmentStrip attachments={attachments} onRemove={remove} onRetry={retry} />
-      )}
+      {attachable && <ComposerAttachmentStrip attachments={attachments} onRemove={remove} onRetry={retry} />}
 
       <div
         onDragEnter={onDragEnter}
@@ -206,18 +217,18 @@ export const AIComposer = forwardRef(function AIComposer(
           'pt-[12px] pr-[12px] pb-[8px] pl-[14px] transition-colors duration-200',
           bare
             ? 'bg-paper rounded-[14px] border border-transparent focus-within:border-accent-line'
-            // One matte white surface lifted out of the off-white ground by a
-            // single hairline and a 6% shadow. Focus warms that hairline to the
-            // accent rather than adding a second, brighter shell around the
-            // composer — there is no permanent teal rectangle at any point.
-            : 'bg-paper border border-line rounded-[16px] shadow-composer transition-shadow focus-within:border-accent-line focus-within:shadow-[0_2px_14px_rgba(0,0,0,.08)]',
+            : // One matte white surface lifted out of the off-white ground by a
+              // single hairline and a 6% shadow. Focus warms that hairline to the
+              // accent rather than adding a second, brighter shell around the
+              // composer — there is no permanent teal rectangle at any point.
+              'bg-paper border border-line rounded-[16px] shadow-composer transition-shadow focus-within:border-accent-line focus-within:shadow-[0_2px_14px_rgba(0,0,0,.08)]',
           // The dock's own settle plays on the first render after a send; it is
           // opacity and offset only, and reduced motion drops it entirely.
           variant === 'chat' && 'animate-composerDock motion-reduce:animate-none',
           // Drag-and-drop (P1.5) — the same accent used for keyboard focus
           // above, so a file drag reads as "this surface is about to accept
           // something," consistent with the composer's own focus language.
-          isDragOver && 'border-accent-line shadow-[0_2px_14px_rgba(0,0,0,.08)]'
+          isDragOver && 'border-accent-line shadow-[0_2px_14px_rgba(0,0,0,.08)]',
         )}
       >
         <div className="relative">
@@ -300,7 +311,7 @@ export const AIComposer = forwardRef(function AIComposer(
               aria-pressed={speech.listening}
               className={cn(
                 'w-[32px] h-[32px] rounded-[9px]',
-                speech.listening ? 'text-accent animate-pulse' : 'text-ink-muted'
+                speech.listening ? 'text-accent animate-pulse' : 'text-ink-muted',
               )}
             >
               <Mic size={17} strokeWidth={1.75} />
@@ -316,7 +327,7 @@ export const AIComposer = forwardRef(function AIComposer(
               'w-[32px] h-[32px] grid place-items-center border-0 rounded-[10px] bg-accent text-white transition-[opacity,transform] duration-200 ease-out',
               canSend
                 ? 'opacity-100 translate-y-0 scale-100 cursor-pointer hover:bg-accent-hover active:bg-accent-press'
-                : 'opacity-0 translate-y-[6px] scale-90 pointer-events-none'
+                : 'opacity-0 translate-y-[6px] scale-90 pointer-events-none',
             )}
           >
             <ArrowUp size={17} strokeWidth={2} />

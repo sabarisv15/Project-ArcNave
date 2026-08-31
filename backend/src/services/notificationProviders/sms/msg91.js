@@ -43,16 +43,28 @@ async function send(to, body, { credentials } = {}) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data.type === 'error') {
       return {
-        channel: 'sms', status: 'failed', to, body, error: data.message || `MSG91 responded ${response.status}`,
+        channel: 'sms',
+        status: 'failed',
+        to,
+        body,
+        error: data.message || `MSG91 responded ${response.status}`,
       };
     }
 
     return {
-      channel: 'sms', status: 'sent', to, body, providerId: data.request_id || null,
+      channel: 'sms',
+      status: 'sent',
+      to,
+      body,
+      providerId: data.request_id || null,
     };
   } catch (err) {
     return {
-      channel: 'sms', status: 'failed', to, body, error: err.message,
+      channel: 'sms',
+      status: 'failed',
+      to,
+      body,
+      error: err.message,
     };
   }
 }

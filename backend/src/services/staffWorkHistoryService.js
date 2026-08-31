@@ -29,9 +29,7 @@ async function listOwnWorkHistory(client, { userId }) {
   return staffWorkHistoryRepository.listByStaffId(client, staff.id);
 }
 
-async function addOwnWorkHistoryEntry(client, {
-  institutionName, designationHeld, fromDate, toDate,
-}, { userId }) {
+async function addOwnWorkHistoryEntry(client, { institutionName, designationHeld, fromDate, toDate }, { userId }) {
   if (!institutionName) {
     throw new StaffWorkHistoryValidationError('institutionName is required');
   }
@@ -65,7 +63,9 @@ async function removeOwnWorkHistoryEntry(client, id, { userId }) {
     throw new StaffWorkHistoryNotFoundError(`work history entry ${JSON.stringify(id)} does not exist`);
   }
   if (entry.staff_id !== staff.id) {
-    throw new StaffWorkHistoryForbiddenError(`user ${JSON.stringify(userId)} does not own work history entry ${JSON.stringify(id)}`);
+    throw new StaffWorkHistoryForbiddenError(
+      `user ${JSON.stringify(userId)} does not own work history entry ${JSON.stringify(id)}`,
+    );
   }
 
   await staffWorkHistoryRepository.remove(client, id);

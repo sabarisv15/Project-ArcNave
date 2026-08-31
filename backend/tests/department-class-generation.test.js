@@ -71,10 +71,10 @@ function hostFor(subdomain) {
 async function seedTenant(adminPool, label) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const collegeId = `dgapi${label}${suffix}`;
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [collegeId, `dgapitenant${label}${suffix}`],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    collegeId,
+    `dgapitenant${label}${suffix}`,
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const result = await adminPool.query(
     `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
@@ -113,7 +113,8 @@ test('department creation auto-generates classes (RS-CLS-001/RS-CLS-002)', async
 
   async function login(college) {
     const resp = await requestJson(baseUrl, '/api/v1/auth/login', 'POST', {
-      headers: { host: hostFor(college.subdomain) }, body: { username: 'principaluser', password: PASSWORD },
+      headers: { host: hostFor(college.subdomain) },
+      body: { username: 'principaluser', password: PASSWORD },
     });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
@@ -131,43 +132,50 @@ test('department creation auto-generates classes (RS-CLS-001/RS-CLS-002)', async
     assert.equal(resp.status, 400);
   });
 
-  await t.test(
-    'a 4-year department with 2 sections generates exactly 12 classes, none in year 1',
-    async () => {
-      const token = await login(collegeA);
-      const resp = await post(baseUrl, '/api/v1/departments', headersFor(collegeA, token), {
-        name: 'ECE', course_duration: 4, default_sections: 2,
-      });
-      assert.equal(resp.status, 201);
-      assert.equal(resp.body.course_duration, 4);
-      assert.equal(resp.body.default_sections, 2);
+  await t.test('a 4-year department with 2 sections generates exactly 12 classes, none in year 1', async () => {
+    const token = await login(collegeA);
+    const resp = await post(baseUrl, '/api/v1/departments', headersFor(collegeA, token), {
+      name: 'ECE',
+      course_duration: 4,
+      default_sections: 2,
+    });
+    assert.equal(resp.status, 201);
+    assert.equal(resp.body.course_duration, 4);
+    assert.equal(resp.body.default_sections, 2);
 
-      // 3 in-scope years (2,3,4) x 2 semesters x 2 sections = 12.
-      assert.equal(resp.body.generatedClasses.length, 12);
+    // 3 in-scope years (2,3,4) x 2 semesters x 2 sections = 12.
+    assert.equal(resp.body.generatedClasses.length, 12);
 
-      const semesters = resp.body.generatedClasses.map((c) => c.semester).sort();
-      assert.deepEqual(semesters, ['3', '3', '4', '4', '5', '5', '6', '6', '7', '7', '8', '8']);
-      assert.ok(!semesters.includes('1') && !semesters.includes('2'), 'year 1 (semesters 1-2) must never be generated');
+    const semesters = resp.body.generatedClasses.map((c) => c.semester).sort();
+    assert.deepEqual(semesters, ['3', '3', '4', '4', '5', '5', '6', '6', '7', '7', '8', '8']);
+    assert.ok(!semesters.includes('1') && !semesters.includes('2'), 'year 1 (semesters 1-2) must never be generated');
 
-      const names = resp.body.generatedClasses.map((c) => c.class_name).sort();
-      assert.deepEqual(names, [
-        'ECE Sem 3 A', 'ECE Sem 3 B',
-        'ECE Sem 4 A', 'ECE Sem 4 B',
-        'ECE Sem 5 A', 'ECE Sem 5 B',
-        'ECE Sem 6 A', 'ECE Sem 6 B',
-        'ECE Sem 7 A', 'ECE Sem 7 B',
-        'ECE Sem 8 A', 'ECE Sem 8 B',
-      ]);
-      for (const cls of resp.body.generatedClasses) {
-        assert.equal(cls.department_id, resp.body.id);
-      }
-    },
-  );
+    const names = resp.body.generatedClasses.map((c) => c.class_name).sort();
+    assert.deepEqual(names, [
+      'ECE Sem 3 A',
+      'ECE Sem 3 B',
+      'ECE Sem 4 A',
+      'ECE Sem 4 B',
+      'ECE Sem 5 A',
+      'ECE Sem 5 B',
+      'ECE Sem 6 A',
+      'ECE Sem 6 B',
+      'ECE Sem 7 A',
+      'ECE Sem 7 B',
+      'ECE Sem 8 A',
+      'ECE Sem 8 B',
+    ]);
+    for (const cls of resp.body.generatedClasses) {
+      assert.equal(cls.department_id, resp.body.id);
+    }
+  });
 
   await t.test('a 3-year, 1-section department generates exactly 4 classes', async () => {
     const token = await login(collegeA);
     const resp = await post(baseUrl, '/api/v1/departments', headersFor(collegeA, token), {
-      name: 'Diploma CS', course_duration: 3, default_sections: 1,
+      name: 'Diploma CS',
+      course_duration: 3,
+      default_sections: 1,
     });
     assert.equal(resp.status, 201);
     // 2 in-scope years (2,3) x 2 semesters x 1 section = 4.

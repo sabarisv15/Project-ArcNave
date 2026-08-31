@@ -69,9 +69,9 @@ function CodeBlock({ children, className }) {
         <div
           className={cn(
             '[&>pre]:m-0 [&>pre]:p-[10px] [&>pre]:pr-[36px] [&>pre]:rounded-[10px] [&>pre]:overflow-x-auto [&>pre]:scroll-quiet',
-            '[&>pre]:font-mono [&>pre]:text-[12.5px] [&>pre]:leading-[1.5] [&>pre]:border [&>pre]:border-line-light'
+            '[&>pre]:font-mono [&>pre]:text-[12.5px] [&>pre]:leading-[1.5] [&>pre]:border [&>pre]:border-line-light',
           )}
-          // eslint-disable-next-line react/no-danger -- Shiki's own escaped output, not user/LLM-controlled HTML (the LLM's raw text is `code` above, tokenized by Shiki, never interpolated as markup).
+
           dangerouslySetInnerHTML={{ __html: html }}
         />
       ) : (
@@ -79,7 +79,7 @@ function CodeBlock({ children, className }) {
           className={cn(
             'm-0 p-[10px] pr-[36px] rounded-[10px] bg-soft border border-line-light overflow-x-auto scroll-quiet',
             'font-mono text-[12.5px] leading-[1.5] text-ink-soft',
-            className
+            className,
           )}
         >
           <code>{code}</code>

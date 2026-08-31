@@ -15,18 +15,30 @@ const HEAD_H = 37;
 
 /** Phases whose row opens a drawer. Everything else shows state only. */
 const ACTIONABLE_PHASES = new Set([
-  'open', 'marking_missed', 'locked_before_window', 'locked_ready', 'submitted', 'submission_expired',
+  'open',
+  'marking_missed',
+  'locked_before_window',
+  'locked_ready',
+  'submitted',
+  'submission_expired',
 ]);
 
 function actionLabel(phase, session) {
   switch (phase) {
-    case 'open': return session.lastSavedAt ? 'Continue' : 'Mark';
-    case 'marking_missed': return 'Request';
-    case 'locked_before_window': return 'Review';
-    case 'locked_ready': return 'Submit';
-    case 'submitted': return 'View';
-    case 'submission_expired': return 'View';
-    default: return null;
+    case 'open':
+      return session.lastSavedAt ? 'Continue' : 'Mark';
+    case 'marking_missed':
+      return 'Request';
+    case 'locked_before_window':
+      return 'Review';
+    case 'locked_ready':
+      return 'Submit';
+    case 'submitted':
+      return 'View';
+    case 'submission_expired':
+      return 'View';
+    default:
+      return null;
   }
 }
 
@@ -53,7 +65,7 @@ function ScheduleRow({ period, phase, session, acknowledged, isCurrent, onOpen, 
         // Current period: a quiet teal edge, not a highlighted card. The transparent
         // border on every other row keeps the columns from shifting.
         'min-h-0 border-t border-line-light border-l-2 transition-colors duration-200 hover:bg-tint2',
-        isCurrent ? 'border-l-accent bg-accent-soft/40' : 'border-l-transparent'
+        isCurrent ? 'border-l-accent bg-accent-soft/40' : 'border-l-transparent',
       )}
     >
       <span className="text-[12.5px] font-[500] text-ink tabular-nums whitespace-nowrap">
@@ -61,7 +73,9 @@ function ScheduleRow({ period, phase, session, acknowledged, isCurrent, onOpen, 
       </span>
 
       <span className="min-w-0 flex items-center gap-[6px]">
-        <span className="text-[13px] text-ink truncate" title={period.subject}>{period.subject}</span>
+        <span className="text-[13px] text-ink truncate" title={period.subject}>
+          {period.subject}
+        </span>
         {period.ownership === 'substitute' && (
           <span
             title={`Substitute for ${period.substituteFor} · ${acknowledged ? 'Acknowledged' : 'Acknowledgement required'}`}
@@ -99,7 +113,10 @@ function ScheduleRow({ period, phase, session, acknowledged, isCurrent, onOpen, 
             type="button"
             onClick={() => onOpen(period.id)}
             aria-label={`${label} — ${period.subject}, ${period.code}`}
-            className={cn(ROW_BTN, 'border border-line bg-paper text-accent hover:bg-accent-soft hover:border-accent-line')}
+            className={cn(
+              ROW_BTN,
+              'border border-line bg-paper text-accent hover:bg-accent-soft hover:border-accent-line',
+            )}
           >
             {label}
           </button>

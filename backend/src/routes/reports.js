@@ -46,79 +46,101 @@ function createReportsRouter() {
   // principal-only — its own permission key, separate from
   // reports.generate's principal-only default the other three /reports/*
   // routes below keep unchanged.
-  router.post('/reports/student-export', requirePermission('reports.student_export'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const body = req.body || {};
-      const report = await reportService.generateStudentExportReport(
-        req.dbClient,
-        {
-          collegeId: req.collegeId, format: body.format, columns: body.columns, studentIds: body.student_ids,
-        },
-        { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole },
-      );
-      res.status(201).json(report);
-    } catch (err) {
-      if (mapReportServiceError(err, res)) return;
-      throw err;
-    }
-  }));
-
-  router.post('/reports/attendance', requirePermission('reports.generate'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const report = await reportService.generateAttendanceReport(
-        req.dbClient,
-        { collegeId: req.collegeId, format: (req.body || {}).format },
-        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(201).json(report);
-    } catch (err) {
-      if (mapReportServiceError(err, res)) return;
-      throw err;
-    }
-  }));
-
-  router.post('/reports/finance', requirePermission('reports.generate'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const report = await reportService.generateFinanceReport(
-        req.dbClient,
-        { collegeId: req.collegeId, format: (req.body || {}).format },
-        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(201).json(report);
-    } catch (err) {
-      if (mapReportServiceError(err, res)) return;
-      throw err;
-    }
-  }));
-
-  router.post('/reports/assessment-marks', requirePermission('reports.generate'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const body = req.body || {};
-    try {
-      const report = await reportService.generateAssessmentMarksReport(
-        req.dbClient,
-        {
-          collegeId: req.collegeId,
-          format: body.format,
-          filters: {
-            academicYear: body.academic_year,
-            departmentId: body.department_id,
-            classId: body.class_id,
-            subject: body.subject,
-            assessmentTypeId: body.assessment_type_id,
+  router.post(
+    '/reports/student-export',
+    requirePermission('reports.student_export'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const body = req.body || {};
+        const report = await reportService.generateStudentExportReport(
+          req.dbClient,
+          {
+            collegeId: req.collegeId,
+            format: body.format,
+            columns: body.columns,
+            studentIds: body.student_ids,
           },
-        },
-        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(201).json(report);
-    } catch (err) {
-      if (mapReportServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+          {
+            actorUserId: identityService.resolveActorUserId(req.capabilities),
+            actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+          },
+        );
+        res.status(201).json(report);
+      } catch (err) {
+        if (mapReportServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
+
+  router.post(
+    '/reports/attendance',
+    requirePermission('reports.generate'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const report = await reportService.generateAttendanceReport(
+          req.dbClient,
+          { collegeId: req.collegeId, format: (req.body || {}).format },
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.status(201).json(report);
+      } catch (err) {
+        if (mapReportServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
+
+  router.post(
+    '/reports/finance',
+    requirePermission('reports.generate'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const report = await reportService.generateFinanceReport(
+          req.dbClient,
+          { collegeId: req.collegeId, format: (req.body || {}).format },
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.status(201).json(report);
+      } catch (err) {
+        if (mapReportServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
+
+  router.post(
+    '/reports/assessment-marks',
+    requirePermission('reports.generate'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const body = req.body || {};
+      try {
+        const report = await reportService.generateAssessmentMarksReport(
+          req.dbClient,
+          {
+            collegeId: req.collegeId,
+            format: body.format,
+            filters: {
+              academicYear: body.academic_year,
+              departmentId: body.department_id,
+              classId: body.class_id,
+              subject: body.subject,
+              assessmentTypeId: body.assessment_type_id,
+            },
+          },
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.status(201).json(report);
+      } catch (err) {
+        if (mapReportServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   return router;
 }

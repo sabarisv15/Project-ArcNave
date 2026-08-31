@@ -42,8 +42,13 @@ async function main() {
   const resTable = tableExtraction.extractRecords(res.text);
   const distinct = [...new Set(resTable.sections.map((s) => s.courseName))];
   console.log('\n=== consolidated result sheet ===');
-  console.log(`records=${resTable.records.length} sectionEntries=${resTable.sections.length} distinctNames=${distinct.length}`);
+  console.log(
+    `records=${resTable.records.length} sectionEntries=${resTable.sections.length} distinctNames=${distinct.length}`,
+  );
   distinct.forEach((n) => console.log(`  ${n.slice(0, 90)}`));
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

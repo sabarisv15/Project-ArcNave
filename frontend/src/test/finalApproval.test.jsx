@@ -9,10 +9,7 @@ import { WorkspaceProvider } from '../store/WorkspaceProvider';
 import { ComposerProvider } from '../store/ComposerProvider';
 import { AcademicTermProvider } from '../store/AcademicTermProvider';
 import { AcademicRosterProvider } from '../store/AcademicRosterProvider';
-import {
-  InstitutionalLifecycleProvider,
-  useInstitutionalLifecycle,
-} from '../store/InstitutionalLifecycleProvider';
+import { InstitutionalLifecycleProvider, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
 import {
   ENDORSEMENT_STATES,
   canFinalApprove,
@@ -49,7 +46,7 @@ function renderApp(route = '/curriculum') {
           </WorkspaceProvider>
         </Tooltip.Provider>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -107,12 +104,19 @@ describe('The final decision is available at exactly one state', () => {
     expect(canFinalApprove('endorsed_pending_l1')).toBe(true);
 
     // Everything else, and each for its own reason.
-    ['not_submitted', 'draft', 'conflict_identified', 'ready_for_endorsement', 'endorsed_pending_l2', 'approved_locked', 'superseded', 'rejected'].forEach(
-      (state) => {
-        expect(canFinalApprove(state)).toBe(false);
-        expect(finalApprovalBlockReason(state)).toBeTruthy();
-      }
-    );
+    [
+      'not_submitted',
+      'draft',
+      'conflict_identified',
+      'ready_for_endorsement',
+      'endorsed_pending_l2',
+      'approved_locked',
+      'superseded',
+      'rejected',
+    ].forEach((state) => {
+      expect(canFinalApprove(state)).toBe(false);
+      expect(finalApprovalBlockReason(state)).toBeTruthy();
+    });
   });
 
   it('refuses a conflicted revision, and says why rather than going quiet', () => {
@@ -181,9 +185,7 @@ describe('Deciding a revision never disturbs the live timetable', () => {
     expect(result.current.endorsementStateOf(awaiting.departmentId)).toBe('approved_locked');
     // The department's live grid is a separate field the decision does not touch.
     expect(awaiting.live.label).toBe(live);
-    expect(
-      TIMETABLE_STATES.find((s) => s.departmentId === awaiting.departmentId).live.label
-    ).toBe(live);
+    expect(TIMETABLE_STATES.find((s) => s.departmentId === awaiting.departmentId).live.label).toBe(live);
     // And a revision is still not the same thing as the live version.
     expect(TIMETABLE_STATES.every((s) => s.live.label !== s.revision?.label)).toBe(true);
   });
@@ -254,9 +256,7 @@ describe('The timetable page shows both, and decides only what it may', () => {
       name: new RegExp(`${CSE_DEPARTMENT.name} — open timetable decision`, 'i'),
     });
     expect(within(row).getByText(/live timetable unchanged/i)).toBeInTheDocument();
-    expect(
-      within(row).getByText(ENDORSEMENT_STATES.endorsed_pending_l1.label)
-    ).toBeInTheDocument();
+    expect(within(row).getByText(ENDORSEMENT_STATES.endorsed_pending_l1.label)).toBeInTheDocument();
   });
 
   it('states why a revision cannot be decided instead of hiding the reason', async () => {

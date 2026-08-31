@@ -1,12 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
-import {
-  DEPARTMENTS,
-  INST_FACULTY,
-  departmentShort,
-  facultyInitials,
-  workloadOf,
-} from '../lib/institutionData';
+import { DEPARTMENTS, INST_FACULTY, departmentShort, facultyInitials, workloadOf } from '../lib/institutionData';
 import { WORKLOAD_STATES } from '../lib/departmentTimetableData';
 import { InstitutionScopeHeader } from '../components/InstitutionScopeHeader';
 import { InstitutionFacultyDrawer } from '../components/InstitutionFacultyDrawer';
@@ -92,9 +86,7 @@ export function InstitutionFacultyView() {
       if (sortKey === 'name') return a.faculty.name.localeCompare(b.faculty.name);
       if (sortKey === 'load_asc') return a.faculty.periods - b.faculty.periods;
       if (sortKey === 'department') {
-        const byDept = departmentShort(a.faculty.departmentId).localeCompare(
-          departmentShort(b.faculty.departmentId)
-        );
+        const byDept = departmentShort(a.faculty.departmentId).localeCompare(departmentShort(b.faculty.departmentId));
         return byDept !== 0 ? byDept : b.faculty.periods - a.faculty.periods;
       }
       return b.faculty.periods - a.faculty.periods;
@@ -162,7 +154,7 @@ export function InstitutionFacultyView() {
             aria-label={`${l.faculty.name} — open record`}
             className={cn(
               GRID,
-              'w-full h-[48px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2'
+              'w-full h-[48px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2',
             )}
           >
             <span className="min-w-0 flex items-center gap-[9px]">
@@ -199,7 +191,7 @@ export function InstitutionFacultyView() {
                   ? 'font-[500] text-pending'
                   : l.faculty.periods === 0
                     ? 'text-ink-faint'
-                    : 'text-ink'
+                    : 'text-ink',
               )}
             >
               {l.faculty.periods} <span className="text-[11px] text-ink-faint">/wk</span>
@@ -209,7 +201,7 @@ export function InstitutionFacultyView() {
               <span
                 className={cn(
                   'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500] max-w-full truncate',
-                  WORKLOAD_STATES[l.state].tone
+                  WORKLOAD_STATES[l.state].tone,
                 )}
               >
                 {WORKLOAD_STATES[l.state].label}

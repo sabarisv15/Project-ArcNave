@@ -64,5 +64,8 @@ const AFTER_COMMIT_CALLBACKS = Symbol('afterCommitCallbacks');
 const AFTER_ROLLBACK_CALLBACKS = Symbol('afterRollbackCallbacks');
 
 module.exports = {
-  runWithRequestContext, getRequestContext, AFTER_COMMIT_CALLBACKS, AFTER_ROLLBACK_CALLBACKS,
+  runWithRequestContext,
+  getRequestContext,
+  AFTER_COMMIT_CALLBACKS,
+  AFTER_ROLLBACK_CALLBACKS,
 };

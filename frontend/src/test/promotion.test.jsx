@@ -9,10 +9,7 @@ import { WorkspaceProvider } from '../store/WorkspaceProvider';
 import { ComposerProvider } from '../store/ComposerProvider';
 import { AcademicTermProvider } from '../store/AcademicTermProvider';
 import { AcademicRosterProvider, useAcademicRoster } from '../store/AcademicRosterProvider';
-import {
-  InstitutionalLifecycleProvider,
-  useInstitutionalLifecycle,
-} from '../store/InstitutionalLifecycleProvider';
+import { InstitutionalLifecycleProvider, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
 import {
   PRIOR_CLASSES,
   PROMOTION_OUTCOMES,
@@ -48,7 +45,7 @@ function renderApp(route = '/department/promotions') {
           </WorkspaceProvider>
         </Tooltip.Provider>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -74,10 +71,7 @@ const wrapper = ({ children }) => (
 
 /** Both layers from one mount, because a promotion crosses them. */
 function lifecycle() {
-  return renderHook(
-    () => ({ life: useInstitutionalLifecycle(), roster: useAcademicRoster() }),
-    { wrapper }
-  );
+  return renderHook(() => ({ life: useInstitutionalLifecycle(), roster: useAcademicRoster() }), { wrapper });
 }
 
 describe('The review cohort is a post-commencement state, not a term rollover', () => {
@@ -177,9 +171,7 @@ describe('A confirmed promotion places the same student', () => {
     });
 
     expect(result.current.roster.studentById(candidate.id)?.id).toBe(candidate.id);
-    expect(
-      result.current.roster.studentsOfDepartment(DEPARTMENT_ID).some((s) => s.id === candidate.id)
-    ).toBe(true);
+    expect(result.current.roster.studentsOfDepartment(DEPARTMENT_ID).some((s) => s.id === candidate.id)).toBe(true);
     expect(result.current.roster.allStudents.filter((s) => s.id === candidate.id)).toHaveLength(1);
   });
 
@@ -336,7 +328,7 @@ describe('Department → Promotions', () => {
 
     expect(await screen.findByRole('heading', { name: 'Promotions' })).toBeInTheDocument();
     expect(
-      screen.getAllByText(/Semester transition review · placements are applied after confirmation/i).length
+      screen.getAllByText(/Semester transition review · placements are applied after confirmation/i).length,
     ).toBeGreaterThan(0);
 
     // Nothing on this screen opens, closes or advances a term.

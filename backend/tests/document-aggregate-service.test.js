@@ -3,19 +3,32 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  aggregate, summarize, compareRecords, validateFilterPattern, compileIdentityPattern,
-  OPERATIONS, DocumentAggregateValidationError,
+  aggregate,
+  summarize,
+  compareRecords,
+  validateFilterPattern,
+  compileIdentityPattern,
+  OPERATIONS,
+  DocumentAggregateValidationError,
 } = require('../src/services/documentAggregateService');
 
 const RECORDS = [
-  { key: '819:25400122', serialNo: '819', regNo: '25400122', block: '2 R2023 Absent\nRA RA\n3 R2023 RA\n4 R2023 RA B A+ A+ A O O' },
+  {
+    key: '819:25400122',
+    serialNo: '819',
+    regNo: '25400122',
+    block: '2 R2023 Absent\nRA RA\n3 R2023 RA\n4 R2023 RA B A+ A+ A O O',
+  },
   { key: '820:25400123', serialNo: '820', regNo: '25400123', block: '1 R2023 RA B C' },
   { key: '821:25400124', serialNo: '821', regNo: '25400124', block: '1 R2023 C' },
 ];
 
 test('aggregate: counts filter.pattern occurrences per record, never the model doing the arithmetic', () => {
   const results = aggregate(RECORDS, { filter: { pattern: 'RA' }, operation: 'count' });
-  assert.deepEqual(results.map((r) => r.count), [4, 1, 0]);
+  assert.deepEqual(
+    results.map((r) => r.count),
+    [4, 1, 0],
+  );
 });
 
 test('aggregate: a name containing the pattern as a substring (e.g. "ANBARASAN" contains "RA") is NOT falsely counted — word-boundary matching only', () => {
@@ -32,7 +45,10 @@ test('aggregate: works identically on delimited-cell records (cells joined befor
 
 test('aggregate: no filter.pattern -> zero for every record, not an error (an explicit "nothing to count" result)', () => {
   const results = aggregate(RECORDS, { operation: 'count' });
-  assert.deepEqual(results.map((r) => r.count), [0, 0, 0]);
+  assert.deepEqual(
+    results.map((r) => r.count),
+    [0, 0, 0],
+  );
 });
 
 test('aggregate: rejects an operation outside the fixed enum — RS-AIG-018, never arbitrary code', () => {
@@ -55,7 +71,10 @@ test('aggregate: "sum" totals each match\'s captured group as a number, per reco
     { key: '2', block: 'Total Arrears: 0' },
   ];
   const results = aggregate(records, { operation: 'sum', filter: { pattern: 'Total Arrears:\\s*(\\d+)' } });
-  assert.deepEqual(results.map((r) => r.sum), [7, 0]);
+  assert.deepEqual(
+    results.map((r) => r.sum),
+    [7, 0],
+  );
 });
 
 test('aggregate: "sum" with no capturing group sums the whole match text as a number', () => {
@@ -72,7 +91,10 @@ test('aggregate: "sum" skips a matched/captured value that is not a plain number
 
 test('aggregate: filter.mode "include" returns only records with a non-zero count, a real filtered list', () => {
   const results = aggregate(RECORDS, { filter: { pattern: 'RA', mode: 'include' }, operation: 'count' });
-  assert.deepEqual(results.map((r) => r.key), ['819:25400122', '820:25400123']);
+  assert.deepEqual(
+    results.map((r) => r.key),
+    ['819:25400122', '820:25400123'],
+  );
 });
 
 test('aggregate: filter.mode "include" works for "sum" the same way — non-zero sum, not non-zero match count', () => {
@@ -80,8 +102,14 @@ test('aggregate: filter.mode "include" works for "sum" the same way — non-zero
     { key: '1', block: 'Total Arrears: 0' },
     { key: '2', block: 'Total Arrears: 3' },
   ];
-  const results = aggregate(records, { operation: 'sum', filter: { pattern: 'Total Arrears:\\s*(\\d+)', mode: 'include' } });
-  assert.deepEqual(results.map((r) => r.key), ['2']);
+  const results = aggregate(records, {
+    operation: 'sum',
+    filter: { pattern: 'Total Arrears:\\s*(\\d+)', mode: 'include' },
+  });
+  assert.deepEqual(
+    results.map((r) => r.key),
+    ['2'],
+  );
 });
 
 test('aggregate: filter.mode defaults to "annotate" (every record returned) when omitted', () => {
@@ -110,7 +138,10 @@ test('summarize: totals across records — the arithmetic the model used to be h
 test('summarize: samples from MATCHED records only — a sample of zero-count rows would spend the budget saying nothing', () => {
   const rows = aggregate(RECORDS, { filter: { pattern: 'RA' }, operation: 'count' });
   const s = summarize(rows, { sampleSize: 10 });
-  assert.deepEqual(s.sample.map((r) => r.serialNo), ['819', '820']);
+  assert.deepEqual(
+    s.sample.map((r) => r.serialNo),
+    ['819', '820'],
+  );
   assert.equal(s.sampleOmitted, 0);
 });
 
@@ -125,7 +156,7 @@ test('summarize: over the cap, reports a truthful shown/omitted split — never 
   assert.equal(s.sampleShown + s.sampleOmitted, s.matchedCount);
 });
 
-test('summarize: at the prior slice\'s own documented scale (55 records, serial 818-872) every matching row is still listed — no behaviour change where it already worked', () => {
+test("summarize: at the prior slice's own documented scale (55 records, serial 818-872) every matching row is still listed — no behaviour change where it already worked", () => {
   const range = Array.from({ length: 55 }, (_, i) => ({ key: `${818 + i}`, block: 'RA' }));
   const rows = aggregate(range, { filter: { pattern: 'RA' }, operation: 'count' });
   const s = summarize(rows);
@@ -140,7 +171,10 @@ test('summarize: bySemester rolls up across records for breakdown, and is absent
     { key: 'b', block: '2 R2023 RA' },
   ];
   const breakdown = summarize(aggregate(records, { filter: { pattern: 'RA' }, operation: 'breakdown' }));
-  assert.deepEqual(breakdown.bySemester, [{ semester: 2, count: 3 }, { semester: 3, count: 1 }]);
+  assert.deepEqual(breakdown.bySemester, [
+    { semester: 2, count: 3 },
+    { semester: 3, count: 1 },
+  ]);
   const counted = summarize(aggregate(records, { filter: { pattern: 'RA' }, operation: 'count' }));
   assert.equal(counted.bySemester, undefined);
 });
@@ -201,6 +235,10 @@ test('validateFilterPattern: patterns are REJECTED, never rewritten — no norma
 // limitation is explicit rather than assumed covered by the check above.
 test('validateFilterPattern: a Python anchor (\\A/\\Z) is NOT caught — it compiles as a literal, a known and deliberate gap', () => {
   assert.equal(validateFilterPattern({ pattern: '\\ARA\\Z' }), null);
+  // \A/\Z are identity escapes in JS, not real anchors; that IS this
+  // test's point (see the comment above and ADL-056) — "fixing" the
+  // escape below would silently stop testing the actual behavior.
+  // eslint-disable-next-line no-useless-escape
   assert.equal(/\ARA\Z/.test('ARAZ'), true);
 });
 
@@ -248,7 +286,10 @@ function compareDaybook(overrides = {}) {
 test("compareRecords: 'lt' returns only the rows under the threshold — the question that was inexpressible before", () => {
   const result = compareDaybook();
   assert.equal(result.matchedCount, 2);
-  assert.deepEqual(result.sample.map((r) => r.value), [4500, 1250]);
+  assert.deepEqual(
+    result.sample.map((r) => r.value),
+    [4500, 1250],
+  );
 });
 
 test('compareRecords: scopedCount is the rows CONSIDERED, not the rows that passed', () => {
@@ -269,7 +310,10 @@ test("compareRecords: 'gt' / 'gte' mirror it at the other end", () => {
 
 test("compareRecords: 'between' is inclusive at BOTH ends", () => {
   const result = compareDaybook({ comparison: { operator: 'between', value: 4500, upperValue: 12000 } });
-  assert.deepEqual(result.sample.map((r) => r.value), [4500, 12000, 5000]);
+  assert.deepEqual(
+    result.sample.map((r) => r.value),
+    [4500, 12000, 5000],
+  );
 });
 
 test('compareRecords: total is the sum of the matching rows own values, computed here and not by the model', () => {
@@ -343,14 +387,18 @@ test('compareRecords: a row matching several numbers is counted as ambiguous, an
 // way filter.pattern and sectionPattern already are.
 test('compareRecords: identityPattern gives each matching row something to be identified by', () => {
   const result = compareDaybook({ identityPattern: new RegExp(PARTY) });
-  assert.deepEqual(result.sample.map((r) => r.identity.trim()), ['ANBU TRADERS', 'DEEPA SUPPLIES']);
+  assert.deepEqual(
+    result.sample.map((r) => r.identity.trim()),
+    ['ANBU TRADERS', 'DEEPA SUPPLIES'],
+  );
 });
 
 test('compareRecords: a row identityPattern cannot name is counted, not silently blank', () => {
-  const result = compareRecords(
-    [{ key: null, cells: ['01-04-2026', '123 456', '4500'] }],
-    { filter: { pattern: AMOUNT }, comparison: { operator: 'lt', value: 5000 }, identityPattern: new RegExp(PARTY) },
-  );
+  const result = compareRecords([{ key: null, cells: ['01-04-2026', '123 456', '4500'] }], {
+    filter: { pattern: AMOUNT },
+    comparison: { operator: 'lt', value: 5000 },
+    identityPattern: new RegExp(PARTY),
+  });
   assert.equal(result.matchedCount, 1);
   assert.equal(result.sample[0].identity, null);
   assert.equal(result.rowsWithoutIdentity, 1);
@@ -362,7 +410,10 @@ test('compareRecords: a row identityPattern cannot name is counted, not silently
 test('compareRecords: identity extraction is stateless across rows', () => {
   const first = compareDaybook({ identityPattern: new RegExp(PARTY) });
   const second = compareDaybook({ identityPattern: new RegExp(PARTY) });
-  assert.deepEqual(first.sample.map((r) => r.identity), second.sample.map((r) => r.identity));
+  assert.deepEqual(
+    first.sample.map((r) => r.identity),
+    second.sample.map((r) => r.identity),
+  );
 });
 
 // A value of exactly 0 (or a negative one — a day book credit) is a
@@ -414,7 +465,9 @@ test('compareRecords: a negative value that reaches the parser intact compares c
 test('compareRecords: the sample is bounded and sampleOmitted stays truthful', () => {
   const many = Array.from({ length: 150 }, (_, i) => ({ key: null, cells: [`P${i}`, '10'] }));
   const result = compareRecords(many, {
-    filter: { pattern: '(\\d+)$' }, comparison: { operator: 'lt', value: 5000 }, sampleSize: 100,
+    filter: { pattern: '(\\d+)$' },
+    comparison: { operator: 'lt', value: 5000 },
+    sampleSize: 100,
   });
   assert.equal(result.matchedCount, 150);
   assert.equal(result.sampleShown, 100);
@@ -435,12 +488,21 @@ test('compareRecords: rejects an operator outside the closed set — RS-AIG-018,
 });
 
 test('compareRecords: rejects a non-finite comparison.value', () => {
-  assert.throws(() => compareDaybook({ comparison: { operator: 'lt', value: 'cheap' } }), DocumentAggregateValidationError);
-  assert.throws(() => compareDaybook({ comparison: { operator: 'lt', value: Infinity } }), DocumentAggregateValidationError);
+  assert.throws(
+    () => compareDaybook({ comparison: { operator: 'lt', value: 'cheap' } }),
+    DocumentAggregateValidationError,
+  );
+  assert.throws(
+    () => compareDaybook({ comparison: { operator: 'lt', value: Infinity } }),
+    DocumentAggregateValidationError,
+  );
 });
 
 test("compareRecords: 'between' without upperValue is rejected", () => {
-  assert.throws(() => compareDaybook({ comparison: { operator: 'between', value: 1 } }), DocumentAggregateValidationError);
+  assert.throws(
+    () => compareDaybook({ comparison: { operator: 'between', value: 1 } }),
+    DocumentAggregateValidationError,
+  );
 });
 
 // Rejected rather than ignored: an upperValue that silently does nothing
@@ -468,10 +530,7 @@ test('compareRecords: a missing filter.pattern is rejected rather than treated a
 
 test("aggregate: 'compare' is in the closed vocabulary but has its own entry point", () => {
   assert.ok(OPERATIONS.has('compare'));
-  assert.throws(
-    () => aggregate(DAYBOOK, { operation: 'compare', filter: { pattern: AMOUNT } }),
-    /own entry point/,
-  );
+  assert.throws(() => aggregate(DAYBOOK, { operation: 'compare', filter: { pattern: AMOUNT } }), /own entry point/);
 });
 
 // --- compileIdentityPattern: the third LLM-supplied regex (ADL-056 rules) ---

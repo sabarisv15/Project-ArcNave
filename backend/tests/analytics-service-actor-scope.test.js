@@ -34,21 +34,21 @@ const DATABASE_URL = process.env.DATABASE_URL;
 async function seedTenant(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const collegeId = `attscope${suffix}`;
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [collegeId, `attscopetenant${suffix}`],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    collegeId,
+    `attscopetenant${suffix}`,
+  ]);
 
-  const dept = await adminPool.query(
-    'INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id',
-    [collegeId, `Dept ${suffix}`],
-  );
+  const dept = await adminPool.query('INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id', [
+    collegeId,
+    `Dept ${suffix}`,
+  ]);
   const departmentId = dept.rows[0].id;
 
-  const otherDept = await adminPool.query(
-    'INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id',
-    [collegeId, `Other Dept ${suffix}`],
-  );
+  const otherDept = await adminPool.query('INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id', [
+    collegeId,
+    `Other Dept ${suffix}`,
+  ]);
   const otherDepartmentId = otherDept.rows[0].id;
 
   const tutorUser = await adminPool.query(
@@ -90,7 +90,9 @@ async function seedTenant(adminPool) {
   // resolves through identityService.resolveActiveClassTutorPosition,
   // not this column.
   await seedClassTutorPosition(adminPool, {
-    collegeId, userId: tutorUserId, classId: ownClassId,
+    collegeId,
+    userId: tutorUserId,
+    classId: ownClassId,
   });
 
   // A second class in the SAME department the tutor does not tutor —
@@ -129,7 +131,12 @@ async function seedTenant(adminPool) {
   );
 
   return {
-    collegeId, tutorUserId, hodUserId, ownClassId, deptOnlyClassId, otherDeptClassId,
+    collegeId,
+    tutorUserId,
+    hodUserId,
+    ownClassId,
+    deptOnlyClassId,
+    otherDeptClassId,
   };
 }
 
@@ -175,42 +182,54 @@ test('AnalyticsService.getAttendanceRateForActor', async (t) => {
   // regression test right below for what tutorUser's personal login
   // now correctly sees instead (nothing, for the tutored-but-not-
   // taught class).
-  await t.test('tutor (class_tutor Position Account login, SELF_ASSIGNED) sees only their own tutored class', async () => {
-    const rows = await withTenantClient(appPool, tenant.collegeId, (client) => (
-      analyticsService.getAttendanceRateForActor(client, {
-        actorUserId: tenant.tutorUserId, actorRole: 'class_tutor', collegeId: tenant.collegeId,
-      })
-    ));
+  await t.test(
+    'tutor (class_tutor Position Account login, SELF_ASSIGNED) sees only their own tutored class',
+    async () => {
+      const rows = await withTenantClient(appPool, tenant.collegeId, (client) =>
+        analyticsService.getAttendanceRateForActor(client, {
+          actorUserId: tenant.tutorUserId,
+          actorRole: 'class_tutor',
+          collegeId: tenant.collegeId,
+        }),
+      );
 
-    assert.equal(rows.length, 1);
-    assert.equal(rows[0].classId, tenant.ownClassId);
-    assert.equal(rows[0].sessionsCount, 1);
-    assert.equal(rows[0].totalMarked, 10);
-    assert.equal(rows[0].totalPresent, 10);
-    assert.equal(rows[0].attendanceRatePercent, 100);
-  });
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].classId, tenant.ownClassId);
+      assert.equal(rows[0].sessionsCount, 1);
+      assert.equal(rows[0].totalMarked, 10);
+      assert.equal(rows[0].totalPresent, 10);
+      assert.equal(rows[0].attendanceRatePercent, 100);
+    },
+  );
 
   // 4-login authorization architecture (2026-08-09) — the critical
   // regression case: tutorUser genuinely occupies ownClass's L4 seat,
   // but this call uses their personal Staff login. Sees nothing —
   // Position Occupancy alone must not widen a personal login's read
   // scope either.
-  await t.test('tutorUser\'s personal Staff login sees nothing, even though that person occupies ownClass\'s L4 seat', async () => {
-    const rows = await withTenantClient(appPool, tenant.collegeId, (client) => (
-      analyticsService.getAttendanceRateForActor(client, {
-        actorUserId: tenant.tutorUserId, actorRole: 'staff', collegeId: tenant.collegeId,
-      })
-    ));
+  await t.test(
+    "tutorUser's personal Staff login sees nothing, even though that person occupies ownClass's L4 seat",
+    async () => {
+      const rows = await withTenantClient(appPool, tenant.collegeId, (client) =>
+        analyticsService.getAttendanceRateForActor(client, {
+          actorUserId: tenant.tutorUserId,
+          actorRole: 'staff',
+          collegeId: tenant.collegeId,
+        }),
+      );
 
-    assert.deepEqual(rows, []);
-  });
+      assert.deepEqual(rows, []);
+    },
+  );
 
-  await t.test('hod (DEPARTMENT scope) sees every class in their department, including the tutor\'s', async () => {
-    const rows = await withTenantClient(appPool, tenant.collegeId, (client) => (
+  await t.test("hod (DEPARTMENT scope) sees every class in their department, including the tutor's", async () => {
+    const rows = await withTenantClient(appPool, tenant.collegeId, (client) =>
       analyticsService.getAttendanceRateForActor(client, {
-        actorUserId: tenant.hodUserId, actorRole: 'hod', collegeId: tenant.collegeId,
-      })
-    ));
+        actorUserId: tenant.hodUserId,
+        actorRole: 'hod',
+        collegeId: tenant.collegeId,
+      }),
+    );
 
     const classIds = rows.map((r) => r.classId).sort();
     assert.deepEqual(classIds, [tenant.deptOnlyClassId, tenant.ownClassId].sort());
@@ -220,26 +239,33 @@ test('AnalyticsService.getAttendanceRateForActor', async (t) => {
     );
   });
 
-  await t.test('tutor and hod see IDENTICAL attendance data for the class they share — the exact parity the '
-    + 'original UAT report found broken', async () => {
-    const [tutorRows, hodRows] = await Promise.all([
-      withTenantClient(appPool, tenant.collegeId, (client) => (
-        analyticsService.getAttendanceRateForActor(client, {
-          actorUserId: tenant.tutorUserId, actorRole: 'class_tutor', collegeId: tenant.collegeId,
-        })
-      )),
-      withTenantClient(appPool, tenant.collegeId, (client) => (
-        analyticsService.getAttendanceRateForActor(client, {
-          actorUserId: tenant.hodUserId, actorRole: 'hod', collegeId: tenant.collegeId,
-        })
-      )),
-    ]);
+  await t.test(
+    'tutor and hod see IDENTICAL attendance data for the class they share — the exact parity the ' +
+      'original UAT report found broken',
+    async () => {
+      const [tutorRows, hodRows] = await Promise.all([
+        withTenantClient(appPool, tenant.collegeId, (client) =>
+          analyticsService.getAttendanceRateForActor(client, {
+            actorUserId: tenant.tutorUserId,
+            actorRole: 'class_tutor',
+            collegeId: tenant.collegeId,
+          }),
+        ),
+        withTenantClient(appPool, tenant.collegeId, (client) =>
+          analyticsService.getAttendanceRateForActor(client, {
+            actorUserId: tenant.hodUserId,
+            actorRole: 'hod',
+            collegeId: tenant.collegeId,
+          }),
+        ),
+      ]);
 
-    const tutorOwnClassRow = tutorRows.find((r) => r.classId === tenant.ownClassId);
-    const hodOwnClassRow = hodRows.find((r) => r.classId === tenant.ownClassId);
+      const tutorOwnClassRow = tutorRows.find((r) => r.classId === tenant.ownClassId);
+      const hodOwnClassRow = hodRows.find((r) => r.classId === tenant.ownClassId);
 
-    assert.ok(tutorOwnClassRow, 'tutor must see their own class');
-    assert.ok(hodOwnClassRow, 'hod must see the tutor\'s class too (it\'s in their department)');
-    assert.deepEqual(tutorOwnClassRow, hodOwnClassRow);
-  });
+      assert.ok(tutorOwnClassRow, 'tutor must see their own class');
+      assert.ok(hodOwnClassRow, "hod must see the tutor's class too (it's in their department)");
+      assert.deepEqual(tutorOwnClassRow, hodOwnClassRow);
+    },
+  );
 });

@@ -40,7 +40,8 @@ import { cn } from '../lib/utils';
  * would import the wrong scope along with the markup.
  */
 
-const GRID = 'grid grid-cols-[28px_minmax(0,1.4fr)_minmax(0,1fr)_92px_minmax(0,1.3fr)] gap-x-[10px] items-center px-[14px]';
+const GRID =
+  'grid grid-cols-[28px_minmax(0,1.4fr)_minmax(0,1fr)_92px_minmax(0,1.3fr)] gap-x-[10px] items-center px-[14px]';
 
 const STEPS = ['File', 'Columns', 'Preview'];
 
@@ -57,7 +58,7 @@ export function BulkImportDrawer({ open, onOpenChange, onImported }) {
   const classified = useMemo(() => {
     if (!parsed) return [];
     return classifyRows(parsed.rows, mapping, (values, pending) =>
-      validateAdmission(OWNED_CLASS.id, values, { scopeClassId: OWNED_CLASS.id, pending })
+      validateAdmission(OWNED_CLASS.id, values, { scopeClassId: OWNED_CLASS.id, pending }),
     );
   }, [parsed, mapping, validateAdmission]);
 
@@ -110,7 +111,11 @@ export function BulkImportDrawer({ open, onOpenChange, onImported }) {
         <ol className="m-0 p-0 list-none flex items-center gap-[6px]">
           {STEPS.map((label, i) => (
             <li key={label} className="flex items-center gap-[6px]">
-              {i > 0 && <span aria-hidden="true" className="text-ink-ghost text-[11px]">→</span>}
+              {i > 0 && (
+                <span aria-hidden="true" className="text-ink-ghost text-[11px]">
+                  →
+                </span>
+              )}
               <span
                 className={cn(
                   'inline-flex items-center h-[22px] px-[8px] rounded-[7px] text-[11.5px]',
@@ -118,7 +123,7 @@ export function BulkImportDrawer({ open, onOpenChange, onImported }) {
                     ? 'bg-accent-soft text-accent font-[600]'
                     : i < stepIndex || result
                       ? 'bg-tint2 text-ink-soft font-[500]'
-                      : 'text-ink-faint'
+                      : 'text-ink-faint',
                 )}
               >
                 {label}
@@ -128,12 +133,9 @@ export function BulkImportDrawer({ open, onOpenChange, onImported }) {
         </ol>
 
         <div className="px-[12px] py-[9px] rounded-[12px] bg-tint border border-line">
-          <div className="text-[11px] font-[500] tracking-[.05em] uppercase text-ink-muted">
-            Importing into
-          </div>
+          <div className="text-[11px] font-[500] tracking-[.05em] uppercase text-ink-muted">Importing into</div>
           <div className="mt-[4px] text-[12.5px] text-ink">
-            {OWNED_CLASS.dept} · {OWNED_CLASS.code} · Semester {OWNED_CLASS.semester} · AY{' '}
-            {OWNED_CLASS.academicYear}
+            {OWNED_CLASS.dept} · {OWNED_CLASS.code} · Semester {OWNED_CLASS.semester} · AY {OWNED_CLASS.academicYear}
           </div>
           <div className="mt-[2px] text-[11.5px] text-ink-faint">
             Locked to this class. A class or section column in the file is ignored.
@@ -150,16 +152,16 @@ export function BulkImportDrawer({ open, onOpenChange, onImported }) {
               </span>
             </div>
             <p className="m-0 text-[12px] text-ink-muted">
-              They carry <span className="text-ink-soft">Documents pending</span> until their
-              documents are added. {counts.rejected} rejected row
+              They carry <span className="text-ink-soft">Documents pending</span> until their documents are added.{' '}
+              {counts.rejected} rejected row
               {counts.rejected === 1 ? ' was' : 's were'} not imported.
             </p>
           </div>
         ) : stepIndex === 0 ? (
           <div className="flex flex-col gap-[10px]">
             <p className="m-0 text-[12.5px] text-ink-muted">
-              A CSV or spreadsheet of student rows. Documents are not part of an import — they are
-              added per student afterwards.
+              A CSV or spreadsheet of student rows. Documents are not part of an import — they are added per student
+              afterwards.
             </p>
             <button
               type="button"
@@ -177,8 +179,8 @@ export function BulkImportDrawer({ open, onOpenChange, onImported }) {
               {fileName} · {parsed.rows.length} rows
             </div>
             <p className="m-0 text-[12px] text-ink-muted">
-              Match each column. The guesses below come from the header names and are worth
-              checking — only you know what your export calls things.
+              Match each column. The guesses below come from the header names and are worth checking — only you know
+              what your export calls things.
             </p>
             {IMPORT_FIELDS.map((f) => (
               <label key={f.key} className="grid grid-cols-[150px_1fr] gap-x-[10px] items-center">
@@ -214,7 +216,7 @@ export function BulkImportDrawer({ open, onOpenChange, onImported }) {
                   <span
                     className={cn(
                       'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-                      ROW_STATES[state].tone
+                      ROW_STATES[state].tone,
                     )}
                   >
                     {ROW_STATES[state].label}
@@ -234,10 +236,7 @@ export function BulkImportDrawer({ open, onOpenChange, onImported }) {
                 <span>Notes</span>
               </div>
               {classified.map((row) => (
-                <div
-                  key={row.index}
-                  className={cn(GRID, 'min-h-[40px] py-[6px] border-t border-line-light')}
-                >
+                <div key={row.index} className={cn(GRID, 'min-h-[40px] py-[6px] border-t border-line-light')}>
                   <span className="text-[11.5px] text-ink-faint tabular-nums">{row.index + 1}</span>
                   <span className="text-[12.5px] text-ink truncate">
                     {row.values.name || <span className="text-ink-faint">—</span>}
@@ -249,7 +248,7 @@ export function BulkImportDrawer({ open, onOpenChange, onImported }) {
                     <span
                       className={cn(
                         'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-                        ROW_STATES[row.state].tone
+                        ROW_STATES[row.state].tone,
                       )}
                     >
                       {ROW_STATES[row.state].label}
@@ -262,8 +261,8 @@ export function BulkImportDrawer({ open, onOpenChange, onImported }) {
 
             <p className="m-0 text-[12px] text-ink-muted">
               Confirming activates {counts.valid + counts.warning} student
-              {counts.valid + counts.warning === 1 ? '' : 's'} in {OWNED_CLASS.code} straight away.
-              Rejected rows are not imported and nothing about them is saved.
+              {counts.valid + counts.warning === 1 ? '' : 's'} in {OWNED_CLASS.code} straight away. Rejected rows are
+              not imported and nothing about them is saved.
             </p>
           </div>
         )}

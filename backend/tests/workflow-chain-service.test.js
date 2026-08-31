@@ -18,8 +18,12 @@
 // data — just against repository-level stubs instead of a live database.
 
 function mockPrincipalPosition(t, { userId = 'principal-1' } = {}) {
-  const findLevel1Mock = t.mock.method(positionRepository, 'findActivePositionByCollegeAndLevel', async () => ({ id: 'principal-pos-1' }));
-  const findAccountMock = t.mock.method(positionRepository, 'findPositionAccountByPositionId', async () => ({ id: 'principal-acct-1' }));
+  const findLevel1Mock = t.mock.method(positionRepository, 'findActivePositionByCollegeAndLevel', async () => ({
+    id: 'principal-pos-1',
+  }));
+  const findAccountMock = t.mock.method(positionRepository, 'findPositionAccountByPositionId', async () => ({
+    id: 'principal-acct-1',
+  }));
   const findOccupantMock = t.mock.method(positionRepository, 'findActiveOccupant', async () => ({ user_id: userId }));
   t.after(() => {
     findLevel1Mock.mock.restore();
@@ -35,8 +39,12 @@ function mockPrincipalPosition(t, { userId = 'principal-1' } = {}) {
 // keyed on findActiveClassAssignment instead of
 // findActivePositionByCollegeAndLevel.
 function mockClassTutorPosition(t, { userId = 'tutor-1' } = {}) {
-  const findClassAssignmentMock = t.mock.method(positionRepository, 'findActiveClassAssignment', async () => ({ position_id: 'tutor-pos-1' }));
-  const findAccountMock = t.mock.method(positionRepository, 'findPositionAccountByPositionId', async () => ({ id: 'tutor-acct-1' }));
+  const findClassAssignmentMock = t.mock.method(positionRepository, 'findActiveClassAssignment', async () => ({
+    position_id: 'tutor-pos-1',
+  }));
+  const findAccountMock = t.mock.method(positionRepository, 'findPositionAccountByPositionId', async () => ({
+    id: 'tutor-acct-1',
+  }));
   const findOccupantMock = t.mock.method(positionRepository, 'findActiveOccupant', async () => ({ user_id: userId }));
   t.after(() => {
     findClassAssignmentMock.mock.restore();
@@ -49,12 +57,20 @@ function mockClassTutorPosition(t, { userId = 'tutor-1' } = {}) {
 // test can resolve both in one chain (see "uses the institution-
 // configured chain" below).
 function mockHodAndPrincipalPositions(t, { hodUserId = 'hod-1', principalUserId = 'principal-1' } = {}) {
-  const findDeptAssignmentMock = t.mock.method(positionRepository, 'findActiveDepartmentAssignment', async () => ({ position_id: 'hod-pos-1' }));
-  const findLevel1Mock = t.mock.method(positionRepository, 'findActivePositionByCollegeAndLevel', async () => ({ id: 'principal-pos-1' }));
-  const findAccountMock = t.mock.method(positionRepository, 'findPositionAccountByPositionId', async (client, positionId) => ({ id: `${positionId}-acct` }));
-  const findOccupantMock = t.mock.method(positionRepository, 'findActiveOccupant', async (client, accountId) => (
-    accountId === 'hod-pos-1-acct' ? { user_id: hodUserId } : { user_id: principalUserId }
-  ));
+  const findDeptAssignmentMock = t.mock.method(positionRepository, 'findActiveDepartmentAssignment', async () => ({
+    position_id: 'hod-pos-1',
+  }));
+  const findLevel1Mock = t.mock.method(positionRepository, 'findActivePositionByCollegeAndLevel', async () => ({
+    id: 'principal-pos-1',
+  }));
+  const findAccountMock = t.mock.method(
+    positionRepository,
+    'findPositionAccountByPositionId',
+    async (client, positionId) => ({ id: `${positionId}-acct` }),
+  );
+  const findOccupantMock = t.mock.method(positionRepository, 'findActiveOccupant', async (client, accountId) =>
+    accountId === 'hod-pos-1-acct' ? { user_id: hodUserId } : { user_id: principalUserId },
+  );
   t.after(() => {
     findDeptAssignmentMock.mock.restore();
     findLevel1Mock.mock.restore();
@@ -97,7 +113,10 @@ test('resolveApproverChain', async (t) => {
       findNoDelegationMock.mock.restore();
     });
 
-    const chain = await workflowChainService.resolveApproverChain({}, { collegeId: 'c1', entityType: 'record_restoration' });
+    const chain = await workflowChainService.resolveApproverChain(
+      {},
+      { collegeId: 'c1', entityType: 'record_restoration' },
+    );
     assert.deepEqual(chain, [{ step: 1, role: 'principal', user_id: 'principal-1' }]);
   });
 
@@ -112,9 +131,14 @@ test('resolveApproverChain', async (t) => {
       findNoDelegationMock.mock.restore();
     });
 
-    const chain = await workflowChainService.resolveApproverChain({}, {
-      collegeId: 'c1', entityType: 'record_restoration', departmentId: 'dept-1',
-    });
+    const chain = await workflowChainService.resolveApproverChain(
+      {},
+      {
+        collegeId: 'c1',
+        entityType: 'record_restoration',
+        departmentId: 'dept-1',
+      },
+    );
     assert.deepEqual(chain, [
       { step: 1, role: 'hod', user_id: 'hod-1' },
       { step: 2, role: 'principal', user_id: 'principal-1' },
@@ -124,61 +148,90 @@ test('resolveApproverChain', async (t) => {
   // RS-WFL-003 (D6, Stage 6, ADL-012): "some modules hard-code a
   // mandatory minimum approval level that no institution configuration
   // can remove" — student_lifecycle_change's own L3 floor.
-  await t.test('rejects an institution-configured student_lifecycle_change chain that never reaches L3 (RS-WFL-003 floor)', async () => {
-    const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => ({
-      configuration: { student_lifecycle_change: ['tutor'] },
-    }));
-    t.after(() => getConfigMock.mock.restore());
+  await t.test(
+    'rejects an institution-configured student_lifecycle_change chain that never reaches L3 (RS-WFL-003 floor)',
+    async () => {
+      const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => ({
+        configuration: { student_lifecycle_change: ['tutor'] },
+      }));
+      t.after(() => getConfigMock.mock.restore());
 
-    await assert.rejects(
-      () => workflowChainService.resolveApproverChain({}, { collegeId: 'c1', entityType: 'student_lifecycle_change', classId: 'class-1' }),
-      workflowChainService.WorkflowChainFloorViolationError,
-    );
-  });
+      await assert.rejects(
+        () =>
+          workflowChainService.resolveApproverChain(
+            {},
+            { collegeId: 'c1', entityType: 'student_lifecycle_change', classId: 'class-1' },
+          ),
+        workflowChainService.WorkflowChainFloorViolationError,
+      );
+    },
+  );
 
-  await t.test('rejects an institution-configured timetable_approval chain that never reaches principal (RS-WFL-003 L1 floor)', async () => {
-    const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => ({
-      configuration: { timetable_approval: ['hod'] },
-    }));
-    t.after(() => getConfigMock.mock.restore());
+  await t.test(
+    'rejects an institution-configured timetable_approval chain that never reaches principal (RS-WFL-003 L1 floor)',
+    async () => {
+      const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => ({
+        configuration: { timetable_approval: ['hod'] },
+      }));
+      t.after(() => getConfigMock.mock.restore());
 
-    await assert.rejects(
-      () => workflowChainService.resolveApproverChain({}, { collegeId: 'c1', entityType: 'timetable_approval', departmentId: 'dept-1' }),
-      workflowChainService.WorkflowChainFloorViolationError,
-    );
-  });
+      await assert.rejects(
+        () =>
+          workflowChainService.resolveApproverChain(
+            {},
+            { collegeId: 'c1', entityType: 'timetable_approval', departmentId: 'dept-1' },
+          ),
+        workflowChainService.WorkflowChainFloorViolationError,
+      );
+    },
+  );
 
-  await t.test('accepts an institution-configured student_lifecycle_change chain that reaches hod (satisfies the L3 floor)', async () => {
-    const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => ({
-      configuration: { student_lifecycle_change: ['hod'] },
-    }));
-    mockHodAndPrincipalPositions(t);
-    const findNoDelegationMock = t.mock.method(workflowDelegationRepository, 'findActive', async () => null);
-    t.after(() => {
-      getConfigMock.mock.restore();
-      findNoDelegationMock.mock.restore();
-    });
+  await t.test(
+    'accepts an institution-configured student_lifecycle_change chain that reaches hod (satisfies the L3 floor)',
+    async () => {
+      const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => ({
+        configuration: { student_lifecycle_change: ['hod'] },
+      }));
+      mockHodAndPrincipalPositions(t);
+      const findNoDelegationMock = t.mock.method(workflowDelegationRepository, 'findActive', async () => null);
+      t.after(() => {
+        getConfigMock.mock.restore();
+        findNoDelegationMock.mock.restore();
+      });
 
-    const chain = await workflowChainService.resolveApproverChain({}, {
-      collegeId: 'c1', entityType: 'student_lifecycle_change', departmentId: 'dept-1',
-    });
-    assert.deepEqual(chain, [{ step: 1, role: 'hod', user_id: 'hod-1' }]);
-  });
+      const chain = await workflowChainService.resolveApproverChain(
+        {},
+        {
+          collegeId: 'c1',
+          entityType: 'student_lifecycle_change',
+          departmentId: 'dept-1',
+        },
+      );
+      assert.deepEqual(chain, [{ step: 1, role: 'hod', user_id: 'hod-1' }]);
+    },
+  );
 
   // RS-CLS-007 / RS-WFL-003: "Approve: L3 only" — a floor identical in
   // shape to student_lifecycle_change's own, just for a different
   // entityType.
-  await t.test('rejects an institution-configured substitute_assignment chain that never reaches L3 (RS-WFL-003 floor)', async () => {
-    const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => ({
-      configuration: { substitute_assignment: ['tutor'] },
-    }));
-    t.after(() => getConfigMock.mock.restore());
+  await t.test(
+    'rejects an institution-configured substitute_assignment chain that never reaches L3 (RS-WFL-003 floor)',
+    async () => {
+      const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => ({
+        configuration: { substitute_assignment: ['tutor'] },
+      }));
+      t.after(() => getConfigMock.mock.restore());
 
-    await assert.rejects(
-      () => workflowChainService.resolveApproverChain({}, { collegeId: 'c1', entityType: 'substitute_assignment', classId: 'class-1' }),
-      workflowChainService.WorkflowChainFloorViolationError,
-    );
-  });
+      await assert.rejects(
+        () =>
+          workflowChainService.resolveApproverChain(
+            {},
+            { collegeId: 'c1', entityType: 'substitute_assignment', classId: 'class-1' },
+          ),
+        workflowChainService.WorkflowChainFloorViolationError,
+      );
+    },
+  );
 
   await t.test('falls back to DEFAULT_CHAINS.substitute_assignment (hod only) when unconfigured', async () => {
     const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => null);
@@ -189,9 +242,14 @@ test('resolveApproverChain', async (t) => {
       findNoDelegationMock.mock.restore();
     });
 
-    const chain = await workflowChainService.resolveApproverChain({}, {
-      collegeId: 'c1', entityType: 'substitute_assignment', departmentId: 'dept-1',
-    });
+    const chain = await workflowChainService.resolveApproverChain(
+      {},
+      {
+        collegeId: 'c1',
+        entityType: 'substitute_assignment',
+        departmentId: 'dept-1',
+      },
+    );
     assert.deepEqual(chain, [{ step: 1, role: 'hod', user_id: 'hod-1' }]);
   });
 
@@ -204,9 +262,14 @@ test('resolveApproverChain', async (t) => {
       findNoDelegationMock.mock.restore();
     });
 
-    const chain = await workflowChainService.resolveApproverChain({}, {
-      collegeId: 'c1', entityType: 'attendance_correction', classId: 'class-1',
-    });
+    const chain = await workflowChainService.resolveApproverChain(
+      {},
+      {
+        collegeId: 'c1',
+        entityType: 'attendance_correction',
+        classId: 'class-1',
+      },
+    );
     assert.deepEqual(chain, [{ step: 1, role: 'tutor', user_id: 'tutor-1' }]);
   });
 
@@ -226,9 +289,14 @@ test('resolveApproverChain', async (t) => {
       findNoDelegationMock.mock.restore();
     });
 
-    const chain = await workflowChainService.resolveApproverChain({}, {
-      collegeId: 'c1', entityType: 'fee_correction', departmentId: 'dept-1',
-    });
+    const chain = await workflowChainService.resolveApproverChain(
+      {},
+      {
+        collegeId: 'c1',
+        entityType: 'fee_correction',
+        departmentId: 'dept-1',
+      },
+    );
     assert.deepEqual(chain, [{ step: 1, role: 'hod', user_id: 'hod-1' }]);
   });
 
@@ -243,9 +311,14 @@ test('resolveApproverChain', async (t) => {
       findNoDelegationMock.mock.restore();
     });
 
-    const chain = await workflowChainService.resolveApproverChain({}, {
-      collegeId: 'c1', entityType: 'fee_correction', departmentId: 'dept-1',
-    });
+    const chain = await workflowChainService.resolveApproverChain(
+      {},
+      {
+        collegeId: 'c1',
+        entityType: 'fee_correction',
+        departmentId: 'dept-1',
+      },
+    );
     assert.deepEqual(chain, [
       { step: 1, role: 'hod', user_id: 'hod-1' },
       { step: 2, role: 'principal', user_id: 'principal-1' },
@@ -261,9 +334,13 @@ test('resolveApproverChain', async (t) => {
       findNoDelegationMock.mock.restore();
     });
 
-    const chain = await workflowChainService.resolveApproverChain({}, {
-      collegeId: 'c1', entityType: 'notification',
-    });
+    const chain = await workflowChainService.resolveApproverChain(
+      {},
+      {
+        collegeId: 'c1',
+        entityType: 'notification',
+      },
+    );
     assert.deepEqual(chain, [{ step: 1, role: 'principal', user_id: 'principal-1' }]);
   });
 
@@ -278,30 +355,44 @@ test('resolveApproverChain', async (t) => {
       findNoDelegationMock.mock.restore();
     });
 
-    const chain = await workflowChainService.resolveApproverChain({}, {
-      collegeId: 'c1', entityType: 'notification', departmentId: 'dept-1',
-    });
+    const chain = await workflowChainService.resolveApproverChain(
+      {},
+      {
+        collegeId: 'c1',
+        entityType: 'notification',
+        departmentId: 'dept-1',
+      },
+    );
     assert.deepEqual(chain, [
       { step: 1, role: 'hod', user_id: 'hod-1' },
       { step: 2, role: 'principal', user_id: 'principal-1' },
     ]);
   });
 
-  await t.test('throws WorkflowChainMissingContextError for "tutor" when the class has no active Class Tutor occupant', async () => {
-    const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => null);
-    const findClassAssignmentMock = t.mock.method(positionRepository, 'findActiveClassAssignment', async () => null);
-    t.after(() => {
-      getConfigMock.mock.restore();
-      findClassAssignmentMock.mock.restore();
-    });
+  await t.test(
+    'throws WorkflowChainMissingContextError for "tutor" when the class has no active Class Tutor occupant',
+    async () => {
+      const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => null);
+      const findClassAssignmentMock = t.mock.method(positionRepository, 'findActiveClassAssignment', async () => null);
+      t.after(() => {
+        getConfigMock.mock.restore();
+        findClassAssignmentMock.mock.restore();
+      });
 
-    await assert.rejects(
-      () => workflowChainService.resolveApproverChain({}, {
-        collegeId: 'c1', entityType: 'attendance_correction', classId: 'class-1',
-      }),
-      workflowChainService.WorkflowChainMissingContextError,
-    );
-  });
+      await assert.rejects(
+        () =>
+          workflowChainService.resolveApproverChain(
+            {},
+            {
+              collegeId: 'c1',
+              entityType: 'attendance_correction',
+              classId: 'class-1',
+            },
+          ),
+        workflowChainService.WorkflowChainMissingContextError,
+      );
+    },
+  );
 
   await t.test('throws WorkflowChainMissingContextError for "hod" with no departmentId', async () => {
     const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => null);
@@ -315,13 +406,18 @@ test('resolveApproverChain', async (t) => {
   await t.test('substitutes an active delegation for the resolved principal', async () => {
     const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => null);
     mockPrincipalPosition(t);
-    const findDelegationMock = t.mock.method(workflowDelegationRepository, 'findActive', async () => ({ delegate_user_id: 'delegate-1' }));
+    const findDelegationMock = t.mock.method(workflowDelegationRepository, 'findActive', async () => ({
+      delegate_user_id: 'delegate-1',
+    }));
     t.after(() => {
       getConfigMock.mock.restore();
       findDelegationMock.mock.restore();
     });
 
-    const chain = await workflowChainService.resolveApproverChain({}, { collegeId: 'c1', entityType: 'record_restoration' });
+    const chain = await workflowChainService.resolveApproverChain(
+      {},
+      { collegeId: 'c1', entityType: 'record_restoration' },
+    );
     assert.equal(chain[0].user_id, 'delegate-1');
   });
 
@@ -338,24 +434,39 @@ test('resolveApproverChain', async (t) => {
     );
   });
 
-  await t.test('throws WorkflowChainMissingContextError when a department has no active HOD, permanent or acting', async () => {
-    const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => null);
-    const findDeptAssignmentMock = t.mock.method(positionRepository, 'findActiveDepartmentAssignment', async () => null);
-    t.after(() => {
-      getConfigMock.mock.restore();
-      findDeptAssignmentMock.mock.restore();
-    });
-    await assert.rejects(
-      () => workflowChainService.resolveApproverChain({}, { collegeId: 'c1', entityType: 'timetable_approval', departmentId: 'dept-1' }),
-      workflowChainService.WorkflowChainMissingContextError,
-    );
-  });
+  await t.test(
+    'throws WorkflowChainMissingContextError when a department has no active HOD, permanent or acting',
+    async () => {
+      const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => null);
+      const findDeptAssignmentMock = t.mock.method(
+        positionRepository,
+        'findActiveDepartmentAssignment',
+        async () => null,
+      );
+      t.after(() => {
+        getConfigMock.mock.restore();
+        findDeptAssignmentMock.mock.restore();
+      });
+      await assert.rejects(
+        () =>
+          workflowChainService.resolveApproverChain(
+            {},
+            { collegeId: 'c1', entityType: 'timetable_approval', departmentId: 'dept-1' },
+          ),
+        workflowChainService.WorkflowChainMissingContextError,
+      );
+    },
+  );
 });
 
 test('createDelegation / revokeDelegation', async (t) => {
   await t.test('rejects an unknown role', async () => {
     await assert.rejects(
-      () => workflowChainService.createDelegation({}, { role: 'super_admin', delegateUserId: 'u1', startDate: '2026-01-01' }),
+      () =>
+        workflowChainService.createDelegation(
+          {},
+          { role: 'super_admin', delegateUserId: 'u1', startDate: '2026-01-01' },
+        ),
       workflowChainService.WorkflowChainUnknownRoleError,
     );
   });
@@ -368,15 +479,24 @@ test('createDelegation / revokeDelegation', async (t) => {
   });
 
   await t.test('creates and audit-logs a delegation', async () => {
-    const createMock = t.mock.method(workflowDelegationRepository, 'create', async (client, fields) => ({ id: 'del-1', ...fields }));
+    const createMock = t.mock.method(workflowDelegationRepository, 'create', async (client, fields) => ({
+      id: 'del-1',
+      ...fields,
+    }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
       createMock.mock.restore();
       auditMock.mock.restore();
     });
-    const result = await workflowChainService.createDelegation({}, {
-      role: 'principal', delegateUserId: 'delegate-1', startDate: '2026-01-01',
-    }, { actorUserId: 'principal-1', collegeId: 'c1' });
+    const result = await workflowChainService.createDelegation(
+      {},
+      {
+        role: 'principal',
+        delegateUserId: 'delegate-1',
+        startDate: '2026-01-01',
+      },
+      { actorUserId: 'principal-1', collegeId: 'c1' },
+    );
     assert.equal(result.id, 'del-1');
     assert.equal(auditMock.mock.calls[0].arguments[1].action, 'workflow_delegation_created');
   });

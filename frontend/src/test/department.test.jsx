@@ -41,7 +41,7 @@ function renderApp(route = '/') {
           </WorkspaceProvider>
         </Tooltip.Provider>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -355,7 +355,7 @@ describe('Department timetable', () => {
 
     expect(await screen.findByRole('heading', { name: 'Timetable' })).toBeInTheDocument();
     expect(
-      await screen.findByText(new RegExp(`${PENDING_REVISION.label} is waiting on your endorsement`))
+      await screen.findByText(new RegExp(`${PENDING_REVISION.label} is waiting on your endorsement`)),
     ).toBeInTheDocument();
     expect(screen.getByText(/continues to follow the live timetable below/i)).toBeInTheDocument();
   });

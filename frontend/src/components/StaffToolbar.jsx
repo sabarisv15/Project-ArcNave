@@ -54,7 +54,7 @@ export function StaffToolbar({ s }) {
                   }}
                   className={cn(
                     'flex items-center justify-between w-full h-[32px] px-[10px] border-0 bg-transparent rounded-[10px] font-sans text-[12.5px] cursor-pointer text-left hover:bg-tint2',
-                    on ? 'text-accent font-[600]' : 'text-ink-soft font-[500]'
+                    on ? 'text-accent font-[600]' : 'text-ink-soft font-[500]',
                   )}
                 >
                   <span>{opt.label}</span>

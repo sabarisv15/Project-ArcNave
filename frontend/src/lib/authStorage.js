@@ -1,9 +1,16 @@
 // Access token lives in memory only (module-level, not localStorage) to
-// limit XSS blast radius. Refresh token + college code persist in
-// sessionStorage so a reload doesn't force a re-login within the tab.
-// Ported unchanged from the production auth contract — this is
-// functional wiring, not visual design, and must match the real
-// backend exactly.
+// limit XSS blast radius. College code persists in sessionStorage so a
+// reload doesn't force a re-login within the tab — it's not a secret,
+// just a routing hint.
+//
+// ARCNAVE modernization P0 (PDF 5.1 / clash C6): the refresh token no
+// longer lives in any browser-script-readable storage at all. The
+// backend now sets it as an httpOnly, SameSite=Strict cookie
+// (routes/auth.js / routes/positionAccounts.js) that the browser
+// attaches automatically to /auth/refresh and /auth/logout — no
+// client-side script, including an XSS payload, can read or exfiltrate
+// it anymore. See api/client.js's `credentials: 'include'` fetch calls
+// for the other half of this fix.
 let accessToken = null;
 
 export function getAccessToken() {
@@ -14,17 +21,7 @@ export function setAccessToken(token) {
   accessToken = token;
 }
 
-const REFRESH_KEY = 'arcnave.refresh_token';
 const COLLEGE_KEY = 'arcnave.college_code';
-
-export function getRefreshToken() {
-  return sessionStorage.getItem(REFRESH_KEY);
-}
-
-export function setRefreshToken(token) {
-  if (token) sessionStorage.setItem(REFRESH_KEY, token);
-  else sessionStorage.removeItem(REFRESH_KEY);
-}
 
 export function getCollegeCode() {
   return sessionStorage.getItem(COLLEGE_KEY);
@@ -37,7 +34,6 @@ export function setCollegeCode(code) {
 
 export function clearSession() {
   accessToken = null;
-  sessionStorage.removeItem(REFRESH_KEY);
 }
 
 // Decodes the JWT payload only — never trust this for authorization,

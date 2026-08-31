@@ -107,10 +107,10 @@ function captureLogLines() {
 async function seedTenantWithUser(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const college = { collegeId: `reqlog${suffix}`, subdomain: `reqlogtenant${suffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [college.collegeId, college.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    college.collegeId,
+    college.subdomain,
+  ]);
   const passwordHash = await security.hashPassword(VALID_PASSWORD);
   await adminPool.query(
     `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
@@ -141,11 +141,14 @@ test('request-scoped structured logging', async (t) => {
       // matching authService.refresh's real shape. Relative path —
       // registered on tenantApp, mounted at /api/v1 externally; the
       // actual request below still hits /api/v1/_test_only/delayed-log.
-      testApp.get('/_test_only/delayed-log', asyncHandler(async (req, res) => {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        logInfo('delayed_log_test_marker', {});
-        res.json({ ok: true });
-      }));
+      testApp.get(
+        '/_test_only/delayed-log',
+        asyncHandler(async (req, res) => {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          logInfo('delayed_log_test_marker', {});
+          res.json({ ok: true });
+        }),
+      );
     },
   });
 
@@ -225,12 +228,17 @@ test('request-scoped structured logging', async (t) => {
       username: 'reqloguser',
       password: VALID_PASSWORD,
     });
-    const refreshToken = login.body.refresh_token;
+    // ARCNAVE modernization P0 (PDF 5.1 / clash C6): the refresh token
+    // now travels as an httpOnly Set-Cookie, not a JSON body field.
+    const setCookie = login.headers['set-cookie'] || [];
+    const cookie = (Array.isArray(setCookie) ? setCookie : [setCookie])
+      .find((c) => c.startsWith('arcnave_refresh_token='))
+      .split(';')[0];
 
     const capture = captureLogLines();
-    const first = await post(baseUrl, '/api/v1/auth/refresh', headers, { refresh_token: refreshToken });
+    const first = await post(baseUrl, '/api/v1/auth/refresh', { ...headers, cookie });
     assert.equal(first.status, 200);
-    const second = await post(baseUrl, '/api/v1/auth/refresh', headers, { refresh_token: refreshToken });
+    const second = await post(baseUrl, '/api/v1/auth/refresh', { ...headers, cookie });
     capture.restore();
     assert.equal(second.status, 401);
 
@@ -254,29 +262,26 @@ test('request-scoped structured logging', async (t) => {
   // of test_rls_tenant_isolation.py's pg_backend_pid()-verified
   // pooled-connection proof, applied to log context instead. ---
 
-  await t.test(
-    'concurrent requests never leak requestId into each other\'s deeply-nested log calls',
-    async () => {
-      const capture = captureLogLines();
-      const [respA, respB] = await Promise.all([
-        get(baseUrl, '/api/v1/_test_only/delayed-log', { 'x-request-id': 'concurrent-test-a' }),
-        get(baseUrl, '/api/v1/_test_only/delayed-log', { 'x-request-id': 'concurrent-test-b' }),
-      ]);
-      capture.restore();
+  await t.test("concurrent requests never leak requestId into each other's deeply-nested log calls", async () => {
+    const capture = captureLogLines();
+    const [respA, respB] = await Promise.all([
+      get(baseUrl, '/api/v1/_test_only/delayed-log', { 'x-request-id': 'concurrent-test-a' }),
+      get(baseUrl, '/api/v1/_test_only/delayed-log', { 'x-request-id': 'concurrent-test-b' }),
+    ]);
+    capture.restore();
 
-      assert.equal(respA.status, 200);
-      assert.equal(respB.status, 200);
+    assert.equal(respA.status, 200);
+    assert.equal(respB.status, 200);
 
-      const markers = capture.lines.filter((l) => l.message === 'delayed_log_test_marker');
-      assert.equal(markers.length, 2, 'expected exactly one delayed_log_test_marker per request');
+    const markers = capture.lines.filter((l) => l.message === 'delayed_log_test_marker');
+    assert.equal(markers.length, 2, 'expected exactly one delayed_log_test_marker per request');
 
-      const seenRequestIds = new Set(markers.map((l) => l.requestId));
-      assert.deepEqual(
-        seenRequestIds,
-        new Set(['concurrent-test-a', 'concurrent-test-b']),
-        'each concurrent request\'s nested log call must carry its own requestId, not the other request\'s ' +
-          '(or a shared/undefined one) — this is what would fail under a broken AsyncLocalStorage implementation',
-      );
-    },
-  );
+    const seenRequestIds = new Set(markers.map((l) => l.requestId));
+    assert.deepEqual(
+      seenRequestIds,
+      new Set(['concurrent-test-a', 'concurrent-test-b']),
+      "each concurrent request's nested log call must carry its own requestId, not the other request's " +
+        '(or a shared/undefined one) — this is what would fail under a broken AsyncLocalStorage implementation',
+    );
+  });
 });

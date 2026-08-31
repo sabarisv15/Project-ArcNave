@@ -29,27 +29,28 @@ async function send(to, body, { credentials } = {}) {
   }
 
   try {
-    const response = await fetch(
-      `https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneNumberId}/messages`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          to,
-          type: 'text',
-          text: { body },
-        }),
+    const response = await fetch(`https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
       },
-    );
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'text',
+        text: { body },
+      }),
+    });
 
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       return {
-        channel: 'whatsapp', status: 'failed', to, body, error: data.error && data.error.message ? data.error.message : `Meta responded ${response.status}`,
+        channel: 'whatsapp',
+        status: 'failed',
+        to,
+        body,
+        error: data.error && data.error.message ? data.error.message : `Meta responded ${response.status}`,
       };
     }
 
@@ -62,7 +63,11 @@ async function send(to, body, { credentials } = {}) {
     };
   } catch (err) {
     return {
-      channel: 'whatsapp', status: 'failed', to, body, error: err.message,
+      channel: 'whatsapp',
+      status: 'failed',
+      to,
+      body,
+      error: err.message,
     };
   }
 }

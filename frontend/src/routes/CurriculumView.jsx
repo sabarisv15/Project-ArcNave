@@ -1,11 +1,6 @@
 import { useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import {
-  createColumnHelper,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
+import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { CURRICULUM } from '../lib/mockData';
 import { StudentsView } from './StudentsView';
 import { StaffView } from './StaffView';
@@ -23,9 +18,9 @@ export function CurriculumView() {
         helper.accessor(key, {
           header: data.cols[i],
           cell: (info) => info.getValue(),
-        })
+        }),
       ),
-    [data]
+    [data],
   );
 
   const table = useReactTable({ data: data.rows, columns, getCoreRowModel: getCoreRowModel() });

@@ -116,10 +116,7 @@ export function CurriculumFullscreenHint({ onGoFullScreen, onDismiss }) {
           >
             Use Curriculum in full-screen mode
           </p>
-          <p
-            id="curriculum-fullscreen-hint-body"
-            className="mt-[3px] mb-0 text-[12px] leading-[1.45] text-ink-muted"
-          >
+          <p id="curriculum-fullscreen-hint-body" className="mt-[3px] mb-0 text-[12px] leading-[1.45] text-ink-muted">
             For the best experience, use Curriculum pages in full-screen mode.
           </p>
 

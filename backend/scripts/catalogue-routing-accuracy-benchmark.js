@@ -56,7 +56,9 @@ const VARIANTS = [
 // analyze_document_table specifically).
 const TESTS = [
   {
-    label: 'Test A', question: '3rd Sem CSE-A attendance percentage enna?', expectedTools: ['attendance_summary'],
+    label: 'Test A',
+    question: '3rd Sem CSE-A attendance percentage enna?',
+    expectedTools: ['attendance_summary'],
   },
   {
     label: 'Test B',
@@ -141,7 +143,9 @@ async function runOneTurn(appPool, identityContext, question) {
   let result;
   let threw = null;
   try {
-    result = await withTenantClient(appPool, COLLEGE_ID, (client) => aiService.askAgent(client, question, { identityContext }));
+    result = await withTenantClient(appPool, COLLEGE_ID, (client) =>
+      aiService.askAgent(client, question, { identityContext }),
+    );
   } catch (err) {
     threw = err;
   } finally {
@@ -149,7 +153,11 @@ async function runOneTurn(appPool, identityContext, question) {
   }
   const llmCalls = await fetchLlmCallRows(appPool, since.toISOString());
   return {
-    result, threw, llmCalls, invocationLog, usedPlan: Boolean(result && result.plan),
+    result,
+    threw,
+    llmCalls,
+    invocationLog,
+    usedPlan: Boolean(result && result.plan),
   };
 }
 
@@ -166,7 +174,9 @@ function summarizeAccuracy(expectedTools, invoked) {
 }
 
 function sleep(ms) {
-  return new Promise((resolve) => { setTimeout(resolve, ms); });
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 const INTER_TURN_DELAY_MS = 4000;
 const MAX_429_RETRIES = 2;
@@ -206,12 +216,18 @@ function reportRep(rep, index) {
   const totalCalls = llmCalls.length;
   const totalLatency = llmCalls.reduce((s, r) => s + (r.latencyMs || 0), 0);
   console.log(
-    `  rep ${index + 1}: calls=${totalCalls} decision(in=${decisionIn},out=${decisionOut}) `
-    + `synthesis(in=${synthesisIn},out=${synthesisOut}) totalLatencyMs=${totalLatency} usedPlan=${rep.usedPlan}`,
+    `  rep ${index + 1}: calls=${totalCalls} decision(in=${decisionIn},out=${decisionOut}) ` +
+      `synthesis(in=${synthesisIn},out=${synthesisOut}) totalLatencyMs=${totalLatency} usedPlan=${rep.usedPlan}`,
   );
   console.log(`           invoked=${JSON.stringify(rep.invocationLog)}`);
   return {
-    decisionIn, decisionOut, synthesisIn, synthesisOut, totalCalls, totalLatency, usedPlan: rep.usedPlan,
+    decisionIn,
+    decisionOut,
+    synthesisIn,
+    synthesisOut,
+    totalCalls,
+    totalLatency,
+    usedPlan: rep.usedPlan,
   };
 }
 
@@ -233,11 +249,15 @@ async function main() {
       console.log(`expected tools: ${JSON.stringify(test.expectedTools)}`);
 
       for (const variant of VARIANTS) {
-        console.log(`\n--- variant: ${variant.key} (experimentalCatalogueVariant=${JSON.stringify(variant.configValue)}) ---`);
+        console.log(
+          `\n--- variant: ${variant.key} (experimentalCatalogueVariant=${JSON.stringify(variant.configValue)}) ---`,
+        );
         // eslint-disable-next-line no-await-in-loop
         const reps = await runVariant(appPool, identityContext, test, variant);
         const metrics = reps.map((rep, i) => reportRep(rep, i)).filter(Boolean);
-        const accuracyPerRep = reps.filter((r) => !r.threw).map((r) => summarizeAccuracy(test.expectedTools, r.invocationLog));
+        const accuracyPerRep = reps
+          .filter((r) => !r.threw)
+          .map((r) => summarizeAccuracy(test.expectedTools, r.invocationLog));
 
         const summary = {
           test: test.label,
@@ -251,24 +271,32 @@ async function main() {
           avgTotalCalls: avg(metrics.map((m) => m.totalCalls)),
           avgTotalLatencyMs: avg(metrics.map((m) => m.totalLatency)),
           planUsageRate: metrics.length ? metrics.filter((m) => m.usedPlan).length / metrics.length : 0,
-          fullCoverageRate: accuracyPerRep.length ? accuracyPerRep.filter((a) => a.fullCoverage).length / accuracyPerRep.length : 0,
+          fullCoverageRate: accuracyPerRep.length
+            ? accuracyPerRep.filter((a) => a.fullCoverage).length / accuracyPerRep.length
+            : 0,
           avgRecall: avg(accuracyPerRep.map((a) => a.recall)),
           avgPrecision: avg(accuracyPerRep.map((a) => a.precision)),
         };
-        summary.grandTotalTokens = summary.avgDecisionIn + summary.avgDecisionOut + summary.avgSynthesisIn + summary.avgSynthesisOut;
+        summary.grandTotalTokens =
+          summary.avgDecisionIn + summary.avgDecisionOut + summary.avgSynthesisIn + summary.avgSynthesisOut;
         allSummaries.push(summary);
         console.log(`  SUMMARY: ${JSON.stringify(summary, null, 2)}`);
       }
     }
 
     console.log('\n\n========== FINAL COMPARISON TABLE (averages across repetitions) ==========');
-    console.log('test  | variant  | decision(io) | synthesis(io) | grandTotal | avgCalls | avgLatencyMs | planUse | fullCoverage | recall | precision');
+    console.log(
+      'test  | variant  | decision(io) | synthesis(io) | grandTotal | avgCalls | avgLatencyMs | planUse | fullCoverage | recall | precision',
+    );
     allSummaries.forEach((s) => {
       console.log(
-        `${s.test.padEnd(6)}| ${s.variant.padEnd(9)}| ${(s.avgDecisionIn + s.avgDecisionOut).toFixed(0).padEnd(13)}| `
-        + `${(s.avgSynthesisIn + s.avgSynthesisOut).toFixed(0).padEnd(14)}| ${s.grandTotalTokens.toFixed(0).padEnd(11)}| `
-        + `${s.avgTotalCalls.toFixed(1).padEnd(9)}| ${s.avgTotalLatencyMs.toFixed(0).padEnd(13)}| ${(s.planUsageRate * 100).toFixed(0)}%`.padEnd(9)
-        + `| ${(s.fullCoverageRate * 100).toFixed(0)}%`.padEnd(13) + `| ${s.avgRecall.toFixed(2)} | ${s.avgPrecision.toFixed(2)}`,
+        `${s.test.padEnd(6)}| ${s.variant.padEnd(9)}| ${(s.avgDecisionIn + s.avgDecisionOut).toFixed(0).padEnd(13)}| ` +
+          `${(s.avgSynthesisIn + s.avgSynthesisOut).toFixed(0).padEnd(14)}| ${s.grandTotalTokens.toFixed(0).padEnd(11)}| ` +
+          `${s.avgTotalCalls.toFixed(1).padEnd(9)}| ${s.avgTotalLatencyMs.toFixed(0).padEnd(13)}| ${(s.planUsageRate * 100).toFixed(0)}%`.padEnd(
+            9,
+          ) +
+          `| ${(s.fullCoverageRate * 100).toFixed(0)}%`.padEnd(13) +
+          `| ${s.avgRecall.toFixed(2)} | ${s.avgPrecision.toFixed(2)}`,
       );
     });
 
@@ -288,10 +316,10 @@ async function main() {
         const delta = s.grandTotalTokens - baseline.grandTotalTokens;
         const pct = baseline.grandTotalTokens ? ((delta / baseline.grandTotalTokens) * 100).toFixed(1) : 'n/a';
         console.log(
-          `${test.label} ${v.key} vs ${baselineVariant.key}: ${baselineVariant.key}=${baseline.grandTotalTokens.toFixed(0)} tok, `
-          + `${v.key}=${s.grandTotalTokens.toFixed(0)} tok, delta=${delta.toFixed(0)} (${pct}%) `
-          + `| coverage ${baselineVariant.key}=${(baseline.fullCoverageRate * 100).toFixed(0)}% ${v.key}=${(s.fullCoverageRate * 100).toFixed(0)}% `
-          + `| planUse ${baselineVariant.key}=${(baseline.planUsageRate * 100).toFixed(0)}% ${v.key}=${(s.planUsageRate * 100).toFixed(0)}%`,
+          `${test.label} ${v.key} vs ${baselineVariant.key}: ${baselineVariant.key}=${baseline.grandTotalTokens.toFixed(0)} tok, ` +
+            `${v.key}=${s.grandTotalTokens.toFixed(0)} tok, delta=${delta.toFixed(0)} (${pct}%) ` +
+            `| coverage ${baselineVariant.key}=${(baseline.fullCoverageRate * 100).toFixed(0)}% ${v.key}=${(s.fullCoverageRate * 100).toFixed(0)}% ` +
+            `| planUse ${baselineVariant.key}=${(baseline.planUsageRate * 100).toFixed(0)}% ${v.key}=${(s.planUsageRate * 100).toFixed(0)}%`,
         );
       });
     });
@@ -302,4 +330,7 @@ async function main() {
   }
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

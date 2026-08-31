@@ -1,5 +1,14 @@
 import { useState } from 'react';
-import { AlertCircle, Code2, FileSpreadsheet, FileText, Image as ImageIcon, Paperclip, RotateCcw, X } from 'lucide-react';
+import {
+  AlertCircle,
+  Code2,
+  FileSpreadsheet,
+  FileText,
+  Image as ImageIcon,
+  Paperclip,
+  RotateCcw,
+  X,
+} from 'lucide-react';
 import { AttachmentManager } from './AttachmentManager';
 import { cn } from '../lib/utils';
 
@@ -69,7 +78,7 @@ function Tile({ attachment, onRemove, onRetry }) {
           TILE,
           'relative block p-0 overflow-hidden rounded-[8px] bg-paper border cursor-pointer',
           'transition-shadow duration-200 hover:shadow-card focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
-          failed ? 'border-danger/40' : 'border-line hover:border-accent-line'
+          failed ? 'border-danger/40' : 'border-line hover:border-accent-line',
         )}
       >
         {isImage ? (
@@ -127,7 +136,7 @@ function Tile({ attachment, onRemove, onRetry }) {
         className={cn(
           'absolute top-[4px] right-[4px] flex items-center gap-[2px] transition-opacity duration-200',
           'opacity-0 group-hover/tile:opacity-100 group-focus-within/tile:opacity-100',
-          '[@media(hover:none)]:opacity-100'
+          '[@media(hover:none)]:opacity-100',
         )}
       >
         {failed && (
@@ -175,7 +184,7 @@ export function ComposerAttachmentStrip({ attachments, onRemove, onRetry }) {
           // the quiet grouped surface — its own bounds, its own padding, no
           // shared border with the input.
           'shrink-0 flex items-center gap-[10px] mb-[8px] p-[8px] rounded-[10px] bg-surface border-b border-line-light',
-          'animate-fadeUp motion-reduce:animate-none'
+          'animate-fadeUp motion-reduce:animate-none',
         )}
       >
         <ul
@@ -197,7 +206,7 @@ export function ComposerAttachmentStrip({ attachments, onRemove, onRetry }) {
                 className={cn(
                   TILE,
                   'grid place-items-center rounded-[8px] border border-line bg-soft font-sans text-[14px] font-[600] text-ink-soft tabular-nums cursor-pointer',
-                  'transition-colors duration-200 hover:bg-tint2 hover:border-accent-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent'
+                  'transition-colors duration-200 hover:bg-tint2 hover:border-accent-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
                 )}
               >
                 +{hidden}

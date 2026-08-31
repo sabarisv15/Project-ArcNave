@@ -25,7 +25,9 @@ function PrimaryBtn({ disabled, children, ...props }) {
       disabled={disabled}
       className={cn(
         'h-[34px] px-[16px] border-0 rounded-[10px] font-sans text-[13px] font-[500]',
-        disabled ? 'bg-frame text-ink-disabled cursor-not-allowed' : 'bg-accent text-white cursor-pointer hover:bg-accent-hover'
+        disabled
+          ? 'bg-frame text-ink-disabled cursor-not-allowed'
+          : 'bg-accent text-white cursor-pointer hover:bg-accent-hover',
       )}
       {...props}
     >

@@ -26,7 +26,11 @@ test('CalendarService.createEvent', async (t) => {
 
   await t.test('creates an event and audit-logs it', async () => {
     const createMock = t.mock.method(calendarEventRepository, 'create', async (client, fields) => ({
-      id: 'ev-1', college_id: fields.collegeId, title: fields.title, event_type: fields.eventType, start_date: fields.startDate,
+      id: 'ev-1',
+      college_id: fields.collegeId,
+      title: fields.title,
+      event_type: fields.eventType,
+      start_date: fields.startDate,
     }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
@@ -45,7 +49,10 @@ test('CalendarService.createEvent', async (t) => {
   });
 
   await t.test('event_type has no predefined restriction — any non-empty string is accepted', async () => {
-    const createMock = t.mock.method(calendarEventRepository, 'create', async (client, fields) => ({ id: 'ev-2', ...fields }));
+    const createMock = t.mock.method(calendarEventRepository, 'create', async (client, fields) => ({
+      id: 'ev-2',
+      ...fields,
+    }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
       createMock.mock.restore();
@@ -74,7 +81,10 @@ test('CalendarService.updateEvent', async (t) => {
 
   await t.test('rejects clearing title to empty on an existing event', async () => {
     const findMock = t.mock.method(calendarEventRepository, 'findById', async () => ({
-      id: 'ev-1', title: 'Old Title', event_type: 'exam', start_date: '2026-01-01',
+      id: 'ev-1',
+      title: 'Old Title',
+      event_type: 'exam',
+      start_date: '2026-01-01',
     }));
     const updateMock = t.mock.method(calendarEventRepository, 'update');
     t.after(() => {
@@ -91,9 +101,15 @@ test('CalendarService.updateEvent', async (t) => {
 
   await t.test('updates an existing event and audit-logs it', async () => {
     const findMock = t.mock.method(calendarEventRepository, 'findById', async () => ({
-      id: 'ev-1', title: 'Old Title', event_type: 'exam', start_date: '2026-01-01',
+      id: 'ev-1',
+      title: 'Old Title',
+      event_type: 'exam',
+      start_date: '2026-01-01',
     }));
-    const updateMock = t.mock.method(calendarEventRepository, 'update', async (client, id, fields) => ({ id, ...fields }));
+    const updateMock = t.mock.method(calendarEventRepository, 'update', async (client, id, fields) => ({
+      id,
+      ...fields,
+    }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
       findMock.mock.restore();
@@ -101,7 +117,12 @@ test('CalendarService.updateEvent', async (t) => {
       auditMock.mock.restore();
     });
 
-    const result = await calendarService.updateEvent({}, 'ev-1', { title: 'New Title' }, { actorUserId: 'u1', collegeId: 'c1' });
+    const result = await calendarService.updateEvent(
+      {},
+      'ev-1',
+      { title: 'New Title' },
+      { actorUserId: 'u1', collegeId: 'c1' },
+    );
     assert.equal(result.title, 'New Title');
     assert.equal(auditMock.mock.calls[0].arguments[1].action, 'calendar_event_updated');
   });
@@ -119,7 +140,10 @@ test('CalendarService.deleteEvent', async (t) => {
   });
 
   await t.test('deletes an existing event and audit-logs it', async () => {
-    const findMock = t.mock.method(calendarEventRepository, 'findById', async () => ({ id: 'ev-1', title: 'Old Title' }));
+    const findMock = t.mock.method(calendarEventRepository, 'findById', async () => ({
+      id: 'ev-1',
+      title: 'Old Title',
+    }));
     const removeMock = t.mock.method(calendarEventRepository, 'remove', async () => true);
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
@@ -136,13 +160,21 @@ test('CalendarService.deleteEvent', async (t) => {
 
 test('CalendarService.listEvents / getEvent', async (t) => {
   await t.test('listEvents passes collegeId/fromDate/toDate straight through to the repository', async () => {
-    const listMock = t.mock.method(calendarEventRepository, 'list', async (client, filters) => [{ id: 'ev-1', ...filters }]);
+    const listMock = t.mock.method(calendarEventRepository, 'list', async (client, filters) => [
+      { id: 'ev-1', ...filters },
+    ]);
     t.after(() => listMock.mock.restore());
 
-    const result = await calendarService.listEvents({}, { collegeId: 'c1', fromDate: '2026-01-01', toDate: '2026-12-31' });
+    const result = await calendarService.listEvents(
+      {},
+      { collegeId: 'c1', fromDate: '2026-01-01', toDate: '2026-12-31' },
+    );
     assert.equal(result.length, 1);
     assert.deepEqual(listMock.mock.calls[0].arguments[1], {
-      collegeId: 'c1', fromDate: '2026-01-01', toDate: '2026-12-31', limit: undefined,
+      collegeId: 'c1',
+      fromDate: '2026-01-01',
+      toDate: '2026-12-31',
+      limit: undefined,
     });
   });
 
@@ -150,9 +182,6 @@ test('CalendarService.listEvents / getEvent', async (t) => {
     const findMock = t.mock.method(calendarEventRepository, 'findById', async () => null);
     t.after(() => findMock.mock.restore());
 
-    await assert.rejects(
-      () => calendarService.getEvent({}, 'missing'),
-      calendarService.CalendarEventNotFoundError,
-    );
+    await assert.rejects(() => calendarService.getEvent({}, 'missing'), calendarService.CalendarEventNotFoundError);
   });
 });

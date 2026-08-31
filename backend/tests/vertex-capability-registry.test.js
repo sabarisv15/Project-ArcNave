@@ -17,7 +17,9 @@ test.beforeEach(() => {
 
 test('getCapabilityProfile: a curated model returns real, cited capability data', () => {
   const profile = registry.getCapabilityProfile({
-    projectId: 'proj-1', location: 'global', modelId: 'gemini-3.7-flash',
+    projectId: 'proj-1',
+    location: 'global',
+    modelId: 'gemini-3.7-flash',
   });
   assert.equal(profile.provider, 'vertex_ai');
   assert.equal(profile.modelId, 'gemini-3.7-flash');
@@ -31,23 +33,38 @@ test('getCapabilityProfile: a curated model returns real, cited capability data'
 
 test('getCapabilityProfile: an unrecognized model asserts nothing true, never a guess', () => {
   const profile = registry.getCapabilityProfile({
-    projectId: 'proj-1', location: 'global', modelId: 'gemini-99.9-nonexistent',
+    projectId: 'proj-1',
+    location: 'global',
+    modelId: 'gemini-99.9-nonexistent',
   });
   assert.deepEqual(profile.capabilities, {});
   assert.equal(profile.verifiedAt, null);
   for (const capability of registry.VERTEX_CAPABILITIES) {
-    assert.equal(registry.hasCapability({
-      projectId: 'proj-1', location: 'global', model: 'gemini-99.9-nonexistent',
-    }, capability), false);
+    assert.equal(
+      registry.hasCapability(
+        {
+          projectId: 'proj-1',
+          location: 'global',
+          model: 'gemini-99.9-nonexistent',
+        },
+        capability,
+      ),
+      false,
+    );
   }
 });
 
 test('getCapabilityProfile: identity is keyed by project/location/model/version, not model alone', () => {
   const a = registry.getCapabilityProfile({
-    projectId: 'proj-a', location: 'global', modelId: 'gemini-3.7-flash',
+    projectId: 'proj-a',
+    location: 'global',
+    modelId: 'gemini-3.7-flash',
   });
   const b = registry.getCapabilityProfile({
-    projectId: 'proj-b', location: 'us-central1', modelId: 'gemini-3.7-flash', modelVersion: '001',
+    projectId: 'proj-b',
+    location: 'us-central1',
+    modelId: 'gemini-3.7-flash',
+    modelVersion: '001',
   });
   assert.equal(a.projectId, 'proj-a');
   assert.equal(a.location, 'global');
@@ -67,7 +84,11 @@ test('getCapabilityProfile: requires modelId', () => {
 
 test('getCapabilityProfile: caches within the TTL window, keyed per identity', () => {
   const first = registry.getCapabilityProfile({ projectId: 'proj-c', location: 'global', modelId: 'gemini-3.7-flash' });
-  const second = registry.getCapabilityProfile({ projectId: 'proj-c', location: 'global', modelId: 'gemini-3.7-flash' });
+  const second = registry.getCapabilityProfile({
+    projectId: 'proj-c',
+    location: 'global',
+    modelId: 'gemini-3.7-flash',
+  });
   assert.equal(first, second, 'must return the exact same cached object, not rebuild it');
 
   const third = registry.getCapabilityProfile({ projectId: 'proj-d', location: 'global', modelId: 'gemini-3.7-flash' });
@@ -76,11 +97,19 @@ test('getCapabilityProfile: caches within the TTL window, keyed per identity', (
 
 test('getCapabilityProfile: a near-zero ttlMs re-fetches rather than serving a stale entry indefinitely', async () => {
   const first = registry.getCapabilityProfile({
-    projectId: 'proj-e', location: 'global', modelId: 'gemini-3.7-flash', ttlMs: 1,
+    projectId: 'proj-e',
+    location: 'global',
+    modelId: 'gemini-3.7-flash',
+    ttlMs: 1,
   });
-  await new Promise((resolve) => { setTimeout(resolve, 5); });
+  await new Promise((resolve) => {
+    setTimeout(resolve, 5);
+  });
   const second = registry.getCapabilityProfile({
-    projectId: 'proj-e', location: 'global', modelId: 'gemini-3.7-flash', ttlMs: 1,
+    projectId: 'proj-e',
+    location: 'global',
+    modelId: 'gemini-3.7-flash',
+    ttlMs: 1,
   });
   assert.notEqual(first, second);
   assert.deepEqual(first.capabilities, second.capabilities);
@@ -88,7 +117,11 @@ test('getCapabilityProfile: a near-zero ttlMs re-fetches rather than serving a s
 
 test('hasCapability: rejects an unknown capability name rather than silently returning false', () => {
   assert.throws(
-    () => registry.hasCapability({ projectId: 'p', location: 'global', model: 'gemini-3.7-flash' }, 'not_a_real_capability'),
+    () =>
+      registry.hasCapability(
+        { projectId: 'p', location: 'global', model: 'gemini-3.7-flash' },
+        'not_a_real_capability',
+      ),
     TypeError,
   );
 });
@@ -102,13 +135,26 @@ test('hasCapability: reads cfg.model (adapter-shaped), not cfg.modelId', () => {
 
 test('toSafeSummary: never includes projectId, and carries only product-relevant fields', () => {
   const profile = registry.getCapabilityProfile({
-    projectId: 'super-secret-proj', location: 'global', modelId: 'gemini-3.7-flash',
+    projectId: 'super-secret-proj',
+    location: 'global',
+    modelId: 'gemini-3.7-flash',
   });
   const summary = registry.toSafeSummary(profile);
   assert.equal('projectId' in summary, false);
   assert.equal(JSON.stringify(summary).includes('super-secret-proj'), false);
-  assert.deepEqual(Object.keys(summary).sort(), [
-    'capabilities', 'inputLimits', 'location', 'modelId', 'modelVersion',
-    'notes', 'preview', 'provider', 'supportedMimeTypes', 'verifiedAt',
-  ].sort());
+  assert.deepEqual(
+    Object.keys(summary).sort(),
+    [
+      'capabilities',
+      'inputLimits',
+      'location',
+      'modelId',
+      'modelVersion',
+      'notes',
+      'preview',
+      'provider',
+      'supportedMimeTypes',
+      'verifiedAt',
+    ].sort(),
+  );
 });

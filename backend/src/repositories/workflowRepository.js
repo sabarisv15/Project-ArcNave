@@ -38,7 +38,8 @@ const COLUMNS = [
 function toRow(fields) {
   const row = { ...fields };
   if (fields.approverChain !== undefined) row.approverChain = JSON.stringify(fields.approverChain);
-  if (fields.actionManifest !== undefined) row.actionManifest = fields.actionManifest === null ? null : JSON.stringify(fields.actionManifest);
+  if (fields.actionManifest !== undefined)
+    row.actionManifest = fields.actionManifest === null ? null : JSON.stringify(fields.actionManifest);
   return row;
 }
 
@@ -58,10 +59,7 @@ async function create(client, fields) {
 }
 
 async function findById(client, id) {
-  const result = await client.query(
-    'SELECT * FROM workflow_requests WHERE id = $1',
-    [id],
-  );
+  const result = await client.query('SELECT * FROM workflow_requests WHERE id = $1', [id]);
   return result.rows[0] || null;
 }
 
@@ -122,10 +120,7 @@ async function update(client, id, fields) {
 async function updatePendingStatus(client, id, fields) {
   const entries = COLUMNS.filter(([key]) => fields[key] !== undefined);
   if (entries.length === 0) {
-    const result = await client.query(
-      "SELECT * FROM workflow_requests WHERE id = $1 AND status = 'Pending'",
-      [id],
-    );
+    const result = await client.query("SELECT * FROM workflow_requests WHERE id = $1 AND status = 'Pending'", [id]);
     return result.rows[0] || null;
   }
 

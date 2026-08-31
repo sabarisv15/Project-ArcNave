@@ -85,7 +85,11 @@ async function ensureClassTutorPosition(client, { collegeId, classId, createdBy 
 
   const chosenTitle = await collegeProfileRepository.getLevel4PositionTitle(client, collegeId);
   const position = await positionRepository.createPosition(client, {
-    collegeId, level: STAFF_LEVEL, title: chosenTitle || DEFAULT_LEVEL4_POSITION_TITLE, createdBy, positionType: CLASS_TUTOR_TYPE,
+    collegeId,
+    level: STAFF_LEVEL,
+    title: chosenTitle || DEFAULT_LEVEL4_POSITION_TITLE,
+    createdBy,
+    positionType: CLASS_TUTOR_TYPE,
   });
   const account = await positionRepository.createPositionAccount(client, {
     collegeId,
@@ -94,7 +98,10 @@ async function ensureClassTutorPosition(client, { collegeId, classId, createdBy 
     passwordHash: await security.hashPassword(security.generateTemporaryPassword()),
   });
   await positionRepository.createPositionClassAssignment(client, {
-    collegeId, positionId: position.id, classId, assignedBy: createdBy,
+    collegeId,
+    positionId: position.id,
+    classId,
+    assignedBy: createdBy,
   });
 
   return { position, account };
@@ -109,13 +116,13 @@ async function ensureClassTutorPosition(client, { collegeId, classId, createdBy 
 // Tutor reassignment gets the same token_version bump, refresh-token
 // revoke, and re-invite as every other level. Idempotent: re-assigning
 // the same person is a no-op (reassignPositionOccupant's own check).
-async function swapClassTutorOccupant(client, {
-  collegeId, classId, newTutorUserId, actorUserId,
-}) {
+async function swapClassTutorOccupant(client, { collegeId, classId, newTutorUserId, actorUserId }) {
   const { account } = await ensureClassTutorPosition(client, { collegeId, classId, createdBy: actorUserId });
   try {
     const { occupant } = await positionAccountInvitationService.reassignPositionOccupant(client, {
-      positionAccountId: account.id, newOccupantUserId: newTutorUserId, actorUserId,
+      positionAccountId: account.id,
+      newOccupantUserId: newTutorUserId,
+      actorUserId,
     });
     return occupant;
   } catch (err) {
@@ -126,7 +133,9 @@ async function swapClassTutorOccupant(client, {
     // createClass/updateClass path used to produce (plan item 2's
     // "same ClassTutorConflictError/ClassTutorNotFoundError" reuse).
     if (err.code === '23503' && err.constraint === 'position_occupants_user_id_fkey') {
-      throw new academicService.ClassTutorNotFoundError(`newTutorUserId ${JSON.stringify(newTutorUserId)} does not exist`);
+      throw new academicService.ClassTutorNotFoundError(
+        `newTutorUserId ${JSON.stringify(newTutorUserId)} does not exist`,
+      );
     }
     throw err;
   }
@@ -154,7 +163,10 @@ async function assignClassTutor(client, classId, { newTutorUserId, actorUserId }
   }
 
   const occupant = await swapClassTutorOccupant(client, {
-    collegeId: cls.college_id, classId, newTutorUserId, actorUserId,
+    collegeId: cls.college_id,
+    classId,
+    newTutorUserId,
+    actorUserId,
   });
 
   await auditLogRepository.createAuditLogEntry(client, {
@@ -188,7 +200,10 @@ async function reassignClassTutor(client, classId, { newTutorUserId, actorUserId
   }
 
   const occupant = await swapClassTutorOccupant(client, {
-    collegeId: cls.college_id, classId, newTutorUserId, actorUserId,
+    collegeId: cls.college_id,
+    classId,
+    newTutorUserId,
+    actorUserId,
   });
 
   await auditLogRepository.createAuditLogEntry(client, {

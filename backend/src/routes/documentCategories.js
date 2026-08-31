@@ -35,25 +35,33 @@ function mapDocumentCategoryError(err, res) {
 function createDocumentCategoriesRouter() {
   const router = express.Router();
 
-  router.get('/document-categories', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const categories = await documentCategoryService.listCategories(req.dbClient);
-    res.json(categories);
-  }));
+  router.get(
+    '/document-categories',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const categories = await documentCategoryService.listCategories(req.dbClient);
+      res.json(categories);
+    }),
+  );
 
-  router.post('/document-categories', requirePermission('document_categories.manage'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const category = await documentCategoryService.createCategory(
-        req.dbClient,
-        { collegeId: req.collegeId, name: (req.body || {}).name },
-      );
-      res.status(201).json(category);
-    } catch (err) {
-      if (mapDocumentCategoryError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/document-categories',
+    requirePermission('document_categories.manage'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const category = await documentCategoryService.createCategory(req.dbClient, {
+          collegeId: req.collegeId,
+          name: (req.body || {}).name,
+        });
+        res.status(201).json(category);
+      } catch (err) {
+        if (mapDocumentCategoryError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   return router;
 }

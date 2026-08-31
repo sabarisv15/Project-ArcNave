@@ -9,7 +9,7 @@ export function ComposerWorkspaceGroup({ children, className }) {
     <div
       className={cn(
         'w-full flex flex-col gap-[9px] p-[10px] rounded-[22px] border border-line bg-paper shadow-composer',
-        className
+        className,
       )}
     >
       {children}

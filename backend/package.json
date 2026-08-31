@@ -8,10 +8,14 @@
     "start": "node src/index.js",
     "migrate": "node scripts/migrate.js up",
     "migrate:down": "node scripts/migrate.js down",
-    "test": "node --test tests/"
+    "test": "node --test tests/",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "argon2": "^0.41.1",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "docx": "^9.7.1",
     "docxtemplater": "^3.69.0",
@@ -32,7 +36,13 @@
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.9.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-n": "^18.3.0",
+    "globals": "^17.11.0",
     "jszip": "^3.10.1",
-    "node-pg-migrate": "^7.6.1"
+    "node-pg-migrate": "^7.6.1",
+    "prettier": "^3.9.6"
   }
 }

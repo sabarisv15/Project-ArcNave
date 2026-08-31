@@ -32,16 +32,18 @@
  *  WeekPoint   { label, pct }
  */
 
-import {
-  ACADEMIC_YEAR as ACADEMIC_YEAR_RECORD,
-  activeClass,
-  classIdFor,
-} from './academicCalendar';
+import { ACADEMIC_YEAR as ACADEMIC_YEAR_RECORD, activeClass, classIdFor } from './academicCalendar';
 import { ATTENDANCE_THRESHOLD, mean, studentsOfClass } from './rosterData';
 import { provisionedDepartment } from './provisioning';
 import { attendanceLiveFor, attendanceLockReason, timetableStateOfClass } from './timetableState';
 
-const SUBJECTS = ['Database Systems', 'Computer Networks', 'Operating Systems', 'Data Structures', 'Software Engineering'];
+const SUBJECTS = [
+  'Database Systems',
+  'Computer Networks',
+  'Operating Systems',
+  'Data Structures',
+  'Software Engineering',
+];
 
 /**
  * The academic year as the label screens render. The full record — its
@@ -167,9 +169,7 @@ export const CURRENT_HOUR = TODAY_HOURS.find((h) => !h.marked) ?? TODAY_HOURS[TO
  * "present at least once": a student who attended the first hour and left is
  * not present today, and the stricter reading is the one a tutor acts on.
  */
-export const TODAY_PRESENT = CLASS_ROSTER.filter(
-  (s) => !MARKED_HOURS.some((h) => h.absentIds.includes(s.id))
-).length;
+export const TODAY_PRESENT = CLASS_ROSTER.filter((s) => !MARKED_HOURS.some((h) => h.absentIds.includes(s.id))).length;
 
 /** Class average across the term — an overall figure, not a weekly one. */
 export const OVERALL_ATTENDANCE = mean(CLASS_ROSTER.map((s) => s.attendance));
@@ -190,9 +190,9 @@ export const WEEKLY_ATTENDANCE = buildWeeks();
  * each student's own recorded percentage, never inferred from a partial set of
  * attendance records.
  */
-export const LOW_ATTENDANCE_WATCHLIST = CLASS_ROSTER.filter(
-  (s) => s.attendance < ATTENDANCE_THRESHOLD
-).sort((a, b) => a.attendance - b.attendance);
+export const LOW_ATTENDANCE_WATCHLIST = CLASS_ROSTER.filter((s) => s.attendance < ATTENDANCE_THRESHOLD).sort(
+  (a, b) => a.attendance - b.attendance,
+);
 
 /**
  * The class this cohort came from, and what it left behind.

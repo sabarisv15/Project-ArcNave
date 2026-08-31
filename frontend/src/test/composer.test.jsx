@@ -15,14 +15,18 @@ const storageFor = (scope) => draftKey(ME.id, 'composer', scope);
 
 /** One provider, two composers — exactly the "two surfaces mounted at once" case. */
 function renderPair(keyA, keyB) {
-  return renderHook(
-    ({ a, b }) => ({ a: useComposer(a), b: useComposer(b) }),
-    { wrapper, initialProps: { a: keyA, b: keyB } }
-  );
+  return renderHook(({ a, b }) => ({ a: useComposer(a), b: useComposer(b) }), {
+    wrapper,
+    initialProps: { a: keyA, b: keyB },
+  });
 }
 
 beforeEach(() => {
-  try { window.sessionStorage.clear(); } catch { /* storage unavailable — the store degrades to memory only */ }
+  try {
+    window.sessionStorage.clear();
+  } catch {
+    /* storage unavailable — the store degrades to memory only */
+  }
 });
 
 describe('composer scope keys', () => {

@@ -58,9 +58,20 @@ async function findById(client, id) {
 // potentially large) back for a listing. findById below still selects
 // `*`: opening one specific artifact genuinely needs its content.
 const LIST_COLUMNS = [
-  'id', 'college_id', 'user_id', 'conversation_id', 'source_message_id', 'title', 'artifact_type',
-  'status', 'version_number', 'published_document_id', 'published_at', 'deleted_at',
-  'created_at', 'updated_at',
+  'id',
+  'college_id',
+  'user_id',
+  'conversation_id',
+  'source_message_id',
+  'title',
+  'artifact_type',
+  'status',
+  'version_number',
+  'published_document_id',
+  'published_at',
+  'deleted_at',
+  'created_at',
+  'updated_at',
 ].join(', ');
 
 // limit/offset are opt-in, unlike conversationRepository.listByUser's

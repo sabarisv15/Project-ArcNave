@@ -36,18 +36,18 @@ async function findById(client, id) {
 // give: (college_id, name) is the real natural key
 // (assessment_types_college_name_key), not globally unique.
 async function findByName(client, collegeId, name) {
-  const result = await client.query(
-    'SELECT * FROM assessment_types WHERE college_id = $1 AND name = $2',
-    [collegeId, name],
-  );
+  const result = await client.query('SELECT * FROM assessment_types WHERE college_id = $1 AND name = $2', [
+    collegeId,
+    name,
+  ]);
   return result.rows[0] || null;
 }
 
 async function list(client, { limit = 50, offset = 0 } = {}) {
-  const result = await client.query(
-    'SELECT * FROM assessment_types ORDER BY created_at LIMIT $1 OFFSET $2',
-    [limit, offset],
-  );
+  const result = await client.query('SELECT * FROM assessment_types ORDER BY created_at LIMIT $1 OFFSET $2', [
+    limit,
+    offset,
+  ]);
   return result.rows;
 }
 
@@ -70,5 +70,9 @@ async function update(client, id, fields) {
 }
 
 module.exports = {
-  create, findById, findByName, list, update,
+  create,
+  findById,
+  findByName,
+  list,
+  update,
 };

@@ -38,9 +38,7 @@ const DEFAULT_CATEGORIES = [
 // duplicates or errors on a category a principal already renamed away
 // from conflicting, since the conflict target is the original slug.
 async function createDefaultsForCollege(client, collegeId) {
-  const values = DEFAULT_CATEGORIES
-    .map((_, i) => `($1, $${i * 2 + 2}, $${i * 2 + 3})`)
-    .join(', ');
+  const values = DEFAULT_CATEGORIES.map((_, i) => `($1, $${i * 2 + 2}, $${i * 2 + 3})`).join(', ');
   const params = [collegeId, ...DEFAULT_CATEGORIES.flatMap((c) => [c.name, c.slug])];
   const result = await client.query(
     `INSERT INTO document_categories (college_id, name, slug)
@@ -53,17 +51,12 @@ async function createDefaultsForCollege(client, collegeId) {
 }
 
 async function findById(client, id) {
-  const result = await client.query(
-    'SELECT * FROM document_categories WHERE id = $1',
-    [id],
-  );
+  const result = await client.query('SELECT * FROM document_categories WHERE id = $1', [id]);
   return result.rows[0] || null;
 }
 
 async function list(client) {
-  const result = await client.query(
-    'SELECT * FROM document_categories ORDER BY name',
-  );
+  const result = await client.query('SELECT * FROM document_categories ORDER BY name');
   return result.rows;
 }
 
@@ -71,13 +64,18 @@ async function list(client) {
 // academicYearRepository.findByCollegeAndYearLabel already use for AI
 // identifier resolution (resolveClassId's own sibling functions).
 async function findByCollegeAndName(client, collegeId, name) {
-  const result = await client.query(
-    'SELECT * FROM document_categories WHERE college_id = $1 AND name = $2',
-    [collegeId, name],
-  );
+  const result = await client.query('SELECT * FROM document_categories WHERE college_id = $1 AND name = $2', [
+    collegeId,
+    name,
+  ]);
   return result.rows[0] || null;
 }
 
 module.exports = {
-  create, findById, list, findByCollegeAndName, createDefaultsForCollege, DEFAULT_CATEGORIES,
+  create,
+  findById,
+  list,
+  findByCollegeAndName,
+  createDefaultsForCollege,
+  DEFAULT_CATEGORIES,
 };

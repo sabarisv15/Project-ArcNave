@@ -44,20 +44,69 @@ const ev = (id, offset, title, type, scope, detail) => ({
  * data replaces this wholesale; the shape is what matters.
  */
 export const INSTITUTIONAL_EVENTS = [
-  ev('cal-01', -12, 'Odd semester classes begin', 'academic', 'All departments', 'Regular timetable in force from this date.'),
-  ev('cal-02', -6, 'Department meeting — CSE', 'meeting', 'Computer Science', 'Agenda: internal assessment schedule, lab rota.'),
+  ev(
+    'cal-01',
+    -12,
+    'Odd semester classes begin',
+    'academic',
+    'All departments',
+    'Regular timetable in force from this date.',
+  ),
+  ev(
+    'cal-02',
+    -6,
+    'Department meeting — CSE',
+    'meeting',
+    'Computer Science',
+    'Agenda: internal assessment schedule, lab rota.',
+  ),
   ev('cal-03', -2, 'Independence Day', 'holiday', 'Institution', 'Institution closed. Flag hoisting at 08:00.'),
-  ev('cal-04', 0, 'Internal Assessment II — day 1', 'exam', 'All departments', 'Forenoon session. Invigilation duty as circulated.'),
+  ev(
+    'cal-04',
+    0,
+    'Internal Assessment II — day 1',
+    'exam',
+    'All departments',
+    'Forenoon session. Invigilation duty as circulated.',
+  ),
   ev('cal-05', 1, 'Internal Assessment II — day 2', 'exam', 'All departments', 'Forenoon session.'),
   ev('cal-06', 2, 'Internal Assessment II — day 3', 'exam', 'All departments', 'Afternoon session.'),
-  ev('cal-07', 3, 'Mark entry deadline — Internal II', 'deadline', 'All staff', 'Marks must be published before 17:00.'),
+  ev(
+    'cal-07',
+    3,
+    'Mark entry deadline — Internal II',
+    'deadline',
+    'All staff',
+    'Marks must be published before 17:00.',
+  ),
   ev('cal-08', 5, 'Parent–teacher meeting', 'department', 'CSE, ECE', 'Class-wise slots shared by the class tutors.'),
-  ev('cal-09', 8, 'Guest lecture — distributed systems', 'department', 'Computer Science', 'Seminar hall, 11:00 onwards.'),
+  ev(
+    'cal-09',
+    8,
+    'Guest lecture — distributed systems',
+    'department',
+    'Computer Science',
+    'Seminar hall, 11:00 onwards.',
+  ),
   ev('cal-10', 11, 'Faculty meeting', 'meeting', 'All staff', 'Principal’s conference room, 15:30.'),
   ev('cal-11', 14, 'Semester fee deadline', 'deadline', 'All students', 'Late fee applies after this date.'),
   ev('cal-12', 18, 'NAAC documentation review', 'academic', 'Institution', 'Department files to be submitted to IQAC.'),
-  ev('cal-13', 22, 'Placement drive — round one', 'department', 'Final year', 'Attendance for final-year students is compulsory.'),
-  ev('cal-14', 26, 'Model exam timetable published', 'academic', 'All departments', 'Circulated by the academic office.'),
+  ev(
+    'cal-13',
+    22,
+    'Placement drive — round one',
+    'department',
+    'Final year',
+    'Attendance for final-year students is compulsory.',
+  ),
+  ev(
+    'cal-14',
+    26,
+    'Model exam timetable published',
+    'academic',
+    'All departments',
+    'Circulated by the academic office.',
+  ),
   ev('cal-15', 30, 'Onam holiday', 'holiday', 'Institution', 'Institution closed.'),
 ];
 
@@ -90,8 +139,18 @@ export function monthGrid(year, monthIndex) {
 }
 
 export const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
 ];
 
 export const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

@@ -54,7 +54,7 @@ function renderApp(route = '/') {
           </WorkspaceProvider>
         </Tooltip.Provider>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -160,9 +160,7 @@ describe('Institution mock data — internal consistency', () => {
   });
 
   it('averages attendance over every student, not over department averages', () => {
-    const overStudents = Math.round(
-      INST_STUDENTS.reduce((s, x) => s + x.attendance, 0) / INST_STUDENTS.length
-    );
+    const overStudents = Math.round(INST_STUDENTS.reduce((s, x) => s + x.attendance, 0) / INST_STUDENTS.length);
     expect(INST_ATTENDANCE).toBe(overStudents);
 
     // The distinction is only meaningful if the two actually differ here — a
@@ -321,7 +319,7 @@ describe('Principal approvals', () => {
     await navigateVia(user, /^approvals$/i);
 
     await user.click(
-      await screen.findByRole('button', { name: /timetable revision — hod endorsed from dr\. k\. anand/i })
+      await screen.findByRole('button', { name: /timetable revision — hod endorsed from dr\. k\. anand/i }),
     );
 
     const dialog = await screen.findByRole('dialog');
@@ -332,7 +330,7 @@ describe('Principal approvals', () => {
 
     await user.click(await screen.findByRole('tab', { name: /decided/i }));
     await user.click(
-      await screen.findByRole('button', { name: /timetable revision — hod endorsed from dr\. k\. anand/i })
+      await screen.findByRole('button', { name: /timetable revision — hod endorsed from dr\. k\. anand/i }),
     );
 
     const decided = await screen.findByRole('dialog');
@@ -362,7 +360,9 @@ describe('Principal screens', () => {
     // The department-level view: one row per department, not 1,285 students.
     expect(await screen.findByText(new RegExp(`${INST_STUDENT_TOTAL} across`, 'i'))).toBeInTheDocument();
     DEPARTMENTS.forEach((d) => {
-      expect(screen.getByRole('button', { name: new RegExp(`${d.name} — open student roster`, 'i') })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: new RegExp(`${d.name} — open student roster`, 'i') }),
+      ).toBeInTheDocument();
     });
     expect(screen.queryByRole('button', { name: /open record/i })).not.toBeInTheDocument();
   });

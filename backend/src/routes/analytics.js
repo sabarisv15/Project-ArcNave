@@ -34,21 +34,29 @@ function createAnalyticsRouter() {
   // principal/hod (by resolved role) keep the exact prior behavior
   // unchanged (unscoped, class_id/date filters honored) — only a
   // genuinely resolved 'staff' takes the new scoped path.
-  router.get('/analytics/attendance-rate', requirePermission('analytics.attendance_rate.read'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { class_id: classId, start_date: startDate, end_date: endDate } = req.query;
-    if (req.capabilities.effectiveRole === 'staff') {
-      const rows = await analyticsService.getAttendanceRateForActor(
-        req.dbClient,
-        { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.capabilities.effectiveRole, collegeId: req.collegeId },
-        { startDate, endDate },
-      );
+  router.get(
+    '/analytics/attendance-rate',
+    requirePermission('analytics.attendance_rate.read'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { class_id: classId, start_date: startDate, end_date: endDate } = req.query;
+      if (req.capabilities.effectiveRole === 'staff') {
+        const rows = await analyticsService.getAttendanceRateForActor(
+          req.dbClient,
+          {
+            actorUserId: identityService.resolveActorUserId(req.capabilities),
+            actorRole: req.capabilities.effectiveRole,
+            collegeId: req.collegeId,
+          },
+          { startDate, endDate },
+        );
+        res.json(rows);
+        return;
+      }
+      const rows = await analyticsService.getAttendanceRateByClass(req.dbClient, { classId, startDate, endDate });
       res.json(rows);
-      return;
-    }
-    const rows = await analyticsService.getAttendanceRateByClass(req.dbClient, { classId, startDate, endDate });
-    res.json(rows);
-  }));
+    }),
+  );
 
   return router;
 }

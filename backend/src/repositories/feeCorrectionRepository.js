@@ -8,9 +8,10 @@
 // attendanceCorrectionRepository.js exactly — same table shape, same
 // reasoning.
 
-async function create(client, {
-  collegeId, feePaymentId, requestedByUserId, proposedStatus, reason, workflowRequestId,
-}) {
+async function create(
+  client,
+  { collegeId, feePaymentId, requestedByUserId, proposedStatus, reason, workflowRequestId },
+) {
   const result = await client.query(
     `INSERT INTO fee_corrections
        (college_id, fee_payment_id, requested_by_user_id, proposed_status, reason, workflow_request_id)
@@ -27,10 +28,9 @@ async function findById(client, id) {
 }
 
 async function listForFeePayment(client, feePaymentId) {
-  const result = await client.query(
-    'SELECT * FROM fee_corrections WHERE fee_payment_id = $1 ORDER BY created_at',
-    [feePaymentId],
-  );
+  const result = await client.query('SELECT * FROM fee_corrections WHERE fee_payment_id = $1 ORDER BY created_at', [
+    feePaymentId,
+  ]);
   return result.rows;
 }
 
@@ -48,13 +48,14 @@ async function findLatestApplied(client, feePaymentId) {
 }
 
 async function markApplied(client, id) {
-  const result = await client.query(
-    'UPDATE fee_corrections SET applied_at = now() WHERE id = $1 RETURNING *',
-    [id],
-  );
+  const result = await client.query('UPDATE fee_corrections SET applied_at = now() WHERE id = $1 RETURNING *', [id]);
   return result.rows[0] || null;
 }
 
 module.exports = {
-  create, findById, listForFeePayment, findLatestApplied, markApplied,
+  create,
+  findById,
+  listForFeePayment,
+  findLatestApplied,
+  markApplied,
 };

@@ -60,7 +60,13 @@ function CalendarBody() {
         <h1 className="m-0 mr-[2px] text-[14.5px] font-[600] tracking-[-.01em] tabular-nums">
           {MONTH_NAMES[cursor.month]} {cursor.year}
         </h1>
-        <button type="button" aria-label="Previous month" title="Previous month" onClick={() => step(-1)} className={NAV_BTN}>
+        <button
+          type="button"
+          aria-label="Previous month"
+          title="Previous month"
+          onClick={() => step(-1)}
+          className={NAV_BTN}
+        >
           <ChevronLeft size={15} strokeWidth={2} />
         </button>
         <button type="button" aria-label="Next month" title="Next month" onClick={() => step(1)} className={NAV_BTN}>
@@ -109,7 +115,7 @@ function CalendarBody() {
               key={d}
               className={cn(
                 'px-[8px] py-[6px] text-[11px] font-[500] uppercase tracking-[.05em] text-ink-muted',
-                i > 0 && 'border-l border-line-light'
+                i > 0 && 'border-l border-line-light',
               )}
             >
               {d}
@@ -141,7 +147,7 @@ function CalendarBody() {
                   // Weekends and days spilling in from the neighbouring months
                   // are a faint surface and a subdued number, never a
                   // different kind of cell.
-                  cell.inMonth ? (weekend ? 'bg-tint/60' : 'bg-paper') : 'bg-tint/40'
+                  cell.inMonth ? (weekend ? 'bg-tint/60' : 'bg-paper') : 'bg-tint/40',
                 )}
               >
                 <span className="flex items-center gap-[4px]">
@@ -154,24 +160,32 @@ function CalendarBody() {
                         ? 'bg-accent-soft text-accent font-[600]'
                         : cell.inMonth
                           ? 'font-[500] text-ink'
-                          : 'font-[400] text-ink-faint'
+                          : 'font-[400] text-ink-faint',
                     )}
                   >
                     {cell.date.getUTCDate()}
                   </span>
                   <span className="flex-1" />
                   {/* A personal note is a marker only; its text lives in the drawer. */}
-                  {note && <StickyNote size={11} strokeWidth={2} className="flex-none text-accent" aria-hidden="true" />}
+                  {note && (
+                    <StickyNote size={11} strokeWidth={2} className="flex-none text-accent" aria-hidden="true" />
+                  )}
                 </span>
 
                 {dayEvents.slice(0, 2).map((e) => (
                   <span key={e.id} className="flex items-center gap-[5px] min-w-0">
-                    <span aria-hidden="true" className="flex-none w-[5px] h-[5px] rounded-full" style={{ backgroundColor: EVENT_TYPES[e.type]?.dot }} />
+                    <span
+                      aria-hidden="true"
+                      className="flex-none w-[5px] h-[5px] rounded-full"
+                      style={{ backgroundColor: EVENT_TYPES[e.type]?.dot }}
+                    />
                     <span className="min-w-0 text-[10.5px] leading-[15px] text-ink-muted truncate">{e.title}</span>
                   </span>
                 ))}
                 {dayEvents.length > 2 && (
-                  <span className="pl-[10px] text-[10.5px] leading-[15px] text-ink-faint">+{dayEvents.length - 2} more</span>
+                  <span className="pl-[10px] text-[10.5px] leading-[15px] text-ink-faint">
+                    +{dayEvents.length - 2} more
+                  </span>
                 )}
               </button>
             );
@@ -183,7 +197,10 @@ function CalendarBody() {
       <NotesListDrawer
         open={notesOpen}
         onClose={() => setNotesOpen(false)}
-        onPick={(dateKey) => { setNotesOpen(false); setOpenDate(dateKey); }}
+        onPick={(dateKey) => {
+          setNotesOpen(false);
+          setOpenDate(dateKey);
+        }}
       />
     </div>
   );

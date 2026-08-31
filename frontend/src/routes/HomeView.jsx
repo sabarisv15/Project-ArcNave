@@ -20,7 +20,11 @@ export function HomeView() {
 
   const send = async () => {
     const id = await sendMessage({
-      scope: 'chat', text: composer.text, attachments: composer.attachments, mode: composer.mode, thinkingLevel: composer.thinkingLevel,
+      scope: 'chat',
+      text: composer.text,
+      attachments: composer.attachments,
+      mode: composer.mode,
+      thinkingLevel: composer.thinkingLevel,
     });
     if (!id) return;
     composer.reset(); // sent — clears Home's scope and nothing else

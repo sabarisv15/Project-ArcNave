@@ -65,7 +65,11 @@ const REQUEST_TONE = {
 function SectionBar({ s, onNewRequest }) {
   return (
     <div className="flex-none flex items-center gap-[8px] mb-[12px]">
-      <div role="tablist" aria-label="Substitute sections" className="flex items-center gap-[2px] p-[2px] bg-frame rounded-[10px]">
+      <div
+        role="tablist"
+        aria-label="Substitute sections"
+        className="flex items-center gap-[2px] p-[2px] bg-frame rounded-[10px]"
+      >
         {SECTIONS.map(({ key, label }) => (
           <button
             key={key}
@@ -75,7 +79,9 @@ function SectionBar({ s, onNewRequest }) {
             onClick={() => s.setSection(key)}
             className={cn(
               'flex-none h-[28px] px-[12px] border-0 rounded-[8px] font-sans text-[12px] whitespace-nowrap cursor-pointer transition-colors duration-200',
-              s.section === key ? 'bg-paper text-ink font-[600] shadow-seg' : 'bg-transparent text-ink-muted font-[500] hover:text-ink'
+              s.section === key
+                ? 'bg-paper text-ink font-[600] shadow-seg'
+                : 'bg-transparent text-ink-muted font-[500] hover:text-ink',
             )}
           >
             {label}
@@ -104,7 +110,9 @@ function SectionBar({ s, onNewRequest }) {
       )}
 
       {s.section === 'mine' && (
-        <button type="button" className={PRIMARY_BTN} onClick={onNewRequest}>Request substitute</button>
+        <button type="button" className={PRIMARY_BTN} onClick={onNewRequest}>
+          Request substitute
+        </button>
       )}
     </div>
   );
@@ -134,7 +142,7 @@ function LogFilters({ s }) {
                 'h-[28px] px-[10px] rounded-[9px] font-sans text-[11.5px] cursor-pointer transition-colors duration-200',
                 s.datePreset === p.key
                   ? 'bg-accent-soft border border-accent-line text-accent font-[600]'
-                  : 'bg-tint2 border border-transparent text-ink-soft font-[500] hover:bg-hoverline'
+                  : 'bg-tint2 border border-transparent text-ink-soft font-[500] hover:bg-hoverline',
               )}
             >
               {p.label}
@@ -144,10 +152,22 @@ function LogFilters({ s }) {
         {s.datePreset === 'custom' && (
           <div className="grid grid-cols-2 gap-[8px] mt-[8px]">
             <FilterField label="From">
-              <input type="date" aria-label="Custom range from" value={s.customFrom} onChange={(e) => s.setCustomFrom(e.target.value)} className={FILTER_FIELD_INPUT} />
+              <input
+                type="date"
+                aria-label="Custom range from"
+                value={s.customFrom}
+                onChange={(e) => s.setCustomFrom(e.target.value)}
+                className={FILTER_FIELD_INPUT}
+              />
             </FilterField>
             <FilterField label="To">
-              <input type="date" aria-label="Custom range to" value={s.customTo} onChange={(e) => s.setCustomTo(e.target.value)} className={FILTER_FIELD_INPUT} />
+              <input
+                type="date"
+                aria-label="Custom range to"
+                value={s.customTo}
+                onChange={(e) => s.setCustomTo(e.target.value)}
+                className={FILTER_FIELD_INPUT}
+              />
             </FilterField>
           </div>
         )}
@@ -186,7 +206,10 @@ function LogFilters({ s }) {
           label="Attendance state"
           value={s.filters.state}
           onChange={(v) => s.setFilter('state', v)}
-          options={[{ value: '', label: 'All' }, ...Object.entries(LOG_ATTENDANCE_LABELS).map(([value, label]) => ({ value, label }))]}
+          options={[
+            { value: '', label: 'All' },
+            ...Object.entries(LOG_ATTENDANCE_LABELS).map(([value, label]) => ({ value, label })),
+          ]}
         />
       </div>
     </FilterPopover>
@@ -222,16 +245,32 @@ function SubstituteLog({ s, onOpenEntry }) {
               role="button"
               tabIndex={0}
               onClick={() => onOpenEntry(e)}
-              onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onOpenEntry(e); } }}
-              className={cn(LOG_GRID, 'h-[46px] border-t border-line-light cursor-pointer transition-colors duration-200 hover:bg-tint2 outline-none focus-visible:bg-tint2')}
+              onKeyDown={(ev) => {
+                if (ev.key === 'Enter' || ev.key === ' ') {
+                  ev.preventDefault();
+                  onOpenEntry(e);
+                }
+              }}
+              className={cn(
+                LOG_GRID,
+                'h-[46px] border-t border-line-light cursor-pointer transition-colors duration-200 hover:bg-tint2 outline-none focus-visible:bg-tint2',
+              )}
             >
-              <span className="text-[12.5px] font-[500] text-ink tabular-nums whitespace-nowrap">{formatDateDMY(e.date)}</span>
+              <span className="text-[12.5px] font-[500] text-ink tabular-nums whitespace-nowrap">
+                {formatDateDMY(e.date)}
+              </span>
               <span className="text-[12px] text-ink-muted tabular-nums whitespace-nowrap">
                 {e.period ? timeRange(e.period) : e.timeRange}
               </span>
-              <span className="min-w-0 text-[13px] text-ink truncate" title={e.subject}>{e.subject}</span>
-              <span className="min-w-0 text-[12.5px] text-ink-muted truncate" title={e.classCode}>{e.classCode}</span>
-              <span className="min-w-0 text-[12.5px] text-ink-muted truncate" title={e.originalStaff}>{e.originalStaff}</span>
+              <span className="min-w-0 text-[13px] text-ink truncate" title={e.subject}>
+                {e.subject}
+              </span>
+              <span className="min-w-0 text-[12.5px] text-ink-muted truncate" title={e.classCode}>
+                {e.classCode}
+              </span>
+              <span className="min-w-0 text-[12.5px] text-ink-muted truncate" title={e.originalStaff}>
+                {e.originalStaff}
+              </span>
               <span className="min-w-0">
                 <StateText label={LOG_ATTENDANCE_LABELS[e.attendanceState]} tone={ATTENDANCE_TONE[e.attendanceState]} />
               </span>
@@ -270,12 +309,18 @@ function RequestRow({ request, children, secondary }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-[8px] flex-wrap">
             <span className="text-[13px] font-[500] text-ink">{secondary}</span>
-            <span className="text-ink-faint" aria-hidden="true">·</span>
+            <span className="text-ink-faint" aria-hidden="true">
+              ·
+            </span>
             <span className="text-[12.5px] text-ink-muted tabular-nums whitespace-nowrap">
               {formatDateDMY(dateFromDayKey(request.dateKey))}
             </span>
-            <span className="text-ink-faint" aria-hidden="true">·</span>
-            <span className="text-[12px] text-ink-muted">{scopeLabel} · {request.slots.length} period{request.slots.length === 1 ? '' : 's'}</span>
+            <span className="text-ink-faint" aria-hidden="true">
+              ·
+            </span>
+            <span className="text-[12px] text-ink-muted">
+              {scopeLabel} · {request.slots.length} period{request.slots.length === 1 ? '' : 's'}
+            </span>
           </div>
 
           <div className="mt-[5px] flex flex-wrap gap-x-[10px] gap-y-[3px]">
@@ -290,7 +335,9 @@ function RequestRow({ request, children, secondary }) {
           </div>
 
           {request.reason && (
-            <div className="mt-[5px] text-[11.5px] text-ink-faint truncate" title={request.reason}>{request.reason}</div>
+            <div className="mt-[5px] text-[11.5px] text-ink-faint truncate" title={request.reason}>
+              {request.reason}
+            </div>
           )}
         </div>
 
@@ -331,12 +378,18 @@ function IncomingRequests({ s }) {
         <RequestRow key={r.id} request={r} secondary={r.fromStaff}>
           {r.status === 'pending' && (
             <>
-              <button type="button" className={GHOST_BTN} onClick={() => declineRequest(r.id)}>Decline</button>
-              <button type="button" className={PRIMARY_BTN} onClick={() => acceptRequest(r.id)}>Accept</button>
+              <button type="button" className={GHOST_BTN} onClick={() => declineRequest(r.id)}>
+                Decline
+              </button>
+              <button type="button" className={PRIMARY_BTN} onClick={() => acceptRequest(r.id)}>
+                Accept
+              </button>
             </>
           )}
           {r.status === 'accepted' && !r.acknowledgedAt && (
-            <button type="button" className={PRIMARY_BTN} onClick={() => acknowledgeRequest(r.id)}>Acknowledge duty</button>
+            <button type="button" className={PRIMARY_BTN} onClick={() => acknowledgeRequest(r.id)}>
+              Acknowledge duty
+            </button>
           )}
           {r.status === 'accepted' && r.acknowledgedAt && (
             <span className="text-[11.5px] font-[500] text-success whitespace-nowrap">
@@ -355,7 +408,14 @@ function MyRequests({ s }) {
 
   return (
     <ListShell
-      empty={s.outgoing.length === 0 && <TableEmptyState title="You have not requested substitute cover yet." hint="Use Request substitute to raise one." />}
+      empty={
+        s.outgoing.length === 0 && (
+          <TableEmptyState
+            title="You have not requested substitute cover yet."
+            hint="Use Request substitute to raise one."
+          />
+        )
+      }
     >
       {s.outgoing.map((r) => (
         <RequestRow
@@ -363,7 +423,7 @@ function MyRequests({ s }) {
           request={r}
           secondary={
             r.recipientMode === 'specific'
-              ? COLLEAGUE_BY_ID[r.toStaffId]?.name ?? 'Specific staff'
+              ? (COLLEAGUE_BY_ID[r.toStaffId]?.name ?? 'Specific staff')
               : `${r.recipientCount} available staff`
           }
         >
@@ -371,7 +431,9 @@ function MyRequests({ s }) {
             <span className="text-[11.5px] text-ink-muted whitespace-nowrap">Covered by {r.acceptedBy}</span>
           )}
           {r.status === 'pending' && (
-            <button type="button" className={GHOST_BTN} onClick={() => cancelRequest(r.id)}>Cancel</button>
+            <button type="button" className={GHOST_BTN} onClick={() => cancelRequest(r.id)}>
+              Cancel
+            </button>
           )}
         </RequestRow>
       ))}
@@ -404,7 +466,12 @@ function LogDetailDrawer({ entry, onClose, onMarkAttendance }) {
                 ['Original staff', entry.originalStaff],
                 ['Class / section', entry.classCode],
                 ['Attendance', LOG_ATTENDANCE_LABELS[entry.attendanceState]],
-                ['Acknowledgement', entry.acknowledged ? `Acknowledged${entry.acknowledgedAt ? ` · ${formatTime(entry.acknowledgedAt)}` : ''}` : 'Required'],
+                [
+                  'Acknowledgement',
+                  entry.acknowledged
+                    ? `Acknowledged${entry.acknowledgedAt ? ` · ${formatTime(entry.acknowledgedAt)}` : ''}`
+                    : 'Required',
+                ],
               ].map(([label, value]) => (
                 <div key={label}>
                   <dt className="text-[10px] tracking-[.05em] uppercase text-ink-faint mb-[3px]">{label}</dt>
@@ -446,7 +513,10 @@ export function SubstitutePane({ s, onOpenPeriod }) {
       <LogDetailDrawer
         entry={entry}
         onClose={() => setEntry(null)}
-        onMarkAttendance={(periodId) => { setEntry(null); onOpenPeriod(periodId); }}
+        onMarkAttendance={(periodId) => {
+          setEntry(null);
+          onOpenPeriod(periodId);
+        }}
       />
 
       <SubstituteRequestDrawer open={requestOpen} onClose={() => setRequestOpen(false)} />

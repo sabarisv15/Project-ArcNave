@@ -25,7 +25,11 @@ export function StaffView() {
           </div>
 
           <StaffToolbar s={s} />
-          <StaffFilterChips chips={s.activeChips} onRemove={(key) => s.setFilter(key, '')} onClearAll={s.clearFilters} />
+          <StaffFilterChips
+            chips={s.activeChips}
+            onRemove={(key) => s.setFilter(key, '')}
+            onClearAll={s.clearFilters}
+          />
         </div>
 
         <div className="flex-1 min-h-0 w-full max-w-[1180px] mx-auto px-[28px] pb-[24px] flex flex-col">

@@ -51,9 +51,10 @@ function startOfCurrentMonth() {
 // default.
 async function getMonthlyTokenQuota(client, collegeId) {
   const row = await configurationService.getConfiguration(client, { collegeId, category: QUOTA_CONFIG_CATEGORY });
-  const configured = row && row.configuration && typeof row.configuration.monthlyTokenQuota === 'number'
-    ? row.configuration.monthlyTokenQuota
-    : null;
+  const configured =
+    row && row.configuration && typeof row.configuration.monthlyTokenQuota === 'number'
+      ? row.configuration.monthlyTokenQuota
+      : null;
   return configured !== null ? configured : globalConfig.aiDefaultMonthlyTokenQuota;
 }
 

@@ -55,7 +55,6 @@ async function streamRequest(path, body, onEvent, { isRetry = false } = {}) {
   let result = null;
 
   for (;;) {
-    // eslint-disable-next-line no-await-in-loop
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
@@ -104,7 +103,10 @@ export const aiApi = {
    * `id` is what later gets sent as an `attachment_ids` entry to
    * /ai/ask(/stream), never the composer's own local `att-...` id.
    */
-  uploadAttachment: ({ fileBase64, fileName, mimeType }) => api.post('/documents/chat-attachments', {
-    file_base64: fileBase64, file_name: fileName, mime_type: mimeType,
-  }),
+  uploadAttachment: ({ fileBase64, fileName, mimeType }) =>
+    api.post('/documents/chat-attachments', {
+      file_base64: fileBase64,
+      file_name: fileName,
+      mime_type: mimeType,
+    }),
 };

@@ -57,7 +57,7 @@ test('AI tool registry — UAT wiring registration', async (t) => {
 });
 
 test('AI tool registry — UAT wiring handler delegation (same-actor only)', async (t) => {
-  await t.test('personal_notes_create always writes under the acting user\'s own id', async () => {
+  await t.test("personal_notes_create always writes under the acting user's own id", async () => {
     const createMock = t.mock.method(personalNoteService, 'createNote', async (client, fields, opts) => {
       assert.equal(opts.actorUserId, 'u1');
       return { id: 'note-1', ...fields };
@@ -93,7 +93,7 @@ test('AI tool registry — UAT wiring handler delegation (same-actor only)', asy
     assert.equal(readMock.mock.callCount(), 1);
   });
 
-  await t.test('user_preferences_set writes under the acting user\'s own id', async () => {
+  await t.test("user_preferences_set writes under the acting user's own id", async () => {
     const setMock = t.mock.method(userPreferenceService, 'setPreference', async (client, key, value, opts) => {
       assert.equal(opts.actorUserId, 'u1');
       return { preference_key: key, value };
@@ -109,17 +109,27 @@ test('AI tool registry — UAT wiring handler delegation (same-actor only)', asy
     assert.equal(setMock.mock.callCount(), 1);
   });
 
-  await t.test('user_preferences_set (P2.4): a key outside the fixed safe set is rejected before userPreferenceService is ever touched — never a place to remember freeform facts about a person', async () => {
-    const setMock = t.mock.method(userPreferenceService, 'setPreference', async () => { throw new Error('must not be called'); });
-    t.after(() => setMock.mock.restore());
+  await t.test(
+    'user_preferences_set (P2.4): a key outside the fixed safe set is rejected before userPreferenceService is ever touched — never a place to remember freeform facts about a person',
+    async () => {
+      const setMock = t.mock.method(userPreferenceService, 'setPreference', async () => {
+        throw new Error('must not be called');
+      });
+      t.after(() => setMock.mock.restore());
 
-    const tool = aiToolRegistry.getTool('user_preferences_set');
-    assert.throws(
-      () => tool.handler({}, { preference_key: 'notes_about_student_x', value: 'failing multiple subjects' }, { userId: 'u1', collegeId: 'c1' }),
-      aiToolRegistry.AiToolInvalidParamsError,
-    );
-    assert.equal(setMock.mock.callCount(), 0);
-  });
+      const tool = aiToolRegistry.getTool('user_preferences_set');
+      assert.throws(
+        () =>
+          tool.handler(
+            {},
+            { preference_key: 'notes_about_student_x', value: 'failing multiple subjects' },
+            { userId: 'u1', collegeId: 'c1' },
+          ),
+        aiToolRegistry.AiToolInvalidParamsError,
+      );
+      assert.equal(setMock.mock.callCount(), 0);
+    },
+  );
 
   await t.test('substitute_duties_list resolves against the acting user, not a caller-supplied staff id', async () => {
     const listMock = t.mock.method(academicService, 'listMySubstituteAssignments', async (client, opts) => {
@@ -133,33 +143,47 @@ test('AI tool registry — UAT wiring handler delegation (same-actor only)', asy
     assert.equal(listMock.mock.callCount(), 1);
   });
 
-  await t.test('substitute_duty_acknowledge passes the acting user as the actor, service enforces same-substitute-only', async () => {
-    const ackMock = t.mock.method(academicService, 'acknowledgeSubstituteAssignment', async (client, assignmentId, opts) => {
-      assert.equal(assignmentId, 'sa-1');
-      assert.equal(opts.actorUserId, 'u1');
-      return { id: 'ack-1' };
-    });
-    t.after(() => ackMock.mock.restore());
+  await t.test(
+    'substitute_duty_acknowledge passes the acting user as the actor, service enforces same-substitute-only',
+    async () => {
+      const ackMock = t.mock.method(
+        academicService,
+        'acknowledgeSubstituteAssignment',
+        async (client, assignmentId, opts) => {
+          assert.equal(assignmentId, 'sa-1');
+          assert.equal(opts.actorUserId, 'u1');
+          return { id: 'ack-1' };
+        },
+      );
+      t.after(() => ackMock.mock.restore());
 
-    const tool = aiToolRegistry.getTool('substitute_duty_acknowledge');
-    const result = await tool.handler({}, { assignment_id: 'sa-1' }, { userId: 'u1', collegeId: 'c1' });
-    assert.equal(result.id, 'ack-1');
-  });
+      const tool = aiToolRegistry.getTool('substitute_duty_acknowledge');
+      const result = await tool.handler({}, { assignment_id: 'sa-1' }, { userId: 'u1', collegeId: 'c1' });
+      assert.equal(result.id, 'ack-1');
+    },
+  );
 
-  await t.test('staff_self_profile_update only forwards self-service fields (service-level enforcement, not tool-level)', async () => {
-    const updateMock = t.mock.method(staffService, 'updateOwnProfile', async (client, fields, opts) => {
-      assert.equal(opts.userId, 'u1');
-      assert.deepEqual(fields, {
-        phone: '9999999999', address: undefined, emergencyContactName: undefined, emergencyContactPhone: undefined, emergencyContactRelation: undefined,
+  await t.test(
+    'staff_self_profile_update only forwards self-service fields (service-level enforcement, not tool-level)',
+    async () => {
+      const updateMock = t.mock.method(staffService, 'updateOwnProfile', async (client, fields, opts) => {
+        assert.equal(opts.userId, 'u1');
+        assert.deepEqual(fields, {
+          phone: '9999999999',
+          address: undefined,
+          emergencyContactName: undefined,
+          emergencyContactPhone: undefined,
+          emergencyContactRelation: undefined,
+        });
+        return { id: 'staff-1', ...fields };
       });
-      return { id: 'staff-1', ...fields };
-    });
-    t.after(() => updateMock.mock.restore());
+      t.after(() => updateMock.mock.restore());
 
-    const tool = aiToolRegistry.getTool('staff_self_profile_update');
-    await tool.handler({}, { phone: '9999999999' }, { userId: 'u1', collegeId: 'c1' });
-    assert.equal(updateMock.mock.callCount(), 1);
-  });
+      const tool = aiToolRegistry.getTool('staff_self_profile_update');
+      await tool.handler({}, { phone: '9999999999' }, { userId: 'u1', collegeId: 'c1' });
+      assert.equal(updateMock.mock.callCount(), 1);
+    },
+  );
 
   await t.test('class_log_create resolves the named class then delegates with the acting user as creator', async () => {
     const resolveMock = t.mock.method(academicService, 'resolveClassId', async () => 'cls-1');
@@ -174,9 +198,16 @@ test('AI tool registry — UAT wiring handler delegation (same-actor only)', asy
     });
 
     const tool = aiToolRegistry.getTool('class_log_create');
-    const result = await tool.handler({}, {
-      class_id: 'CSE-3A', subject: 'DS', session_date: '2026-08-12', topic: 'Stacks',
-    }, { userId: 'u1', role: 'staff', collegeId: 'c1' });
+    const result = await tool.handler(
+      {},
+      {
+        class_id: 'CSE-3A',
+        subject: 'DS',
+        session_date: '2026-08-12',
+        topic: 'Stacks',
+      },
+      { userId: 'u1', role: 'staff', collegeId: 'c1' },
+    );
     assert.equal(result.topic, 'Stacks');
   });
 
@@ -193,24 +224,31 @@ test('AI tool registry — UAT wiring handler delegation (same-actor only)', asy
     });
 
     const tool = aiToolRegistry.getTool('students_flag');
-    const result = await tool.handler({}, { student_id: 'R101', remark: 'Repeated absence' }, { userId: 'u1', role: 'staff', collegeId: 'c1' });
+    const result = await tool.handler(
+      {},
+      { student_id: 'R101', remark: 'Repeated absence' },
+      { userId: 'u1', role: 'staff', collegeId: 'c1' },
+    );
     assert.equal(result.remark, 'Repeated absence');
   });
 
-  await t.test('students_flag_clear resolves the named student then delegates with the acting user as actor', async () => {
-    const resolveMock = t.mock.method(studentService, 'resolveStudentId', async () => 'student-1');
-    const clearMock = t.mock.method(studentService, 'clearStudentFlag', async (client, studentId, opts) => {
-      assert.equal(studentId, 'student-1');
-      assert.equal(opts.actorUserId, 'u1');
-      return { id: 'flag-1' };
-    });
-    t.after(() => {
-      resolveMock.mock.restore();
-      clearMock.mock.restore();
-    });
+  await t.test(
+    'students_flag_clear resolves the named student then delegates with the acting user as actor',
+    async () => {
+      const resolveMock = t.mock.method(studentService, 'resolveStudentId', async () => 'student-1');
+      const clearMock = t.mock.method(studentService, 'clearStudentFlag', async (client, studentId, opts) => {
+        assert.equal(studentId, 'student-1');
+        assert.equal(opts.actorUserId, 'u1');
+        return { id: 'flag-1' };
+      });
+      t.after(() => {
+        resolveMock.mock.restore();
+        clearMock.mock.restore();
+      });
 
-    const tool = aiToolRegistry.getTool('students_flag_clear');
-    const result = await tool.handler({}, { student_id: 'R101' }, { userId: 'u1', role: 'staff', collegeId: 'c1' });
-    assert.equal(result.id, 'flag-1');
-  });
+      const tool = aiToolRegistry.getTool('students_flag_clear');
+      const result = await tool.handler({}, { student_id: 'R101' }, { userId: 'u1', role: 'staff', collegeId: 'c1' });
+      assert.equal(result.id, 'flag-1');
+    },
+  );
 });

@@ -70,7 +70,10 @@ function discoverRelations(vectors, width) {
       const holds = vectors.every((v) => v[j] === v[i] * factor);
       if (holds && (hasVariance(vectors, i) || hasVariance(vectors, j))) {
         relations.push({
-          type: 'scale', from: i, to: j, factor,
+          type: 'scale',
+          from: i,
+          to: j,
+          factor,
         });
       }
     }
@@ -82,7 +85,9 @@ function discoverRelations(vectors, width) {
         const holds = vectors.every((v) => v[k] === v[i] + v[j]);
         if (holds && (hasVariance(vectors, i) || hasVariance(vectors, j) || hasVariance(vectors, k))) {
           relations.push({
-            type: 'sum', addends: [i, j], total: k,
+            type: 'sum',
+            addends: [i, j],
+            total: k,
           });
         }
       }

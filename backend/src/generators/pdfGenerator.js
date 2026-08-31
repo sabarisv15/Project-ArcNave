@@ -51,16 +51,35 @@ async function generate(reportModel) {
     doc.moveDown();
 
     let y = doc.y;
-    drawRow(doc, columns.map((c) => c.label), PAGE_MARGIN, y, columnWidth, HEADER_FONT_SIZE, true);
+    drawRow(
+      doc,
+      columns.map((c) => c.label),
+      PAGE_MARGIN,
+      y,
+      columnWidth,
+      HEADER_FONT_SIZE,
+      true,
+    );
     y += ROW_HEIGHT;
-    doc.moveTo(PAGE_MARGIN, y - 4).lineTo(doc.page.width - PAGE_MARGIN, y - 4).stroke();
+    doc
+      .moveTo(PAGE_MARGIN, y - 4)
+      .lineTo(doc.page.width - PAGE_MARGIN, y - 4)
+      .stroke();
 
     for (const row of rows) {
       if (y > doc.page.height - PAGE_MARGIN - ROW_HEIGHT) {
         doc.addPage();
         y = PAGE_MARGIN;
       }
-      drawRow(doc, columns.map((c) => row[c.id]), PAGE_MARGIN, y, columnWidth, ROW_FONT_SIZE, false);
+      drawRow(
+        doc,
+        columns.map((c) => row[c.id]),
+        PAGE_MARGIN,
+        y,
+        columnWidth,
+        ROW_FONT_SIZE,
+        false,
+      );
       y += ROW_HEIGHT;
     }
 

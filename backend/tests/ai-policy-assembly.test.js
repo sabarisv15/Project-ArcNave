@@ -10,13 +10,16 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const aiPolicyAssembly = require('../src/services/aiPolicyAssembly');
 
-const {
-  CORE, CONTINUITY, TOOL_SELECTION, PLAN, FILE, ARTIFACT, MODE_PREFIX, buildPolicy,
-} = aiPolicyAssembly;
+const { CORE, CONTINUITY, TOOL_SELECTION, PLAN, FILE, ARTIFACT, MODE_PREFIX, buildPolicy } = aiPolicyAssembly;
 
 function baseState(overrides = {}) {
   return {
-    mode: 'curriculum', hasHistory: false, toolCount: 0, hasFileTool: false, focusEntityType: null, ...overrides,
+    mode: 'curriculum',
+    hasHistory: false,
+    toolCount: 0,
+    hasFileTool: false,
+    focusEntityType: null,
+    ...overrides,
   };
 }
 
@@ -36,7 +39,7 @@ test('buildPolicy: TOOL_SELECTION included only when toolCount > 0', () => {
   assert.ok(buildPolicy(baseState({ toolCount: 1 })).includes(TOOL_SELECTION));
 });
 
-test('buildPolicy: PLAN included only when toolCount >= 2 (matches askAgent\'s own plan-meta-tool gate)', () => {
+test("buildPolicy: PLAN included only when toolCount >= 2 (matches askAgent's own plan-meta-tool gate)", () => {
   assert.ok(!buildPolicy(baseState({ toolCount: 1 })).includes(PLAN));
   assert.ok(buildPolicy(baseState({ toolCount: 2 })).includes(PLAN));
 });
@@ -59,9 +62,14 @@ test('buildPolicy: ARTIFACT included only when focusEntityType is exactly "artif
 });
 
 test('buildPolicy: every module can be simultaneously present', () => {
-  const policy = buildPolicy(baseState({
-    hasHistory: true, toolCount: 2, hasFileTool: true, focusEntityType: 'artifact',
-  }));
+  const policy = buildPolicy(
+    baseState({
+      hasHistory: true,
+      toolCount: 2,
+      hasFileTool: true,
+      focusEntityType: 'artifact',
+    }),
+  );
   assert.ok(policy.includes(CORE));
   assert.ok(policy.includes(CONTINUITY));
   assert.ok(policy.includes(TOOL_SELECTION));
@@ -72,10 +80,17 @@ test('buildPolicy: every module can be simultaneously present', () => {
 
 test('buildPolicy: assembly order is fixed (CORE first, ARTIFACT last) regardless of state field order', () => {
   const stateA = {
-    focusEntityType: 'artifact', hasFileTool: true, toolCount: 2, hasHistory: true, mode: 'curriculum',
+    focusEntityType: 'artifact',
+    hasFileTool: true,
+    toolCount: 2,
+    hasHistory: true,
+    mode: 'curriculum',
   };
   const stateB = baseState({
-    hasHistory: true, toolCount: 2, hasFileTool: true, focusEntityType: 'artifact',
+    hasHistory: true,
+    toolCount: 2,
+    hasFileTool: true,
+    focusEntityType: 'artifact',
   });
   const policyA = buildPolicy(stateA);
   const policyB = buildPolicy(stateB);
@@ -96,7 +111,7 @@ test('buildPolicy: deterministic — same state in, byte-identical string out, s
   assert.equal(JSON.stringify(state), snapshot, 'buildPolicy must not mutate its input');
 });
 
-test('buildPolicy: modules are joined with a blank line, matching every existing call site\'s separator', () => {
+test("buildPolicy: modules are joined with a blank line, matching every existing call site's separator", () => {
   const policy = buildPolicy(baseState({ hasHistory: true }));
   assert.equal(policy, `${CORE}\n\n${CONTINUITY}`);
 });

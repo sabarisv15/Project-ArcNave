@@ -46,55 +46,60 @@ function profileBodyToFields(body) {
 function createStaffInvitationsRouter() {
   const router = express.Router();
 
-  router.post('/staff/invitations/accept', asyncHandler(async (req, res) => {
-    const { token, username, password } = req.body || {};
-    const profileFields = profileBodyToFields(req.body || {});
+  router.post(
+    '/staff/invitations/accept',
+    asyncHandler(async (req, res) => {
+      const { token, username, password } = req.body || {};
+      const profileFields = profileBodyToFields(req.body || {});
 
-    const lookupClient = await appPool.connect();
-    let invitation;
-    try {
-      invitation = await staffService.lookupPendingStaffInvitation(lookupClient, token);
-    } catch (err) {
-      if (err instanceof staffService.StaffInvitationInvalidError) {
-        res.status(401).json({ detail: 'Invalid or expired invitation' });
-        return;
+      const lookupClient = await appPool.connect();
+      let invitation;
+      try {
+        invitation = await staffService.lookupPendingStaffInvitation(lookupClient, token);
+      } catch (err) {
+        if (err instanceof staffService.StaffInvitationInvalidError) {
+          res.status(401).json({ detail: 'Invalid or expired invitation' });
+          return;
+        }
+        throw err;
+      } finally {
+        lookupClient.release();
       }
-      throw err;
-    } finally {
-      lookupClient.release();
-    }
 
-    await openTenantTransaction(req, res, invitation.college_id);
+      await openTenantTransaction(req, res, invitation.college_id);
 
-    let result;
-    try {
-      result = await staffService.acceptStaffInvitation(req.dbClient, invitation, {
-        username, password, ...profileFields,
+      let result;
+      try {
+        result = await staffService.acceptStaffInvitation(req.dbClient, invitation, {
+          username,
+          password,
+          ...profileFields,
+        });
+      } catch (err) {
+        if (err instanceof staffService.StaffInvitationValidationError) {
+          await req.rollbackTransaction();
+          res.status(400).json({ detail: err.message });
+          return;
+        }
+        if (err instanceof staffService.StaffInvitationUsernameConflictError) {
+          await req.rollbackTransaction();
+          res.status(409).json({ detail: err.message });
+          return;
+        }
+        throw err;
+      }
+
+      res.status(201).json({
+        user_id: result.user.id,
+        staff_id: result.staff.id,
+        college_id: result.staff.college_id,
+        username: result.user.username,
+        email: result.user.email,
+        department_id: result.staff.department_id,
+        workflow_request_id: result.workflowRequest.id,
       });
-    } catch (err) {
-      if (err instanceof staffService.StaffInvitationValidationError) {
-        await req.rollbackTransaction();
-        res.status(400).json({ detail: err.message });
-        return;
-      }
-      if (err instanceof staffService.StaffInvitationUsernameConflictError) {
-        await req.rollbackTransaction();
-        res.status(409).json({ detail: err.message });
-        return;
-      }
-      throw err;
-    }
-
-    res.status(201).json({
-      user_id: result.user.id,
-      staff_id: result.staff.id,
-      college_id: result.staff.college_id,
-      username: result.user.username,
-      email: result.user.email,
-      department_id: result.staff.department_id,
-      workflow_request_id: result.workflowRequest.id,
-    });
-  }));
+    }),
+  );
 
   return router;
 }

@@ -21,7 +21,11 @@ const { Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun, Headin
 
 function textCell(text, bold) {
   return new TableCell({
-    children: [new Paragraph({ children: [new TextRun({ text: text === null || text === undefined ? '' : String(text), bold })] })],
+    children: [
+      new Paragraph({
+        children: [new TextRun({ text: text === null || text === undefined ? '' : String(text), bold })],
+      }),
+    ],
   });
 }
 
@@ -37,12 +41,11 @@ async function generate(reportModel) {
   });
 
   const doc = new Document({
-    sections: [{
-      children: [
-        new Paragraph({ text: title, heading: HeadingLevel.HEADING_1 }),
-        table,
-      ],
-    }],
+    sections: [
+      {
+        children: [new Paragraph({ text: title, heading: HeadingLevel.HEADING_1 }), table],
+      },
+    ],
   });
 
   const buffer = await Packer.toBuffer(doc);

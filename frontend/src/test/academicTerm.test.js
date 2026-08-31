@@ -160,16 +160,7 @@ describe('The commencement consequences are data', () => {
       expect(c.detail).toBeTruthy();
     });
     const keys = COMMENCEMENT_CONSEQUENCES.map((c) => c.key);
-    expect(keys).toEqual([
-      'band',
-      'classes',
-      'seats',
-      'history',
-      'review',
-      'placement',
-      'timetable',
-      'attendance',
-    ]);
+    expect(keys).toEqual(['band', 'classes', 'seats', 'history', 'review', 'placement', 'timetable', 'attendance']);
   });
 
   it('says promotion is not automatic and attendance is not switched on', () => {

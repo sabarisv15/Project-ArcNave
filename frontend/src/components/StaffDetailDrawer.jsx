@@ -30,7 +30,9 @@ export function StaffDetailDrawer({ s }) {
                     {initials(p.name)}
                   </span>
                   <div className="min-w-0">
-                    <Dialog.Title className="m-0 text-[17px] font-[600] tracking-[-.01em] truncate">{p.name}</Dialog.Title>
+                    <Dialog.Title className="m-0 text-[17px] font-[600] tracking-[-.01em] truncate">
+                      {p.name}
+                    </Dialog.Title>
                     <div className="mt-[2px] text-[11.5px] tabular-nums text-ink-faint">{p.employeeId}</div>
                   </div>
                 </div>

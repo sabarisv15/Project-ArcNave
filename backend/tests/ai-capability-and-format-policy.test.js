@@ -22,19 +22,24 @@ const { AiOutputFormatValidationError, DESTINATIONS } = aiOutputFormatService;
 // A configurationService stub — capabilityExplain's only data access.
 function configStub(enabledCategories) {
   return {
-    getConfiguration: async (client, { category }) => (enabledCategories.includes(category)
-      ? { configuration: { enabled: true } }
-      : null),
+    getConfiguration: async (client, { category }) =>
+      enabledCategories.includes(category) ? { configuration: { enabled: true } } : null,
   };
 }
 
 test.describe('capability_search (consumer-tool-adaptation: search_plugins / search_skills)', () => {
   test('rejects a query with no searchable words', () => {
-    assert.throws(() => aiCapabilityCatalogService.capabilitySearch('principal', 'what can you do'), AiCapabilityCatalogValidationError);
+    assert.throws(
+      () => aiCapabilityCatalogService.capabilitySearch('principal', 'what can you do'),
+      AiCapabilityCatalogValidationError,
+    );
   });
 
   test('rejects a query below the minimum length', () => {
-    assert.throws(() => aiCapabilityCatalogService.capabilitySearch('principal', 'a'), AiCapabilityCatalogValidationError);
+    assert.throws(
+      () => aiCapabilityCatalogService.capabilitySearch('principal', 'a'),
+      AiCapabilityCatalogValidationError,
+    );
   });
 
   test('returns only capabilities the acting role actually permits', () => {
@@ -42,13 +47,19 @@ test.describe('capability_search (consumer-tool-adaptation: search_plugins / sea
     const staffToolNames = new Set(
       aiToolRegistry.listTools({ role: 'staff', excludeHumanOnly: true }).map((t) => t.name),
     );
-    forStaff.forEach((match) => assert.ok(staffToolNames.has(match.capability), `${match.capability} leaked into staff results`));
+    forStaff.forEach((match) =>
+      assert.ok(staffToolNames.has(match.capability), `${match.capability} leaked into staff results`),
+    );
   });
 
   test('never lists a human-only capability — the AI cannot do those at all', () => {
     const humanOnlyNames = new Set(
-      aiToolRegistry.listTools({ role: 'principal' })
-        .filter((t) => !aiToolRegistry.listTools({ role: 'principal', excludeHumanOnly: true }).some((v) => v.name === t.name))
+      aiToolRegistry
+        .listTools({ role: 'principal' })
+        .filter(
+          (t) =>
+            !aiToolRegistry.listTools({ role: 'principal', excludeHumanOnly: true }).some((v) => v.name === t.name),
+        )
         .map((t) => t.name),
     );
     const matches = aiCapabilityCatalogService.capabilitySearch('principal', 'student records timetable finance');
@@ -63,7 +74,10 @@ test.describe('capability_search (consumer-tool-adaptation: search_plugins / sea
   });
 
   test('caps the result set rather than returning the whole registry', () => {
-    const matches = aiCapabilityCatalogService.capabilitySearch('principal', 'student staff document report attendance finance');
+    const matches = aiCapabilityCatalogService.capabilitySearch(
+      'principal',
+      'student staff document report attendance finance',
+    );
     assert.ok(matches.length <= aiCapabilityCatalogService.MAX_MATCHES);
   });
 });
@@ -72,7 +86,9 @@ test.describe('capability_explain (consumer-tool-adaptation: suggest_plugin_inst
   const original = require('../src/services/configurationService');
   const originalGet = original.getConfiguration;
 
-  test.afterEach(() => { original.getConfiguration = originalGet; });
+  test.afterEach(() => {
+    original.getConfiguration = originalGet;
+  });
 
   test('distinguishes "no such capability" from every other reason', async () => {
     const result = await aiCapabilityCatalogService.capabilityExplain({}, 'demo', 'principal', 'teleport_student');
@@ -120,7 +136,8 @@ test.describe('the catalogue cannot enable anything (its whole safety property)'
   });
 
   test('no tool exists that turns a capability on — that stays a configuration change', () => {
-    const enablers = aiToolRegistry.listTools()
+    const enablers = aiToolRegistry
+      .listTools()
       .filter((t) => /capability.*(enable|install|activate)|enable.*capability/i.test(t.name));
     assert.deepStrictEqual(enablers, []);
   });
@@ -222,11 +239,25 @@ test.describe('fileTypeGuidance — Layer 6, per-format truth since the skills s
 
 test.describe('new tool registrations are wired and role-scoped', () => {
   const NEW_TOOLS = [
-    'present_featured', 'present_comparison', 'present_carousel', 'present_links',
-    'present_places', 'present_map', 'present_recipe', 'present_diagram',
-    'describe_diagram_constraints', 'conversation_recent', 'conversation_read',
-    'conversation_archive', 'ai_memory_revise', 'web_search_fast', 'image_search',
-    'capability_search', 'capability_explain', 'decide_output_format', 'decide_image_route',
+    'present_featured',
+    'present_comparison',
+    'present_carousel',
+    'present_links',
+    'present_places',
+    'present_map',
+    'present_recipe',
+    'present_diagram',
+    'describe_diagram_constraints',
+    'conversation_recent',
+    'conversation_read',
+    'conversation_archive',
+    'ai_memory_revise',
+    'web_search_fast',
+    'image_search',
+    'capability_search',
+    'capability_explain',
+    'decide_output_format',
+    'decide_image_route',
   ];
 
   test('every one is registered', () => {

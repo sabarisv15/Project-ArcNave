@@ -65,11 +65,11 @@ A `.docx` is a ZIP archive of XML files, but `python-docx` reads and
 writes that archive for you — you should never need to unzip/rezip
 one by hand in this sandbox.
 
-| Task | Approach |
-|---|---|
-| **Create** a new document | `python-docx`'s `Document()` — see gotchas below |
+| Task                          | Approach                                                                                  |
+| ----------------------------- | ----------------------------------------------------------------------------------------- |
+| **Create** a new document     | `python-docx`'s `Document()` — see gotchas below                                          |
 | **Edit** an existing document | `python-docx`'s `Document(path)` — mutate paragraphs/runs/tables in place, then `.save()` |
-| **Read** content | `python-docx`'s `Document(path)`, iterate `.paragraphs` / `.tables` |
+| **Read** content              | `python-docx`'s `Document(path)`, iterate `.paragraphs` / `.tables`                       |
 
 ## Quick start
 
@@ -141,7 +141,7 @@ this project or well-documented upstream:
   `Cm`) and let the other scale automatically.
 - **Page breaks:** `document.add_page_break()` between blocks, or
   `run.add_break(WD_BREAK.PAGE)` mid-paragraph (`from docx.enum.text
-  import WD_BREAK`).
+import WD_BREAK`).
 - **Never rely on `\n` inside `run.text`** — Word does not render it
   as a line break. Use `run.add_break(WD_BREAK.LINE)`, or a separate
   paragraph.

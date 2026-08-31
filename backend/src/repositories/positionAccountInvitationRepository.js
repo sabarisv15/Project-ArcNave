@@ -10,9 +10,10 @@
 // migration's own header comment for why) — this file makes no
 // assumption about which; that's the caller's concern.
 
-async function createInvitation(client, {
-  collegeId, positionId, level, positionType, email, tokenHash, createdBy, expiresAt,
-}) {
+async function createInvitation(
+  client,
+  { collegeId, positionId, level, positionType, email, tokenHash, createdBy, expiresAt },
+) {
   const result = await client.query(
     `INSERT INTO position_account_invitations
        (college_id, position_id, level, position_type, email, token_hash, created_by, expires_at)

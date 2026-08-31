@@ -66,11 +66,15 @@ async function assertIsTutor(client, classId, actorUserId, actorRole) {
     throw new ExaminationClassNotFoundError(`class ${JSON.stringify(classId)} does not exist`);
   }
   if (actorRole !== 'class_tutor') {
-    throw new ExaminationNotTutorError(`user ${JSON.stringify(actorUserId)}'s current login (role ${JSON.stringify(actorRole)}) is not a Class Tutor Position Account`);
+    throw new ExaminationNotTutorError(
+      `user ${JSON.stringify(actorUserId)}'s current login (role ${JSON.stringify(actorRole)}) is not a Class Tutor Position Account`,
+    );
   }
   const tutorUserId = await identityService.resolvePositionOccupant(client, { collegeId: cls.college_id, classId });
   if (tutorUserId !== actorUserId) {
-    throw new ExaminationNotTutorError(`user ${JSON.stringify(actorUserId)} is not the tutor of class ${JSON.stringify(classId)}`);
+    throw new ExaminationNotTutorError(
+      `user ${JSON.stringify(actorUserId)} is not the tutor of class ${JSON.stringify(classId)}`,
+    );
   }
   return cls;
 }
@@ -80,12 +84,22 @@ async function assertIsTutor(client, classId, actorUserId, actorRole) {
 // announcements, updates, and information decided by the Class Tutor"
 // deliberately doesn't enumerate fixed types here, matching every
 // other free-text doc_type precedent in this schema.
-async function uploadExamDocument(client, classId, { docType, fileName, mimeType, fileBuffer }, { actorUserId, actorRole } = {}) {
+async function uploadExamDocument(
+  client,
+  classId,
+  { docType, fileName, mimeType, fileBuffer },
+  { actorUserId, actorRole } = {},
+) {
   const cls = await assertIsTutor(client, classId, actorUserId, actorRole);
   return documentService.uploadDocument(
     client,
     {
-      collegeId: cls.college_id, classId, docType, fileName, mimeType, fileBuffer,
+      collegeId: cls.college_id,
+      classId,
+      docType,
+      fileName,
+      mimeType,
+      fileBuffer,
     },
     { actorUserId },
   );
@@ -117,7 +131,11 @@ async function publishExamTimetableVersion(client, classId, documentId, { actorU
   await examTimetableVersionRepository.clearCurrentOfficialForClass(client, classId);
   const versionNumber = (await examTimetableVersionRepository.countForClass(client, classId)) + 1;
   const version = await examTimetableVersionRepository.create(client, {
-    collegeId: cls.college_id, classId, documentId, versionNumber, publishedByUserId: actorUserId,
+    collegeId: cls.college_id,
+    classId,
+    documentId,
+    versionNumber,
+    publishedByUserId: actorUserId,
   });
 
   await auditLogRepository.createAuditLogEntry(client, {

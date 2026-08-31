@@ -10,17 +10,19 @@
 // actually imports (they differ for python-docx/python-pptx, whose
 // import names are docx/pptx) — see the Dockerfile's own comment for
 // what each package is for.
-const SANDBOX_PACKAGES = Object.freeze([
-  { pipName: 'pdfplumber', importName: 'pdfplumber' },
-  { pipName: 'openpyxl', importName: 'openpyxl' },
-  { pipName: 'pandas', importName: 'pandas' },
-  { pipName: 'reportlab', importName: 'reportlab.pdfgen' },
-  { pipName: 'pypdf', importName: 'pypdf' },
-  { pipName: 'python-docx', importName: 'docx' },
-  { pipName: 'python-pptx', importName: 'pptx' },
-  { pipName: 'pdf2image', importName: 'pdf2image' },
-  { pipName: 'pytesseract', importName: 'pytesseract' },
-].map((entry) => Object.freeze(entry)));
+const SANDBOX_PACKAGES = Object.freeze(
+  [
+    { pipName: 'pdfplumber', importName: 'pdfplumber' },
+    { pipName: 'openpyxl', importName: 'openpyxl' },
+    { pipName: 'pandas', importName: 'pandas' },
+    { pipName: 'reportlab', importName: 'reportlab.pdfgen' },
+    { pipName: 'pypdf', importName: 'pypdf' },
+    { pipName: 'python-docx', importName: 'docx' },
+    { pipName: 'python-pptx', importName: 'pptx' },
+    { pipName: 'pdf2image', importName: 'pdf2image' },
+    { pipName: 'pytesseract', importName: 'pytesseract' },
+  ].map((entry) => Object.freeze(entry)),
+);
 
 // "a, b, c, and d" — the exact join style the execute_code tool
 // description already used by hand before this module existed.

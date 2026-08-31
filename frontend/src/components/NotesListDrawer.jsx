@@ -56,7 +56,9 @@ export function NotesListDrawer({ open, onClose, onPick }) {
       <div className="flex-1 min-h-0 overflow-y-auto scroll-quiet px-[18px] pb-[16px]">
         {rows.length === 0 ? (
           <p className="mt-[24px] text-center text-[12.5px] text-ink-faint">
-            {allNotes.length === 0 ? 'No notes yet. Pick a date on the calendar to write one.' : 'No notes match that search.'}
+            {allNotes.length === 0
+              ? 'No notes yet. Pick a date on the calendar to write one.'
+              : 'No notes match that search.'}
           </p>
         ) : (
           <div className="grid gap-[6px]">
@@ -74,7 +76,9 @@ export function NotesListDrawer({ open, onClose, onPick }) {
                   {n.title?.trim() || notePreview(n)}
                 </span>
                 {n.title?.trim() && n.body?.trim() && (
-                  <span className="block mt-[1px] text-[11.5px] text-ink-muted truncate">{notePreview({ body: n.body })}</span>
+                  <span className="block mt-[1px] text-[11.5px] text-ink-muted truncate">
+                    {notePreview({ body: n.body })}
+                  </span>
                 )}
               </button>
             ))}

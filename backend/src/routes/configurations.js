@@ -85,24 +85,29 @@ function createConfigurationsRouter() {
   // restricted to principal instead (this session's own task: this
   // route used to let any authenticated user read finance/
   // notification-provider/AI-provider config, credentials included).
-  router.get('/configurations/:category', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const actorRole = req.jwtClaims.role || req.capabilities.effectiveRole;
-    if (SENSITIVE_CONFIGURATION_CATEGORIES.includes(req.params.category)
-      && actorRole !== 'principal') {
-      res.status(403).json({ detail: `role ${JSON.stringify(actorRole)} may not read configuration category ${JSON.stringify(req.params.category)}` });
-      return;
-    }
-    const row = await configurationService.getConfiguration(req.dbClient, {
-      collegeId: req.collegeId,
-      category: req.params.category,
-    });
-    if (row === null) {
-      res.status(404).json({ detail: `No configuration set for category ${JSON.stringify(req.params.category)}` });
-      return;
-    }
-    res.json({ category: row.category, configuration: row.configuration, version: row.version });
-  }));
+  router.get(
+    '/configurations/:category',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const actorRole = req.jwtClaims.role || req.capabilities.effectiveRole;
+      if (SENSITIVE_CONFIGURATION_CATEGORIES.includes(req.params.category) && actorRole !== 'principal') {
+        res.status(403).json({
+          detail: `role ${JSON.stringify(actorRole)} may not read configuration category ${JSON.stringify(req.params.category)}`,
+        });
+        return;
+      }
+      const row = await configurationService.getConfiguration(req.dbClient, {
+        collegeId: req.collegeId,
+        category: req.params.category,
+      });
+      if (row === null) {
+        res.status(404).json({ detail: `No configuration set for category ${JSON.stringify(req.params.category)}` });
+        return;
+      }
+      res.json({ category: row.category, configuration: row.configuration, version: row.version });
+    }),
+  );
 
   // Checked the deleted Python version rather than guessing: writes
   // were gated to require_role("principal") specifically — a
@@ -114,34 +119,38 @@ function createConfigurationsRouter() {
   // principal). Ported as-is, conservative default and all, not
   // silently resolved or silently loosened — worth revisiting once a
   // real category has a real business rule about who can change it.
-  router.put('/configurations/:category', requirePermission('configurations.update'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { configuration, expected_version: rawExpectedVersion } = req.body || {};
-    const expectedVersion = rawExpectedVersion === undefined ? null : rawExpectedVersion;
-    try {
-      if (req.params.category === 'storage') {
-        assertValidStorageConfiguration(configuration);
+  router.put(
+    '/configurations/:category',
+    requirePermission('configurations.update'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { configuration, expected_version: rawExpectedVersion } = req.body || {};
+      const expectedVersion = rawExpectedVersion === undefined ? null : rawExpectedVersion;
+      try {
+        if (req.params.category === 'storage') {
+          assertValidStorageConfiguration(configuration);
+        }
+        const row = await configurationService.setConfiguration(req.dbClient, {
+          collegeId: req.collegeId,
+          category: req.params.category,
+          configuration,
+          expectedVersion,
+          userId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.json({ category: row.category, configuration: row.configuration, version: row.version });
+      } catch (err) {
+        if (err instanceof configurationService.ConfigurationVersionConflictError) {
+          res.status(409).json({ detail: err.message });
+          return;
+        }
+        if (err instanceof configurationService.ConfigurationCategoryValidationError) {
+          res.status(400).json({ detail: err.message });
+          return;
+        }
+        throw err;
       }
-      const row = await configurationService.setConfiguration(req.dbClient, {
-        collegeId: req.collegeId,
-        category: req.params.category,
-        configuration,
-        expectedVersion,
-        userId: identityService.resolveActorUserId(req.capabilities),
-      });
-      res.json({ category: row.category, configuration: row.configuration, version: row.version });
-    } catch (err) {
-      if (err instanceof configurationService.ConfigurationVersionConflictError) {
-        res.status(409).json({ detail: err.message });
-        return;
-      }
-      if (err instanceof configurationService.ConfigurationCategoryValidationError) {
-        res.status(400).json({ detail: err.message });
-        return;
-      }
-      throw err;
-    }
-  }));
+    }),
+  );
 
   return router;
 }

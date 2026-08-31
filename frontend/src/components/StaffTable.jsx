@@ -92,14 +92,16 @@ export function StaffTable({ s }) {
       }),
       helper.accessor('phone', {
         header: 'Contact number',
-        cell: (info) => <span className="block text-[12.5px] tabular-nums text-ink-soft truncate">{info.getValue()}</span>,
+        cell: (info) => (
+          <span className="block text-[12.5px] tabular-nums text-ink-soft truncate">{info.getValue()}</span>
+        ),
       }),
       helper.accessor('email', {
         header: 'Email',
         cell: (info) => <EmailCell email={info.getValue()} />,
       }),
     ],
-    []
+    [],
   );
 
   const table = useReactTable({ data: s.rows, columns, getCoreRowModel: getCoreRowModel() });
@@ -120,7 +122,7 @@ export function StaffTable({ s }) {
             key={hg.id}
             className={cn(
               'grid gap-x-[10px] items-center sticky top-0 z-[46] py-[12px] px-[14px] bg-tint shadow-[inset_0_-1px_0_theme(colors.line.DEFAULT)] text-[10.5px] font-[500] tracking-[.07em] uppercase text-ink-muted',
-              GRID
+              GRID,
             )}
           >
             {hg.headers.map((header) => (
@@ -148,7 +150,7 @@ export function StaffTable({ s }) {
               }}
               className={cn(
                 'grid gap-x-[10px] items-center py-[12px] px-[14px] border-t border-line-light cursor-pointer transition-colors duration-200 hover:bg-tint2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent',
-                GRID
+                GRID,
               )}
             >
               {row.getVisibleCells().map((cell) => (
@@ -163,7 +165,9 @@ export function StaffTable({ s }) {
         {s.rows.length === 0 && (
           <div className="py-[56px] px-[20px] text-center">
             <div className="text-[14px] font-[600] text-ink">No results found</div>
-            <div className="mt-[6px] text-[12.5px] text-ink-faint">Clear a filter or change the search term to see staff.</div>
+            <div className="mt-[6px] text-[12.5px] text-ink-faint">
+              Clear a filter or change the search term to see staff.
+            </div>
           </div>
         )}
       </div>

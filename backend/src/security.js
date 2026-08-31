@@ -51,12 +51,14 @@ async function needsRehash(passwordHash) {
 // this column existed) — 0 is also every pre-existing user's actual
 // column value, so this default doesn't change what a decoded claim
 // means for a caller that never opts into passing it explicitly.
-function createAccessToken({
-  userId, collegeId, role, tokenVersion = 0,
-}) {
+function createAccessToken({ userId, collegeId, role, tokenVersion = 0 }) {
   return jwt.sign(
     {
-      sub: userId, college_id: collegeId, role, token_version: tokenVersion, type: 'access',
+      sub: userId,
+      college_id: collegeId,
+      role,
+      token_version: tokenVersion,
+      type: 'access',
     },
     config.jwtSecretKey,
     { algorithm: config.jwtAlgorithm, expiresIn: `${config.accessTokenExpireMinutes}m` },
@@ -84,7 +86,10 @@ function decodeAccessToken(token) {
 function createPositionAccessToken({ positionAccountId, collegeId, tokenVersion = 0 }) {
   return jwt.sign(
     {
-      sub: positionAccountId, college_id: collegeId, token_version: tokenVersion, type: 'position_access',
+      sub: positionAccountId,
+      college_id: collegeId,
+      token_version: tokenVersion,
+      type: 'position_access',
     },
     config.jwtSecretKey,
     { algorithm: config.jwtAlgorithm, expiresIn: `${config.accessTokenExpireMinutes}m` },
@@ -101,11 +106,10 @@ function createPositionAccessToken({ positionAccountId, collegeId, tokenVersion 
 // and middleware/rbac.js (requireRole/requireAuth) — kept
 // deliberately separate rather than unified.
 function createPlatformAccessToken({ adminId }) {
-  return jwt.sign(
-    { sub: adminId, type: 'platform_access' },
-    config.platformJwtSecretKey,
-    { algorithm: config.jwtAlgorithm, expiresIn: `${config.accessTokenExpireMinutes}m` },
-  );
+  return jwt.sign({ sub: adminId, type: 'platform_access' }, config.platformJwtSecretKey, {
+    algorithm: config.jwtAlgorithm,
+    expiresIn: `${config.accessTokenExpireMinutes}m`,
+  });
 }
 
 function decodePlatformAccessToken(token) {

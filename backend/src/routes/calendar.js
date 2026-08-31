@@ -54,65 +54,88 @@ function createCalendarRouter() {
   // configuration categories are (routes/configurations.js). Writes
   // are Principal-only (calendar.write), matching that same route's
   // conservative default for admin-facing configuration changes.
-  router.get('/calendar-events', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { from_date: fromDate, to_date: toDate } = req.query;
-    const events = await calendarService.listEvents(req.dbClient, { collegeId: req.collegeId, fromDate, toDate });
-    res.json(events);
-  }));
+  router.get(
+    '/calendar-events',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { from_date: fromDate, to_date: toDate } = req.query;
+      const events = await calendarService.listEvents(req.dbClient, { collegeId: req.collegeId, fromDate, toDate });
+      res.json(events);
+    }),
+  );
 
-  router.get('/calendar-events/:id', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const event = await calendarService.getEvent(req.dbClient, req.params.id);
-      res.json(event);
-    } catch (err) {
-      if (mapCalendarServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.get(
+    '/calendar-events/:id',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const event = await calendarService.getEvent(req.dbClient, req.params.id);
+        res.json(event);
+      } catch (err) {
+        if (mapCalendarServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/calendar-events', requirePermission('calendar.write'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const event = await calendarService.createEvent(
-        req.dbClient,
-        { collegeId: req.collegeId, ...bodyToFields(req.body || {}, CALENDAR_EVENT_BODY_FIELDS) },
-        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(201).json(event);
-    } catch (err) {
-      if (mapCalendarServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/calendar-events',
+    requirePermission('calendar.write'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const event = await calendarService.createEvent(
+          req.dbClient,
+          { collegeId: req.collegeId, ...bodyToFields(req.body || {}, CALENDAR_EVENT_BODY_FIELDS) },
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.status(201).json(event);
+      } catch (err) {
+        if (mapCalendarServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.put('/calendar-events/:id', requirePermission('calendar.write'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const event = await calendarService.updateEvent(
-        req.dbClient,
-        req.params.id,
-        bodyToFields(req.body || {}, CALENDAR_EVENT_BODY_FIELDS),
-        { actorUserId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
-      );
-      res.json(event);
-    } catch (err) {
-      if (mapCalendarServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.put(
+    '/calendar-events/:id',
+    requirePermission('calendar.write'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const event = await calendarService.updateEvent(
+          req.dbClient,
+          req.params.id,
+          bodyToFields(req.body || {}, CALENDAR_EVENT_BODY_FIELDS),
+          { actorUserId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
+        );
+        res.json(event);
+      } catch (err) {
+        if (mapCalendarServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.delete('/calendar-events/:id', requirePermission('calendar.write'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      await calendarService.deleteEvent(req.dbClient, req.params.id, { actorUserId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId });
-      res.status(204).end();
-    } catch (err) {
-      if (mapCalendarServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.delete(
+    '/calendar-events/:id',
+    requirePermission('calendar.write'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        await calendarService.deleteEvent(req.dbClient, req.params.id, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+          collegeId: req.collegeId,
+        });
+        res.status(204).end();
+      } catch (err) {
+        if (mapCalendarServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   return router;
 }

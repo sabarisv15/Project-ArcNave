@@ -54,7 +54,7 @@ export function Greeting() {
           state="static"
           className={cn(
             'w-[44px] h-[44px] sm:w-[56px] sm:h-[56px] text-ink-soft',
-            animate && 'animate-velTravel motion-reduce:animate-none'
+            animate && 'animate-velTravel motion-reduce:animate-none',
           )}
         />
         <h1 className="m-0 text-[25px] font-[600] tracking-[-.015em]">Good afternoon, Priya.</h1>

@@ -32,7 +32,11 @@ const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 // not a security credential) without ever holding the plaintext value
 // anywhere past this one line.
 function hashIdentifier(value) {
-  return crypto.createHash('sha256').update(String(value || '')).digest('hex').slice(0, 16);
+  return crypto
+    .createHash('sha256')
+    .update(String(value || ''))
+    .digest('hex')
+    .slice(0, 16);
 }
 
 // For the four pre-auth routes in routes/auth.js: keys on IP + a

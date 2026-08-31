@@ -89,9 +89,7 @@ async function runTenantJob(collegeId, jobId, handler) {
   }
 }
 
-async function enqueue(client, {
-  collegeId, name, jobType, payload, createdByUserId,
-}, handler = async () => {}) {
+async function enqueue(client, { collegeId, name, jobType, payload, createdByUserId }, handler = async () => {}) {
   const job = await backgroundJobRepository.create(client, {
     collegeId,
     name: name || 'background_job',

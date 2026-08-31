@@ -26,10 +26,9 @@ async function create(client, fields) {
 }
 
 async function findByCollege(client, collegeId) {
-  const result = await client.query(
-    'SELECT * FROM onboarding_document_templates WHERE college_id = $1 ORDER BY name',
-    [collegeId],
-  );
+  const result = await client.query('SELECT * FROM onboarding_document_templates WHERE college_id = $1 ORDER BY name', [
+    collegeId,
+  ]);
   return result.rows;
 }
 

@@ -49,39 +49,47 @@ function bodyToFields(body, fieldMap) {
 function createCollegeProfileRouter() {
   const router = express.Router();
 
-  router.get('/college-profile', requirePermission('college_profile.read'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const profile = await collegeProfileService.getProfile(req.dbClient, req.collegeId);
-    if (profile === null) {
-      res.status(404).json({ detail: `No college found with college_id ${JSON.stringify(req.collegeId)}` });
-      return;
-    }
-    res.json(profile);
-  }));
-
-  router.put('/college-profile', requirePermission('college_profile.update'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    let profile;
-    try {
-      profile = await collegeProfileService.updateProfile(
-        req.dbClient,
-        req.collegeId,
-        bodyToFields(req.body || {}, COLLEGE_PROFILE_BODY_FIELDS),
-        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-    } catch (err) {
-      if (err instanceof collegeProfileService.CollegeProfileValidationError) {
-        res.status(400).json({ detail: err.message });
+  router.get(
+    '/college-profile',
+    requirePermission('college_profile.read'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const profile = await collegeProfileService.getProfile(req.dbClient, req.collegeId);
+      if (profile === null) {
+        res.status(404).json({ detail: `No college found with college_id ${JSON.stringify(req.collegeId)}` });
         return;
       }
-      throw err;
-    }
-    if (profile === null) {
-      res.status(404).json({ detail: `No college found with college_id ${JSON.stringify(req.collegeId)}` });
-      return;
-    }
-    res.json(profile);
-  }));
+      res.json(profile);
+    }),
+  );
+
+  router.put(
+    '/college-profile',
+    requirePermission('college_profile.update'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      let profile;
+      try {
+        profile = await collegeProfileService.updateProfile(
+          req.dbClient,
+          req.collegeId,
+          bodyToFields(req.body || {}, COLLEGE_PROFILE_BODY_FIELDS),
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+      } catch (err) {
+        if (err instanceof collegeProfileService.CollegeProfileValidationError) {
+          res.status(400).json({ detail: err.message });
+          return;
+        }
+        throw err;
+      }
+      if (profile === null) {
+        res.status(404).json({ detail: `No college found with college_id ${JSON.stringify(req.collegeId)}` });
+        return;
+      }
+      res.json(profile);
+    }),
+  );
 
   return router;
 }

@@ -87,10 +87,10 @@ function hostFor(subdomain) {
 async function seedTenant(adminPool, label) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const college = { collegeId: `fac${label}${suffix}`, subdomain: `factenant${label}${suffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [college.collegeId, college.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    college.collegeId,
+    college.subdomain,
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userIds = {};
   for (const username of ['principaluser', 'staffuser', 'teacher1', 'teacher2']) {
@@ -112,10 +112,11 @@ async function seedTenant(adminPool, label) {
   // one for the staff_user_id-scoped list test below.
   for (const username of ['teacher1', 'teacher2']) {
     // eslint-disable-next-line no-await-in-loop
-    await adminPool.query(
-      `INSERT INTO staff (college_id, user_id, full_name) VALUES ($1, $2, $3)`,
-      [college.collegeId, userIds[username], username],
-    );
+    await adminPool.query(`INSERT INTO staff (college_id, user_id, full_name) VALUES ($1, $2, $3)`, [
+      college.collegeId,
+      userIds[username],
+      username,
+    ]);
   }
 
   const class1 = await adminPool.query(
@@ -130,7 +131,10 @@ async function seedTenant(adminPool, label) {
   // classes.tutor_user_id onto the real Position/Account/Occupant
   // fixture.
   const { officialEmail: staffuserClassTutorEmail } = await seedClassTutorPosition(adminPool, {
-    collegeId: college.collegeId, userId: userIds.staffuser, classId: class1.rows[0].id, passwordHash,
+    collegeId: college.collegeId,
+    userId: userIds.staffuser,
+    classId: class1.rows[0].id,
+    passwordHash,
   });
   const class2 = await adminPool.query(
     `INSERT INTO classes (college_id, class_name) VALUES ($1, 'Fac Alloc Class Two') RETURNING id`,
@@ -186,12 +190,10 @@ test('faculty allocation', async (t) => {
   });
 
   async function login(college, username) {
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/auth/login',
-      'POST',
-      { headers: { host: hostFor(college.subdomain) }, body: { username, password: PASSWORD } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/auth/login', 'POST', {
+      headers: { host: hostFor(college.subdomain) },
+      body: { username, password: PASSWORD },
+    });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -208,12 +210,10 @@ test('faculty allocation', async (t) => {
   // it's tutor-derived — Position Occupancy alone (staffuser's
   // personal login) no longer widens read scope either.
   async function loginTutor(college) {
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/position-accounts/login',
-      'POST',
-      { headers: { host: hostFor(college.subdomain) }, body: { official_email: college.classTutorEmail, password: PASSWORD } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/position-accounts/login', 'POST', {
+      headers: { host: hostFor(college.subdomain) },
+      body: { official_email: college.classTutorEmail, password: PASSWORD },
+    });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -223,7 +223,10 @@ test('faculty allocation', async (t) => {
   await t.test('create (assign) returns 201 with the created row, snake_case', async () => {
     const token = await login(collegeA, 'principaluser');
     const resp = await post(baseUrl, '/api/v1/faculty-allocation', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.class1, period_id: collegeA.periodIds.period1, subject: 'DBMS', staff_user_id: collegeA.userIds.teacher1,
+      class_id: collegeA.classIds.class1,
+      period_id: collegeA.periodIds.period1,
+      subject: 'DBMS',
+      staff_user_id: collegeA.userIds.teacher1,
     });
     assert.equal(resp.status, 201);
     assert.equal(resp.body.class_id, collegeA.classIds.class1);
@@ -236,7 +239,9 @@ test('faculty allocation', async (t) => {
   await t.test('create rejects a missing staff_user_id with 400, not a 500', async () => {
     const token = await login(collegeA, 'principaluser');
     const resp = await post(baseUrl, '/api/v1/faculty-allocation', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.class1, period_id: collegeA.periodIds.period2, subject: 'Networks',
+      class_id: collegeA.classIds.class1,
+      period_id: collegeA.periodIds.period2,
+      subject: 'Networks',
     });
     assert.equal(resp.status, 400);
   });
@@ -244,7 +249,10 @@ test('faculty allocation', async (t) => {
   await t.test('create on a duplicate (class_id, period_id) is a real 409', async () => {
     const token = await login(collegeA, 'principaluser');
     const resp = await post(baseUrl, '/api/v1/faculty-allocation', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.class1, period_id: collegeA.periodIds.period1, subject: 'Something Else', staff_user_id: collegeA.userIds.teacher2,
+      class_id: collegeA.classIds.class1,
+      period_id: collegeA.periodIds.period1,
+      subject: 'Something Else',
+      staff_user_id: collegeA.userIds.teacher2,
     });
     assert.equal(resp.status, 409);
   });
@@ -252,7 +260,10 @@ test('faculty allocation', async (t) => {
   await t.test('create double-booking a staff member across two classes at the same period is a real 409', async () => {
     const token = await login(collegeA, 'principaluser');
     const resp = await post(baseUrl, '/api/v1/faculty-allocation', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.class2, period_id: collegeA.periodIds.period1, subject: 'Networks', staff_user_id: collegeA.userIds.teacher1,
+      class_id: collegeA.classIds.class2,
+      period_id: collegeA.periodIds.period1,
+      subject: 'Networks',
+      staff_user_id: collegeA.userIds.teacher1,
     });
     assert.equal(resp.status, 409);
   });
@@ -260,7 +271,10 @@ test('faculty allocation', async (t) => {
   await t.test('create with a nonexistent class_id returns 404, not a 500', async () => {
     const token = await login(collegeA, 'principaluser');
     const resp = await post(baseUrl, '/api/v1/faculty-allocation', headersFor(collegeA, token), {
-      class_id: crypto.randomUUID(), period_id: collegeA.periodIds.period2, subject: 'Ghost', staff_user_id: collegeA.userIds.teacher2,
+      class_id: crypto.randomUUID(),
+      period_id: collegeA.periodIds.period2,
+      subject: 'Ghost',
+      staff_user_id: collegeA.userIds.teacher2,
     });
     assert.equal(resp.status, 404);
   });
@@ -268,7 +282,10 @@ test('faculty allocation', async (t) => {
   await t.test('create with a nonexistent period_id returns 404', async () => {
     const token = await login(collegeA, 'principaluser');
     const resp = await post(baseUrl, '/api/v1/faculty-allocation', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.class2, period_id: crypto.randomUUID(), subject: 'Ghost', staff_user_id: collegeA.userIds.teacher2,
+      class_id: collegeA.classIds.class2,
+      period_id: crypto.randomUUID(),
+      subject: 'Ghost',
+      staff_user_id: collegeA.userIds.teacher2,
     });
     assert.equal(resp.status, 404);
   });
@@ -276,7 +293,10 @@ test('faculty allocation', async (t) => {
   await t.test('create with a nonexistent staff_user_id returns 404', async () => {
     const token = await login(collegeA, 'principaluser');
     const resp = await post(baseUrl, '/api/v1/faculty-allocation', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.class2, period_id: collegeA.periodIds.period2, subject: 'Ghost', staff_user_id: crypto.randomUUID(),
+      class_id: collegeA.classIds.class2,
+      period_id: collegeA.periodIds.period2,
+      subject: 'Ghost',
+      staff_user_id: crypto.randomUUID(),
     });
     assert.equal(resp.status, 404);
   });
@@ -284,7 +304,10 @@ test('faculty allocation', async (t) => {
   await t.test('a second class can share the same period with a different staff member', async () => {
     const token = await login(collegeA, 'principaluser');
     const resp = await post(baseUrl, '/api/v1/faculty-allocation', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.class2, period_id: collegeA.periodIds.period1, subject: 'Networks', staff_user_id: collegeA.userIds.teacher2,
+      class_id: collegeA.classIds.class2,
+      period_id: collegeA.periodIds.period1,
+      subject: 'Networks',
+      staff_user_id: collegeA.userIds.teacher2,
     });
     assert.equal(resp.status, 201);
   });
@@ -292,14 +315,20 @@ test('faculty allocation', async (t) => {
   await t.test('get by id returns 200 for an existing allocation, 404 for an unknown id', async () => {
     const token = await login(collegeA, 'principaluser');
     const created = await post(baseUrl, '/api/v1/faculty-allocation', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.class1, period_id: collegeA.periodIds.period2, subject: 'Library',
+      class_id: collegeA.classIds.class1,
+      period_id: collegeA.periodIds.period2,
+      subject: 'Library',
       staff_user_id: collegeA.userIds.teacher2,
     });
     const found = await get(baseUrl, `/api/v1/faculty-allocation/${created.body.id}`, headersFor(collegeA, token));
     assert.equal(found.status, 200);
     assert.equal(found.body.id, created.body.id);
 
-    const missing = await get(baseUrl, `/api/v1/faculty-allocation/${crypto.randomUUID()}`, headersFor(collegeA, token));
+    const missing = await get(
+      baseUrl,
+      `/api/v1/faculty-allocation/${crypto.randomUUID()}`,
+      headersFor(collegeA, token),
+    );
     assert.equal(missing.status, 404);
   });
 
@@ -319,17 +348,25 @@ test('faculty allocation', async (t) => {
     assert.equal(resp.status, 400);
   });
 
-  await t.test('list by class_id returns that class\'s allocations', async () => {
+  await t.test("list by class_id returns that class's allocations", async () => {
     const token = await login(collegeA, 'principaluser');
-    const resp = await get(baseUrl, `/api/v1/faculty-allocation?class_id=${collegeA.classIds.class1}`, headersFor(collegeA, token));
+    const resp = await get(
+      baseUrl,
+      `/api/v1/faculty-allocation?class_id=${collegeA.classIds.class1}`,
+      headersFor(collegeA, token),
+    );
     assert.equal(resp.status, 200);
     assert.ok(resp.body.length >= 1);
     assert.ok(resp.body.every((row) => row.class_id === collegeA.classIds.class1));
   });
 
-  await t.test('list by staff_user_id returns that staff member\'s allocations', async () => {
+  await t.test("list by staff_user_id returns that staff member's allocations", async () => {
     const token = await login(collegeA, 'principaluser');
-    const resp = await get(baseUrl, `/api/v1/faculty-allocation?staff_user_id=${collegeA.userIds.teacher1}`, headersFor(collegeA, token));
+    const resp = await get(
+      baseUrl,
+      `/api/v1/faculty-allocation?staff_user_id=${collegeA.userIds.teacher1}`,
+      headersFor(collegeA, token),
+    );
     assert.equal(resp.status, 200);
     assert.ok(resp.body.length >= 1);
     assert.ok(resp.body.every((row) => row.staff_user_id === collegeA.userIds.teacher1));
@@ -338,17 +375,28 @@ test('faculty allocation', async (t) => {
   await t.test('delete removes the row and returns 204; a second delete 404s', async () => {
     const token = await login(collegeA, 'principaluser');
     const created = await post(baseUrl, '/api/v1/faculty-allocation', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.class2, period_id: collegeA.periodIds.period2, subject: 'Deletable Subject', staff_user_id: collegeA.userIds.teacher1,
+      class_id: collegeA.classIds.class2,
+      period_id: collegeA.periodIds.period2,
+      subject: 'Deletable Subject',
+      staff_user_id: collegeA.userIds.teacher1,
     });
     assert.equal(created.status, 201);
 
-    const firstDelete = await del(baseUrl, `/api/v1/faculty-allocation/${created.body.id}`, headersFor(collegeA, token));
+    const firstDelete = await del(
+      baseUrl,
+      `/api/v1/faculty-allocation/${created.body.id}`,
+      headersFor(collegeA, token),
+    );
     assert.equal(firstDelete.status, 204);
 
     const getAfter = await get(baseUrl, `/api/v1/faculty-allocation/${created.body.id}`, headersFor(collegeA, token));
     assert.equal(getAfter.status, 404);
 
-    const secondDelete = await del(baseUrl, `/api/v1/faculty-allocation/${created.body.id}`, headersFor(collegeA, token));
+    const secondDelete = await del(
+      baseUrl,
+      `/api/v1/faculty-allocation/${created.body.id}`,
+      headersFor(collegeA, token),
+    );
     assert.equal(secondDelete.status, 404);
   });
 
@@ -357,21 +405,31 @@ test('faculty allocation', async (t) => {
   await t.test('create is rejected for a non-principal role', async () => {
     const token = await login(collegeA, 'staffuser');
     const resp = await post(baseUrl, '/api/v1/faculty-allocation', headersFor(collegeA, token), {
-      class_id: collegeA.classIds.class1, period_id: collegeA.periodIds.period1, subject: 'Rbac Test', staff_user_id: collegeA.userIds.teacher1,
+      class_id: collegeA.classIds.class1,
+      period_id: collegeA.periodIds.period1,
+      subject: 'Rbac Test',
+      staff_user_id: collegeA.userIds.teacher1,
     });
     assert.equal(resp.status, 403);
   });
 
   await t.test('create requires authentication', async () => {
     const resp = await post(baseUrl, '/api/v1/faculty-allocation', headersFor(collegeA), {
-      class_id: collegeA.classIds.class1, period_id: collegeA.periodIds.period1, subject: 'Rbac Test', staff_user_id: collegeA.userIds.teacher1,
+      class_id: collegeA.classIds.class1,
+      period_id: collegeA.periodIds.period1,
+      subject: 'Rbac Test',
+      staff_user_id: collegeA.userIds.teacher1,
     });
     assert.equal(resp.status, 401);
   });
 
   await t.test('read is allowed for the L4 Class Tutor Position Account login, not just principal', async () => {
     const tutorToken = await loginTutor(collegeA);
-    const resp = await get(baseUrl, `/api/v1/faculty-allocation?class_id=${collegeA.classIds.class1}`, headersFor(collegeA, tutorToken));
+    const resp = await get(
+      baseUrl,
+      `/api/v1/faculty-allocation?class_id=${collegeA.classIds.class1}`,
+      headersFor(collegeA, tutorToken),
+    );
     assert.equal(resp.status, 200);
   });
 
@@ -379,14 +437,25 @@ test('faculty allocation', async (t) => {
   // regression case: staffuser genuinely occupies class1's L4 seat,
   // but this request uses staffuser's PERSONAL login. Position
   // Occupancy alone must not widen this read scope either.
-  await t.test('read is rejected for staffuser\'s personal login even though that person currently occupies class1\'s L4 seat', async () => {
-    const staffToken = await login(collegeA, 'staffuser');
-    const resp = await get(baseUrl, `/api/v1/faculty-allocation?class_id=${collegeA.classIds.class1}`, headersFor(collegeA, staffToken));
-    assert.equal(resp.status, 403);
-  });
+  await t.test(
+    "read is rejected for staffuser's personal login even though that person currently occupies class1's L4 seat",
+    async () => {
+      const staffToken = await login(collegeA, 'staffuser');
+      const resp = await get(
+        baseUrl,
+        `/api/v1/faculty-allocation?class_id=${collegeA.classIds.class1}`,
+        headersFor(collegeA, staffToken),
+      );
+      assert.equal(resp.status, 403);
+    },
+  );
 
   await t.test('read requires authentication', async () => {
-    const resp = await get(baseUrl, `/api/v1/faculty-allocation?class_id=${collegeA.classIds.class1}`, headersFor(collegeA));
+    const resp = await get(
+      baseUrl,
+      `/api/v1/faculty-allocation?class_id=${collegeA.classIds.class1}`,
+      headersFor(collegeA),
+    );
     assert.equal(resp.status, 401);
   });
 
@@ -409,7 +478,10 @@ test('faculty allocation', async (t) => {
     );
 
     const respA = await post(baseUrl, '/api/v1/faculty-allocation', headersFor(collegeA, tokenA), {
-      class_id: cls.rows[0].id, period_id: period.rows[0].id, subject: 'Cross Tenant Check', staff_user_id: collegeA.userIds.teacher1,
+      class_id: cls.rows[0].id,
+      period_id: period.rows[0].id,
+      subject: 'Cross Tenant Check',
+      staff_user_id: collegeA.userIds.teacher1,
     });
     assert.equal(respA.status, 201);
 
@@ -438,7 +510,10 @@ test('faculty allocation', async (t) => {
     );
 
     const resp = await post(baseUrl, '/api/v1/faculty-allocation', headersFor(collegeA, token), {
-      class_id: cls.rows[0].id, period_id: period.rows[0].id, subject: 'Audited Subject', staff_user_id: teacher.rows[0].id,
+      class_id: cls.rows[0].id,
+      period_id: period.rows[0].id,
+      subject: 'Audited Subject',
+      staff_user_id: teacher.rows[0].id,
     });
     assert.equal(resp.status, 201);
 

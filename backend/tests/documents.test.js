@@ -99,10 +99,10 @@ function hostFor(subdomain) {
 async function seedTenant(adminPool, label) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const college = { collegeId: `doc${label}${suffix}`, subdomain: `doctenant${label}${suffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [college.collegeId, college.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    college.collegeId,
+    college.subdomain,
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userIds = {};
   for (const [username, role] of [
@@ -172,24 +172,22 @@ test('documents', async (t) => {
     // only emptied. Works the same whether documentStorageRoot is a
     // plain directory (local, non-Docker test runs) or a volume mount.
     const entries = await fs.readdir(config.documentStorageRoot).catch(() => []);
-    await Promise.all(entries.map((entry) => fs.rm(
-      path.join(config.documentStorageRoot, entry),
-      { recursive: true, force: true },
-    )));
+    await Promise.all(
+      entries.map((entry) => fs.rm(path.join(config.documentStorageRoot, entry), { recursive: true, force: true })),
+    );
     const backupEntries = await fs.readdir(config.documentBackupRoot).catch(() => []);
-    await Promise.all(backupEntries.map((entry) => fs.rm(
-      path.join(config.documentBackupRoot, entry),
-      { recursive: true, force: true },
-    )));
+    await Promise.all(
+      backupEntries.map((entry) =>
+        fs.rm(path.join(config.documentBackupRoot, entry), { recursive: true, force: true }),
+      ),
+    );
   });
 
   async function login(college, username) {
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/auth/login',
-      'POST',
-      { headers: { host: hostFor(college.subdomain) }, body: { username, password: PASSWORD } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/auth/login', 'POST', {
+      headers: { host: hostFor(college.subdomain) },
+      body: { username, password: PASSWORD },
+    });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -205,7 +203,10 @@ test('documents', async (t) => {
   await t.test('principal uploads a document: 201, real bytes land on disk, row matches', async () => {
     const token = await login(collegeA, 'principaluser');
     const resp = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {
-      student_id: collegeA.studentId, doc_type: 'aadhaar', file_name: 'aadhaar.pdf', mime_type: 'application/pdf',
+      student_id: collegeA.studentId,
+      doc_type: 'aadhaar',
+      file_name: 'aadhaar.pdf',
+      mime_type: 'application/pdf',
       file_base64: fileBytes.toString('base64'),
     });
     assert.equal(resp.status, 201);
@@ -230,40 +231,55 @@ test('documents', async (t) => {
   // to ~75kb of raw file after base64 overhead. This upload is ~1MB —
   // comfortably above that old effective cap, comfortably below the
   // real 15mb limit now enforced by tenantApp.js's path-scoped parser.
-  await t.test('upload accepts a file well above the old ~75kb effective cap (real 15mb limit now applies)', async () => {
-    const token = await login(collegeA, 'principaluser');
-    const bigFileBytes = Buffer.alloc(1024 * 1024, 'A'); // 1MB
-    const resp = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {
-      student_id: collegeA.studentId, doc_type: 'aadhaar', file_name: 'big.pdf', mime_type: 'application/pdf',
-      file_base64: bigFileBytes.toString('base64'),
-    });
-    assert.equal(resp.status, 201);
-    assert.equal(resp.body.file_size_bytes, String(bigFileBytes.length));
-  });
+  await t.test(
+    'upload accepts a file well above the old ~75kb effective cap (real 15mb limit now applies)',
+    async () => {
+      const token = await login(collegeA, 'principaluser');
+      const bigFileBytes = Buffer.alloc(1024 * 1024, 'A'); // 1MB
+      const resp = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {
+        student_id: collegeA.studentId,
+        doc_type: 'aadhaar',
+        file_name: 'big.pdf',
+        mime_type: 'application/pdf',
+        file_base64: bigFileBytes.toString('base64'),
+      });
+      assert.equal(resp.status, 201);
+      assert.equal(resp.body.file_size_bytes, String(bigFileBytes.length));
+    },
+  );
 
-  await t.test('upload still rejects a body genuinely over the 15mb limit — not accidentally unbounded now', async () => {
-    const token = await login(collegeA, 'principaluser');
-    const tooBigBytes = Buffer.alloc(16 * 1024 * 1024, 'A'); // 16MB raw -> >15mb base64
-    const resp = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {
-      student_id: collegeA.studentId, doc_type: 'aadhaar', file_name: 'toobig.pdf', mime_type: 'application/pdf',
-      file_base64: tooBigBytes.toString('base64'),
-    });
-    // 500, not 413: middleware/errorHandler.js always responds 500 for
-    // any unhandled error regardless of the error's own status code
-    // (body-parser's PayloadTooLargeError does carry a real .status of
-    // 413, but this app's generic error handler doesn't look at it) —
-    // pre-existing, consistent behavior for every unhandled error in
-    // this codebase, not something this fix changed or should change
-    // here. The actual claim this test verifies is the one that
-    // matters for Fix 7: the request is genuinely REJECTED past 15mb,
-    // not silently accepted as if the limit were unbounded.
-    assert.equal(resp.status, 500);
-  });
+  await t.test(
+    'upload still rejects a body genuinely over the 15mb limit — not accidentally unbounded now',
+    async () => {
+      const token = await login(collegeA, 'principaluser');
+      const tooBigBytes = Buffer.alloc(16 * 1024 * 1024, 'A'); // 16MB raw -> >15mb base64
+      const resp = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {
+        student_id: collegeA.studentId,
+        doc_type: 'aadhaar',
+        file_name: 'toobig.pdf',
+        mime_type: 'application/pdf',
+        file_base64: tooBigBytes.toString('base64'),
+      });
+      // 500, not 413: middleware/errorHandler.js always responds 500 for
+      // any unhandled error regardless of the error's own status code
+      // (body-parser's PayloadTooLargeError does carry a real .status of
+      // 413, but this app's generic error handler doesn't look at it) —
+      // pre-existing, consistent behavior for every unhandled error in
+      // this codebase, not something this fix changed or should change
+      // here. The actual claim this test verifies is the one that
+      // matters for Fix 7: the request is genuinely REJECTED past 15mb,
+      // not silently accepted as if the limit were unbounded.
+      assert.equal(resp.status, 500);
+    },
+  );
 
   await t.test('upload rejects a missing file_base64 with 400, not a 500', async () => {
     const token = await login(collegeA, 'principaluser');
     const resp = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {
-      student_id: collegeA.studentId, doc_type: 'photo', file_name: 'p.jpg', mime_type: 'image/jpeg',
+      student_id: collegeA.studentId,
+      doc_type: 'photo',
+      file_name: 'p.jpg',
+      mime_type: 'image/jpeg',
     });
     assert.equal(resp.status, 400);
   });
@@ -271,7 +287,10 @@ test('documents', async (t) => {
   await t.test('upload rejects a missing doc_type with 400', async () => {
     const token = await login(collegeA, 'principaluser');
     const resp = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {
-      student_id: collegeA.studentId, file_name: 'p.jpg', mime_type: 'image/jpeg', file_base64: fileBytes.toString('base64'),
+      student_id: collegeA.studentId,
+      file_name: 'p.jpg',
+      mime_type: 'image/jpeg',
+      file_base64: fileBytes.toString('base64'),
     });
     assert.equal(resp.status, 400);
   });
@@ -279,7 +298,11 @@ test('documents', async (t) => {
   await t.test('upload with a nonexistent student_id returns 404, not a 500', async () => {
     const token = await login(collegeA, 'principaluser');
     const resp = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {
-      student_id: crypto.randomUUID(), doc_type: 'photo', file_name: 'p.jpg', mime_type: 'image/jpeg', file_base64: fileBytes.toString('base64'),
+      student_id: crypto.randomUUID(),
+      doc_type: 'photo',
+      file_name: 'p.jpg',
+      mime_type: 'image/jpeg',
+      file_base64: fileBytes.toString('base64'),
     });
     assert.equal(resp.status, 404);
   });
@@ -287,7 +310,11 @@ test('documents', async (t) => {
   await t.test('staff (non-principal) cannot upload: 403', async () => {
     const token = await login(collegeA, 'staffuser');
     const resp = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {
-      student_id: collegeA.studentId, doc_type: 'photo', file_name: 'p.jpg', mime_type: 'image/jpeg', file_base64: fileBytes.toString('base64'),
+      student_id: collegeA.studentId,
+      doc_type: 'photo',
+      file_name: 'p.jpg',
+      mime_type: 'image/jpeg',
+      file_base64: fileBytes.toString('base64'),
     });
     assert.equal(resp.status, 403);
   });
@@ -295,31 +322,50 @@ test('documents', async (t) => {
   await t.test('GET /documents/:id returns the metadata row', async () => {
     const token = await login(collegeA, 'principaluser');
     const uploaded = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {
-      student_id: collegeA.studentId, doc_type: 'birth_cert', file_name: 'birth.pdf', mime_type: 'application/pdf', file_base64: fileBytes.toString('base64'),
+      student_id: collegeA.studentId,
+      doc_type: 'birth_cert',
+      file_name: 'birth.pdf',
+      mime_type: 'application/pdf',
+      file_base64: fileBytes.toString('base64'),
     });
     const resp = await get(baseUrl, `/api/v1/documents/${uploaded.body.id}`, headersFor(collegeA, token));
     assert.equal(resp.status, 200);
     assert.equal(resp.body.id, uploaded.body.id);
   });
 
-  await t.test('GET /documents/:id 404s for a tenant that does not own it (RLS via a real cross-tenant attempt)', async () => {
-    const tokenA = await login(collegeA, 'principaluser');
-    const uploaded = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, tokenA), {
-      student_id: collegeA.studentId, doc_type: 'income_cert', file_name: 'income.pdf', mime_type: 'application/pdf', file_base64: fileBytes.toString('base64'),
-    });
+  await t.test(
+    'GET /documents/:id 404s for a tenant that does not own it (RLS via a real cross-tenant attempt)',
+    async () => {
+      const tokenA = await login(collegeA, 'principaluser');
+      const uploaded = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, tokenA), {
+        student_id: collegeA.studentId,
+        doc_type: 'income_cert',
+        file_name: 'income.pdf',
+        mime_type: 'application/pdf',
+        file_base64: fileBytes.toString('base64'),
+      });
 
-    const tokenB = await login(collegeB, 'principaluser');
-    const resp = await get(baseUrl, `/api/v1/documents/${uploaded.body.id}`, headersFor(collegeB, tokenB));
-    assert.equal(resp.status, 404);
-  });
+      const tokenB = await login(collegeB, 'principaluser');
+      const resp = await get(baseUrl, `/api/v1/documents/${uploaded.body.id}`, headersFor(collegeB, tokenB));
+      assert.equal(resp.status, 404);
+    },
+  );
 
   await t.test('GET /documents/:id/download streams the exact original bytes with correct headers', async () => {
     const token = await login(collegeA, 'principaluser');
     const uploaded = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {
-      student_id: collegeA.studentId, doc_type: 'transfer_cert', file_name: 'transfer.pdf', mime_type: 'application/pdf', file_base64: fileBytes.toString('base64'),
+      student_id: collegeA.studentId,
+      doc_type: 'transfer_cert',
+      file_name: 'transfer.pdf',
+      mime_type: 'application/pdf',
+      file_base64: fileBytes.toString('base64'),
     });
 
-    const resp = await requestRaw(baseUrl, `/api/v1/documents/${uploaded.body.id}/download`, headersFor(collegeA, token));
+    const resp = await requestRaw(
+      baseUrl,
+      `/api/v1/documents/${uploaded.body.id}/download`,
+      headersFor(collegeA, token),
+    );
     assert.equal(resp.status, 200);
     assert.equal(resp.headers['content-type'], 'application/pdf');
     assert.match(resp.headers['content-disposition'], /transfer\.pdf/);
@@ -330,7 +376,11 @@ test('documents', async (t) => {
     const token = await login(collegeA, 'principaluser');
     const textBytes = Buffer.from('OCR readable certificate text');
     const uploaded = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {
-      student_id: collegeA.studentId, doc_type: 'certificate', file_name: 'ocr.txt', mime_type: 'text/plain', file_base64: textBytes.toString('base64'),
+      student_id: collegeA.studentId,
+      doc_type: 'certificate',
+      file_name: 'ocr.txt',
+      mime_type: 'text/plain',
+      file_base64: textBytes.toString('base64'),
     });
     assert.equal(uploaded.status, 201);
 
@@ -344,14 +394,24 @@ test('documents', async (t) => {
     const token = await login(collegeA, 'principaluser');
     const maliciousName = 'evil.pdf"\r\nX-Injected: yes';
     const uploaded = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {
-      student_id: collegeA.studentId, doc_type: 'photo', file_name: maliciousName, mime_type: 'application/pdf', file_base64: fileBytes.toString('base64'),
+      student_id: collegeA.studentId,
+      doc_type: 'photo',
+      file_name: maliciousName,
+      mime_type: 'application/pdf',
+      file_base64: fileBytes.toString('base64'),
     });
     assert.equal(uploaded.status, 201);
 
-    const resp = await requestRaw(baseUrl, `/api/v1/documents/${uploaded.body.id}/download`, headersFor(collegeA, token));
+    const resp = await requestRaw(
+      baseUrl,
+      `/api/v1/documents/${uploaded.body.id}/download`,
+      headersFor(collegeA, token),
+    );
     assert.equal(resp.status, 200);
     assert.equal(resp.headers['x-injected'], undefined, 'CRLF in file_name must not inject a new header');
-    assert.ok(!resp.headers['content-disposition'].includes('\r') && !resp.headers['content-disposition'].includes('\n'));
+    assert.ok(
+      !resp.headers['content-disposition'].includes('\r') && !resp.headers['content-disposition'].includes('\n'),
+    );
   });
 
   await t.test('GET /documents?student_id=... lists every document for that student, newest first', async () => {
@@ -372,11 +432,16 @@ test('documents', async (t) => {
   await t.test('POST /documents/:id/review verifies a document and stamps the reviewer', async () => {
     const token = await login(collegeA, 'principaluser');
     const uploaded = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {
-      student_id: collegeA.studentId, doc_type: 'community_cert', file_name: 'community.pdf', mime_type: 'application/pdf', file_base64: fileBytes.toString('base64'),
+      student_id: collegeA.studentId,
+      doc_type: 'community_cert',
+      file_name: 'community.pdf',
+      mime_type: 'application/pdf',
+      file_base64: fileBytes.toString('base64'),
     });
 
     const resp = await post(baseUrl, `/api/v1/documents/${uploaded.body.id}/review`, headersFor(collegeA, token), {
-      status: 'verified', remarks: 'Checked against original',
+      status: 'verified',
+      remarks: 'Checked against original',
     });
     assert.equal(resp.status, 200);
     assert.equal(resp.body.status, 'verified');
@@ -387,33 +452,48 @@ test('documents', async (t) => {
   await t.test('review rejects an unknown status with 400', async () => {
     const token = await login(collegeA, 'principaluser');
     const uploaded = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {
-      student_id: collegeA.studentId, doc_type: 'disability_cert', file_name: 'd.pdf', mime_type: 'application/pdf', file_base64: fileBytes.toString('base64'),
+      student_id: collegeA.studentId,
+      doc_type: 'disability_cert',
+      file_name: 'd.pdf',
+      mime_type: 'application/pdf',
+      file_base64: fileBytes.toString('base64'),
     });
-    const resp = await post(baseUrl, `/api/v1/documents/${uploaded.body.id}/review`, headersFor(collegeA, token), { status: 'uploaded' });
+    const resp = await post(baseUrl, `/api/v1/documents/${uploaded.body.id}/review`, headersFor(collegeA, token), {
+      status: 'uploaded',
+    });
     assert.equal(resp.status, 400);
   });
 
   await t.test('review on a nonexistent id returns 404', async () => {
     const token = await login(collegeA, 'principaluser');
-    const resp = await post(baseUrl, `/api/v1/documents/${crypto.randomUUID()}/review`, headersFor(collegeA, token), { status: 'verified' });
+    const resp = await post(baseUrl, `/api/v1/documents/${crypto.randomUUID()}/review`, headersFor(collegeA, token), {
+      status: 'verified',
+    });
     assert.equal(resp.status, 404);
   });
 
-  await t.test('DELETE /documents/:id soft-deletes: 204, then a 404 on re-fetch, but the file stays on disk', async () => {
-    const token = await login(collegeA, 'principaluser');
-    const uploaded = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {
-      student_id: collegeA.studentId, doc_type: 'scholarship_cert', file_name: 's.pdf', mime_type: 'application/pdf', file_base64: fileBytes.toString('base64'),
-    });
+  await t.test(
+    'DELETE /documents/:id soft-deletes: 204, then a 404 on re-fetch, but the file stays on disk',
+    async () => {
+      const token = await login(collegeA, 'principaluser');
+      const uploaded = await post(baseUrl, '/api/v1/documents', headersFor(collegeA, token), {
+        student_id: collegeA.studentId,
+        doc_type: 'scholarship_cert',
+        file_name: 's.pdf',
+        mime_type: 'application/pdf',
+        file_base64: fileBytes.toString('base64'),
+      });
 
-    const delResp = await del(baseUrl, `/api/v1/documents/${uploaded.body.id}`, headersFor(collegeA, token));
-    assert.equal(delResp.status, 204);
+      const delResp = await del(baseUrl, `/api/v1/documents/${uploaded.body.id}`, headersFor(collegeA, token));
+      assert.equal(delResp.status, 204);
 
-    const getResp = await get(baseUrl, `/api/v1/documents/${uploaded.body.id}`, headersFor(collegeA, token));
-    assert.equal(getResp.status, 404);
+      const getResp = await get(baseUrl, `/api/v1/documents/${uploaded.body.id}`, headersFor(collegeA, token));
+      assert.equal(getResp.status, 404);
 
-    const restored = await fileStorage.readFile(uploaded.body.storage_path);
-    assert.ok(restored.equals(fileBytes), 'soft-delete must not remove the recoverable file bytes');
-  });
+      const restored = await fileStorage.readFile(uploaded.body.storage_path);
+      assert.ok(restored.equals(fileBytes), 'soft-delete must not remove the recoverable file bytes');
+    },
+  );
 
   await t.test('delete on a nonexistent id returns 404', async () => {
     const token = await login(collegeA, 'principaluser');

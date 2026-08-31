@@ -77,10 +77,10 @@ function hostFor(subdomain) {
 async function seedTenant(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const college = { collegeId: `aimem${suffix}`, subdomain: `aimemtenant${suffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [college.collegeId, college.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    college.collegeId,
+    college.subdomain,
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   for (const [username, role] of [
     ['userone', 'principal'],
@@ -148,38 +148,47 @@ test('ai memory routes', async (t) => {
     assert.deepEqual(resp.body, []);
   });
 
-  await t.test('enabling consent, then round-tripping a memory entry through GET/PUT preferences directly (human path, not the AI tool)', async () => {
-    const token = await login('userone');
-    const consentResp = await put(baseUrl, '/api/v1/ai/memory/consent', headersFor(token), { consented: true });
-    assert.equal(consentResp.status, 200);
-    assert.equal(consentResp.body.consented, true);
-    assert.ok(consentResp.body.consentedAt);
-  });
+  await t.test(
+    'enabling consent, then round-tripping a memory entry through GET/PUT preferences directly (human path, not the AI tool)',
+    async () => {
+      const token = await login('userone');
+      const consentResp = await put(baseUrl, '/api/v1/ai/memory/consent', headersFor(token), { consented: true });
+      assert.equal(consentResp.status, 200);
+      assert.equal(consentResp.body.consented, true);
+      assert.ok(consentResp.body.consentedAt);
+    },
+  );
 
-  await t.test('revoking consent wipes previously stored memory (set via direct DB insert to simulate a prior AI write)', async () => {
-    const token = await login('userone');
-    await put(baseUrl, '/api/v1/ai/memory/consent', headersFor(token), { consented: true });
+  await t.test(
+    'revoking consent wipes previously stored memory (set via direct DB insert to simulate a prior AI write)',
+    async () => {
+      const token = await login('userone');
+      await put(baseUrl, '/api/v1/ai/memory/consent', headersFor(token), { consented: true });
 
-    // Simulate what ai_memory_remember would have written (the AI tool path
-    // itself is proven separately in ai-memory-service.test.js) — insert
-    // directly as an authenticated app-role write under this tenant.
-    const userRow = await adminPool.query('SELECT id FROM users WHERE college_id = $1 AND username = $2', [college.collegeId, 'userone']);
-    const userId = userRow.rows[0].id;
-    await adminPool.query(
-      `INSERT INTO ai_scoped_memory (college_id, user_id, memory_type, value) VALUES ($1, $2, 'communication_style', '"concise"')`,
-      [college.collegeId, userId],
-    );
+      // Simulate what ai_memory_remember would have written (the AI tool path
+      // itself is proven separately in ai-memory-service.test.js) — insert
+      // directly as an authenticated app-role write under this tenant.
+      const userRow = await adminPool.query('SELECT id FROM users WHERE college_id = $1 AND username = $2', [
+        college.collegeId,
+        'userone',
+      ]);
+      const userId = userRow.rows[0].id;
+      await adminPool.query(
+        `INSERT INTO ai_scoped_memory (college_id, user_id, memory_type, value) VALUES ($1, $2, 'communication_style', '"concise"')`,
+        [college.collegeId, userId],
+      );
 
-    const beforeRevoke = await get(baseUrl, '/api/v1/ai/memory', headersFor(token));
-    assert.equal(beforeRevoke.body.length, 1);
+      const beforeRevoke = await get(baseUrl, '/api/v1/ai/memory', headersFor(token));
+      assert.equal(beforeRevoke.body.length, 1);
 
-    const revokeResp = await put(baseUrl, '/api/v1/ai/memory/consent', headersFor(token), { consented: false });
-    assert.equal(revokeResp.status, 200);
-    assert.equal(revokeResp.body.consented, false);
+      const revokeResp = await put(baseUrl, '/api/v1/ai/memory/consent', headersFor(token), { consented: false });
+      assert.equal(revokeResp.status, 200);
+      assert.equal(revokeResp.body.consented, false);
 
-    const afterRevoke = await get(baseUrl, '/api/v1/ai/memory', headersFor(token));
-    assert.deepEqual(afterRevoke.body, []);
-  });
+      const afterRevoke = await get(baseUrl, '/api/v1/ai/memory', headersFor(token));
+      assert.deepEqual(afterRevoke.body, []);
+    },
+  );
 
   await t.test('DELETE /ai/memory/:memoryType always succeeds, even with no consent on record', async () => {
     const token = await login('userone');
@@ -220,7 +229,10 @@ test('ai memory routes', async (t) => {
 
     // Simulate what ai_memory_remember_fact would have written (the AI
     // tool path itself is proven separately in ai-memory-service.test.js).
-    const userRow = await adminPool.query('SELECT id FROM users WHERE college_id = $1 AND username = $2', [college.collegeId, 'userone']);
+    const userRow = await adminPool.query('SELECT id FROM users WHERE college_id = $1 AND username = $2', [
+      college.collegeId,
+      'userone',
+    ]);
     const userId = userRow.rows[0].id;
     const insertResp = await adminPool.query(
       'INSERT INTO ai_general_memory (college_id, user_id, fact) VALUES ($1, $2, $3) RETURNING id',
@@ -239,25 +251,32 @@ test('ai memory routes', async (t) => {
     assert.deepEqual(afterDelete.body, []);
   });
 
-  await t.test('revoking consent wipes previously stored general facts too, not just the bounded preferences', async () => {
-    const token = await login('userone');
-    await put(baseUrl, '/api/v1/ai/memory/consent', headersFor(token), { consented: true });
+  await t.test(
+    'revoking consent wipes previously stored general facts too, not just the bounded preferences',
+    async () => {
+      const token = await login('userone');
+      await put(baseUrl, '/api/v1/ai/memory/consent', headersFor(token), { consented: true });
 
-    const userRow = await adminPool.query('SELECT id FROM users WHERE college_id = $1 AND username = $2', [college.collegeId, 'userone']);
-    const userId = userRow.rows[0].id;
-    await adminPool.query(
-      'INSERT INTO ai_general_memory (college_id, user_id, fact) VALUES ($1, $2, $3)',
-      [college.collegeId, userId, 'I prefer answers in Tanglish'],
-    );
+      const userRow = await adminPool.query('SELECT id FROM users WHERE college_id = $1 AND username = $2', [
+        college.collegeId,
+        'userone',
+      ]);
+      const userId = userRow.rows[0].id;
+      await adminPool.query('INSERT INTO ai_general_memory (college_id, user_id, fact) VALUES ($1, $2, $3)', [
+        college.collegeId,
+        userId,
+        'I prefer answers in Tanglish',
+      ]);
 
-    const beforeRevoke = await get(baseUrl, '/api/v1/ai/memory/facts', headersFor(token));
-    assert.equal(beforeRevoke.body.length, 1);
+      const beforeRevoke = await get(baseUrl, '/api/v1/ai/memory/facts', headersFor(token));
+      assert.equal(beforeRevoke.body.length, 1);
 
-    await put(baseUrl, '/api/v1/ai/memory/consent', headersFor(token), { consented: false });
+      await put(baseUrl, '/api/v1/ai/memory/consent', headersFor(token), { consented: false });
 
-    const afterRevoke = await get(baseUrl, '/api/v1/ai/memory/facts', headersFor(token));
-    assert.deepEqual(afterRevoke.body, []);
-  });
+      const afterRevoke = await get(baseUrl, '/api/v1/ai/memory/facts', headersFor(token));
+      assert.deepEqual(afterRevoke.body, []);
+    },
+  );
 
   await t.test('DELETE /ai/memory/facts/:factId always succeeds, even with no consent on record', async () => {
     const token = await login('userone');

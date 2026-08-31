@@ -88,10 +88,10 @@ function hostFor(subdomain) {
 async function seedTenant(adminPool, label) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const college = { collegeId: `notifapi${label}${suffix}`, subdomain: `notifapitenant${label}${suffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [college.collegeId, college.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    college.collegeId,
+    college.subdomain,
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userIds = {};
   for (const [username, role] of [
@@ -107,17 +107,20 @@ async function seedTenant(adminPool, label) {
     );
     userIds[username] = result.rows[0].id;
   }
-  await adminPool.query(
-    `INSERT INTO staff (college_id, user_id, full_name) VALUES ($1, $2, 'Test Principal')`,
-    [college.collegeId, userIds.principaluser],
-  );
+  await adminPool.query(`INSERT INTO staff (college_id, user_id, full_name) VALUES ($1, $2, 'Test Principal')`, [
+    college.collegeId,
+    userIds.principaluser,
+  ]);
   await seedPrincipalPosition(adminPool, { collegeId: college.collegeId, userId: userIds.principaluser, passwordHash });
-  const dept = await adminPool.query(
-    'INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id',
-    [college.collegeId, `Notifications API Dept ${suffix}`],
-  );
+  const dept = await adminPool.query('INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id', [
+    college.collegeId,
+    `Notifications API Dept ${suffix}`,
+  ]);
   await seedHodPosition(adminPool, {
-    collegeId: college.collegeId, userId: userIds.hoduser, departmentId: dept.rows[0].id, passwordHash,
+    collegeId: college.collegeId,
+    userId: userIds.hoduser,
+    departmentId: dept.rows[0].id,
+    passwordHash,
   });
 
   return { ...college, userIds };
@@ -153,7 +156,12 @@ test('notifications API', async (t) => {
   });
 
   async function login(username) {
-    const resp = await post(baseUrl, '/api/v1/auth/login', { host: hostFor(college.subdomain) }, { username, password: PASSWORD });
+    const resp = await post(
+      baseUrl,
+      '/api/v1/auth/login',
+      { host: hostFor(college.subdomain) },
+      { username, password: PASSWORD },
+    );
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -165,19 +173,30 @@ test('notifications API', async (t) => {
   }
 
   await t.test('draft requires authentication', async () => {
-    const resp = await post(baseUrl, '/api/v1/notifications', headersFor(null), { channel: 'email', to_address: 'x@example.com', body: 'hi' });
+    const resp = await post(baseUrl, '/api/v1/notifications', headersFor(null), {
+      channel: 'email',
+      to_address: 'x@example.com',
+      body: 'hi',
+    });
     assert.equal(resp.status, 401);
   });
 
   await t.test('staff (not principal/hod) cannot draft: 403', async () => {
     const token = await login('staffuser');
-    const resp = await post(baseUrl, '/api/v1/notifications', headersFor(token), { channel: 'email', to_address: 'x@example.com', body: 'hi' });
+    const resp = await post(baseUrl, '/api/v1/notifications', headersFor(token), {
+      channel: 'email',
+      to_address: 'x@example.com',
+      body: 'hi',
+    });
     assert.equal(resp.status, 403);
   });
 
   await t.test('draft rejects a missing body field with 400, not a 500', async () => {
     const token = await login('hoduser');
-    const resp = await post(baseUrl, '/api/v1/notifications', headersFor(token), { channel: 'email', to_address: 'x@example.com' });
+    const resp = await post(baseUrl, '/api/v1/notifications', headersFor(token), {
+      channel: 'email',
+      to_address: 'x@example.com',
+    });
     assert.equal(resp.status, 400);
   });
 
@@ -186,7 +205,10 @@ test('notifications API', async (t) => {
   await t.test('hod can draft a notification: 201, status Draft', async () => {
     const token = await login('hoduser');
     const resp = await post(baseUrl, '/api/v1/notifications', headersFor(token), {
-      channel: 'email', to_address: 'parent@example.com', subject: 'Fee reminder', body: 'Please pay the pending fee.',
+      channel: 'email',
+      to_address: 'parent@example.com',
+      subject: 'Fee reminder',
+      body: 'Please pay the pending fee.',
     });
     assert.equal(resp.status, 201);
     assert.equal(resp.body.status, 'Draft');
@@ -226,7 +248,12 @@ test('notifications API', async (t) => {
     const notification = listResp.body.find((n) => n.id === notificationId);
 
     const principalToken = await login('principaluser');
-    const approveResp = await post(baseUrl, `/api/v1/workflow-requests/${notification.workflow_request_id}/approve`, headersFor(principalToken), {});
+    const approveResp = await post(
+      baseUrl,
+      `/api/v1/workflow-requests/${notification.workflow_request_id}/approve`,
+      headersFor(principalToken),
+      {},
+    );
     assert.equal(approveResp.status, 200);
     assert.equal(approveResp.body.notification.status, 'Dispatched');
   });

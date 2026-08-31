@@ -19,15 +19,29 @@ const academicService = require('../src/services/academicService');
 
 test('approveTimetableApproval revision creation', async (t) => {
   function mockPendingLookup(t, workflowRequestId = 'wf-1') {
-    const findClassMock = t.mock.method(classRepository, 'findById', async () => ({ id: 'class-1', college_id: 'c1', department_id: 'dept-1' }));
-    const findPendingMock = t.mock.method(workflowService, 'findPendingForEntity', async () => ({ id: workflowRequestId }));
+    const findClassMock = t.mock.method(classRepository, 'findById', async () => ({
+      id: 'class-1',
+      college_id: 'c1',
+      department_id: 'dept-1',
+    }));
+    const findPendingMock = t.mock.method(workflowService, 'findPendingForEntity', async () => ({
+      id: workflowRequestId,
+    }));
     return { findClassMock, findPendingMock };
   }
 
   await t.test('mid-chain approval (still Pending) does not create a revision', async () => {
     const { findClassMock, findPendingMock } = mockPendingLookup(t);
-    const approveMock = t.mock.method(workflowService, 'approveRequest', async () => ({ id: 'wf-1', status: 'Pending', current_step: 2 }));
-    const updateClassMock = t.mock.method(classRepository, 'update', async (client, id, fields) => ({ id, college_id: 'c1', timetable_status: fields.timetableStatus }));
+    const approveMock = t.mock.method(workflowService, 'approveRequest', async () => ({
+      id: 'wf-1',
+      status: 'Pending',
+      current_step: 2,
+    }));
+    const updateClassMock = t.mock.method(classRepository, 'update', async (client, id, fields) => ({
+      id,
+      college_id: 'c1',
+      timetable_status: fields.timetableStatus,
+    }));
     const countMock = t.mock.method(timetableRevisionRepository, 'countForClass');
     const createRevisionMock = t.mock.method(timetableRevisionRepository, 'create');
     t.after(() => {
@@ -47,10 +61,20 @@ test('approveTimetableApproval revision creation', async (t) => {
 
   await t.test('terminal approval creates revision 1 for a class with no prior revisions', async () => {
     const { findClassMock, findPendingMock } = mockPendingLookup(t);
-    const approveMock = t.mock.method(workflowService, 'approveRequest', async () => ({ id: 'wf-1', status: 'Approved' }));
-    const updateClassMock = t.mock.method(classRepository, 'update', async (client, id, fields) => ({ id, college_id: 'c1', timetable_status: fields.timetableStatus }));
+    const approveMock = t.mock.method(workflowService, 'approveRequest', async () => ({
+      id: 'wf-1',
+      status: 'Approved',
+    }));
+    const updateClassMock = t.mock.method(classRepository, 'update', async (client, id, fields) => ({
+      id,
+      college_id: 'c1',
+      timetable_status: fields.timetableStatus,
+    }));
     const countMock = t.mock.method(timetableRevisionRepository, 'countForClass', async () => 0);
-    const createRevisionMock = t.mock.method(timetableRevisionRepository, 'create', async (client, fields) => ({ id: 'rev-1', ...fields }));
+    const createRevisionMock = t.mock.method(timetableRevisionRepository, 'create', async (client, fields) => ({
+      id: 'rev-1',
+      ...fields,
+    }));
     t.after(() => {
       findClassMock.mock.restore();
       findPendingMock.mock.restore();
@@ -68,10 +92,20 @@ test('approveTimetableApproval revision creation', async (t) => {
 
   await t.test('terminal approval numbers the next revision after existing ones', async () => {
     const { findClassMock, findPendingMock } = mockPendingLookup(t);
-    const approveMock = t.mock.method(workflowService, 'approveRequest', async () => ({ id: 'wf-2', status: 'Approved' }));
-    const updateClassMock = t.mock.method(classRepository, 'update', async (client, id, fields) => ({ id, college_id: 'c1', timetable_status: fields.timetableStatus }));
+    const approveMock = t.mock.method(workflowService, 'approveRequest', async () => ({
+      id: 'wf-2',
+      status: 'Approved',
+    }));
+    const updateClassMock = t.mock.method(classRepository, 'update', async (client, id, fields) => ({
+      id,
+      college_id: 'c1',
+      timetable_status: fields.timetableStatus,
+    }));
     const countMock = t.mock.method(timetableRevisionRepository, 'countForClass', async () => 2);
-    const createRevisionMock = t.mock.method(timetableRevisionRepository, 'create', async (client, fields) => ({ id: 'rev-3', ...fields }));
+    const createRevisionMock = t.mock.method(timetableRevisionRepository, 'create', async (client, fields) => ({
+      id: 'rev-3',
+      ...fields,
+    }));
     t.after(() => {
       findClassMock.mock.restore();
       findPendingMock.mock.restore();
@@ -88,7 +122,11 @@ test('approveTimetableApproval revision creation', async (t) => {
 
 test('getEffectiveTimetableRevision / listTimetableRevisions', async (t) => {
   await t.test('getEffectiveTimetableRevision delegates to the repository lookup for the given date', async () => {
-    const findEffectiveMock = t.mock.method(timetableRevisionRepository, 'findEffectiveForDate', async (client, classId, date) => ({ classId, date, revisionNumber: 2 }));
+    const findEffectiveMock = t.mock.method(
+      timetableRevisionRepository,
+      'findEffectiveForDate',
+      async (client, classId, date) => ({ classId, date, revisionNumber: 2 }),
+    );
     t.after(() => findEffectiveMock.mock.restore());
 
     const result = await academicService.getEffectiveTimetableRevision({}, 'class-1', '2026-06-01');
@@ -97,7 +135,10 @@ test('getEffectiveTimetableRevision / listTimetableRevisions', async (t) => {
   });
 
   await t.test('listTimetableRevisions delegates to the repository listing', async () => {
-    const listMock = t.mock.method(timetableRevisionRepository, 'listForClass', async () => [{ revisionNumber: 1 }, { revisionNumber: 2 }]);
+    const listMock = t.mock.method(timetableRevisionRepository, 'listForClass', async () => [
+      { revisionNumber: 1 },
+      { revisionNumber: 2 },
+    ]);
     t.after(() => listMock.mock.restore());
 
     const result = await academicService.listTimetableRevisions({}, 'class-1');

@@ -1,6 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { ATTENDANCE_PERIODS, INITIAL_SESSIONS, PERIOD_BY_ID, getRecordPhase, canLockClassLog } from '../lib/attendanceData';
+import {
+  ATTENDANCE_PERIODS,
+  INITIAL_SESSIONS,
+  PERIOD_BY_ID,
+  getRecordPhase,
+  canLockClassLog,
+} from '../lib/attendanceData';
 import { INCOMING_REQUESTS, ME, MY_REQUESTS, isStaffSelectable } from '../lib/substituteData';
 import { ACTIVE_VERSION_ID } from '../lib/timetableData';
 
@@ -26,13 +32,21 @@ export function AttendanceProvider({ children }) {
   // { [periodId]: { acknowledgedAt, acknowledgedBy } } — an audit trail, not a bare boolean, per the mandatory-acknowledgment rule.
   const [acknowledged, setAcknowledged] = useState(() =>
     Object.fromEntries(
-      ATTENDANCE_PERIODS.filter((p) => p.substituteAcknowledged).map((p) => [p.id, { acknowledgedAt: p.startTime, acknowledgedBy: 'You' }])
-    )
+      ATTENDANCE_PERIODS.filter((p) => p.substituteAcknowledged).map((p) => [
+        p.id,
+        { acknowledgedAt: p.startTime, acknowledgedBy: 'You' },
+      ]),
+    ),
   );
   const [requests, setRequests] = useState(() => {
     const seedAck = (r) =>
       r.direction === 'incoming' && r.status === 'accepted' && r.periodId
-        ? { ...r, acknowledgedAt: ATTENDANCE_PERIODS.find((p) => p.id === r.periodId)?.substituteAcknowledged ? new Date() : null }
+        ? {
+            ...r,
+            acknowledgedAt: ATTENDANCE_PERIODS.find((p) => p.id === r.periodId)?.substituteAcknowledged
+              ? new Date()
+              : null,
+          }
         : { ...r, acknowledgedAt: null };
     return [...INCOMING_REQUESTS, ...MY_REQUESTS].map(seedAck);
   });
@@ -45,7 +59,9 @@ export function AttendanceProvider({ children }) {
    * unless the staff member has deliberately selected an older one to view.
    */
   const [timetableVersionId, setTimetableVersionId] = useState(ACTIVE_VERSION_ID);
-  useEffect(() => { setTimetableVersionId(ACTIVE_VERSION_ID); }, []);
+  useEffect(() => {
+    setTimetableVersionId(ACTIVE_VERSION_ID);
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), TICK_MS);
@@ -59,7 +75,7 @@ export function AttendanceProvider({ children }) {
       if (!period || !session) return null;
       return getRecordPhase(period, session, now);
     },
-    [sessions, now]
+    [sessions, now],
   );
 
   /** Quiet autosave — no toast, just a fresh `lastSavedAt` for the inline "Saved" indicator. Class log fields save in the same record. */
@@ -163,20 +179,29 @@ export function AttendanceProvider({ children }) {
    * *not* acknowledge it. Acknowledgement is a separate, explicit act, and it
    * is what actually unlocks Mark attendance.
    */
-  const acceptRequest = useCallback((id) => {
-    patchRequest(id, { status: 'accepted', resolvedAt: new Date(), acknowledgedAt: null });
-    toast('Substitute duty accepted');
-  }, [patchRequest]);
+  const acceptRequest = useCallback(
+    (id) => {
+      patchRequest(id, { status: 'accepted', resolvedAt: new Date(), acknowledgedAt: null });
+      toast('Substitute duty accepted');
+    },
+    [patchRequest],
+  );
 
-  const declineRequest = useCallback((id) => {
-    patchRequest(id, { status: 'declined', resolvedAt: new Date() });
-    toast('Substitute request declined');
-  }, [patchRequest]);
+  const declineRequest = useCallback(
+    (id) => {
+      patchRequest(id, { status: 'declined', resolvedAt: new Date() });
+      toast('Substitute request declined');
+    },
+    [patchRequest],
+  );
 
-  const cancelRequest = useCallback((id) => {
-    patchRequest(id, { status: 'cancelled', resolvedAt: new Date() });
-    toast('Substitute request cancelled');
-  }, [patchRequest]);
+  const cancelRequest = useCallback(
+    (id) => {
+      patchRequest(id, { status: 'cancelled', resolvedAt: new Date() });
+      toast('Substitute request cancelled');
+    },
+    [patchRequest],
+  );
 
   /**
    * One acknowledgement record, two surfaces: the request row here and the
@@ -188,9 +213,10 @@ export function AttendanceProvider({ children }) {
     setRequests((prev) =>
       prev.map((r) => {
         if (r.id !== id) return r;
-        if (r.periodId) setAcknowledged((ack) => ({ ...ack, [r.periodId]: { acknowledgedAt: at, acknowledgedBy: 'You' } }));
+        if (r.periodId)
+          setAcknowledged((ack) => ({ ...ack, [r.periodId]: { acknowledgedAt: at, acknowledgedBy: 'You' } }));
         return { ...r, acknowledgedAt: at };
-      })
+      }),
     );
     toast('Substitute duty acknowledged');
   }, []);
@@ -220,7 +246,8 @@ export function AttendanceProvider({ children }) {
       {
         id: `req-out-${Date.now()}`,
         direction: 'outgoing',
-        fromStaff: ME.name, fromStaffId: ME.id,
+        fromStaff: ME.name,
+        fromStaffId: ME.id,
         recipientMode: draft.recipientMode,
         toStaffId: draft.recipientMode === 'specific' ? draft.toStaffId : null,
         recipientCount: draft.recipientMode === 'specific' ? 1 : draft.recipientCount,
@@ -229,8 +256,11 @@ export function AttendanceProvider({ children }) {
         slots: draft.slots,
         reason: draft.reason || '',
         status: 'pending',
-        createdAt: new Date(), resolvedAt: null,
-        acceptedBy: null, periodId: null, acknowledgedAt: null,
+        createdAt: new Date(),
+        resolvedAt: null,
+        acceptedBy: null,
+        periodId: null,
+        acknowledgedAt: null,
       },
       ...prev,
     ]);
@@ -240,13 +270,46 @@ export function AttendanceProvider({ children }) {
 
   const value = useMemo(
     () => ({
-      now, sessions, phaseFor,
-      saveDraft, lockAttendance, submitAttendance, requestLateSubmission, requestCorrection, updateClassLog,
-      acknowledged, acknowledgeDuty,
-      requests, acceptRequest, declineRequest, cancelRequest, acknowledgeRequest, createSubstituteRequest,
-      timetableVersionId, setTimetableVersionId,
+      now,
+      sessions,
+      phaseFor,
+      saveDraft,
+      lockAttendance,
+      submitAttendance,
+      requestLateSubmission,
+      requestCorrection,
+      updateClassLog,
+      acknowledged,
+      acknowledgeDuty,
+      requests,
+      acceptRequest,
+      declineRequest,
+      cancelRequest,
+      acknowledgeRequest,
+      createSubstituteRequest,
+      timetableVersionId,
+      setTimetableVersionId,
     }),
-    [now, sessions, phaseFor, saveDraft, lockAttendance, submitAttendance, requestLateSubmission, requestCorrection, updateClassLog, acknowledged, acknowledgeDuty, requests, acceptRequest, declineRequest, cancelRequest, acknowledgeRequest, createSubstituteRequest, timetableVersionId]
+    [
+      now,
+      sessions,
+      phaseFor,
+      saveDraft,
+      lockAttendance,
+      submitAttendance,
+      requestLateSubmission,
+      requestCorrection,
+      updateClassLog,
+      acknowledged,
+      acknowledgeDuty,
+      requests,
+      acceptRequest,
+      declineRequest,
+      cancelRequest,
+      acknowledgeRequest,
+      createSubstituteRequest,
+      timetableVersionId,
+    ],
   );
 
   return <AttendanceContext.Provider value={value}>{children}</AttendanceContext.Provider>;

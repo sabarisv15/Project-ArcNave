@@ -11,7 +11,8 @@ import { documentsApi } from '../api/documents';
 import { formatSize } from '../lib/documentsData';
 import { formatDateDMY } from '../lib/ist';
 
-const GRID = 'grid grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,.8fr)_minmax(0,.6fr)] gap-[12px] items-center';
+const GRID =
+  'grid grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,.8fr)_minmax(0,.6fr)] gap-[12px] items-center';
 
 const SORTS = [
   { key: 'published-desc', label: 'Newest uploaded' },
@@ -77,14 +78,30 @@ export function InstitutionalDocuments() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    const timer = setTimeout(() => {
-      documentsApi
-        .listInstitutionalDocuments({ categoryId: category || undefined, departmentId: department || undefined, search: query || undefined })
-        .then((rows) => { if (!cancelled) setDocuments(Array.isArray(rows) ? rows : []); })
-        .catch(() => { if (!cancelled) toast('Could not load institutional documents.'); })
-        .finally(() => { if (!cancelled) setLoading(false); });
-    }, query ? 250 : 0);
-    return () => { cancelled = true; clearTimeout(timer); };
+    const timer = setTimeout(
+      () => {
+        documentsApi
+          .listInstitutionalDocuments({
+            categoryId: category || undefined,
+            departmentId: department || undefined,
+            search: query || undefined,
+          })
+          .then((rows) => {
+            if (!cancelled) setDocuments(Array.isArray(rows) ? rows : []);
+          })
+          .catch(() => {
+            if (!cancelled) toast('Could not load institutional documents.');
+          })
+          .finally(() => {
+            if (!cancelled) setLoading(false);
+          });
+      },
+      query ? 250 : 0,
+    );
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [category, department, query]);
 
   const categoryById = useMemo(() => new Map(categories.map((c) => [c.id, c.name])), [categories]);
@@ -133,20 +150,29 @@ export function InstitutionalDocuments() {
           onOpenChange={setFiltersOpen}
           activeCount={activeFilters}
           align="end"
-          onClear={() => { setCategory(''); setDepartment(''); }}
+          onClear={() => {
+            setCategory('');
+            setDepartment('');
+          }}
         >
           <div className="grid gap-[12px]">
             <FilterSelect
               label="Category"
               value={category}
               onChange={setCategory}
-              options={[{ value: '', label: 'All categories' }, ...categories.map((c) => ({ value: c.id, label: c.name }))]}
+              options={[
+                { value: '', label: 'All categories' },
+                ...categories.map((c) => ({ value: c.id, label: c.name })),
+              ]}
             />
             <FilterSelect
               label="Department"
               value={department}
               onChange={setDepartment}
-              options={[{ value: '', label: 'All departments' }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
+              options={[
+                { value: '', label: 'All departments' },
+                ...departments.map((d) => ({ value: d.id, label: d.name })),
+              ]}
             />
           </div>
         </FilterPopover>
@@ -175,12 +201,17 @@ export function InstitutionalDocuments() {
               key={d.id}
               type="button"
               onClick={() => setPreview(d)}
-              className={cn(GRID, 'w-full px-[14px] py-[9px] border-b border-line-lighter text-left bg-transparent border-x-0 border-t-0 cursor-pointer hover:bg-tint2 transition-colors duration-150')}
+              className={cn(
+                GRID,
+                'w-full px-[14px] py-[9px] border-b border-line-lighter text-left bg-transparent border-x-0 border-t-0 cursor-pointer hover:bg-tint2 transition-colors duration-150',
+              )}
             >
               <span className="flex items-center gap-[9px] min-w-0">
                 <DocumentIcon node={{ ...d, kind: 'file' }} />
                 <span className="min-w-0">
-                  <span className="block text-[12.5px] font-[500] text-ink truncate" title={d.name}>{d.name}</span>
+                  <span className="block text-[12.5px] font-[500] text-ink truncate" title={d.name}>
+                    {d.name}
+                  </span>
                   <span className="block text-[11px] text-ink-faint tabular-nums">{formatDateDMY(d.publishedAt)}</span>
                 </span>
               </span>
@@ -191,7 +222,10 @@ export function InstitutionalDocuments() {
             </button>
           ))}
           {!loading && rows.length === 0 && (
-            <TableEmptyState title="No results found" hint="Clear a filter or change the search term to see documents." />
+            <TableEmptyState
+              title="No results found"
+              hint="Clear a filter or change the search term to see documents."
+            />
           )}
         </StickyTableShell>
       ) : (
@@ -205,7 +239,9 @@ export function InstitutionalDocuments() {
                 className="flex flex-col gap-[8px] p-[12px] border border-line rounded-[14px] bg-paper text-left cursor-pointer transition-colors duration-150 hover:bg-tint2"
               >
                 <DocumentIcon node={{ ...d, kind: 'file' }} size={20} />
-                <span className="block text-[12.5px] font-[500] text-ink line-clamp-2" title={d.name}>{d.name}</span>
+                <span className="block text-[12.5px] font-[500] text-ink line-clamp-2" title={d.name}>
+                  {d.name}
+                </span>
                 <span className="block text-[11px] text-ink-faint">{d.category}</span>
                 <span className="block text-[11px] text-ink-faint tabular-nums">
                   {formatDateDMY(d.publishedAt)} · {formatSize(d.size)}
@@ -214,7 +250,10 @@ export function InstitutionalDocuments() {
             ))}
           </div>
           {!loading && rows.length === 0 && (
-            <TableEmptyState title="No results found" hint="Clear a filter or change the search term to see documents." />
+            <TableEmptyState
+              title="No results found"
+              hint="Clear a filter or change the search term to see documents."
+            />
           )}
         </div>
       )}

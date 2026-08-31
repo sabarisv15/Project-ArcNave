@@ -39,13 +39,15 @@ export function DrawerShell({ open, onOpenChange, title, contextLine, descriptio
           className={cn(
             'fixed inset-y-0 right-0 z-[121] w-full flex flex-col bg-raised border-l border-line-strong rounded-l-[20px] shadow-dialog outline-none overflow-hidden',
             'data-[state=open]:animate-in data-[state=open]:slide-in-from-right-6 data-[state=open]:fade-in duration-200 ease-out motion-reduce:animate-none',
-            width
+            width,
           )}
         >
           {/* Compact context header — one line of context, never a title block plus a paragraph. */}
           <div className="flex-none flex items-start justify-between gap-[12px] pt-[15px] px-[18px] pb-[12px] border-b border-line">
             <div className="min-w-0">
-              <Dialog.Title className="m-0 text-[14.5px] font-[600] tracking-[-.01em] text-ink truncate">{title}</Dialog.Title>
+              <Dialog.Title className="m-0 text-[14.5px] font-[600] tracking-[-.01em] text-ink truncate">
+                {title}
+              </Dialog.Title>
               {contextLine && (
                 <div className="mt-[3px] text-[11.5px] text-ink-muted truncate tabular-nums" title={contextLine}>
                   {contextLine}
@@ -85,7 +87,8 @@ export const PRIMARY_BTN =
   'flex-none h-[34px] px-[15px] border-0 rounded-[10px] bg-accent text-white font-sans text-[12.5px] font-[500] cursor-pointer transition-colors duration-200 hover:bg-accent-hover active:bg-accent-press';
 export const GHOST_BTN =
   'flex-none h-[34px] px-[13px] border border-line rounded-[10px] bg-paper font-sans text-[12.5px] font-[500] text-ink-soft cursor-pointer transition-colors duration-200 hover:bg-tint2';
-const DISABLED_BTN = 'flex-none h-[34px] px-[15px] border-0 rounded-[10px] bg-frame text-ink-disabled font-sans text-[12.5px] font-[500] cursor-not-allowed';
+const DISABLED_BTN =
+  'flex-none h-[34px] px-[15px] border-0 rounded-[10px] bg-frame text-ink-disabled font-sans text-[12.5px] font-[500] cursor-not-allowed';
 
 const FIELD =
   'w-full font-sans text-[12.5px] text-ink bg-paper border border-line rounded-[10px] px-[11px] py-[8px] outline-none transition-colors duration-200 placeholder:text-ink-faint focus:border-accent-line focus:shadow-[0_0_0_3px_rgba(11,114,133,.1)]';
@@ -108,7 +111,7 @@ function Note({ children, danger }) {
     <div
       className={cn(
         'flex-none mx-[18px] mt-[14px] px-[13px] py-[10px] rounded-[11px] border text-[12px] leading-[1.5]',
-        danger ? 'border-line bg-danger-soft text-danger' : 'border-line bg-paper text-ink-muted'
+        danger ? 'border-line bg-danger-soft text-danger' : 'border-line bg-paper text-ink-muted',
       )}
     >
       {children}
@@ -143,7 +146,10 @@ function RosterReadOnly({ period, session }) {
 function TopicField({ value, onChange, error, inputRef, disabled }) {
   return (
     <div className="flex-none px-[18px] pt-[10px]">
-      <label htmlFor="drawer-topic" className="flex items-baseline gap-[6px] text-[11px] font-[500] uppercase tracking-[.05em] text-ink-faint mb-[5px]">
+      <label
+        htmlFor="drawer-topic"
+        className="flex items-baseline gap-[6px] text-[11px] font-[500] uppercase tracking-[.05em] text-ink-faint mb-[5px]"
+      >
         Topic taught<span className="text-danger">*</span>
         {error && <span className="normal-case tracking-normal font-[500] text-[11px] text-danger">{error}</span>}
       </label>
@@ -157,7 +163,11 @@ function TopicField({ value, onChange, error, inputRef, disabled }) {
         placeholder="e.g. Binary search trees: insertion and traversal"
         aria-required="true"
         aria-invalid={!!error}
-        className={cn(FIELD, 'resize-none min-h-[46px]', error && 'border-danger focus:border-danger focus:shadow-[0_0_0_3px_rgba(180,69,60,.1)]')}
+        className={cn(
+          FIELD,
+          'resize-none min-h-[46px]',
+          error && 'border-danger focus:border-danger focus:shadow-[0_0_0_3px_rgba(180,69,60,.1)]',
+        )}
       />
     </div>
   );
@@ -170,8 +180,12 @@ function ConfirmRail({ title, body, confirmLabel, onConfirm, onCancel }) {
       <div className="text-[12.5px] font-[500] text-ink">{title}</div>
       <p className="mt-[3px] mb-[10px] text-[11.5px] leading-[1.5] text-ink-muted">{body}</p>
       <div className="flex items-center justify-end gap-[8px]">
-        <button type="button" className={GHOST_BTN} onClick={onCancel}>Cancel</button>
-        <button type="button" className={PRIMARY_BTN} onClick={onConfirm}>{confirmLabel}</button>
+        <button type="button" className={GHOST_BTN} onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="button" className={PRIMARY_BTN} onClick={onConfirm}>
+          {confirmLabel}
+        </button>
       </div>
     </div>
   );
@@ -277,7 +291,7 @@ function MarkingBody({ period, session, now, saveDraft, lockAttendance, submitAt
             'flex-none h-[32px] px-[11px] border rounded-[9px] font-sans text-[11.5px] font-[500] whitespace-nowrap transition-colors duration-200',
             absentIds.size === 0
               ? 'border-line bg-tint2 text-ink-disabled cursor-not-allowed'
-              : 'border-line bg-paper text-ink-soft cursor-pointer hover:bg-tint2'
+              : 'border-line bg-paper text-ink-soft cursor-pointer hover:bg-tint2',
           )}
         >
           Mark all present
@@ -288,7 +302,9 @@ function MarkingBody({ period, session, now, saveDraft, lockAttendance, submitAt
         {filtered.map((s) => (
           <StudentRow key={s.id} student={s} present={!absentIds.has(s.id)} onToggle={() => toggle(s.id)} />
         ))}
-        {filtered.length === 0 && <p className="py-[16px] text-[12px] text-ink-faint text-center">No students found for “{query}”.</p>}
+        {filtered.length === 0 && (
+          <p className="py-[16px] text-[12px] text-ink-faint text-center">No students found for “{query}”.</p>
+        )}
       </div>
 
       <TopicField value={topic} onChange={handleTopic} error={topicError} inputRef={topicRef} />
@@ -299,7 +315,12 @@ function MarkingBody({ period, session, now, saveDraft, lockAttendance, submitAt
           body="Locking makes it visible in the Class login. It isn't counted in attendance % until submitted."
           confirmLabel="Lock attendance"
           onCancel={() => setConfirm(null)}
-          onConfirm={() => { autosave.markClean(); lockAttendance(period.id); setConfirm(null); onDone(); }}
+          onConfirm={() => {
+            autosave.markClean();
+            lockAttendance(period.id);
+            setConfirm(null);
+            onDone();
+          }}
         />
       ) : confirm === 'submit' ? (
         <ConfirmRail
@@ -307,14 +328,21 @@ function MarkingBody({ period, session, now, saveDraft, lockAttendance, submitAt
           body="Submitted attendance is included in the attendance percentage. Changes after this need Class Tutor approval."
           confirmLabel="Submit attendance"
           onCancel={() => setConfirm(null)}
-          onConfirm={() => { autosave.markClean(); submitAttendance(period.id); setConfirm(null); onDone(); }}
+          onConfirm={() => {
+            autosave.markClean();
+            submitAttendance(period.id);
+            setConfirm(null);
+            onDone();
+          }}
         />
       ) : (
         <DrawerRail
           meta={
             <span className="block text-[11px] text-ink-faint tabular-nums" aria-live="polite">
               {presentCount} present · {absentIds.size} absent
-              <span className="mx-[5px] text-ink-faint" aria-hidden="true">·</span>
+              <span className="mx-[5px] text-ink-faint" aria-hidden="true">
+                ·
+              </span>
               {autosave.status === 'error' || autosave.status === 'saving' ? (
                 <AutosaveStatus status={autosave.status} onRetry={autosave.retry} />
               ) : usedDraft && !session.lastSavedAt ? (
@@ -325,7 +353,9 @@ function MarkingBody({ period, session, now, saveDraft, lockAttendance, submitAt
             </span>
           }
         >
-          <button type="button" className={GHOST_BTN} onClick={() => commit(absentIds, topic)}>Save draft</button>
+          <button type="button" className={GHOST_BTN} onClick={() => commit(absentIds, topic)}>
+            Save draft
+          </button>
           <button
             type="button"
             className={hasEntries ? PRIMARY_BTN : DISABLED_BTN}
@@ -369,12 +399,22 @@ const TITLES = {
  */
 export function AttendanceActionDrawer({ periodId, onClose }) {
   const {
-    now, sessions, phaseFor, acknowledged, acknowledgeDuty,
-    saveDraft, lockAttendance, submitAttendance, requestLateSubmission, requestCorrection,
+    now,
+    sessions,
+    phaseFor,
+    acknowledged,
+    acknowledgeDuty,
+    saveDraft,
+    lockAttendance,
+    submitAttendance,
+    requestLateSubmission,
+    requestCorrection,
   } = useAttendanceStore();
   const [correctionOpen, setCorrectionOpen] = useState(false);
 
-  useEffect(() => { setCorrectionOpen(false); }, [periodId]);
+  useEffect(() => {
+    setCorrectionOpen(false);
+  }, [periodId]);
 
   const period = periodId ? PERIOD_BY_ID[periodId] : null;
   const session = periodId ? sessions[periodId] : null;
@@ -399,31 +439,48 @@ export function AttendanceActionDrawer({ periodId, onClose }) {
       >
         {!owned && (
           <>
-            <Note>View only · assigned to {period.ownerName ?? 'another staff member'}. Marking is restricted to the period's owner or an approved substitute.</Note>
+            <Note>
+              View only · assigned to {period.ownerName ?? 'another staff member'}. Marking is restricted to the
+              period's owner or an approved substitute.
+            </Note>
             <RosterReadOnly period={period} session={session} />
           </>
         )}
 
         {needsAck && (
           <>
-            <Note>Cover duty for {period.substituteFor}. Acknowledge it to enable attendance marking for this period.</Note>
+            <Note>
+              Cover duty for {period.substituteFor}. Acknowledge it to enable attendance marking for this period.
+            </Note>
             <div className="flex-1" />
-            <DrawerRail meta={<span className="text-[11px] text-ink-faint">Marking stays disabled until you acknowledge this duty.</span>}>
-              <button type="button" className={PRIMARY_BTN} onClick={() => acknowledgeDuty(period.id)}>Acknowledge duty</button>
+            <DrawerRail
+              meta={
+                <span className="text-[11px] text-ink-faint">
+                  Marking stays disabled until you acknowledge this duty.
+                </span>
+              }
+            >
+              <button type="button" className={PRIMARY_BTN} onClick={() => acknowledgeDuty(period.id)}>
+                Acknowledge duty
+              </button>
             </DrawerRail>
           </>
         )}
 
         {canAct && phase === 'not_approved' && (
           <>
-            <Note>Timetable not yet approved. Attendance opens once the timetable is approved — no override is available.</Note>
+            <Note>
+              Timetable not yet approved. Attendance opens once the timetable is approved — no override is available.
+            </Note>
             <div className="flex-1" />
           </>
         )}
 
         {canAct && phase === 'upcoming' && (
           <>
-            <Note>{markingWindowStatusText('upcoming', period, now)} · marking stays open for 30 min from the start.</Note>
+            <Note>
+              {markingWindowStatusText('upcoming', period, now)} · marking stays open for 30 min from the start.
+            </Note>
             <RosterReadOnly period={period} session={session} />
           </>
         )}
@@ -445,11 +502,19 @@ export function AttendanceActionDrawer({ periodId, onClose }) {
           <>
             <Note danger>The marking window has closed. Submitting this period now requires an approval request.</Note>
             <RosterReadOnly period={period} session={session} />
-            <DrawerRail meta={<span className="text-[11px] text-ink-faint">{session.classLog.topicTaught || 'No topic recorded'}</span>}>
+            <DrawerRail
+              meta={
+                <span className="text-[11px] text-ink-faint">
+                  {session.classLog.topicTaught || 'No topic recorded'}
+                </span>
+              }
+            >
               {session.lateSubmissionRequested ? (
                 <span className="text-[12px] font-[500] text-ink-muted">Late submission requested</span>
               ) : (
-                <button type="button" className={GHOST_BTN} onClick={() => requestLateSubmission(period.id)}>Request late submission</button>
+                <button type="button" className={GHOST_BTN} onClick={() => requestLateSubmission(period.id)}>
+                  Request late submission
+                </button>
               )}
             </DrawerRail>
           </>
@@ -457,27 +522,47 @@ export function AttendanceActionDrawer({ periodId, onClose }) {
 
         {canAct && phase === 'locked_before_window' && (
           <>
-            <Note>Locked · submission opens at {formatTime12(session.submissionWindowOpensAt)}. Visible in the Class login, not yet counted in attendance %.</Note>
+            <Note>
+              Locked · submission opens at {formatTime12(session.submissionWindowOpensAt)}. Visible in the Class login,
+              not yet counted in attendance %.
+            </Note>
             <RosterReadOnly period={period} session={session} />
           </>
         )}
 
         {canAct && phase === 'locked_ready' && (
-          <LockedReadyBody period={period} session={session} now={now} onSubmit={() => { submitAttendance(period.id); onClose(); }} />
+          <LockedReadyBody
+            period={period}
+            session={session}
+            now={now}
+            onSubmit={() => {
+              submitAttendance(period.id);
+              onClose();
+            }}
+          />
         )}
 
         {canAct && phase === 'submitted' && (
           <>
             {correction?.status === 'pending' && <Note>Correction requested. Pending Class Tutor approval.</Note>}
-            {correction?.status === 'approved' && <Note>Correction approved. This record shows the corrected values.</Note>}
+            {correction?.status === 'approved' && (
+              <Note>Correction approved. This record shows the corrected values.</Note>
+            )}
             {correction?.status === 'rejected' && <Note>Correction rejected. The recorded attendance stands.</Note>}
             {!correction && (
-              <Note>Submitted {formatDateLabel(session.submittedAt, now)} · {formatTime(session.submittedAt)} · included in attendance %.</Note>
+              <Note>
+                Submitted {formatDateLabel(session.submittedAt, now)} · {formatTime(session.submittedAt)} · included in
+                attendance %.
+              </Note>
             )}
             <RosterReadOnly period={period} session={session} />
-            <DrawerRail meta={<span className="text-[11px] text-ink-faint truncate block">{session.classLog.topicTaught}</span>}>
+            <DrawerRail
+              meta={<span className="text-[11px] text-ink-faint truncate block">{session.classLog.topicTaught}</span>}
+            >
               {(!correction || correction.status !== 'pending') && (
-                <button type="button" className={GHOST_BTN} onClick={() => setCorrectionOpen(true)}>Request a correction</button>
+                <button type="button" className={GHOST_BTN} onClick={() => setCorrectionOpen(true)}>
+                  Request a correction
+                </button>
               )}
             </DrawerRail>
           </>
@@ -486,14 +571,19 @@ export function AttendanceActionDrawer({ periodId, onClose }) {
         {canAct && phase === 'submission_expired' && (
           <>
             <Note danger>
-              Not submitted before {formatTime12(session.submissionWindowClosesAt)} on {formatFullDate(session.submissionWindowClosesAt)}.
+              Not submitted before {formatTime12(session.submissionWindowClosesAt)} on{' '}
+              {formatFullDate(session.submissionWindowClosesAt)}.
             </Note>
             <RosterReadOnly period={period} session={session} />
-            <DrawerRail meta={<span className="text-[11px] text-ink-faint">Approval is required before you can submit.</span>}>
+            <DrawerRail
+              meta={<span className="text-[11px] text-ink-faint">Approval is required before you can submit.</span>}
+            >
               {session.lateSubmissionRequested ? (
                 <span className="text-[12px] font-[500] text-ink-muted">Late submission requested</span>
               ) : (
-                <button type="button" className={GHOST_BTN} onClick={() => requestLateSubmission(period.id)}>Request late submission</button>
+                <button type="button" className={GHOST_BTN} onClick={() => requestLateSubmission(period.id)}>
+                  Request late submission
+                </button>
               )}
             </DrawerRail>
           </>
@@ -521,7 +611,8 @@ function LockedReadyBody({ period, session, now, onSubmit }) {
   return (
     <>
       <Note>
-        Ready to submit · closes in {formatDurationHM(closesAt - now)} ({formatTime12(closesAt)}, {formatFullDate(closesAt)}).
+        Ready to submit · closes in {formatDurationHM(closesAt - now)} ({formatTime12(closesAt)},{' '}
+        {formatFullDate(closesAt)}).
       </Note>
       <RosterReadOnly period={period} session={session} />
       {confirming ? (
@@ -540,7 +631,9 @@ function LockedReadyBody({ period, session, now, onSubmit }) {
             </span>
           }
         >
-          <button type="button" className={PRIMARY_BTN} onClick={() => setConfirming(true)}>Submit attendance</button>
+          <button type="button" className={PRIMARY_BTN} onClick={() => setConfirming(true)}>
+            Submit attendance
+          </button>
         </DrawerRail>
       )}
     </>

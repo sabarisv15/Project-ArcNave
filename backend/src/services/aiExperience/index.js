@@ -30,14 +30,16 @@ function parseToolData(sanitizedContext) {
   return { toolName: entry.toolName, data };
 }
 
-function buildPresentation({
-  sanitizedContext, question, answer, toolUsed, actorRole, tool,
-}) {
+function buildPresentation({ sanitizedContext, question, answer, toolUsed, actorRole, tool }) {
   const { toolName, data } = parseToolData(sanitizedContext);
   const resolvedToolName = toolUsed || toolName;
 
   let sections = buildSections({
-    toolName: resolvedToolName, tool, data, question, answer,
+    toolName: resolvedToolName,
+    tool,
+    data,
+    question,
+    answer,
   });
   sections = applyPersona(sections, actorRole);
 

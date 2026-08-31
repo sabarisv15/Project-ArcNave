@@ -18,20 +18,9 @@
  * each other.
  */
 
-import {
-  CLASS_ATTENTION_THRESHOLD,
-  DEPT_CLASSES,
-  DEPT_FACULTY,
-  FACULTY_BY_ID,
-  tutorOf,
-} from './departmentData';
+import { CLASS_ATTENTION_THRESHOLD, DEPT_CLASSES, DEPT_FACULTY, FACULTY_BY_ID, tutorOf } from './departmentData';
 import { pendingCountOfClass } from './departmentApprovalsData';
-import {
-  CONFLICTS,
-  PENDING_REVISION,
-  conflictsOfClass,
-  facultyWorkload,
-} from './departmentTimetableData';
+import { CONFLICTS, PENDING_REVISION, conflictsOfClass, facultyWorkload } from './departmentTimetableData';
 
 /** The attention state a class row carries. Order matters: the first that applies wins. */
 export const ATTENTION_STATES = {
@@ -62,12 +51,8 @@ export function classHealth(cls, overrides = {}) {
    * which is what keeps every existing caller correct.
    */
   const seatState = overrides.seat ? overrides.seat.state : cls.seatState;
-  const tutorId = overrides.seat
-    ? overrides.seat.state === 'active'
-      ? overrides.seat.holderId
-      : null
-    : cls.tutorId;
-  const tutor = overrides.seat ? (tutorId ? FACULTY_BY_ID[tutorId] ?? null : null) : tutorOf(cls.id);
+  const tutorId = overrides.seat ? (overrides.seat.state === 'active' ? overrides.seat.holderId : null) : cls.tutorId;
+  const tutor = overrides.seat ? (tutorId ? (FACULTY_BY_ID[tutorId] ?? null) : null) : tutorOf(cls.id);
   const studentCount = overrides.studentCount ?? cls.studentCount;
   const attendance = overrides.attendance ?? cls.attendance;
 
@@ -152,7 +137,12 @@ export function departmentSignals() {
   CONFLICTS.forEach((c) => {
     signals.push({
       id: c.id,
-      kind: c.kind === 'unassigned_period' ? 'Unassigned period' : c.kind === 'room_overlap' ? 'Room overlap' : 'Faculty overlap',
+      kind:
+        c.kind === 'unassigned_period'
+          ? 'Unassigned period'
+          : c.kind === 'room_overlap'
+            ? 'Room overlap'
+            : 'Faculty overlap',
       title: `${c.day} · Hour ${c.hour}`,
       detail: c.detail,
       to: '/department/timetable',

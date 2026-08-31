@@ -13,9 +13,7 @@
 // here calls into another table's own repository (none exists yet) —
 // kept as one file across five tables only because nothing outside
 // constraint tests consumes any of this yet.
-async function createPosition(client, {
-  collegeId, level, title, createdBy, positionType,
-}) {
+async function createPosition(client, { collegeId, level, title, createdBy, positionType }) {
   const result = await client.query(
     `INSERT INTO positions (college_id, level, title, created_by, position_type)
      VALUES ($1, $2, $3, $4, $5)
@@ -47,9 +45,7 @@ async function findActivePositionByCollegeAndLevel(client, collegeId, level) {
   return result.rows[0] || null;
 }
 
-async function createPositionAccount(client, {
-  collegeId, positionId, officialEmail, passwordHash,
-}) {
+async function createPositionAccount(client, { collegeId, positionId, officialEmail, passwordHash }) {
   const result = await client.query(
     `INSERT INTO position_accounts (college_id, position_id, official_email, password_hash)
      VALUES ($1, $2, $3, $4)
@@ -60,16 +56,11 @@ async function createPositionAccount(client, {
 }
 
 async function findPositionAccountByPositionId(client, positionId) {
-  const result = await client.query(
-    'SELECT * FROM position_accounts WHERE position_id = $1',
-    [positionId],
-  );
+  const result = await client.query('SELECT * FROM position_accounts WHERE position_id = $1', [positionId]);
   return result.rows[0] || null;
 }
 
-async function createPositionOccupant(client, {
-  collegeId, positionAccountId, userId, assignedBy,
-}) {
+async function createPositionOccupant(client, { collegeId, positionAccountId, userId, assignedBy }) {
   const result = await client.query(
     `INSERT INTO position_occupants (college_id, position_account_id, user_id, assigned_by)
      VALUES ($1, $2, $3, $4)
@@ -167,9 +158,7 @@ async function revokePositionOccupant(client, id, { revokedBy }) {
   return result.rows[0] || null;
 }
 
-async function createPositionModuleAssignment(client, {
-  collegeId, positionId, moduleKey, assignedBy,
-}) {
+async function createPositionModuleAssignment(client, { collegeId, positionId, moduleKey, assignedBy }) {
   const result = await client.query(
     `INSERT INTO position_module_assignments (college_id, position_id, module_key, assigned_by)
      VALUES ($1, $2, $3, $4)
@@ -198,9 +187,7 @@ async function revokePositionModuleAssignment(client, id, { revokedBy }) {
   return result.rows[0] || null;
 }
 
-async function createPositionDepartmentAssignment(client, {
-  collegeId, positionId, departmentId, assignedBy,
-}) {
+async function createPositionDepartmentAssignment(client, { collegeId, positionId, departmentId, assignedBy }) {
   const result = await client.query(
     `INSERT INTO position_department_assignments (college_id, position_id, department_id, assigned_by)
      VALUES ($1, $2, $3, $4)
@@ -233,9 +220,7 @@ async function revokePositionDepartmentAssignment(client, id, { revokedBy }) {
 // position_department_assignments trio above, FK'd to classes(id)
 // instead of departments(id). Links a Level 4 + position_type=
 // 'class_tutor' position to the one class it tutors.
-async function createPositionClassAssignment(client, {
-  collegeId, positionId, classId, assignedBy,
-}) {
+async function createPositionClassAssignment(client, { collegeId, positionId, classId, assignedBy }) {
   const result = await client.query(
     `INSERT INTO position_class_assignments (college_id, position_id, class_id, assigned_by)
      VALUES ($1, $2, $3, $4)
@@ -331,10 +316,10 @@ async function findActiveClassTutorAssignmentsForCollege(client, collegeId) {
 // users/refresh_tokens functions exactly, table-for-table.
 
 async function findPositionAccountByOfficialEmail(client, collegeId, officialEmail) {
-  const result = await client.query(
-    `SELECT * FROM position_accounts WHERE college_id = $1 AND official_email = $2`,
-    [collegeId, officialEmail],
-  );
+  const result = await client.query(`SELECT * FROM position_accounts WHERE college_id = $1 AND official_email = $2`, [
+    collegeId,
+    officialEmail,
+  ]);
   return result.rows[0] || null;
 }
 
@@ -389,9 +374,7 @@ async function clearPositionAccountMfaAndRecovery(client, id) {
   );
 }
 
-async function createPositionAccountRefreshToken(client, {
-  collegeId, positionAccountId, tokenHash, expiresAt,
-}) {
+async function createPositionAccountRefreshToken(client, { collegeId, positionAccountId, tokenHash, expiresAt }) {
   await client.query(
     `INSERT INTO position_account_refresh_tokens (college_id, position_account_id, token_hash, expires_at)
      VALUES ($1, $2, $3, $4)`,

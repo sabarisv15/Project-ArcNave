@@ -8,10 +8,7 @@
 // private to them, not a tenant-wide list.
 
 async function getConsent(client, userId) {
-  const result = await client.query(
-    'SELECT * FROM ai_memory_consent WHERE user_id = $1',
-    [userId],
-  );
+  const result = await client.query('SELECT * FROM ai_memory_consent WHERE user_id = $1', [userId]);
   return result.rows[0] || null;
 }
 
@@ -42,10 +39,7 @@ async function upsertMemory(client, { collegeId, userId, memoryType, value }) {
 }
 
 async function listMemoryByUser(client, userId) {
-  const result = await client.query(
-    'SELECT * FROM ai_scoped_memory WHERE user_id = $1 ORDER BY memory_type',
-    [userId],
-  );
+  const result = await client.query('SELECT * FROM ai_scoped_memory WHERE user_id = $1 ORDER BY memory_type', [userId]);
   return result.rows;
 }
 
@@ -74,18 +68,14 @@ async function insertGeneralFact(client, { collegeId, userId, fact }) {
 }
 
 async function listGeneralFacts(client, userId) {
-  const result = await client.query(
-    'SELECT * FROM ai_general_memory WHERE user_id = $1 ORDER BY created_at',
-    [userId],
-  );
+  const result = await client.query('SELECT * FROM ai_general_memory WHERE user_id = $1 ORDER BY created_at', [userId]);
   return result.rows;
 }
 
 async function countGeneralFacts(client, userId) {
-  const result = await client.query(
-    'SELECT count(*)::int AS count FROM ai_general_memory WHERE user_id = $1',
-    [userId],
-  );
+  const result = await client.query('SELECT count(*)::int AS count FROM ai_general_memory WHERE user_id = $1', [
+    userId,
+  ]);
   return result.rows[0].count;
 }
 
@@ -102,10 +92,10 @@ async function updateGeneralFact(client, userId, factId, fact) {
 }
 
 async function removeGeneralFact(client, userId, factId) {
-  const result = await client.query(
-    'DELETE FROM ai_general_memory WHERE user_id = $1 AND id = $2 RETURNING id',
-    [userId, factId],
-  );
+  const result = await client.query('DELETE FROM ai_general_memory WHERE user_id = $1 AND id = $2 RETURNING id', [
+    userId,
+    factId,
+  ]);
   return result.rows.length > 0;
 }
 

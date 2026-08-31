@@ -18,7 +18,14 @@ const MENU_ITEM =
  * clearly divided second group, without teaching this shared menu route-specific
  * concepts.
  */
-export function ChatHeaderMenu({ onRenameRequested, onAddToProject, projects, onDelete, deleteLabel = 'Delete', extraSections }) {
+export function ChatHeaderMenu({
+  onRenameRequested,
+  onAddToProject,
+  projects,
+  onDelete,
+  deleteLabel = 'Delete',
+  extraSections,
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -30,7 +37,7 @@ export function ChatHeaderMenu({ onRenameRequested, onAddToProject, projects, on
           aria-expanded={open}
           className={cn(
             'flex-none w-[22px] h-[22px] grid place-items-center border-0 bg-transparent rounded-[6px] text-ink-faint cursor-pointer transition-colors duration-200 hover:bg-accent-soft hover:text-accent',
-            open && 'bg-accent-soft text-accent'
+            open && 'bg-accent-soft text-accent',
           )}
         >
           <ChevronDown size={15} strokeWidth={2} />
@@ -51,9 +58,7 @@ export function ChatHeaderMenu({ onRenameRequested, onAddToProject, projects, on
 
           {onAddToProject && (
             <DropdownMenu.Sub>
-              <DropdownMenu.SubTrigger
-                className={cn(MENU_ITEM, 'justify-between data-[state=open]:bg-tint2')}
-              >
+              <DropdownMenu.SubTrigger className={cn(MENU_ITEM, 'justify-between data-[state=open]:bg-tint2')}>
                 <span className="flex items-center gap-[9px]">
                   <FolderInput size={14} strokeWidth={1.9} />
                   Add to project
@@ -286,7 +291,7 @@ export function ChatHeader({
                 // runs out of room), so the chevron sits immediately after the
                 // title rather than at the far end of the bar.
                 'min-w-0 h-[24px] flex items-center border-0 rounded-[6px] px-[4px] -mx-[4px] bg-transparent font-chat text-[14.5px] font-[600] text-ink text-left cursor-text truncate transition-colors duration-200 hover:bg-tint2/60',
-                selected && 'bg-accent-soft'
+                selected && 'bg-accent-soft',
               )}
             >
               <span className="truncate">

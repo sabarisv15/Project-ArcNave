@@ -28,14 +28,15 @@ const { LlmRequestError } = require('./errors');
 // failure (DNS, connection reset, or the abort firing) is wrapped in the
 // same LlmRequestError shape every adapter already threw, naming the
 // calling provider so the message stays distinguishable in logs.
-async function fetchWithTimeout({
-  url, headers, body, timeoutMs, providerLabel,
-}) {
+async function fetchWithTimeout({ url, headers, body, timeoutMs, providerLabel }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, {
-      method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal,
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
     });
   } catch (err) {
     throw new LlmRequestError(`request to ${providerLabel} failed: ${err.message}`);
@@ -88,9 +89,13 @@ function buildOpenAiCompatiblePriorTurnMessages(priorTurns) {
     {
       role: 'assistant',
       content: null,
-      tool_calls: [turn.rawToolCall || {
-        id: turn.callId, type: 'function', function: { name: turn.toolName, arguments: JSON.stringify(turn.arguments || {}) },
-      }],
+      tool_calls: [
+        turn.rawToolCall || {
+          id: turn.callId,
+          type: 'function',
+          function: { name: turn.toolName, arguments: JSON.stringify(turn.arguments || {}) },
+        },
+      ],
     },
     { role: 'tool', tool_call_id: turn.callId, content: turn.resultText },
   ]);

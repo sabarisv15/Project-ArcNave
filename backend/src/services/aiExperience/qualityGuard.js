@@ -14,29 +14,30 @@ function dedupe(list) {
 }
 
 function hasContent(sections) {
-  const detailsHasRows = sections.details
-    && ((sections.details.type === 'table' && sections.details.rows.length > 0)
-      || (sections.details.type === 'list' && sections.details.items.length > 0));
+  const detailsHasRows =
+    sections.details &&
+    ((sections.details.type === 'table' && sections.details.rows.length > 0) ||
+      (sections.details.type === 'list' && sections.details.items.length > 0));
   return Boolean(
-    sections.summary
-    || (sections.keyMetrics && sections.keyMetrics.length > 0)
-    || detailsHasRows
-    || (sections.chart && sections.chart.points && sections.chart.points.length > 0)
-    || (sections.timeline && sections.timeline.days && sections.timeline.days.length > 0)
-    || (sections.choices && sections.choices.options && sections.choices.options.length > 0)
-    || (sections.optionsCard && sections.optionsCard.options && sections.optionsCard.options.length > 0)
-    || (sections.quiz && sections.quiz.questions && sections.quiz.questions.length > 0)
-    || sections.translation
-    || (sections.steps && sections.steps.steps && sections.steps.steps.length > 0)
-    || (sections.featured && sections.featured.fields && sections.featured.fields.length > 0)
-    || (sections.comparison && sections.comparison.items && sections.comparison.items.length > 0)
-    || (sections.carousel && sections.carousel.items && sections.carousel.items.length > 0)
-    || (sections.links && sections.links.links && sections.links.links.length > 0)
-    || (sections.places && sections.places.places && sections.places.places.length > 0)
-    || (sections.recipe && sections.recipe.ingredients && sections.recipe.ingredients.length > 0)
-    || (sections.diagram && sections.diagram.svg)
-    || (sections.insights && sections.insights.length > 0)
-    || (sections.recommendedActions && sections.recommendedActions.length > 0),
+    sections.summary ||
+    (sections.keyMetrics && sections.keyMetrics.length > 0) ||
+    detailsHasRows ||
+    (sections.chart && sections.chart.points && sections.chart.points.length > 0) ||
+    (sections.timeline && sections.timeline.days && sections.timeline.days.length > 0) ||
+    (sections.choices && sections.choices.options && sections.choices.options.length > 0) ||
+    (sections.optionsCard && sections.optionsCard.options && sections.optionsCard.options.length > 0) ||
+    (sections.quiz && sections.quiz.questions && sections.quiz.questions.length > 0) ||
+    sections.translation ||
+    (sections.steps && sections.steps.steps && sections.steps.steps.length > 0) ||
+    (sections.featured && sections.featured.fields && sections.featured.fields.length > 0) ||
+    (sections.comparison && sections.comparison.items && sections.comparison.items.length > 0) ||
+    (sections.carousel && sections.carousel.items && sections.carousel.items.length > 0) ||
+    (sections.links && sections.links.links && sections.links.links.length > 0) ||
+    (sections.places && sections.places.places && sections.places.places.length > 0) ||
+    (sections.recipe && sections.recipe.ingredients && sections.recipe.ingredients.length > 0) ||
+    (sections.diagram && sections.diagram.svg) ||
+    (sections.insights && sections.insights.length > 0) ||
+    (sections.recommendedActions && sections.recommendedActions.length > 0),
   );
 }
 

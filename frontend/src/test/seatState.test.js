@@ -36,7 +36,7 @@ describe('Class Tutor seats — one per active semester-section class', () => {
   it('derives the seat total from the provisioned structure, not a fixture', () => {
     const expected = PROVISIONED_DEPARTMENTS.reduce(
       (sum, d) => sum + CLASS_TUTOR_SEATS.filter((s) => s.departmentId === d.id).length,
-      0
+      0,
     );
     expect(CLASS_TUTOR_SEATS).toHaveLength(expected);
   });
@@ -105,9 +105,7 @@ describe('Attendance derives from the timetable, never from a seat', () => {
     CLASS_TIMETABLE_STATES.forEach((c) => {
       expect(c.attendanceLive).toBe(c.state === 'approved');
     });
-    expect(ATTENDANCE_LIVE_TOTAL).toBe(
-      CLASS_TIMETABLE_STATES.filter((c) => c.state === 'approved').length
-    );
+    expect(ATTENDANCE_LIVE_TOTAL).toBe(CLASS_TIMETABLE_STATES.filter((c) => c.state === 'approved').length);
   });
 
   it('is unavailable without an active academic year, however many grids are approved', () => {
@@ -123,14 +121,10 @@ describe('Attendance derives from the timetable, never from a seat', () => {
    * whether or not anybody holds the seat.
    */
   it('never unlocks attendance because a Class Tutor was assigned', () => {
-    const tutoredButLocked = ACTIVE_CLASSES.filter(
-      (c) => hasClassTutor(c.id) && !attendanceLiveFor(c.id)
-    );
+    const tutoredButLocked = ACTIVE_CLASSES.filter((c) => hasClassTutor(c.id) && !attendanceLiveFor(c.id));
     expect(tutoredButLocked.length).toBeGreaterThan(0);
 
-    const liveButUncovered = ACTIVE_CLASSES.filter(
-      (c) => !hasClassTutor(c.id) && attendanceLiveFor(c.id)
-    );
+    const liveButUncovered = ACTIVE_CLASSES.filter((c) => !hasClassTutor(c.id) && attendanceLiveFor(c.id));
     expect(liveButUncovered.length).toBeGreaterThan(0);
   });
 

@@ -28,7 +28,16 @@ const COLUMNS = [
   ['status', 'Result / status'],
 ];
 
-const DEFAULT_COLUMNS = ['sNo', 'rollNumber', 'registerNumber', 'studentName', 'maxMarks', 'marksObtained', 'percentage', 'status'];
+const DEFAULT_COLUMNS = [
+  'sNo',
+  'rollNumber',
+  'registerNumber',
+  'studentName',
+  'maxMarks',
+  'marksObtained',
+  'percentage',
+  'status',
+];
 
 function buildRows(assessment, students) {
   return students.map((s, i) => {
@@ -46,7 +55,7 @@ function buildRows(assessment, students) {
       // DD/MM/YYYY here too — an export must not disagree with the screen it came from.
       assessmentDate: formatDateDMY(assessment.date),
       maxMarks: assessment.maxMarks,
-      marksObtained: entry?.absent ? '—' : entry?.value ?? '',
+      marksObtained: entry?.absent ? '—' : (entry?.value ?? ''),
       percentage: pct === null ? '—' : `${pct}%`,
       status: entry?.absent ? 'Absent' : typeof entry?.value === 'number' ? 'Recorded' : 'Not entered',
     };
@@ -54,7 +63,10 @@ function buildRows(assessment, students) {
 }
 
 function slug(text) {
-  return String(text || 'assessment').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  return String(text || 'assessment')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
 }
 
 /** Report for one assessment — CSV with a column picker, or a print-formatted PDF. */
@@ -62,15 +74,16 @@ export function AssessmentReportDrawer({ assessment, students, onClose }) {
   const [selected, setSelected] = useState(DEFAULT_COLUMNS);
   const [previewOpen, setPreviewOpen] = useState(true);
 
-  const rows = useMemo(
-    () => (assessment ? buildRows(assessment, students) : []),
-    [assessment, students]
-  );
+  const rows = useMemo(() => (assessment ? buildRows(assessment, students) : []), [assessment, students]);
 
   if (!assessment) return null;
 
   const toggle = (key) =>
-    setSelected((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : COLUMNS.map(([k]) => k).filter((k) => prev.includes(k) || k === key)));
+    setSelected((prev) =>
+      prev.includes(key)
+        ? prev.filter((k) => k !== key)
+        : COLUMNS.map(([k]) => k).filter((k) => prev.includes(k) || k === key),
+    );
 
   const marked = rows.filter((r) => r.status !== 'Not entered');
   const numeric = rows.filter((r) => typeof r.marksObtained === 'number');
@@ -84,7 +97,8 @@ export function AssessmentReportDrawer({ assessment, students, onClose }) {
     `Assessment date ${formatDateDMY(assessment.date)} · Maximum marks ${assessment.maxMarks}`,
   ];
 
-  const filename = (ext) => `assessment-report_${slug(assessment.name)}_${slug(assessment.code)}_${istDayKey(new Date())}.${ext}`;
+  const filename = (ext) =>
+    `assessment-report_${slug(assessment.name)}_${slug(assessment.code)}_${istDayKey(new Date())}.${ext}`;
 
   const exportCsv = () => {
     downloadTextFile(filename('csv'), rowsToCsv(rows, selected, COLUMNS));
@@ -124,7 +138,9 @@ export function AssessmentReportDrawer({ assessment, students, onClose }) {
       <div className="flex-none px-[18px] pt-[13px] pb-[10px]">
         <div className="flex items-center gap-[8px] mb-[8px]">
           <span className="text-[10.5px] font-[500] uppercase tracking-[.06em] text-ink-faint">Choose columns</span>
-          <span className="text-[11px] text-ink-faint tabular-nums">{selected.length}/{COLUMNS.length}</span>
+          <span className="text-[11px] text-ink-faint tabular-nums">
+            {selected.length}/{COLUMNS.length}
+          </span>
           <div className="flex-1" />
           <button
             type="button"
@@ -155,7 +171,7 @@ export function AssessmentReportDrawer({ assessment, students, onClose }) {
                   'h-[26px] px-[9px] rounded-[8px] font-sans text-[11.5px] cursor-pointer transition-colors duration-200',
                   on
                     ? 'bg-accent-soft border border-accent-line text-accent font-[600]'
-                    : 'bg-tint2 border border-transparent text-ink-soft font-[500] hover:bg-hoverline'
+                    : 'bg-tint2 border border-transparent text-ink-soft font-[500] hover:bg-hoverline',
                 )}
               >
                 {label}
@@ -191,7 +207,10 @@ export function AssessmentReportDrawer({ assessment, students, onClose }) {
                 style={{ minWidth: 'max-content' }}
               >
                 {selected.map((key) => (
-                  <span key={key} className="flex-none w-[132px] px-[10px] h-[30px] flex items-center text-[10px] font-[500] tracking-[.05em] uppercase text-ink-muted">
+                  <span
+                    key={key}
+                    className="flex-none w-[132px] px-[10px] h-[30px] flex items-center text-[10px] font-[500] tracking-[.05em] uppercase text-ink-muted"
+                  >
                     {Object.fromEntries(COLUMNS)[key]}
                   </span>
                 ))}
@@ -199,7 +218,11 @@ export function AssessmentReportDrawer({ assessment, students, onClose }) {
               {rows.map((r, i) => (
                 <div key={i} className="flex border-t border-line-light">
                   {selected.map((key) => (
-                    <span key={key} className="flex-none w-[132px] px-[10px] h-[32px] flex items-center text-[11.5px] text-ink-soft truncate" title={String(r[key])}>
+                    <span
+                      key={key}
+                      className="flex-none w-[132px] px-[10px] h-[32px] flex items-center text-[11.5px] text-ink-soft truncate"
+                      title={String(r[key])}
+                    >
                       {String(r[key])}
                     </span>
                   ))}
@@ -219,15 +242,12 @@ export function AssessmentReportDrawer({ assessment, students, onClose }) {
           </span>
         }
       >
-        <button
-          type="button"
-          className={GHOST_BTN}
-          disabled={selected.length === 0}
-          onClick={exportCsv}
-        >
+        <button type="button" className={GHOST_BTN} disabled={selected.length === 0} onClick={exportCsv}>
           Export CSV
         </button>
-        <button type="button" className={PRIMARY_BTN} onClick={exportPdf}>Export PDF</button>
+        <button type="button" className={PRIMARY_BTN} onClick={exportPdf}>
+          Export PDF
+        </button>
       </DrawerRail>
     </DrawerShell>
   );

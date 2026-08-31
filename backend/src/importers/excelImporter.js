@@ -25,7 +25,9 @@ async function parse(fileBuffer) {
   const headerRow = worksheet.getRow(1);
   const headers = [];
   headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-    headers[colNumber - 1] = String(cell.value || '').trim().toLowerCase();
+    headers[colNumber - 1] = String(cell.value || '')
+      .trim()
+      .toLowerCase();
   });
 
   const rows = [];

@@ -101,10 +101,9 @@ async function list(client, { limit = 50, offset = 0 } = {}) {
 // service layer, not here (same "no business logic in this file"
 // boundary every other function here already draws).
 async function findAllByCollege(client, collegeId) {
-  const result = await client.query(
-    'SELECT * FROM timetable_periods WHERE college_id = $1 ORDER BY hour_index',
-    [collegeId],
-  );
+  const result = await client.query('SELECT * FROM timetable_periods WHERE college_id = $1 ORDER BY hour_index', [
+    collegeId,
+  ]);
   return result.rows;
 }
 

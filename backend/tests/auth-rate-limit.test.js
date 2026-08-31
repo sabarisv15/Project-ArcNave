@@ -68,10 +68,10 @@ function stopServer(server) {
 async function seedTenantWithUsers(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const college = { collegeId: `rl${suffix}`, subdomain: `ratelimit${suffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [college.collegeId, college.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    college.collegeId,
+    college.subdomain,
+  ]);
   const passwordHash = await argon2.hash(VALID_PASSWORD);
   await adminPool.query(
     `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
@@ -125,18 +125,28 @@ test('auth rate limiting', async (t) => {
         assert.equal(resp.body.detail, 'Too many attempts. Please try again later.');
         break;
       }
-      assert.equal(resp.status, 401, `expected 401 (wrong password) before the limit trips, got ${resp.status} on attempt ${i}`);
+      assert.equal(
+        resp.status,
+        401,
+        `expected 401 (wrong password) before the limit trips, got ${resp.status} on attempt ${i}`,
+      );
     }
-    assert.ok(sawRateLimited, `expected a 429 within 55 attempts against one identifier, last status was ${lastStatus}`);
+    assert.ok(
+      sawRateLimited,
+      `expected a 429 within 55 attempts against one identifier, last status was ${lastStatus}`,
+    );
   });
 
-  await t.test('a different identifier from the same client is not affected by the first one being rate-limited', async () => {
-    const resp = await login('otheruser');
-    // Wrong password, but the identifier itself is not rate-limited —
-    // proves the key is IP+identifier, not IP alone, which would have
-    // collectively locked out every user behind this same test client.
-    assert.equal(resp.status, 401);
-  });
+  await t.test(
+    'a different identifier from the same client is not affected by the first one being rate-limited',
+    async () => {
+      const resp = await login('otheruser');
+      // Wrong password, but the identifier itself is not rate-limited —
+      // proves the key is IP+identifier, not IP alone, which would have
+      // collectively locked out every user behind this same test client.
+      assert.equal(resp.status, 401);
+    },
+  );
 
   await t.test('the correct password still works for the non-rate-limited identifier', async () => {
     const resp = await login('otheruser', VALID_PASSWORD);

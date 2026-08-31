@@ -81,10 +81,17 @@ async function measureF13() {
   // backend/ is bind-mounted), then matched against the CURRENT registry
   // so descriptions reflect real live schemas, not a hand-copied guess.
   const headNamesPath = path.join(__dirname, '.head-tool-names.txt');
-  const headNames = fs.readFileSync(headNamesPath, 'utf8').split('\n').map((s) => s.trim()).filter(Boolean)
+  const headNames = fs
+    .readFileSync(headNamesPath, 'utf8')
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean)
     .filter((n) => current.some((t) => t.name === n));
 
-  const currentDecls = toolsToDeclarations(current.map((t) => t.name), current);
+  const currentDecls = toolsToDeclarations(
+    current.map((t) => t.name),
+    current,
+  );
   const headDecls = toolsToDeclarations(headNames, current); // current descriptions for tools that already existed at HEAD
 
   const [beforeTok, afterTok] = await Promise.all([
@@ -96,7 +103,9 @@ async function measureF13() {
   console.log(`Before (HEAD, ${headDecls.length} tools):   ${beforeTok} tok`);
   console.log(`After  (working tree, ${currentDecls.length} tools): ${afterTok} tok`);
   console.log(`Delta: +${afterTok - beforeTok} tok (${(((afterTok - beforeTok) / beforeTok) * 100).toFixed(1)}%)`);
-  console.log('Note: "before" reuses CURRENT descriptions for tools that already existed at HEAD — a handful may have been edited this session, so this is a real but approximate delta, not a byte-exact replay of the old registry.');
+  console.log(
+    'Note: "before" reuses CURRENT descriptions for tools that already existed at HEAD — a handful may have been edited this session, so this is a real but approximate delta, not a byte-exact replay of the old registry.',
+  );
 }
 
 async function measureF9() {
@@ -127,7 +136,11 @@ async function measureF9() {
     await client.query('COMMIT');
 
     const full = messages.map((m) => ({
-      role: m.role, content: m.content, presentation: m.presentation, rawData: m.raw_data, createdAt: m.created_at,
+      role: m.role,
+      content: m.content,
+      presentation: m.presentation,
+      rawData: m.raw_data,
+      createdAt: m.created_at,
     }));
     const guarded = messages.map((m) => ({ role: m.role, content: m.content, createdAt: m.created_at }));
 
@@ -137,12 +150,18 @@ async function measureF9() {
       countTokens({ contents: [{ role: 'user', parts: [{ text: asText(guarded) }] }] }),
     ]);
 
-    console.log(`\n=== F9: conversation_read token cost (largest conversation for '${COLLEGE_ID}', ${messages.length} messages) ===`);
+    console.log(
+      `\n=== F9: conversation_read token cost (largest conversation for '${COLLEGE_ID}', ${messages.length} messages) ===`,
+    );
     console.log(`conversationId: ${conversationId}`);
     console.log(`Unguarded (role+content+presentation+rawData+createdAt): ${fullTok} tok`);
     console.log(`Guarded (role+content+createdAt only, actual tool output): ${guardedTok} tok`);
-    console.log(`Guard saves: ${fullTok - guardedTok} tok (${(((fullTok - guardedTok) / fullTok) * 100).toFixed(1)}%) on this conversation.`);
-    console.log('Note: this dev DB has no conversation carrying an ADL-055-scale document extraction (the 125,048-token case was measured against real ledger-PDF content not present here) — this measures the guard on realistic-but-modest local data, not the worst case. The worst case is already bounded by construction: the guard drops exactly the two fields (rawData/presentation) that carried that cost, regardless of how large they get.');
+    console.log(
+      `Guard saves: ${fullTok - guardedTok} tok (${(((fullTok - guardedTok) / fullTok) * 100).toFixed(1)}%) on this conversation.`,
+    );
+    console.log(
+      'Note: this dev DB has no conversation carrying an ADL-055-scale document extraction (the 125,048-token case was measured against real ledger-PDF content not present here) — this measures the guard on realistic-but-modest local data, not the worst case. The worst case is already bounded by construction: the guard drops exactly the two fields (rawData/presentation) that carried that cost, regardless of how large they get.',
+    );
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     throw err;

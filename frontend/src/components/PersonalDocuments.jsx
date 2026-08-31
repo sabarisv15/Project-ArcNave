@@ -2,8 +2,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import {
-  ChevronRight, Copy, Download, FolderPlus, LayoutGrid, List, MoreHorizontal,
-  Pencil, Plus, Trash2, Upload, FolderUp, X, MoveRight, AlertCircle,
+  ChevronRight,
+  Copy,
+  Download,
+  FolderPlus,
+  LayoutGrid,
+  List,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Trash2,
+  Upload,
+  FolderUp,
+  X,
+  MoveRight,
+  AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '../lib/utils';
@@ -62,7 +75,9 @@ function Breadcrumbs({ trail, onNavigate }) {
               disabled={last}
               className={cn(
                 'h-[26px] px-[7px] border-0 bg-transparent rounded-[8px] font-sans text-[12.5px] whitespace-nowrap transition-colors duration-200',
-                last ? 'text-ink font-[600] cursor-default' : 'text-ink-muted font-[500] cursor-pointer hover:bg-tint2 hover:text-ink'
+                last
+                  ? 'text-ink font-[600] cursor-default'
+                  : 'text-ink-muted font-[500] cursor-pointer hover:bg-tint2 hover:text-ink',
               )}
             >
               {node.name}
@@ -79,20 +94,22 @@ function UploadTray({ uploads, onDismiss }) {
   return (
     <div className="flex-none mb-[8px] grid gap-[5px]" aria-live="polite">
       {uploads.map((u) => (
-        <div key={u.id} className="flex items-center gap-[10px] px-[11px] py-[7px] border border-line rounded-[11px] bg-paper">
+        <div
+          key={u.id}
+          className="flex items-center gap-[10px] px-[11px] py-[7px] border border-line rounded-[11px] bg-paper"
+        >
           <span className="min-w-0 flex-1">
             <span className="block text-[12px] font-[500] text-ink truncate">{u.name}</span>
             <span className="block text-[11px] text-ink-faint">
-              {u.status === 'failed'
-                ? 'Upload failed'
-                : u.status === 'done'
-                  ? 'Uploaded'
-                  : `Uploading… ${u.progress}%`}
+              {u.status === 'failed' ? 'Upload failed' : u.status === 'done' ? 'Uploaded' : `Uploading… ${u.progress}%`}
             </span>
           </span>
           {u.status !== 'failed' && (
             <span className="flex-none w-[92px] h-[4px] rounded-full bg-frame overflow-hidden" aria-hidden="true">
-              <span className="block h-full bg-accent transition-[width] duration-200" style={{ width: `${u.progress}%` }} />
+              <span
+                className="block h-full bg-accent transition-[width] duration-200"
+                style={{ width: `${u.progress}%` }}
+              />
             </span>
           )}
           {u.status === 'failed' && (
@@ -100,7 +117,12 @@ function UploadTray({ uploads, onDismiss }) {
               <AlertCircle size={12} strokeWidth={2.2} aria-hidden="true" /> Retry
             </span>
           )}
-          <button type="button" aria-label={`Dismiss ${u.name}`} onClick={() => onDismiss(u.id)} className="flex-none text-ink-faint hover:text-ink">
+          <button
+            type="button"
+            aria-label={`Dismiss ${u.name}`}
+            onClick={() => onDismiss(u.id)}
+            className="flex-none text-ink-faint hover:text-ink"
+          >
             <X size={13} strokeWidth={2.2} />
           </button>
         </div>
@@ -122,8 +144,18 @@ function UploadTray({ uploads, onDismiss }) {
  */
 export function PersonalDocuments() {
   const {
-    root, childrenOf, createFolder, rename, move, duplicate, remove,
-    uploads, upload, dismissUpload, personal, loading,
+    root,
+    childrenOf,
+    createFolder,
+    rename,
+    move,
+    duplicate,
+    remove,
+    uploads,
+    upload,
+    dismissUpload,
+    personal,
+    loading,
   } = useDocumentsStore();
 
   const [folderId, setFolderId] = useState(root);
@@ -157,7 +189,9 @@ export function PersonalDocuments() {
 
   // Selection is per-folder: it survives preview, rename and sort, and resets
   // only when the current folder actually changes.
-  useEffect(() => { setSelected(new Set()); }, [folderId]);
+  useEffect(() => {
+    setSelected(new Set());
+  }, [folderId]);
 
   const toggleSelect = useCallback((id, additive) => {
     setSelected((prev) => {
@@ -180,11 +214,11 @@ export function PersonalDocuments() {
   };
 
   const moveTargets = useMemo(
-    () => [
-      { id: root, name: 'Personal documents' },
-      ...personal.filter((n) => n.kind === 'folder'),
-    ].filter((t) => (moving ? canMoveInto(personal, moving.id, t.id) : false)),
-    [personal, moving, root]
+    () =>
+      [{ id: root, name: 'Personal documents' }, ...personal.filter((n) => n.kind === 'folder')].filter((t) =>
+        moving ? canMoveInto(personal, moving.id, t.id) : false,
+      ),
+    [personal, moving, root],
   );
 
   const rowMenu = (node) => (
@@ -214,7 +248,9 @@ export function PersonalDocuments() {
               </DropdownMenu.Item>
               <DropdownMenu.Item
                 className={MENU_ITEM}
-                onSelect={() => documentsApi.download(node.id, node.name).catch(() => toast(`Could not download “${node.name}”.`))}
+                onSelect={() =>
+                  documentsApi.download(node.id, node.name).catch(() => toast(`Could not download “${node.name}”.`))
+                }
               >
                 <Download size={13} strokeWidth={1.9} /> Download
               </DropdownMenu.Item>
@@ -237,7 +273,10 @@ export function PersonalDocuments() {
   return (
     <div
       className={PANE}
-      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragOver(true);
+      }}
       onDragLeave={() => setDragOver(false)}
       onDrop={onDrop}
     >
@@ -246,9 +285,16 @@ export function PersonalDocuments() {
         <Breadcrumbs trail={trail} onNavigate={setFolderId} />
         <div className="flex-1" />
         <span className="hidden sm:block text-[11.5px] text-ink-faint whitespace-nowrap">
-          {selectedNodes.length > 0 ? `${selectedNodes.length} selected` : `${items.length} item${items.length === 1 ? '' : 's'}`}
+          {selectedNodes.length > 0
+            ? `${selectedNodes.length} selected`
+            : `${items.length} item${items.length === 1 ? '' : 's'}`}
         </span>
-        <SearchPopoverField value={query} onChange={setQuery} placeholder="Search this folder…" ariaLabel="Search personal documents" />
+        <SearchPopoverField
+          value={query}
+          onChange={setQuery}
+          placeholder="Search this folder…"
+          ariaLabel="Search personal documents"
+        />
         <SortIconPopover options={SORTS} value={sort} onChange={setSort} />
         <button
           type="button"
@@ -290,16 +336,26 @@ export function PersonalDocuments() {
         type="file"
         multiple
         className="hidden"
-        onChange={(e) => { upload(folderId, e.target.files); e.target.value = ''; }}
+        onChange={(e) => {
+          upload(folderId, e.target.files);
+          e.target.value = '';
+        }}
       />
       <input
         ref={folderInput}
         type="file"
         webkitdirectory=""
+        // Legacy non-prefixed folder-picker attribute kept alongside
+        // webkitdirectory for older-browser compat; not a real DOM
+        // property React knows about, but harmless to pass through.
+        // eslint-disable-next-line react/no-unknown-property
         directory=""
         multiple
         className="hidden"
-        onChange={(e) => { upload(folderId, e.target.files); e.target.value = ''; }}
+        onChange={(e) => {
+          upload(folderId, e.target.files);
+          e.target.value = '';
+        }}
       />
 
       <UploadTray uploads={uploads} onDismiss={dismissUpload} />
@@ -330,11 +386,20 @@ export function PersonalDocuments() {
           <div className="text-[12.5px] text-ink-faint">Loading your documents…</div>
         </div>
       ) : items.length === 0 ? (
-        <div className={cn('flex-1 min-h-0 grid place-items-center border rounded-[16px] bg-paper', dragOver ? 'border-accent-line bg-accent-soft' : 'border-line')}>
+        <div
+          className={cn(
+            'flex-1 min-h-0 grid place-items-center border rounded-[16px] bg-paper',
+            dragOver ? 'border-accent-line bg-accent-soft' : 'border-line',
+          )}
+        >
           <div className="text-center px-[20px]">
-            <div className="text-[13.5px] font-[500] text-ink">{query ? 'No results found' : 'This folder is empty'}</div>
+            <div className="text-[13.5px] font-[500] text-ink">
+              {query ? 'No results found' : 'This folder is empty'}
+            </div>
             <div className="mt-[4px] text-[12px] text-ink-faint">
-              {query ? 'Change the search term to see files in this folder.' : 'Drop files here, or start with an action below.'}
+              {query
+                ? 'Change the search term to see files in this folder.'
+                : 'Drop files here, or start with an action below.'}
             </div>
             {!query && (
               <div className="flex items-center justify-center gap-[8px] mt-[12px]">
@@ -373,19 +438,29 @@ export function PersonalDocuments() {
               onClick={(e) => toggleSelect(node.id, e.ctrlKey || e.metaKey)}
               onDoubleClick={() => openNode(node)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') { e.preventDefault(); openNode(node); }
-                if (e.key === ' ') { e.preventDefault(); toggleSelect(node.id, true); }
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  openNode(node);
+                }
+                if (e.key === ' ') {
+                  e.preventDefault();
+                  toggleSelect(node.id, true);
+                }
               }}
               className={cn(
-                GRID, 'px-[14px] py-[9px] border-b border-line-lighter cursor-pointer outline-none transition-colors duration-150',
-                selected.has(node.id) ? 'bg-accent-soft' : 'hover:bg-tint2 focus-visible:bg-tint2'
+                GRID,
+                'px-[14px] py-[9px] border-b border-line-lighter cursor-pointer outline-none transition-colors duration-150',
+                selected.has(node.id) ? 'bg-accent-soft' : 'hover:bg-tint2 focus-visible:bg-tint2',
               )}
             >
               <span className="flex items-center gap-[9px] min-w-0">
                 <DocumentIcon node={node} />
                 <button
                   type="button"
-                  onClick={(e) => { e.stopPropagation(); openNode(node); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openNode(node);
+                  }}
                   className="min-w-0 border-0 bg-transparent p-0 text-left font-sans text-[12.5px] font-[500] text-ink truncate cursor-pointer hover:text-accent"
                   title={node.name}
                 >
@@ -411,10 +486,15 @@ export function PersonalDocuments() {
                 aria-selected={selected.has(node.id)}
                 onClick={(e) => toggleSelect(node.id, e.ctrlKey || e.metaKey)}
                 onDoubleClick={() => openNode(node)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); openNode(node); } }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    openNode(node);
+                  }
+                }}
                 className={cn(
                   'relative flex flex-col gap-[7px] p-[12px] border rounded-[14px] cursor-pointer outline-none transition-colors duration-150',
-                  selected.has(node.id) ? 'border-accent-line bg-accent-soft' : 'border-line bg-paper hover:bg-tint2'
+                  selected.has(node.id) ? 'border-accent-line bg-accent-soft' : 'border-line bg-paper hover:bg-tint2',
                 )}
               >
                 <span className="flex items-start justify-between gap-[6px]">
@@ -423,7 +503,10 @@ export function PersonalDocuments() {
                 </span>
                 <button
                   type="button"
-                  onClick={(e) => { e.stopPropagation(); openNode(node); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openNode(node);
+                  }}
                   className="border-0 bg-transparent p-0 text-left font-sans text-[12.5px] font-[500] text-ink line-clamp-2 cursor-pointer hover:text-accent"
                   title={node.name}
                 >
@@ -446,7 +529,10 @@ export function PersonalDocuments() {
         open={!!renaming}
         node={renaming}
         onClose={() => setRenaming(null)}
-        onSubmit={(name) => { rename(renaming.id, name); setRenaming(null); }}
+        onSubmit={(name) => {
+          rename(renaming.id, name);
+          setRenaming(null);
+        }}
       />
 
       <RenameNodeDialog
@@ -454,7 +540,10 @@ export function PersonalDocuments() {
         mode="create"
         folderId={folderId}
         onClose={() => setCreatingFolder(false)}
-        onSubmit={(name) => { createFolder(folderId, name); setCreatingFolder(false); }}
+        onSubmit={(name) => {
+          createFolder(folderId, name);
+          setCreatingFolder(false);
+        }}
       />
 
       {/* Move-to list: drag-and-drop between folders isn't reliable enough to be
@@ -463,7 +552,9 @@ export function PersonalDocuments() {
         <AlertDialog.Portal>
           <AlertDialog.Overlay className="fixed inset-0 z-[130] bg-overlay/20 animate-fadeUp" />
           <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[131] w-[calc(100%-48px)] max-w-[400px] bg-paper rounded-[16px] p-[20px] shadow-dialog outline-none animate-fadeUp">
-            <AlertDialog.Title className="m-0 mb-[4px] text-[15.5px] font-[600]">Move “{moving?.name}”</AlertDialog.Title>
+            <AlertDialog.Title className="m-0 mb-[4px] text-[15.5px] font-[600]">
+              Move “{moving?.name}”
+            </AlertDialog.Title>
             <AlertDialog.Description className="m-0 mb-[12px] text-[12.5px] text-ink-muted">
               Choose a destination folder.
             </AlertDialog.Description>
@@ -472,7 +563,10 @@ export function PersonalDocuments() {
                 <button
                   key={t.id}
                   type="button"
-                  onClick={() => { move(moving.id, t.id); setMoving(null); }}
+                  onClick={() => {
+                    move(moving.id, t.id);
+                    setMoving(null);
+                  }}
                   className="flex items-center gap-[8px] h-[34px] px-[10px] border-0 bg-transparent rounded-[9px] font-sans text-[12.5px] text-ink-soft text-left cursor-pointer hover:bg-tint2"
                 >
                   <DocumentIcon node={{ kind: 'folder' }} /> {t.name}
@@ -484,7 +578,10 @@ export function PersonalDocuments() {
             </div>
             <div className="flex justify-end mt-[16px]">
               <AlertDialog.Cancel asChild>
-                <button type="button" className="h-[32px] px-[14px] border border-line rounded-[10px] bg-paper font-sans text-[12.5px] font-[500] text-ink-muted cursor-pointer hover:bg-tint2">
+                <button
+                  type="button"
+                  className="h-[32px] px-[14px] border border-line rounded-[10px] bg-paper font-sans text-[12.5px] font-[500] text-ink-muted cursor-pointer hover:bg-tint2"
+                >
                   Cancel
                 </button>
               </AlertDialog.Cancel>
@@ -498,21 +595,33 @@ export function PersonalDocuments() {
           <AlertDialog.Overlay className="fixed inset-0 z-[130] bg-overlay/20 animate-fadeUp" />
           <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[131] w-[calc(100%-48px)] max-w-[400px] bg-paper rounded-[16px] p-[20px] shadow-dialog outline-none animate-fadeUp">
             <AlertDialog.Title className="m-0 mb-[6px] text-[15.5px] font-[600]">
-              {confirmDelete?.length === 1 ? `Delete “${confirmDelete[0].name}”?` : `Delete ${confirmDelete?.length} items?`}
+              {confirmDelete?.length === 1
+                ? `Delete “${confirmDelete[0].name}”?`
+                : `Delete ${confirmDelete?.length} items?`}
             </AlertDialog.Title>
             <AlertDialog.Description className="m-0 mb-[18px] text-[12.5px] leading-[1.6] text-ink-muted">
-              This can&rsquo;t be undone.{confirmDelete?.length === 1 && confirmDelete[0].kind === 'folder' ? ' Everything inside this folder is deleted too.' : ''}
+              This can&rsquo;t be undone.
+              {confirmDelete?.length === 1 && confirmDelete[0].kind === 'folder'
+                ? ' Everything inside this folder is deleted too.'
+                : ''}
             </AlertDialog.Description>
             <div className="flex justify-end gap-[9px]">
               <AlertDialog.Cancel asChild>
-                <button type="button" className="h-[32px] px-[14px] border border-line rounded-[10px] bg-paper font-sans text-[12.5px] font-[500] text-ink-muted cursor-pointer hover:bg-tint2">
+                <button
+                  type="button"
+                  className="h-[32px] px-[14px] border border-line rounded-[10px] bg-paper font-sans text-[12.5px] font-[500] text-ink-muted cursor-pointer hover:bg-tint2"
+                >
                   Cancel
                 </button>
               </AlertDialog.Cancel>
               <AlertDialog.Action asChild>
                 <button
                   type="button"
-                  onClick={() => { remove(confirmDelete.map((n) => n.id)); setSelected(new Set()); setConfirmDelete(null); }}
+                  onClick={() => {
+                    remove(confirmDelete.map((n) => n.id));
+                    setSelected(new Set());
+                    setConfirmDelete(null);
+                  }}
                   className="h-[32px] px-[14px] border-0 rounded-[10px] bg-danger text-white font-sans text-[12.5px] font-[500] cursor-pointer hover:bg-danger-hover"
                 >
                   Delete

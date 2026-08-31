@@ -19,20 +19,18 @@ const { GoogleAuth } = require('google-auth-library');
 const config = require('../src/config');
 
 const DOWNLOADS = 'C:\\Users\\HAI\\Downloads';
-const FILES = [
-  'EXAM FEES ece(sw) III YR 7 SEM.pdf',
-  'APRDAYBOOK.pdf',
-  '111_cons_result_apr2026.pdf',
-];
+const FILES = ['EXAM FEES ece(sw) III YR 7 SEM.pdf', 'APRDAYBOOK.pdf', '111_cons_result_apr2026.pdf'];
 
 // Two questions, because the first run separated them sharply and the
 // distinction is the whole finding: the model may be able to READ a row
 // while being unable to COUNT the rows.
-const COUNT_PROMPT = 'How many student/transaction rows does this document contain in total? '
-  + 'Answer with only a number, nothing else.';
-const EXTRACT_PROMPT = 'List EVERY data row in this document as a JSON array of '
-  + '{"n": <row number>, "id": "<the main identifier for that row>"}. Return ONLY the JSON array. '
-  + 'Do not summarise, do not stop early, include every row.';
+const COUNT_PROMPT =
+  'How many student/transaction rows does this document contain in total? ' +
+  'Answer with only a number, nothing else.';
+const EXTRACT_PROMPT =
+  'List EVERY data row in this document as a JSON array of ' +
+  '{"n": <row number>, "id": "<the main identifier for that row>"}. Return ONLY the JSON array. ' +
+  'Do not summarise, do not stop early, include every row.';
 
 async function accessToken() {
   const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
@@ -54,7 +52,10 @@ async function main() {
   console.log(`mode: ${mode}`);
   for (const name of FILES) {
     const file = path.join(DOWNLOADS, name);
-    if (!fs.existsSync(file)) { console.log(`${name} — MISSING`); continue; }
+    if (!fs.existsSync(file)) {
+      console.log(`${name} — MISSING`);
+      continue;
+    }
     const buffer = fs.readFileSync(file);
     const mb = (buffer.length / 1024 / 1024).toFixed(2);
     const t0 = Date.now();
@@ -66,13 +67,15 @@ async function main() {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          contents: [{
-            role: 'user',
-            parts: [
-              { inline_data: { mime_type: 'application/pdf', data: buffer.toString('base64') } },
-              { text: mode === 'count' ? COUNT_PROMPT : EXTRACT_PROMPT },
-            ],
-          }],
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { inline_data: { mime_type: 'application/pdf', data: buffer.toString('base64') } },
+                { text: mode === 'count' ? COUNT_PROMPT : EXTRACT_PROMPT },
+              ],
+            },
+          ],
           generationConfig: { temperature: 0, maxOutputTokens: mode === 'count' ? 64 : 60000 },
         }),
       });
@@ -84,13 +87,22 @@ async function main() {
         inTok = String((payload.usageMetadata || {}).promptTokenCount || '-');
         const text = (payload.candidates || [])
           .flatMap((c) => (c.content && c.content.parts) || [])
-          .map((p) => p.text || '').join('').trim();
+          .map((p) => p.text || '')
+          .join('')
+          .trim();
         if (mode === 'count') {
           answer = text.slice(0, 60);
         } else {
-          const cleaned = text.replace(/^```(?:json)?/m, '').replace(/```\s*$/m, '').trim();
+          const cleaned = text
+            .replace(/^```(?:json)?/m, '')
+            .replace(/```\s*$/m, '')
+            .trim();
           let rows = null;
-          try { rows = JSON.parse(cleaned); } catch { rows = null; }
+          try {
+            rows = JSON.parse(cleaned);
+          } catch {
+            rows = null;
+          }
           const finish = ((payload.candidates || [])[0] || {}).finishReason || '?';
           answer = Array.isArray(rows)
             ? `${rows.length} rows extracted (finish: ${finish})`
@@ -108,7 +120,12 @@ async function main() {
       answer,
     );
   }
-  console.log('\nDeterministic reference counts: exam fees 23 students, day book 839 rows, result sheet 1603 records (1781 markers).');
+  console.log(
+    '\nDeterministic reference counts: exam fees 23 students, day book 839 rows, result sheet 1603 records (1781 markers).',
+  );
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

@@ -203,9 +203,7 @@ export function returnedState() {
  * any screen knowing that L2 is optional.
  */
 export function endorsementChain(provisioning = PROVISIONING) {
-  const steps = [
-    { key: HOD_L3, title: `${seatTitle(HOD_L3, provisioning)} endorsement` },
-  ];
+  const steps = [{ key: HOD_L3, title: `${seatTitle(HOD_L3, provisioning)} endorsement` }];
   if (level2InTimetableChain(provisioning)) {
     steps.push({ key: LEVEL_2, title: `${seatTitle(LEVEL_2, provisioning)} review` });
   }
@@ -215,23 +213,26 @@ export function endorsementChain(provisioning = PROVISIONING) {
 
 /** The chain as one line — `L3 endorsement → L2 review → L1 final approval`. */
 export function endorsementChainLabel(provisioning = PROVISIONING) {
-  return endorsementChain(provisioning).map((s) => s.title).join(' → ');
+  return endorsementChain(provisioning)
+    .map((s) => s.title)
+    .join(' → ');
 }
 
 /** Where a state sits on the chain, so the same list can render its progress. */
 export function chainProgress(state, provisioning = PROVISIONING) {
   const steps = endorsementChain(provisioning);
-  const reached = {
-    not_submitted: -1,
-    draft: -1,
-    conflict_identified: 0,
-    ready_for_endorsement: 0,
-    endorsed_pending_l2: 1,
-    endorsed_pending_l1: level2InTimetableChain(provisioning) ? 2 : 1,
-    approved_locked: steps.length,
-    superseded: steps.length,
-    rejected: 0,
-  }[state] ?? -1;
+  const reached =
+    {
+      not_submitted: -1,
+      draft: -1,
+      conflict_identified: 0,
+      ready_for_endorsement: 0,
+      endorsed_pending_l2: 1,
+      endorsed_pending_l1: level2InTimetableChain(provisioning) ? 2 : 1,
+      approved_locked: steps.length,
+      superseded: steps.length,
+      rejected: 0,
+    }[state] ?? -1;
 
   return steps.map((step, i) => ({
     ...step,

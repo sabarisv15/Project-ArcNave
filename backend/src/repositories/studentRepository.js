@@ -227,5 +227,12 @@ async function list(client, { limit = 50, offset = 0, rollNumbers } = {}) {
 }
 
 module.exports = {
-  create, findById, findByRollNo, findByClassId, findByDepartmentId, update, softDelete, list,
+  create,
+  findById,
+  findByRollNo,
+  findByClassId,
+  findByDepartmentId,
+  update,
+  softDelete,
+  list,
 };

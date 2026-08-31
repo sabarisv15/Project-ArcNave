@@ -62,12 +62,56 @@
  */
 
 import {
-  DAY_MS, formatDateDMY, formatDateLabelIST, formatDayDateDMY, formatTime12IST, istDayKey, istMidnight,
+  DAY_MS,
+  formatDateDMY,
+  formatDateLabelIST,
+  formatDayDateDMY,
+  formatTime12IST,
+  istDayKey,
+  istMidnight,
 } from './ist';
 import { ACTIVE_VERSION_ID, periodsForDate } from './timetableData';
 
-const FIRST = ['Arjun', 'Priya', 'Rahul', 'Ananya', 'Vikram', 'Sneha', 'Karan', 'Divya', 'Rohan', 'Meera', 'Aditya', 'Kavya', 'Nikhil', 'Pooja', 'Sanjay', 'Isha', 'Varun', 'Neha', 'Aakash', 'Ritika', 'Manish', 'Swathi', 'Harsha', 'Deepika'];
-const LAST = ['Mehta', 'Nair', 'Sharma', 'Iyer', 'Reddy', 'Gupta', 'Rao', 'Kapoor', 'Verma', 'Menon', 'Pillai', 'Krishnan'];
+const FIRST = [
+  'Arjun',
+  'Priya',
+  'Rahul',
+  'Ananya',
+  'Vikram',
+  'Sneha',
+  'Karan',
+  'Divya',
+  'Rohan',
+  'Meera',
+  'Aditya',
+  'Kavya',
+  'Nikhil',
+  'Pooja',
+  'Sanjay',
+  'Isha',
+  'Varun',
+  'Neha',
+  'Aakash',
+  'Ritika',
+  'Manish',
+  'Swathi',
+  'Harsha',
+  'Deepika',
+];
+const LAST = [
+  'Mehta',
+  'Nair',
+  'Sharma',
+  'Iyer',
+  'Reddy',
+  'Gupta',
+  'Rao',
+  'Kapoor',
+  'Verma',
+  'Menon',
+  'Pillai',
+  'Krishnan',
+];
 
 export function seeded(seed) {
   let s = seed;
@@ -149,9 +193,26 @@ const HISTORY_DAYS = 24;
  * is the period's position within today's own schedule.
  */
 function todaySeedFor(index, total) {
-  if (index === 0) return { attendanceStatus: 'submitted', absentRolls: ['05', '14'], topic: 'Recap of the previous unit and problem walkthrough' };
-  if (index === 1) return { attendanceStatus: 'locked', absentRolls: ['03'], lockedOffsetMinutes: 10, topic: 'Worked examples and guided practice' };
-  if (index === DEMO_OPEN_PERIOD_INDEX) return { attendanceStatus: 'draft', absentRolls: ['04', '19'], savedOffsetMinutes: 3, topic: 'Core concept introduction with board work' };
+  if (index === 0)
+    return {
+      attendanceStatus: 'submitted',
+      absentRolls: ['05', '14'],
+      topic: 'Recap of the previous unit and problem walkthrough',
+    };
+  if (index === 1)
+    return {
+      attendanceStatus: 'locked',
+      absentRolls: ['03'],
+      lockedOffsetMinutes: 10,
+      topic: 'Worked examples and guided practice',
+    };
+  if (index === DEMO_OPEN_PERIOD_INDEX)
+    return {
+      attendanceStatus: 'draft',
+      absentRolls: ['04', '19'],
+      savedOffsetMinutes: 3,
+      topic: 'Core concept introduction with board work',
+    };
   if (index === total - 1) return null; // untouched, still upcoming
   return null;
 }
@@ -160,19 +221,26 @@ function todaySeedFor(index, total) {
 function historySeedFor(daysAgo, index) {
   const bucket = (daysAgo + index) % 7;
   if (bucket === 3) return null; // never marked — a genuine marking_missed record
-  if (bucket === 5) return { attendanceStatus: 'locked', absentRolls: ['07'], lockedOffsetMinutes: 12, topic: 'Unit revision and doubt clearing' };
+  if (bucket === 5)
+    return {
+      attendanceStatus: 'locked',
+      absentRolls: ['07'],
+      lockedOffsetMinutes: 12,
+      topic: 'Unit revision and doubt clearing',
+    };
   return {
     attendanceStatus: 'submitted',
     absentRolls: bucket === 1 ? ['02', '19', '27'] : bucket === 2 ? ['11'] : ['08', '21'],
-    topic: bucket === 0
-      ? 'Chapter introduction with worked examples'
-      : bucket === 1
-        ? 'Problem-solving session on the current unit'
-        : bucket === 2
-          ? 'Concept discussion and short in-class exercise'
-          : bucket === 4
-            ? 'Lab walkthrough and observation recording'
-            : 'Assessment review and corrections',
+    topic:
+      bucket === 0
+        ? 'Chapter introduction with worked examples'
+        : bucket === 1
+          ? 'Problem-solving session on the current unit'
+          : bucket === 2
+            ? 'Concept discussion and short in-class exercise'
+            : bucket === 4
+              ? 'Lab walkthrough and observation recording'
+              : 'Assessment review and corrections',
   };
 }
 
@@ -197,9 +265,7 @@ function buildPeriodDefs() {
     const shift = daysAgo === 0 ? demoShiftForToday(instances) : 0;
 
     instances.forEach((instance, index) => {
-      const seed = daysAgo === 0
-        ? todaySeedFor(index, instances.length)
-        : historySeedFor(daysAgo, index);
+      const seed = daysAgo === 0 ? todaySeedFor(index, instances.length) : historySeedFor(daysAgo, index);
 
       const startTime = new Date(instance.startTime.getTime() + shift);
       const endTime = new Date(instance.endTime.getTime() + shift);
@@ -234,9 +300,7 @@ function buildPeriodDefs() {
         substituteAcknowledged: instance.ownership === 'substitute' && daysAgo > 0,
         rosterSeed: rosterSeedFor(instance.classKey),
         rosterCount: rosterCountFor(instance.classKey),
-        seedSession: seed
-          ? { ...seed, classLog: { topicTaught: `${instance.subject}: ${seed.topic}` } }
-          : undefined,
+        seedSession: seed ? { ...seed, classLog: { topicTaught: `${instance.subject}: ${seed.topic}` } } : undefined,
       });
     });
   }
@@ -272,9 +336,13 @@ const OTHER_STAFF_PERIOD = (() => {
 
 if (OTHER_STAFF_PERIOD) PERIOD_DEFS.push(OTHER_STAFF_PERIOD);
 
-
 export const EMPTY_CLASS_LOG = {
-  topicTaught: '', lessonObjective: '', teachingMethod: '', resourcesUsed: '', homework: '', notes: '',
+  topicTaught: '',
+  lessonObjective: '',
+  teachingMethod: '',
+  resourcesUsed: '',
+  homework: '',
+  notes: '',
 };
 
 function buildSeedSession(period, def, startTime) {
@@ -287,11 +355,15 @@ function buildSeedSession(period, def, startTime) {
     presentIds: new Set(),
     absentIds: new Set(),
     lastSavedAt: null,
-    lockedAt: null, lockedBy: null,
-    submittedAt: null, submittedBy: null,
-    submissionWindowOpensAt: opensAt, submissionWindowClosesAt: closesAt,
+    lockedAt: null,
+    lockedBy: null,
+    submittedAt: null,
+    submittedBy: null,
+    submissionWindowOpensAt: opensAt,
+    submissionWindowClosesAt: closesAt,
     includedInPercentage: false,
-    lateSubmissionRequested: false, lateSubmissionRequestedAt: null,
+    lateSubmissionRequested: false,
+    lateSubmissionRequestedAt: null,
     correction: null,
     classLog: { ...EMPTY_CLASS_LOG },
   };
@@ -307,7 +379,8 @@ function buildSeedSession(period, def, startTime) {
   const session = {
     ...base,
     attendanceStatus: seed.attendanceStatus,
-    presentIds, absentIds,
+    presentIds,
+    absentIds,
     lastSavedAt: new Date(startTime.getTime() + (seed.savedOffsetMinutes ?? 5) * 60000),
   };
 
@@ -338,8 +411,13 @@ function buildSeedSession(period, def, startTime) {
     };
     if (seed.correction.status === 'approved') {
       for (const it of items) {
-        if (it.requestedPresent) { session.absentIds.delete(it.studentId); session.presentIds.add(it.studentId); }
-        else { session.presentIds.delete(it.studentId); session.absentIds.add(it.studentId); }
+        if (it.requestedPresent) {
+          session.absentIds.delete(it.studentId);
+          session.presentIds.add(it.studentId);
+        } else {
+          session.presentIds.delete(it.studentId);
+          session.absentIds.add(it.studentId);
+        }
       }
     }
   }
@@ -399,7 +477,9 @@ export const TODAY = midnightOf(new Date());
 /** Today's schedule is always strict ascending IST start-time order — never grouped, never re-pinned for "current". */
 const byStartTimeAsc = (a, b) => a.startTime - b.startTime;
 export const MY_PERIODS_TODAY = MY_PERIODS.filter((p) => p.date.getTime() === TODAY.getTime()).sort(byStartTimeAsc);
-export const SUBSTITUTE_DUTIES_TODAY = SUBSTITUTE_DUTIES.filter((p) => p.date.getTime() === TODAY.getTime()).sort(byStartTimeAsc);
+export const SUBSTITUTE_DUTIES_TODAY = SUBSTITUTE_DUTIES.filter((p) => p.date.getTime() === TODAY.getTime()).sort(
+  byStartTimeAsc,
+);
 
 /** History spans every date, both ownership types the staff member has real access to. */
 export const HISTORY_PERIODS = [...MY_PERIODS, ...SUBSTITUTE_DUTIES].sort((a, b) => b.startTime - a.startTime);

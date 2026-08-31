@@ -47,8 +47,14 @@ test('excelImporter.parse round-trips excelGenerator output', async (t) => {
   await t.test('reads back headers and row values from a real generated .xlsx', async () => {
     const reportModel = {
       title: 'Test Report',
-      columns: [{ id: 'roll_no', label: 'roll_no' }, { id: 'full_name', label: 'full_name' }],
-      rows: [{ roll_no: '35', full_name: 'Asha' }, { roll_no: '67', full_name: 'Ravi' }],
+      columns: [
+        { id: 'roll_no', label: 'roll_no' },
+        { id: 'full_name', label: 'full_name' },
+      ],
+      rows: [
+        { roll_no: '35', full_name: 'Asha' },
+        { roll_no: '67', full_name: 'Ravi' },
+      ],
     };
     const bytes = await excelGenerator.generate(reportModel);
     const { headers, rows } = await excelImporter.parse(bytes);
@@ -61,10 +67,7 @@ test('excelImporter.parse round-trips excelGenerator output', async (t) => {
 
 test('importService.parseImportFile', async (t) => {
   await t.test('rejects a missing fileBuffer', async () => {
-    await assert.rejects(
-      () => importService.parseImportFile(null, 'text/csv'),
-      importService.ImportValidationError,
-    );
+    await assert.rejects(() => importService.parseImportFile(null, 'text/csv'), importService.ImportValidationError);
   });
 
   await t.test('rejects an unsupported mimeType', async () => {
@@ -97,7 +100,8 @@ test('importService.validateRows', async (t) => {
   await t.test('drops fields not in allowedFields', () => {
     const rows = [{ day_of_week: 'Monday', hour_index: '1', unexpected_column: 'x' }];
     const { validRows } = importService.validateRows(rows, {
-      requiredFields: ['day_of_week'], allowedFields: ['day_of_week', 'hour_index'],
+      requiredFields: ['day_of_week'],
+      allowedFields: ['day_of_week', 'hour_index'],
     });
     assert.deepEqual(validRows[0].fields, { day_of_week: 'Monday', hour_index: '1' });
   });

@@ -93,13 +93,17 @@ async function main() {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
     body: JSON.stringify({
-      contents: [{
-        role: 'user',
-        parts: [
-          { inline_data: { mime_type: 'audio/wav', data: audioBase64 } },
-          { text: 'Describe, in one short sentence, what you hear in this audio clip (pitch/tone/duration is enough — no transcription is expected since this is a pure tone, not speech).' },
-        ],
-      }],
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { inline_data: { mime_type: 'audio/wav', data: audioBase64 } },
+            {
+              text: 'Describe, in one short sentence, what you hear in this audio clip (pitch/tone/duration is enough — no transcription is expected since this is a pure tone, not speech).',
+            },
+          ],
+        },
+      ],
       generationConfig: { temperature: 0, maxOutputTokens: 256 },
     }),
   });

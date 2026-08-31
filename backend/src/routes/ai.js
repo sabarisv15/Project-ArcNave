@@ -117,10 +117,10 @@ function mapAiToolError(err, res) {
     return true;
   }
   if (
-    err instanceof aiToolRegistry.AiToolTenantMismatchError
-    || err instanceof aiToolRegistry.AiToolRoleNotPermittedError
-    || err instanceof aiToolRegistry.AiToolDataClassificationError
-    || err instanceof aiToolRegistry.AiToolDepartmentScopeError
+    err instanceof aiToolRegistry.AiToolTenantMismatchError ||
+    err instanceof aiToolRegistry.AiToolRoleNotPermittedError ||
+    err instanceof aiToolRegistry.AiToolDataClassificationError ||
+    err instanceof aiToolRegistry.AiToolDepartmentScopeError
   ) {
     res.status(403).json({ detail: err.message });
     return true;
@@ -204,7 +204,10 @@ function mapAiToolError(err, res) {
   // isn't a bug). Both thrown by aiCostControlService.checkUsageLimits,
   // called once at the very top of askAgent, before any provider is
   // ever reached.
-  if (err instanceof aiCostControlService.AiQuotaExceededError || err instanceof aiCostControlService.AiRateLimitExceededError) {
+  if (
+    err instanceof aiCostControlService.AiQuotaExceededError ||
+    err instanceof aiCostControlService.AiRateLimitExceededError
+  ) {
     res.status(429).json({ detail: err.message });
     return true;
   }
@@ -223,8 +226,8 @@ function mapAiToolError(err, res) {
     return true;
   }
   if (
-    err instanceof notificationService.NotificationNoPendingRequestError
-    || err instanceof notificationService.NotificationNotApprovedError
+    err instanceof notificationService.NotificationNoPendingRequestError ||
+    err instanceof notificationService.NotificationNotApprovedError
   ) {
     res.status(409).json({ detail: err.message });
     return true;
@@ -236,8 +239,8 @@ function mapAiToolError(err, res) {
   // reasoning as aiProviders.LlmRequestError below (the vendor/site,
   // not this server, is at fault).
   if (
-    err instanceof webRetrievalService.WebRetrievalNotEnabledError
-    || err instanceof webRetrievalService.WebRetrievalDomainNotAllowedError
+    err instanceof webRetrievalService.WebRetrievalNotEnabledError ||
+    err instanceof webRetrievalService.WebRetrievalDomainNotAllowedError
   ) {
     res.status(400).json({ detail: err.message });
     return true;
@@ -251,8 +254,8 @@ function mapAiToolError(err, res) {
   // prompt itself was invalid, either way "this request can't be served
   // as configured/asked," not a server or upstream-provider fault.
   if (
-    err instanceof imageGenerationService.ImageGenerationNotEnabledError
-    || err instanceof imageGenerationService.ImageGenerationValidationError
+    err instanceof imageGenerationService.ImageGenerationNotEnabledError ||
+    err instanceof imageGenerationService.ImageGenerationValidationError
   ) {
     res.status(400).json({ detail: err.message });
     return true;
@@ -267,25 +270,25 @@ function mapAiToolError(err, res) {
   // same reason — an authenticated, permitted caller reaching for
   // something outside their own scope.
   if (
-    err instanceof assessmentService.AssessmentMarkValidationError
-    || err instanceof calendarService.CalendarEventValidationError
-    || err instanceof financeService.FeePaymentValidationError
-    || err instanceof financeService.FeePaymentStatusError
-    || err instanceof financeService.FeeCorrectionValidationError
-    || err instanceof staffService.StaffValidationError
-    || err instanceof studentService.StudentTransferValidationError
-    || err instanceof studentService.StudentLifecycleValidationError
-    || err instanceof academicService.ClassValidationError
-    || err instanceof workflowService.WorkflowRequestValidationError
-    || err instanceof projectService.ProjectValidationError
+    err instanceof assessmentService.AssessmentMarkValidationError ||
+    err instanceof calendarService.CalendarEventValidationError ||
+    err instanceof financeService.FeePaymentValidationError ||
+    err instanceof financeService.FeePaymentStatusError ||
+    err instanceof financeService.FeeCorrectionValidationError ||
+    err instanceof staffService.StaffValidationError ||
+    err instanceof studentService.StudentTransferValidationError ||
+    err instanceof studentService.StudentLifecycleValidationError ||
+    err instanceof academicService.ClassValidationError ||
+    err instanceof workflowService.WorkflowRequestValidationError ||
+    err instanceof projectService.ProjectValidationError ||
     // UAT finding: attendanceService's own error classes (mark_attendance_nl's
     // Business Service) were never registered here at all — every one of
     // its errors fell through to an unhandled 500 instead of the same
     // clean mapping routes/attendance.js's own mapAttendanceServiceError
     // already gives a human caller of the equivalent action. Statuses
     // below match that existing mapper exactly, not a new convention.
-    || err instanceof attendanceService.AttendanceValidationError
-    || err instanceof attendanceService.AttendanceCorrectionValidationError
+    err instanceof attendanceService.AttendanceValidationError ||
+    err instanceof attendanceService.AttendanceCorrectionValidationError ||
     // export_artifact/update_artifact_content (this session's own tools) —
     // never registered here until the live test that first exercised the
     // failure path caught it: artifactService's errors fell straight
@@ -293,75 +296,75 @@ function mapAiToolError(err, res) {
     // ran into a problem" fallback), same class of gap the
     // attendanceService UAT finding above already fixed once for a
     // different service.
-    || err instanceof artifactService.ArtifactValidationError
+    err instanceof artifactService.ArtifactValidationError ||
     // generate_document (this session's own tool) — same reasoning,
     // applied up front this time rather than found live: uploadDocument's
     // own required-field guard (documentService.js).
-    || err instanceof documentService.DocumentValidationError
+    err instanceof documentService.DocumentValidationError
   ) {
     res.status(400).json({ detail: err.message });
     return true;
   }
   if (
-    err instanceof assessmentService.AssessmentMarkNotAssignedFacultyError
-    || err instanceof studentService.StudentNotAuthorizedError
-    || err instanceof attendanceService.AttendanceForbiddenError
-    || err instanceof financeService.FeePaymentNotAuthorizedError
-    || err instanceof projectService.ProjectForbiddenError
-    || err instanceof artifactService.ArtifactForbiddenError
+    err instanceof assessmentService.AssessmentMarkNotAssignedFacultyError ||
+    err instanceof studentService.StudentNotAuthorizedError ||
+    err instanceof attendanceService.AttendanceForbiddenError ||
+    err instanceof financeService.FeePaymentNotAuthorizedError ||
+    err instanceof projectService.ProjectForbiddenError ||
+    err instanceof artifactService.ArtifactForbiddenError
   ) {
     res.status(403).json({ detail: err.message });
     return true;
   }
   if (
-    err instanceof assessmentService.AssessmentMarkClassNotFoundError
-    || err instanceof calendarService.CalendarEventNotFoundError
-    || err instanceof financeService.FeePaymentStudentNotFoundError
-    || err instanceof financeService.FeePaymentDocumentNotFoundError
-    || err instanceof financeService.FeeCorrectionNotFoundError
-    || err instanceof staffService.StaffNotFoundError
-    || err instanceof staffService.StaffDepartmentNotFoundError
-    || err instanceof staffService.StaffHodNotFoundError
-    || err instanceof staffService.StaffPrincipalNotFoundError
-    || err instanceof studentService.StudentClassNotFoundError
-    || err instanceof studentService.StudentTransferStudentNotFoundError
-    || err instanceof studentService.StudentTransferClassNotFoundError
-    || err instanceof studentService.StudentLifecycleStudentNotFoundError
-    || err instanceof attendanceService.AttendanceClassNotFoundError
-    || err instanceof attendanceService.AttendanceSessionNotFoundError
-    || err instanceof attendanceService.AttendanceCorrectionNotFoundError
-    || err instanceof projectService.ProjectNotFoundError
-    || err instanceof artifactService.ArtifactNotFoundError
+    err instanceof assessmentService.AssessmentMarkClassNotFoundError ||
+    err instanceof calendarService.CalendarEventNotFoundError ||
+    err instanceof financeService.FeePaymentStudentNotFoundError ||
+    err instanceof financeService.FeePaymentDocumentNotFoundError ||
+    err instanceof financeService.FeeCorrectionNotFoundError ||
+    err instanceof staffService.StaffNotFoundError ||
+    err instanceof staffService.StaffDepartmentNotFoundError ||
+    err instanceof staffService.StaffHodNotFoundError ||
+    err instanceof staffService.StaffPrincipalNotFoundError ||
+    err instanceof studentService.StudentClassNotFoundError ||
+    err instanceof studentService.StudentTransferStudentNotFoundError ||
+    err instanceof studentService.StudentTransferClassNotFoundError ||
+    err instanceof studentService.StudentLifecycleStudentNotFoundError ||
+    err instanceof attendanceService.AttendanceClassNotFoundError ||
+    err instanceof attendanceService.AttendanceSessionNotFoundError ||
+    err instanceof attendanceService.AttendanceCorrectionNotFoundError ||
+    err instanceof projectService.ProjectNotFoundError ||
+    err instanceof artifactService.ArtifactNotFoundError
   ) {
     res.status(404).json({ detail: err.message });
     return true;
   }
   if (
-    err instanceof financeService.FeePaymentConflictError
-    || err instanceof financeService.FeePaymentAlreadyMarkedError
-    || err instanceof financeService.FeeCorrectionNoPendingRequestError
-    || err instanceof staffService.StaffCodeConflictError
-    || err instanceof studentService.StudentRollNoConflictError
-    || err instanceof studentService.StudentLifecycleApprovalRequiredError
-    || err instanceof workflowService.WorkflowRequestConflictError
-    || err instanceof attendanceService.AttendanceTimetableNotApprovedError
-    || err instanceof attendanceService.AttendanceLockedError
-    || err instanceof attendanceService.AttendanceSessionConflictError
-    || err instanceof attendanceService.AttendanceReMarkConflictError
-    || err instanceof attendanceService.AttendanceNotLockedError
-    || err instanceof attendanceService.AttendanceCorrectionNoPendingRequestError
-    || err instanceof projectService.ProjectDocumentAlreadyAttachedError
+    err instanceof financeService.FeePaymentConflictError ||
+    err instanceof financeService.FeePaymentAlreadyMarkedError ||
+    err instanceof financeService.FeeCorrectionNoPendingRequestError ||
+    err instanceof staffService.StaffCodeConflictError ||
+    err instanceof studentService.StudentRollNoConflictError ||
+    err instanceof studentService.StudentLifecycleApprovalRequiredError ||
+    err instanceof workflowService.WorkflowRequestConflictError ||
+    err instanceof attendanceService.AttendanceTimetableNotApprovedError ||
+    err instanceof attendanceService.AttendanceLockedError ||
+    err instanceof attendanceService.AttendanceSessionConflictError ||
+    err instanceof attendanceService.AttendanceReMarkConflictError ||
+    err instanceof attendanceService.AttendanceNotLockedError ||
+    err instanceof attendanceService.AttendanceCorrectionNoPendingRequestError ||
+    err instanceof projectService.ProjectDocumentAlreadyAttachedError ||
     // No active teaching session right now is the same "actor/resource
     // isn't in a state that allows this action right now" semantics
     // AttendanceTimetableNotApprovedError/AttendanceLockedError already
     // use 409 for above — mark_attendance_nl-only (the human dashboard's
     // own attendance route never resolves "current session" implicitly,
     // so this exact class has no prior mapping anywhere to match against).
-    || err instanceof attendanceService.AttendanceNoActiveSessionError
+    err instanceof attendanceService.AttendanceNoActiveSessionError ||
     // Same "actor/resource isn't in a state that allows this action right
     // now" semantics as AttendanceLockedError etc. above — a published
     // artifact is terminal (assertNotPublished, artifactService.js).
-    || err instanceof artifactService.ArtifactAlreadyPublishedError
+    err instanceof artifactService.ArtifactAlreadyPublishedError
   ) {
     res.status(409).json({ detail: err.message });
     return true;
@@ -386,42 +389,53 @@ function createAiRouter() {
   // this route. Listing tool names/descriptions carries no
   // classification risk of its own; invoking one is what the gate below
   // actually protects.
-  router.get('/ai/tools', requireAuth, asyncHandler(async (req, res) => {
-    res.json(aiService.listTools());
-  }));
+  router.get(
+    '/ai/tools',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      res.json(aiService.listTools());
+    }),
+  );
 
   // An optional body.question turns this into the full Tool Registry
   // -> ... -> LLM pipeline (aiService.askAboutTool); omitting it keeps
   // today's behavior exactly (aiService.invokeTool, stops at the
   // sanitized context blob) — one route, not two, and every existing
   // caller/test that never sends `question` is unaffected.
-  router.post('/ai/tools/:name/invoke', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const identityContext = buildAiIdentityContext(req);
-    const params = (req.body || {}).params || {};
-    const question = (req.body || {}).question;
-    // Opt-in — a caller that never sends this header (every caller
-    // today; wiring the frontend to send one is a separate, later
-    // piece of work) sees byte-for-byte the same behavior as before.
-    // Only applies to the plain-invoke write path, not askAboutTool
-    // (a read, nothing to deduplicate) — see
-    // aiService.invokeToolIdempotent's own comment on scope.
-    const idempotencyKey = req.get('Idempotency-Key');
-    try {
-      let result;
-      if (question !== undefined) {
-        result = await aiService.askAboutTool(req.dbClient, req.params.name, params, question, { identityContext });
-      } else if (idempotencyKey) {
-        result = await aiService.invokeToolIdempotent(req.dbClient, req.params.name, params, { identityContext, idempotencyKey });
-      } else {
-        result = await aiService.invokeTool(req.dbClient, req.params.name, params, { identityContext });
+  router.post(
+    '/ai/tools/:name/invoke',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const identityContext = buildAiIdentityContext(req);
+      const params = (req.body || {}).params || {};
+      const question = (req.body || {}).question;
+      // Opt-in — a caller that never sends this header (every caller
+      // today; wiring the frontend to send one is a separate, later
+      // piece of work) sees byte-for-byte the same behavior as before.
+      // Only applies to the plain-invoke write path, not askAboutTool
+      // (a read, nothing to deduplicate) — see
+      // aiService.invokeToolIdempotent's own comment on scope.
+      const idempotencyKey = req.get('Idempotency-Key');
+      try {
+        let result;
+        if (question !== undefined) {
+          result = await aiService.askAboutTool(req.dbClient, req.params.name, params, question, { identityContext });
+        } else if (idempotencyKey) {
+          result = await aiService.invokeToolIdempotent(req.dbClient, req.params.name, params, {
+            identityContext,
+            idempotencyKey,
+          });
+        } else {
+          result = await aiService.invokeTool(req.dbClient, req.params.name, params, { identityContext });
+        }
+        res.json(result);
+      } catch (err) {
+        if (mapAiToolError(err, res)) return;
+        throw err;
       }
-      res.json(result);
-    } catch (err) {
-      if (mapAiToolError(err, res)) return;
-      throw err;
-    }
-  }));
+    }),
+  );
 
   // Tool-selection entry point: body {question}, no toolName — the LLM
   // picks a tool (or none) from aiService.askAgent's own registry list.
@@ -450,8 +464,13 @@ function createAiRouter() {
   async function resolveAskContext(req) {
     const identityContext = buildAiIdentityContext(req);
     const {
-      question, focusContext, project_id: projectId, conversation_id: conversationId,
-      attachment_ids: attachmentIds, mode, thinkingLevel,
+      question,
+      focusContext,
+      project_id: projectId,
+      conversation_id: conversationId,
+      attachment_ids: attachmentIds,
+      mode,
+      thinkingLevel,
     } = req.body || {};
     let projectContext;
     if (projectId) {
@@ -475,38 +494,57 @@ function createAiRouter() {
     let history;
     if (conversationId) {
       try {
-        const messages = await conversationService.listMessages(req.dbClient, conversationId, { userId: identityContext.userId });
+        const messages = await conversationService.listMessages(req.dbClient, conversationId, {
+          userId: identityContext.userId,
+        });
         // attachments rides along (not just role/content) so buildHistoryHint
         // can remind the model a file from an earlier turn still has a live,
         // reusable attachmentId — see that function's own comment for why
         // dropping this here was the actual bug behind "asks to re-upload/
         // re-state the file on the very next turn".
-        history = messages.slice(-HISTORY_MESSAGE_CEILING).map((m) => ({ role: m.role, content: m.content, attachments: m.attachments || undefined }));
+        history = messages
+          .slice(-HISTORY_MESSAGE_CEILING)
+          .map((m) => ({ role: m.role, content: m.content, attachments: m.attachments || undefined }));
       } catch {
         // graceful degrade — see comment above
       }
     }
     return {
-      question, identityContext, focusContext, projectContext, history, attachmentIds, mode,
+      question,
+      identityContext,
+      focusContext,
+      projectContext,
+      history,
+      attachmentIds,
+      mode,
       thinkingLevel: resolveThinkingLevel(thinkingLevel),
     };
   }
 
-  router.post('/ai/ask', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const {
-      question, identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel,
-    } = await resolveAskContext(req);
-    try {
-      const result = await aiService.askAgent(req.dbClient, question, {
-        identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel,
-      });
-      res.json(result);
-    } catch (err) {
-      if (mapAiToolError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/ai/ask',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { question, identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel } =
+        await resolveAskContext(req);
+      try {
+        const result = await aiService.askAgent(req.dbClient, question, {
+          identityContext,
+          focusContext,
+          projectContext,
+          history,
+          attachmentIds,
+          mode,
+          thinkingLevel,
+        });
+        res.json(result);
+      } catch (err) {
+        if (mapAiToolError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // Streaming variant of /ai/ask (P0.5) — same tool-select/plan/
   // confirmation logic (aiService.askAgent, unchanged): the final
@@ -522,36 +560,51 @@ function createAiRouter() {
   // route it used. A separate route, not a content-negotiated branch of
   // /ai/ask itself, so that route's existing contract/tests stay
   // byte-for-byte untouched.
-  router.post('/ai/ask/stream', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const {
-      question, identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel,
-    } = await resolveAskContext(req);
+  router.post(
+    '/ai/ask/stream',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { question, identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel } =
+        await resolveAskContext(req);
 
-    res.writeHead(200, {
-      'content-type': 'text/event-stream',
-      'cache-control': 'no-cache',
-      connection: 'keep-alive',
-    });
-    const writeEvent = (event, data) => {
-      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-    };
+      res.writeHead(200, {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      });
+      const writeEvent = (event, data) => {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
 
-    try {
-      const result = await aiService.askAgent(req.dbClient, question, {
-        identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel,
-      }, (delta) => writeEvent('delta', { delta }), (step) => writeEvent('step', step));
-      writeEvent('done', result);
-    } catch (err) {
-      // The response has already started (headers sent) by the time
-      // any error here could occur — an SSE `error` event, never an
-      // HTTP status change, is the only honest way to surface it to an
-      // EventSource client at this point.
-      writeEvent('error', { detail: err.message });
-    } finally {
-      res.end();
-    }
-  }));
+      try {
+        const result = await aiService.askAgent(
+          req.dbClient,
+          question,
+          {
+            identityContext,
+            focusContext,
+            projectContext,
+            history,
+            attachmentIds,
+            mode,
+            thinkingLevel,
+          },
+          (delta) => writeEvent('delta', { delta }),
+          (step) => writeEvent('step', step),
+        );
+        writeEvent('done', result);
+      } catch (err) {
+        // The response has already started (headers sent) by the time
+        // any error here could occur — an SSE `error` event, never an
+        // HTTP status change, is the only honest way to surface it to an
+        // EventSource client at this point.
+        writeEvent('error', { detail: err.message });
+      } finally {
+        res.end();
+      }
+    }),
+  );
 
   // Executes a bounded workflow plan the user already confirmed (P0.3)
   // — the frontend gets `pendingConfirmation: { steps }` back from
@@ -569,23 +622,29 @@ function createAiRouter() {
   // /ai/tools/:name/invoke already lets a caller name any tool+params
   // directly with no LLM in the loop at all. The Policy Gate is the
   // real authority here, never "was this plan LLM-authored."
-  router.post('/ai/workflow/execute', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const identityContext = buildAiIdentityContext(req);
-    const { question, steps } = req.body || {};
-    if (!Array.isArray(steps) || steps.length === 0) {
-      res.status(400).json({ detail: 'steps is required and must be a non-empty array' });
-      return;
-    }
-    const resolvedSteps = steps.map((s) => ({ toolName: s.toolName || s.tool_name, params: s.params || {} }));
-    try {
-      const result = await aiService.executeWorkflowPlan(req.dbClient, resolvedSteps, question || '', { identityContext });
-      res.json(result);
-    } catch (err) {
-      if (mapAiToolError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/ai/workflow/execute',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const identityContext = buildAiIdentityContext(req);
+      const { question, steps } = req.body || {};
+      if (!Array.isArray(steps) || steps.length === 0) {
+        res.status(400).json({ detail: 'steps is required and must be a non-empty array' });
+        return;
+      }
+      const resolvedSteps = steps.map((s) => ({ toolName: s.toolName || s.tool_name, params: s.params || {} }));
+      try {
+        const result = await aiService.executeWorkflowPlan(req.dbClient, resolvedSteps, question || '', {
+          identityContext,
+        });
+        res.json(result);
+      } catch (err) {
+        if (mapAiToolError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   return router;
 }

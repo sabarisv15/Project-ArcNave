@@ -46,9 +46,7 @@ async function resolveAssessmentTypeId(client, collegeId, identifier) {
   }
   const assessmentType = await assessmentTypeRepository.findByName(client, collegeId, identifier);
   if (assessmentType === null) {
-    throw new IdentifierResolutionError(
-      `no assessment type found named ${JSON.stringify(identifier)} in this college`,
-    );
+    throw new IdentifierResolutionError(`no assessment type found named ${JSON.stringify(identifier)} in this college`);
   }
   return assessmentType.id;
 }
@@ -163,17 +161,27 @@ async function createAssessmentType(client, { collegeId, name, maxMarks }, { act
   let assessmentType;
   try {
     assessmentType = await assessmentTypeRepository.create(client, {
-      collegeId, name, maxMarks, createdByUserId: actorUserId,
+      collegeId,
+      name,
+      maxMarks,
+      createdByUserId: actorUserId,
     });
   } catch (err) {
     if (err.code === '23505' && err.constraint === 'assessment_types_college_name_key') {
-      throw new AssessmentTypeNameConflictError(`an assessment type named ${JSON.stringify(name)} already exists for this college`);
+      throw new AssessmentTypeNameConflictError(
+        `an assessment type named ${JSON.stringify(name)} already exists for this college`,
+      );
     }
     throw err;
   }
 
   await auditLogRepository.createAuditLogEntry(client, {
-    collegeId, userId: actorUserId, action: 'assessment_type_created', entity: 'assessment_types', entityId: assessmentType.id, metadata: null,
+    collegeId,
+    userId: actorUserId,
+    action: 'assessment_type_created',
+    entity: 'assessment_types',
+    entityId: assessmentType.id,
+    metadata: null,
   });
 
   return assessmentType;
@@ -197,10 +205,14 @@ async function assertCanEditAssessmentType(client, id, { actorUserId, actorRole 
     if (actorRole === 'principal') {
       return;
     }
-    throw new AssessmentTypeNotAuthorizedError(`assessment type ${JSON.stringify(id)} has no recorded creator — only principal may edit it`);
+    throw new AssessmentTypeNotAuthorizedError(
+      `assessment type ${JSON.stringify(id)} has no recorded creator — only principal may edit it`,
+    );
   }
   if (existing.created_by_user_id !== actorUserId) {
-    throw new AssessmentTypeNotAuthorizedError(`user ${JSON.stringify(actorUserId)} did not create assessment type ${JSON.stringify(id)}`);
+    throw new AssessmentTypeNotAuthorizedError(
+      `user ${JSON.stringify(actorUserId)} did not create assessment type ${JSON.stringify(id)}`,
+    );
   }
 }
 
@@ -211,7 +223,9 @@ async function updateAssessmentType(client, id, fields, { actorUserId, actorRole
     assessmentType = await assessmentTypeRepository.update(client, id, fields);
   } catch (err) {
     if (err.code === '23505' && err.constraint === 'assessment_types_college_name_key') {
-      throw new AssessmentTypeNameConflictError(`an assessment type named ${JSON.stringify(fields.name)} already exists for this college`);
+      throw new AssessmentTypeNameConflictError(
+        `an assessment type named ${JSON.stringify(fields.name)} already exists for this college`,
+      );
     }
     throw err;
   }
@@ -220,7 +234,12 @@ async function updateAssessmentType(client, id, fields, { actorUserId, actorRole
   }
 
   await auditLogRepository.createAuditLogEntry(client, {
-    collegeId: assessmentType.college_id, userId: actorUserId, action: 'assessment_type_updated', entity: 'assessment_types', entityId: id, metadata: null,
+    collegeId: assessmentType.college_id,
+    userId: actorUserId,
+    action: 'assessment_type_updated',
+    entity: 'assessment_types',
+    entityId: id,
+    metadata: null,
   });
   return assessmentType;
 }
@@ -243,7 +262,10 @@ async function assertIsAssignedFaculty(client, classId, subject, actorUserId) {
 // migration comment already sets, applied one level up.
 async function findBatchStatus(client, { academicYear, classId, subject, assessmentTypeId }) {
   const submission = await assessmentSubmissionRepository.findOne(client, {
-    academicYear, classId, subject, assessmentTypeId,
+    academicYear,
+    classId,
+    subject,
+    assessmentTypeId,
   });
   return submission || { status: 'draft' };
 }
@@ -296,11 +318,23 @@ function assertMarksInRange(marksObtained, maxMarks) {
 // requestMarkCorrection/requestMarkReevaluation once locked/submitted.
 // Mirrors financeService.markFeePayment's identical first-write-only
 // shape (RS-FIN-002/003).
-async function recordMark(client, {
-  academicYear, classId, subject, assessmentTypeId, studentId, marksObtained,
-}, { actorUserId } = {}) {
-  if (!academicYear || !classId || !subject || !assessmentTypeId || !studentId || marksObtained === undefined || marksObtained === null) {
-    throw new AssessmentMarkValidationError('academicYear, classId, subject, assessmentTypeId, studentId, and marksObtained are required');
+async function recordMark(
+  client,
+  { academicYear, classId, subject, assessmentTypeId, studentId, marksObtained },
+  { actorUserId } = {},
+) {
+  if (
+    !academicYear ||
+    !classId ||
+    !subject ||
+    !assessmentTypeId ||
+    !studentId ||
+    marksObtained === undefined ||
+    marksObtained === null
+  ) {
+    throw new AssessmentMarkValidationError(
+      'academicYear, classId, subject, assessmentTypeId, studentId, and marksObtained are required',
+    );
   }
 
   const cls = await classRepository.findById(client, classId);
@@ -310,7 +344,10 @@ async function recordMark(client, {
   await assertIsAssignedFaculty(client, classId, subject, actorUserId);
 
   const batch = await findBatchStatus(client, {
-    academicYear, classId, subject, assessmentTypeId,
+    academicYear,
+    classId,
+    subject,
+    assessmentTypeId,
   });
   assertBatchDraft(batch);
 
@@ -324,7 +361,10 @@ async function recordMark(client, {
   assertMarksInRange(marksObtained, assessmentType ? assessmentType.max_marks : null);
 
   const existing = await assessmentMarkRepository.findOne(client, {
-    studentId, assessmentTypeId, classId, subject,
+    studentId,
+    assessmentTypeId,
+    classId,
+    subject,
   });
   if (existing !== null) {
     throw new AssessmentMarkAlreadyRecordedError(
@@ -333,7 +373,14 @@ async function recordMark(client, {
   }
 
   const mark = await assessmentMarkRepository.create(client, {
-    collegeId: cls.college_id, academicYear, classId, subject, assessmentTypeId, studentId, marksObtained, enteredByUserId: actorUserId,
+    collegeId: cls.college_id,
+    academicYear,
+    classId,
+    subject,
+    assessmentTypeId,
+    studentId,
+    marksObtained,
+    enteredByUserId: actorUserId,
   });
 
   await auditLogRepository.createAuditLogEntry(client, {
@@ -364,7 +411,10 @@ async function updateMark(client, markId, { marksObtained } = {}, { actorUserId 
   await assertIsAssignedFaculty(client, mark.class_id, mark.subject, actorUserId);
 
   const batch = await findBatchStatus(client, {
-    academicYear: mark.academic_year, classId: mark.class_id, subject: mark.subject, assessmentTypeId: mark.assessment_type_id,
+    academicYear: mark.academic_year,
+    classId: mark.class_id,
+    subject: mark.subject,
+    assessmentTypeId: mark.assessment_type_id,
   });
   assertBatchDraft(batch);
 
@@ -389,21 +439,31 @@ async function updateMark(client, markId, { marksObtained } = {}, { actorUserId 
 
 async function getOrCreateBatch(client, { collegeId, academicYear, classId, subject, assessmentTypeId }) {
   const existing = await assessmentSubmissionRepository.findOne(client, {
-    academicYear, classId, subject, assessmentTypeId,
+    academicYear,
+    classId,
+    subject,
+    assessmentTypeId,
   });
   if (existing !== null) {
     return existing;
   }
   return assessmentSubmissionRepository.create(client, {
-    collegeId, academicYear, classId, subject, assessmentTypeId, status: 'draft',
+    collegeId,
+    academicYear,
+    classId,
+    subject,
+    assessmentTypeId,
+    status: 'draft',
   });
 }
 
 // "Save and Lock": draft -> locked, freezing direct edits for this
 // batch. Only the assigned Subject Faculty may lock their own batch.
-async function lockAssessmentSubmission(client, {
-  academicYear, classId, subject, assessmentTypeId,
-}, { actorUserId } = {}) {
+async function lockAssessmentSubmission(
+  client,
+  { academicYear, classId, subject, assessmentTypeId },
+  { actorUserId } = {},
+) {
   if (!academicYear || !classId || !subject || !assessmentTypeId) {
     throw new AssessmentSubmissionValidationError('academicYear, classId, subject, and assessmentTypeId are required');
   }
@@ -414,18 +474,31 @@ async function lockAssessmentSubmission(client, {
   await assertIsAssignedFaculty(client, classId, subject, actorUserId);
 
   const batch = await getOrCreateBatch(client, {
-    collegeId: cls.college_id, academicYear, classId, subject, assessmentTypeId,
+    collegeId: cls.college_id,
+    academicYear,
+    classId,
+    subject,
+    assessmentTypeId,
   });
   if (batch.status !== 'draft') {
-    throw new AssessmentSubmissionInvalidTransitionError(`assessment batch is ${JSON.stringify(batch.status)}, not 'draft' — cannot lock`);
+    throw new AssessmentSubmissionInvalidTransitionError(
+      `assessment batch is ${JSON.stringify(batch.status)}, not 'draft' — cannot lock`,
+    );
   }
 
   const updated = await assessmentSubmissionRepository.update(client, batch.id, {
-    status: 'locked', lockedAt: new Date(), lockedByUserId: actorUserId,
+    status: 'locked',
+    lockedAt: new Date(),
+    lockedByUserId: actorUserId,
   });
 
   await auditLogRepository.createAuditLogEntry(client, {
-    collegeId: cls.college_id, userId: actorUserId, action: 'assessment_submission_locked', entity: 'assessment_submissions', entityId: updated.id, metadata: { subject, assessmentTypeId },
+    collegeId: cls.college_id,
+    userId: actorUserId,
+    action: 'assessment_submission_locked',
+    entity: 'assessment_submissions',
+    entityId: updated.id,
+    metadata: { subject, assessmentTypeId },
   });
 
   return updated;
@@ -434,9 +507,11 @@ async function lockAssessmentSubmission(client, {
 // locked -> draft: staff changed their mind before submitting. Only
 // available while still 'locked' — once 'submitted', there is no way
 // back to direct editing (requestMarkReevaluation is the only path).
-async function unlockAssessmentSubmission(client, {
-  academicYear, classId, subject, assessmentTypeId,
-}, { actorUserId } = {}) {
+async function unlockAssessmentSubmission(
+  client,
+  { academicYear, classId, subject, assessmentTypeId },
+  { actorUserId } = {},
+) {
   const cls = await classRepository.findById(client, classId);
   if (cls === null) {
     throw new AssessmentMarkClassNotFoundError(`class ${JSON.stringify(classId)} does not exist`);
@@ -444,21 +519,35 @@ async function unlockAssessmentSubmission(client, {
   await assertIsAssignedFaculty(client, classId, subject, actorUserId);
 
   const batch = await assessmentSubmissionRepository.findOne(client, {
-    academicYear, classId, subject, assessmentTypeId,
+    academicYear,
+    classId,
+    subject,
+    assessmentTypeId,
   });
   if (batch === null) {
-    throw new AssessmentSubmissionNotFoundError('no assessment batch found for this academicYear/classId/subject/assessmentTypeId');
+    throw new AssessmentSubmissionNotFoundError(
+      'no assessment batch found for this academicYear/classId/subject/assessmentTypeId',
+    );
   }
   if (batch.status !== 'locked') {
-    throw new AssessmentSubmissionInvalidTransitionError(`assessment batch is ${JSON.stringify(batch.status)}, not 'locked' — cannot unlock`);
+    throw new AssessmentSubmissionInvalidTransitionError(
+      `assessment batch is ${JSON.stringify(batch.status)}, not 'locked' — cannot unlock`,
+    );
   }
 
   const updated = await assessmentSubmissionRepository.update(client, batch.id, {
-    status: 'draft', lockedAt: null, lockedByUserId: null,
+    status: 'draft',
+    lockedAt: null,
+    lockedByUserId: null,
   });
 
   await auditLogRepository.createAuditLogEntry(client, {
-    collegeId: cls.college_id, userId: actorUserId, action: 'assessment_submission_unlocked', entity: 'assessment_submissions', entityId: updated.id, metadata: { subject, assessmentTypeId },
+    collegeId: cls.college_id,
+    userId: actorUserId,
+    action: 'assessment_submission_unlocked',
+    entity: 'assessment_submissions',
+    entityId: updated.id,
+    metadata: { subject, assessmentTypeId },
   });
 
   return updated;
@@ -467,9 +556,11 @@ async function unlockAssessmentSubmission(client, {
 // "Submit whenever ready": locked -> submitted. Must be locked first —
 // submitting directly from 'draft' is refused so nothing reaches the
 // HOD without the faculty explicitly freezing it first.
-async function submitAssessmentSubmission(client, {
-  academicYear, classId, subject, assessmentTypeId,
-}, { actorUserId } = {}) {
+async function submitAssessmentSubmission(
+  client,
+  { academicYear, classId, subject, assessmentTypeId },
+  { actorUserId } = {},
+) {
   const cls = await classRepository.findById(client, classId);
   if (cls === null) {
     throw new AssessmentMarkClassNotFoundError(`class ${JSON.stringify(classId)} does not exist`);
@@ -477,31 +568,46 @@ async function submitAssessmentSubmission(client, {
   await assertIsAssignedFaculty(client, classId, subject, actorUserId);
 
   const batch = await assessmentSubmissionRepository.findOne(client, {
-    academicYear, classId, subject, assessmentTypeId,
+    academicYear,
+    classId,
+    subject,
+    assessmentTypeId,
   });
   if (batch === null) {
-    throw new AssessmentSubmissionNotFoundError('no assessment batch found for this academicYear/classId/subject/assessmentTypeId');
+    throw new AssessmentSubmissionNotFoundError(
+      'no assessment batch found for this academicYear/classId/subject/assessmentTypeId',
+    );
   }
   if (batch.status !== 'locked') {
-    throw new AssessmentSubmissionInvalidTransitionError(`assessment batch is ${JSON.stringify(batch.status)}, not 'locked' — lock it before submitting`);
+    throw new AssessmentSubmissionInvalidTransitionError(
+      `assessment batch is ${JSON.stringify(batch.status)}, not 'locked' — lock it before submitting`,
+    );
   }
 
   const updated = await assessmentSubmissionRepository.update(client, batch.id, {
-    status: 'submitted', submittedAt: new Date(), submittedByUserId: actorUserId,
+    status: 'submitted',
+    submittedAt: new Date(),
+    submittedByUserId: actorUserId,
   });
 
   await auditLogRepository.createAuditLogEntry(client, {
-    collegeId: cls.college_id, userId: actorUserId, action: 'assessment_submission_submitted', entity: 'assessment_submissions', entityId: updated.id, metadata: { subject, assessmentTypeId },
+    collegeId: cls.college_id,
+    userId: actorUserId,
+    action: 'assessment_submission_submitted',
+    entity: 'assessment_submissions',
+    entityId: updated.id,
+    metadata: { subject, assessmentTypeId },
   });
 
   return updated;
 }
 
-async function getAssessmentSubmissionStatus(client, {
-  academicYear, classId, subject, assessmentTypeId,
-}) {
+async function getAssessmentSubmissionStatus(client, { academicYear, classId, subject, assessmentTypeId }) {
   return findBatchStatus(client, {
-    academicYear, classId, subject, assessmentTypeId,
+    academicYear,
+    classId,
+    subject,
+    assessmentTypeId,
   });
 }
 
@@ -513,7 +619,12 @@ async function getAssessmentSubmissionStatus(client, {
 // fee corrections) is the approver, same role RS-ASM-003 names
 // explicitly ("the same role L4 already plays for attendance
 // corrections").
-async function requestMarkCorrection(client, markId, { proposedMarksObtained, reason } = {}, { requestedByUserId, origin = 'human' } = {}) {
+async function requestMarkCorrection(
+  client,
+  markId,
+  { proposedMarksObtained, reason } = {},
+  { requestedByUserId, origin = 'human' } = {},
+) {
   if (proposedMarksObtained === undefined || proposedMarksObtained === null) {
     throw new MarkCorrectionValidationError('proposedMarksObtained is required');
   }
@@ -527,7 +638,10 @@ async function requestMarkCorrection(client, markId, { proposedMarksObtained, re
   }
 
   const batch = await findBatchStatus(client, {
-    academicYear: mark.academic_year, classId: mark.class_id, subject: mark.subject, assessmentTypeId: mark.assessment_type_id,
+    academicYear: mark.academic_year,
+    classId: mark.class_id,
+    subject: mark.subject,
+    assessmentTypeId: mark.assessment_type_id,
   });
   if (batch.status !== 'locked') {
     throw new MarkCorrectionWrongBatchStateError(
@@ -538,7 +652,9 @@ async function requestMarkCorrection(client, markId, { proposedMarksObtained, re
   }
 
   const cls = await classRepository.findById(client, mark.class_id);
-  const tutorUserId = cls ? await identityService.resolvePositionOccupant(client, { collegeId: cls.college_id, classId: cls.id }) : null;
+  const tutorUserId = cls
+    ? await identityService.resolvePositionOccupant(client, { collegeId: cls.college_id, classId: cls.id })
+    : null;
 
   const workflowRequest = await workflowService.submitRequest(client, {
     collegeId: mark.college_id,
@@ -567,11 +683,15 @@ async function loadPendingMarkCorrectionApproval(client, correctionId) {
     throw new MarkCorrectionNotFoundError(`assessment mark correction ${JSON.stringify(correctionId)} does not exist`);
   }
   if (correction.workflow_request_id === null) {
-    throw new MarkCorrectionNoPendingRequestError(`assessment mark correction ${JSON.stringify(correctionId)} has no workflow request`);
+    throw new MarkCorrectionNoPendingRequestError(
+      `assessment mark correction ${JSON.stringify(correctionId)} has no workflow request`,
+    );
   }
   const pending = await workflowService.getRequest(client, correction.workflow_request_id);
   if (pending === null || pending.status !== 'Pending') {
-    throw new MarkCorrectionNoPendingRequestError(`assessment mark correction ${JSON.stringify(correctionId)} has no pending approval request`);
+    throw new MarkCorrectionNoPendingRequestError(
+      `assessment mark correction ${JSON.stringify(correctionId)} has no pending approval request`,
+    );
   }
   return { correction, pending };
 }
@@ -581,7 +701,9 @@ async function loadPendingMarkCorrectionApproval(client, correctionId) {
 // getEffectiveMark below is what "recomputes from it."
 async function approveMarkCorrection(client, correctionId, { actorUserId, actorRole, remarks } = {}) {
   if (actorRole !== 'class_tutor') {
-    throw new MarkCorrectionNotAuthorizedError(`user ${JSON.stringify(actorUserId)}'s current login (role ${JSON.stringify(actorRole)}) is not a Class Tutor Position Account`);
+    throw new MarkCorrectionNotAuthorizedError(
+      `user ${JSON.stringify(actorUserId)}'s current login (role ${JSON.stringify(actorRole)}) is not a Class Tutor Position Account`,
+    );
   }
   const { correction, pending } = await loadPendingMarkCorrectionApproval(client, correctionId);
   await workflowService.approveRequest(client, pending.id, { actorUserId, remarks });
@@ -602,7 +724,9 @@ async function approveMarkCorrection(client, correctionId, { actorUserId, actorR
 
 async function rejectMarkCorrection(client, correctionId, { actorUserId, actorRole, remarks } = {}) {
   if (actorRole !== 'class_tutor') {
-    throw new MarkCorrectionNotAuthorizedError(`user ${JSON.stringify(actorUserId)}'s current login (role ${JSON.stringify(actorRole)}) is not a Class Tutor Position Account`);
+    throw new MarkCorrectionNotAuthorizedError(
+      `user ${JSON.stringify(actorUserId)}'s current login (role ${JSON.stringify(actorRole)}) is not a Class Tutor Position Account`,
+    );
   }
   const { correction, pending } = await loadPendingMarkCorrectionApproval(client, correctionId);
   await workflowService.rejectRequest(client, pending.id, { actorUserId, remarks });
@@ -622,11 +746,11 @@ async function rejectMarkCorrection(client, correctionId, { actorUserId, actorRo
 // RS-ASM-003: "L4 MAY choose to escalate a specific correction further
 // up the institution's configured chain" — identical discretionary
 // option to RS-ATT-004's (D9), same 'hod'/'principal' target set.
-async function escalateMarkCorrection(client, correctionId, {
-  actorUserId, actorRole, escalateToRole, remarks,
-} = {}) {
+async function escalateMarkCorrection(client, correctionId, { actorUserId, actorRole, escalateToRole, remarks } = {}) {
   if (actorRole !== 'class_tutor') {
-    throw new MarkCorrectionNotAuthorizedError(`user ${JSON.stringify(actorUserId)}'s current login (role ${JSON.stringify(actorRole)}) is not a Class Tutor Position Account`);
+    throw new MarkCorrectionNotAuthorizedError(
+      `user ${JSON.stringify(actorUserId)}'s current login (role ${JSON.stringify(actorRole)}) is not a Class Tutor Position Account`,
+    );
   }
   if (!['hod', 'principal'].includes(escalateToRole)) {
     throw new MarkCorrectionInvalidEscalationError(
@@ -639,11 +763,15 @@ async function escalateMarkCorrection(client, correctionId, {
   const cls = await classRepository.findById(client, mark.class_id);
 
   const escalateToUserId = await workflowChainService.resolveRoleUserId(client, escalateToRole, {
-    collegeId: correction.college_id, departmentId: cls.department_id,
+    collegeId: correction.college_id,
+    departmentId: cls.department_id,
   });
 
   const updated = await workflowService.escalateRequest(client, pending.id, {
-    actorUserId, escalateToRole, escalateToUserId, remarks,
+    actorUserId,
+    escalateToRole,
+    escalateToUserId,
+    remarks,
   });
 
   await auditLogRepository.createAuditLogEntry(client, {
@@ -668,7 +796,12 @@ async function listMarkCorrectionsForMark(client, markId) {
 // materially different actor and moment from a faculty self-correction
 // while merely locked, hence the separate table/workflow entityType
 // (see the migration's own file-level comment).
-async function requestMarkReevaluation(client, markId, { proposedMarksObtained, reason } = {}, { requestedByUserId, origin = 'human' } = {}) {
+async function requestMarkReevaluation(
+  client,
+  markId,
+  { proposedMarksObtained, reason } = {},
+  { requestedByUserId, origin = 'human' } = {},
+) {
   if (proposedMarksObtained === undefined || proposedMarksObtained === null) {
     throw new MarkReevaluationValidationError('proposedMarksObtained is required');
   }
@@ -682,15 +815,21 @@ async function requestMarkReevaluation(client, markId, { proposedMarksObtained, 
   }
 
   const batch = await findBatchStatus(client, {
-    academicYear: mark.academic_year, classId: mark.class_id, subject: mark.subject, assessmentTypeId: mark.assessment_type_id,
+    academicYear: mark.academic_year,
+    classId: mark.class_id,
+    subject: mark.subject,
+    assessmentTypeId: mark.assessment_type_id,
   });
   if (batch.status !== 'submitted') {
-    throw new MarkReevaluationNotSubmittedError('this assessment has not been submitted yet — a re-evaluation only applies to a submitted mark');
+    throw new MarkReevaluationNotSubmittedError(
+      'this assessment has not been submitted yet — a re-evaluation only applies to a submitted mark',
+    );
   }
 
   const cls = await classRepository.findById(client, mark.class_id);
   const hodUserId = await workflowChainService.resolveRoleUserId(client, 'hod', {
-    collegeId: mark.college_id, departmentId: cls ? cls.department_id : undefined,
+    collegeId: mark.college_id,
+    departmentId: cls ? cls.department_id : undefined,
   });
 
   const workflowRequest = await workflowService.submitRequest(client, {
@@ -717,14 +856,20 @@ async function requestMarkReevaluation(client, markId, { proposedMarksObtained, 
 async function loadPendingMarkReevaluationApproval(client, reevaluationId) {
   const reevaluation = await assessmentMarkReevaluationRepository.findById(client, reevaluationId);
   if (reevaluation === null) {
-    throw new MarkReevaluationNotFoundError(`assessment mark re-evaluation ${JSON.stringify(reevaluationId)} does not exist`);
+    throw new MarkReevaluationNotFoundError(
+      `assessment mark re-evaluation ${JSON.stringify(reevaluationId)} does not exist`,
+    );
   }
   if (reevaluation.workflow_request_id === null) {
-    throw new MarkReevaluationNoPendingRequestError(`assessment mark re-evaluation ${JSON.stringify(reevaluationId)} has no workflow request`);
+    throw new MarkReevaluationNoPendingRequestError(
+      `assessment mark re-evaluation ${JSON.stringify(reevaluationId)} has no workflow request`,
+    );
   }
   const pending = await workflowService.getRequest(client, reevaluation.workflow_request_id);
   if (pending === null || pending.status !== 'Pending') {
-    throw new MarkReevaluationNoPendingRequestError(`assessment mark re-evaluation ${JSON.stringify(reevaluationId)} has no pending approval request`);
+    throw new MarkReevaluationNoPendingRequestError(
+      `assessment mark re-evaluation ${JSON.stringify(reevaluationId)} has no pending approval request`,
+    );
   }
   return { reevaluation, pending };
 }
@@ -790,7 +935,10 @@ async function getEffectiveMark(client, markId) {
     latestApplied = latestCorrection;
     source = 'correction';
   }
-  if (latestReevaluation !== null && (latestApplied === null || latestReevaluation.applied_at > latestApplied.applied_at)) {
+  if (
+    latestReevaluation !== null &&
+    (latestApplied === null || latestReevaluation.applied_at > latestApplied.applied_at)
+  ) {
     latestApplied = latestReevaluation;
     source = 'reevaluation';
   }
@@ -815,9 +963,10 @@ async function getEffectiveMark(client, markId) {
 // join doesn't live in the repository) — combined with an explicit
 // classId if both are given, though naming both is an unusual caller
 // choice, not one this function second-guesses.
-async function listMarksForFilters(client, {
-  academicYear, departmentId, classId, classIds: callerClassIds, subject, assessmentTypeId,
-} = {}) {
+async function listMarksForFilters(
+  client,
+  { academicYear, departmentId, classId, classIds: callerClassIds, subject, assessmentTypeId } = {},
+) {
   let classIds = callerClassIds;
   if (departmentId !== undefined) {
     const classesInDept = await classRepository.findByDepartmentId(client, departmentId);
@@ -828,7 +977,11 @@ async function listMarksForFilters(client, {
   }
 
   return assessmentMarkRepository.findByFilters(client, {
-    academicYear, classId, classIds, subject, assessmentTypeId,
+    academicYear,
+    classId,
+    classIds,
+    subject,
+    assessmentTypeId,
   });
 }
 
@@ -862,7 +1015,12 @@ async function removeMark(client, id, { actorUserId } = {}) {
     return null;
   }
   await auditLogRepository.createAuditLogEntry(client, {
-    collegeId: mark.college_id, userId: actorUserId, action: 'assessment_mark_removed', entity: 'assessment_marks', entityId: id, metadata: null,
+    collegeId: mark.college_id,
+    userId: actorUserId,
+    action: 'assessment_mark_removed',
+    entity: 'assessment_marks',
+    entityId: id,
+    metadata: null,
   });
   return mark;
 }

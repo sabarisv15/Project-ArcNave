@@ -22,7 +22,10 @@ const { LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError } = re
 const { withRetry } = require('./retry');
 const { iterateSseLines } = require('./sse');
 const {
-  fetchWithTimeout, parseJsonResponse, extractOpenAiCompatibleUsage, buildOpenAiCompatiblePriorTurnMessages,
+  fetchWithTimeout,
+  parseJsonResponse,
+  extractOpenAiCompatibleUsage,
+  buildOpenAiCompatiblePriorTurnMessages,
 } = require('./openAiCompatibleUtils');
 const { flattenToPrompts } = require('../aiContextAssembly');
 
@@ -54,13 +57,15 @@ async function postJson(cfg, path, body) {
   const headers = { 'content-type': 'application/json' };
   if (cfg.apiKey) headers.authorization = `Bearer ${cfg.apiKey}`;
 
-  const response = await withRetry(() => fetchWithTimeout({
-    url: `${cfg.baseUrl}${path}`,
-    headers,
-    body,
-    timeoutMs: REQUEST_TIMEOUT_MS,
-    providerLabel: 'self-hosted LLM provider',
-  }));
+  const response = await withRetry(() =>
+    fetchWithTimeout({
+      url: `${cfg.baseUrl}${path}`,
+      headers,
+      body,
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      providerLabel: 'self-hosted LLM provider',
+    }),
+  );
 
   return parseJsonResponse(response, 'self-hosted LLM provider');
 }
@@ -160,7 +165,8 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
     } catch {
       continue;
     }
-    const delta = event && event.choices && event.choices[0] && event.choices[0].delta && event.choices[0].delta.content;
+    const delta =
+      event && event.choices && event.choices[0] && event.choices[0].delta && event.choices[0].delta.content;
     if (typeof delta === 'string' && delta.length > 0) {
       full += delta;
       onDelta(delta);
@@ -223,7 +229,12 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
     // ADR-030 P0 telemetry — see gemini.js's own equivalent comment.
     const usage = extractOpenAiCompatibleUsage(payload && payload.usage);
     return {
-      type: 'tool_call', toolName: fn.name, arguments: toolArguments, callId: toolCalls[0].id, rawToolCall: toolCalls[0], usage,
+      type: 'tool_call',
+      toolName: fn.name,
+      arguments: toolArguments,
+      callId: toolCalls[0].id,
+      rawToolCall: toolCalls[0],
+      usage,
     };
   }
 
@@ -264,7 +275,9 @@ async function embed(cfg, texts, { inputType } = {}) {
 // convention this codebase can assume — honest limitation, same
 // AiProviderCapabilityError shape claude.js's own missing embed() uses.
 async function generateImage() {
-  throw new AiProviderCapabilityError('this self-hosted provider has no image-generation endpoint configured — configure a different provider for this feature');
+  throw new AiProviderCapabilityError(
+    'this self-hosted provider has no image-generation endpoint configured — configure a different provider for this feature',
+  );
 }
 
 module.exports = {

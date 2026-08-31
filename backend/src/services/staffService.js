@@ -394,7 +394,10 @@ async function ensureHodPosition(client, { collegeId, departmentId, createdBy })
 
   const chosenTitle = await collegeProfileRepository.getLevel3PositionTitle(client, collegeId);
   const position = await positionRepository.createPosition(client, {
-    collegeId, level: 3, title: chosenTitle || DEFAULT_LEVEL3_POSITION_TITLE, createdBy,
+    collegeId,
+    level: 3,
+    title: chosenTitle || DEFAULT_LEVEL3_POSITION_TITLE,
+    createdBy,
   });
   const account = await positionRepository.createPositionAccount(client, {
     collegeId,
@@ -403,7 +406,10 @@ async function ensureHodPosition(client, { collegeId, departmentId, createdBy })
     passwordHash: await security.hashPassword(security.generateTemporaryPassword()),
   });
   await positionRepository.createPositionDepartmentAssignment(client, {
-    collegeId, positionId: position.id, departmentId, assignedBy: createdBy,
+    collegeId,
+    positionId: position.id,
+    departmentId,
+    assignedBy: createdBy,
   });
 
   return { position, account };
@@ -428,13 +434,20 @@ async function swapHodOccupant(client, { collegeId, departmentId, newOccupantUse
     await positionRepository.revokePositionOccupant(client, currentOccupant.id, { revokedBy: actorUserId });
   }
   return positionRepository.createPositionOccupant(client, {
-    collegeId, positionAccountId: account.id, userId: newOccupantUserId, assignedBy: actorUserId,
+    collegeId,
+    positionAccountId: account.id,
+    userId: newOccupantUserId,
+    assignedBy: actorUserId,
   });
 }
 
 // null means no staff profile exists with this id — not an error. The
 // route turns that into 404, same as studentService.getStudent.
-async function provisionHodAccount(client, { collegeId, username, email, fullName, departmentId, ...rest }, { actorUserId } = {}) {
+async function provisionHodAccount(
+  client,
+  { collegeId, username, email, fullName, departmentId, ...rest },
+  { actorUserId } = {},
+) {
   if (!username || !email || !fullName || !departmentId || !actorUserId) {
     throw new StaffValidationError('username, email, fullName, departmentId, and actorUserId are required');
   }
@@ -463,14 +476,12 @@ async function provisionHodAccount(client, { collegeId, username, email, fullNam
 
   let staff;
   try {
-    staff = await createStaff(
-      client,
-      { collegeId, userId: user.id, fullName, departmentId, ...rest },
-      { actorUserId },
-    );
+    staff = await createStaff(client, { collegeId, userId: user.id, fullName, departmentId, ...rest }, { actorUserId });
     staff = await assignStaffCode(client, staff.id);
 
-    const { user: activatedUser, plainPassword } = await authService.activateUser(client, user.id, { activatedBy: actorUserId });
+    const { user: activatedUser, plainPassword } = await authService.activateUser(client, user.id, {
+      activatedBy: actorUserId,
+    });
     await notificationService.sendStaffCredentialsEmail(client, {
       to: activatedUser.email,
       username: activatedUser.username,
@@ -485,7 +496,10 @@ async function provisionHodAccount(client, { collegeId, username, email, fullNam
   }
 
   await swapHodOccupant(client, {
-    collegeId, departmentId, newOccupantUserId: user.id, actorUserId,
+    collegeId,
+    departmentId,
+    newOccupantUserId: user.id,
+    actorUserId,
   });
 
   await auditLogRepository.createAuditLogEntry(client, {
@@ -670,7 +684,10 @@ async function getOwnProfile(client, { userId }) {
   if (staff === null) {
     throw new StaffNotFoundError(`no staff profile exists for user ${JSON.stringify(userId)}`);
   }
-  const tutoredClassId = await identityService.resolveActiveClassTutorPosition(client, { userId: staff.user_id, collegeId: staff.college_id });
+  const tutoredClassId = await identityService.resolveActiveClassTutorPosition(client, {
+    userId: staff.user_id,
+    collegeId: staff.college_id,
+  });
   return { ...staff, is_class_tutor: tutoredClassId !== null, tutored_class_id: tutoredClassId };
 }
 
@@ -802,7 +819,10 @@ async function deactivateStaff(client, staffId, { actorUserId } = {}) {
   // studentService's two sites already moved onto (step 16) —
   // identityService.resolveActiveClassTutorPosition, never a direct
   // classRepository/positionRepository call of this file's own.
-  const tutoredClassId = await identityService.resolveActiveClassTutorPosition(client, { userId: staff.user_id, collegeId: staff.college_id });
+  const tutoredClassId = await identityService.resolveActiveClassTutorPosition(client, {
+    userId: staff.user_id,
+    collegeId: staff.college_id,
+  });
   if (tutoredClassId !== null) {
     throw new StaffDeactivationHasActiveDutiesError(
       `staff ${JSON.stringify(staffId)} is still the tutor of class ${JSON.stringify(tutoredClassId)} — reassign the Class Tutor duty first`,
@@ -829,7 +849,13 @@ async function deactivateStaff(client, staffId, { actorUserId } = {}) {
 // retained." A duty, not a role grant — facultyUserId's own users.role
 // is never touched here, same "Resolved (Module 2 kickoff)" precedent
 // Class Tutor already established.
-async function appointHodInCharge(client, departmentId, facultyUserId, { reason } = {}, { actorUserId, collegeId } = {}) {
+async function appointHodInCharge(
+  client,
+  departmentId,
+  facultyUserId,
+  { reason } = {},
+  { actorUserId, collegeId } = {},
+) {
   if (!departmentId || !facultyUserId) {
     throw new HodInChargeValidationError('departmentId and facultyUserId are required');
   }
@@ -837,7 +863,11 @@ async function appointHodInCharge(client, departmentId, facultyUserId, { reason 
   let appointment;
   try {
     appointment = await hodInChargeRepository.create(client, {
-      collegeId, departmentId, facultyUserId, appointedByUserId: actorUserId, reason,
+      collegeId,
+      departmentId,
+      facultyUserId,
+      appointedByUserId: actorUserId,
+      reason,
     });
   } catch (err) {
     if (err.code === '23505' && err.constraint === 'hod_in_charge_one_active_per_department') {
@@ -849,7 +879,10 @@ async function appointHodInCharge(client, departmentId, facultyUserId, { reason 
   }
 
   await swapHodOccupant(client, {
-    collegeId, departmentId, newOccupantUserId: facultyUserId, actorUserId,
+    collegeId,
+    departmentId,
+    newOccupantUserId: facultyUserId,
+    actorUserId,
   });
 
   await auditLogRepository.createAuditLogEntry(client, {
@@ -873,22 +906,32 @@ async function appointHodInCharge(client, departmentId, facultyUserId, { reason 
 async function revokeHodInCharge(client, appointmentId, { actorUserId } = {}) {
   const appointment = await hodInChargeRepository.revoke(client, appointmentId, { revokedByUserId: actorUserId });
   if (appointment === null) {
-    throw new StaffDeactivationNotFoundError(`HOD In-Charge appointment ${JSON.stringify(appointmentId)} does not exist or is already revoked`);
+    throw new StaffDeactivationNotFoundError(
+      `HOD In-Charge appointment ${JSON.stringify(appointmentId)} does not exist or is already revoked`,
+    );
   }
 
   const { account } = await ensureHodPosition(client, {
-    collegeId: appointment.college_id, departmentId: appointment.department_id, createdBy: actorUserId,
+    collegeId: appointment.college_id,
+    departmentId: appointment.department_id,
+    createdBy: actorUserId,
   });
   const currentOccupant = await positionRepository.findActiveOccupant(client, account.id);
   if (currentOccupant !== null) {
     await positionRepository.revokePositionOccupant(client, currentOccupant.id, { revokedBy: actorUserId });
   }
   const permanentHod = await staffRepository.findByCollegeDepartmentAndRole(
-    client, appointment.college_id, appointment.department_id, 'hod',
+    client,
+    appointment.college_id,
+    appointment.department_id,
+    'hod',
   );
   if (permanentHod !== null) {
     await positionRepository.createPositionOccupant(client, {
-      collegeId: appointment.college_id, positionAccountId: account.id, userId: permanentHod.user_id, assignedBy: actorUserId,
+      collegeId: appointment.college_id,
+      positionAccountId: account.id,
+      userId: permanentHod.user_id,
+      assignedBy: actorUserId,
     });
   }
 
@@ -1011,11 +1054,19 @@ async function inviteStaff(client, { email }, { actorUserId, collegeId } = {}) {
   const rawToken = security.generateRefreshToken();
   const expiresAt = new Date(Date.now() + config.principalInvitationExpireHours * 60 * 60 * 1000);
   const invitation = await staffInvitationRepository.createInvitation(client, {
-    collegeId, departmentId, email, tokenHash: security.hashRefreshToken(rawToken), invitedBy: actorUserId, expiresAt,
+    collegeId,
+    departmentId,
+    email,
+    tokenHash: security.hashRefreshToken(rawToken),
+    invitedBy: actorUserId,
+    expiresAt,
   });
 
   await notificationService.sendStaffInvitationEmail(client, {
-    to: email, collegeId, token: rawToken, expiresAt: invitation.expires_at,
+    to: email,
+    collegeId,
+    token: rawToken,
+    expiresAt: invitation.expires_at,
   });
 
   await auditLogRepository.createAuditLogEntry(client, {
@@ -1100,7 +1151,11 @@ async function acceptStaffInvitation(client, invitation, { username, password, f
   const staff = await createStaff(
     client,
     {
-      collegeId: invitation.college_id, userId: user.id, fullName, departmentId: invitation.department_id, ...rest,
+      collegeId: invitation.college_id,
+      userId: user.id,
+      fullName,
+      departmentId: invitation.department_id,
+      ...rest,
     },
     { actorUserId: invitation.invited_by },
   );
@@ -1137,7 +1192,9 @@ async function submitStaffRegistration(client, staffId, { requestedByUserId, ori
     throw new StaffNotFoundError(`staff ${JSON.stringify(staffId)} does not exist`);
   }
   if (!staff.department_id) {
-    throw new StaffValidationError(`staff ${JSON.stringify(staffId)} has no departmentId set, cannot resolve an HOD approver`);
+    throw new StaffValidationError(
+      `staff ${JSON.stringify(staffId)} has no departmentId set, cannot resolve an HOD approver`,
+    );
   }
 
   // RS-STF-002 (D10): resolved through workflowChainService's
@@ -1255,9 +1312,16 @@ async function assertSingleActiveRoleHolder(client, staff, user) {
   }
   if (user.role === 'hod') {
     if (!staff.department_id) {
-      throw new StaffValidationError(`staff ${JSON.stringify(staff.id)} has no departmentId set, cannot verify hod uniqueness`);
+      throw new StaffValidationError(
+        `staff ${JSON.stringify(staff.id)} has no departmentId set, cannot verify hod uniqueness`,
+      );
     }
-    const existing = await staffRepository.findByCollegeDepartmentAndRole(client, staff.college_id, staff.department_id, 'hod');
+    const existing = await staffRepository.findByCollegeDepartmentAndRole(
+      client,
+      staff.college_id,
+      staff.department_id,
+      'hod',
+    );
     if (existing && existing.user_id !== user.id) {
       throw new StaffHodAlreadyActiveError(
         `department ${JSON.stringify(staff.department_id)} already has an active hod`,

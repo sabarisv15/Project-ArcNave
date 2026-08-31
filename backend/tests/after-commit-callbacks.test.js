@@ -23,11 +23,15 @@ const { runWithRequestContext, AFTER_COMMIT_CALLBACKS } = require('../src/loggin
 // mechanism itself.
 function fakeReqRes() {
   let endResolve;
-  const endPromise = new Promise((resolve) => { endResolve = resolve; });
+  const endPromise = new Promise((resolve) => {
+    endResolve = resolve;
+  });
   const req = { requestId: 'test-request' };
   const res = {
     headersSent: false,
-    status() { return this; },
+    status() {
+      return this;
+    },
     json() {},
     end: (...args) => endResolve(args),
   };
@@ -44,14 +48,20 @@ test('registerAfterCommit: callback does not run before commit, runs after', asy
     const client = await openTenantTransaction(req, res, null);
     try {
       let fired = false;
-      registerAfterCommit(() => { fired = true; });
+      registerAfterCommit(() => {
+        fired = true;
+      });
 
       assert.equal(fired, false, 'callback must not fire at registration time');
 
       res.end();
       await endPromise;
 
-      assert.equal(fired, true, 'callback must have fired by the time the real res.end runs, since commitAndRelease drains callbacks before resolving');
+      assert.equal(
+        fired,
+        true,
+        'callback must have fired by the time the real res.end runs, since commitAndRelease drains callbacks before resolving',
+      );
     } finally {
       await client.query('SELECT 1').catch(() => {});
     }
@@ -64,7 +74,9 @@ test('registerAfterCommit: callback does NOT run on rollback', async () => {
     await openTenantTransaction(req, res, null);
 
     let fired = false;
-    registerAfterCommit(() => { fired = true; });
+    registerAfterCommit(() => {
+      fired = true;
+    });
 
     await req.rollbackTransaction();
 
@@ -78,8 +90,12 @@ test('registerAfterCommit: a throwing callback cannot break the response', async
     await openTenantTransaction(req, res, null);
 
     let secondFired = false;
-    registerAfterCommit(() => { throw new Error('a background callback failing on purpose'); });
-    registerAfterCommit(() => { secondFired = true; });
+    registerAfterCommit(() => {
+      throw new Error('a background callback failing on purpose');
+    });
+    registerAfterCommit(() => {
+      secondFired = true;
+    });
 
     // Must not throw/reject — a callback failing is swallowed and
     // logged, never allowed to turn a successful commit into a 500 or
@@ -88,12 +104,18 @@ test('registerAfterCommit: a throwing callback cannot break the response', async
     const endArgs = await endPromise;
 
     assert.deepEqual(endArgs, ['ok'], 'the real response body must still reach res.end unmodified');
-    assert.equal(secondFired, true, 'a callback after a throwing one must still run — one failure does not skip the rest');
+    assert.equal(
+      secondFired,
+      true,
+      'a callback after a throwing one must still run — one failure does not skip the rest',
+    );
   });
 });
 
 test('registerAfterCommit: with no request context, fires immediately (fallback for non-request callers)', () => {
   let fired = false;
-  registerAfterCommit(() => { fired = true; });
+  registerAfterCommit(() => {
+    fired = true;
+  });
   assert.equal(fired, true);
 });

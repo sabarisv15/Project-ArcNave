@@ -47,7 +47,8 @@ const childProcess = require('child_process');
 function execFileAsync(command, args, options) {
   return new Promise((resolve, reject) => {
     childProcess.execFile(command, args, options, (err, stdout, stderr) => {
-      if (err) reject(err); else resolve({ stdout, stderr });
+      if (err) reject(err);
+      else resolve({ stdout, stderr });
     });
   });
 }
@@ -119,11 +120,9 @@ async function rasterizePdfToImages(pdfBuffer) {
       // exhausting memory, same "truncate the worst case, don't crash"
       // reasoning the repository-level LIMITs elsewhere in this
       // codebase already use.
-      await execFileAsync(
-        'pdftoppm',
-        ['-png', '-r', RASTER_DPI, '-l', String(MAX_PAGES), inputPath, outputPrefix],
-        { timeout: EXEC_TIMEOUT_MS },
-      );
+      await execFileAsync('pdftoppm', ['-png', '-r', RASTER_DPI, '-l', String(MAX_PAGES), inputPath, outputPrefix], {
+        timeout: EXEC_TIMEOUT_MS,
+      });
     } catch (err) {
       throw new PdfRasterizationError(`pdftoppm failed: ${err.message}`);
     }
@@ -148,5 +147,8 @@ async function rasterizePdfToImages(pdfBuffer) {
 }
 
 module.exports = {
-  PdfRasterizationError, rasterizePdfToImages, EXEC_TIMEOUT_MS, MAX_PAGES,
+  PdfRasterizationError,
+  rasterizePdfToImages,
+  EXEC_TIMEOUT_MS,
+  MAX_PAGES,
 };

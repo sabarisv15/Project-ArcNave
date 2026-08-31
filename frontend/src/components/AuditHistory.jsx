@@ -28,11 +28,7 @@ export function AuditHistory({ entries }) {
   return (
     <ul className="m-0 p-0 list-none">
       {entries.map((e, i) => (
-        <li
-          // eslint-disable-next-line react/no-array-index-key -- audit lines have no id of their own and are never reordered
-          key={i}
-          className="py-[7px] border-t border-line-light first:border-t-0"
-        >
+        <li key={i} className="py-[7px] border-t border-line-light first:border-t-0">
           <div className="text-[12.5px] text-ink">{e.action}</div>
           <div className="mt-[1px] text-[11.5px] text-ink-faint">
             {e.by} · {e.position} · {when(e.at)}

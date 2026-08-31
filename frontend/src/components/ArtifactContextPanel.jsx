@@ -122,7 +122,7 @@ export function ArtifactContextPanel({ items, onClose, pinned = false }) {
       aria-label="Artifact context"
       className={cn(
         'hidden flex-col shrink-0 w-[280px] min-h-0 border-l border-divider',
-        pinned ? 'lg:flex' : 'min-[1360px]:flex'
+        pinned ? 'lg:flex' : 'min-[1360px]:flex',
       )}
     >
       <ContextHeader
@@ -148,7 +148,7 @@ export function ArtifactContextDrawer({ items, open, onOpenChange }) {
           className={cn(
             'fixed inset-y-0 right-0 z-[101] w-[min(340px,92vw)] flex flex-col',
             'bg-raised border-l border-line-strong rounded-l-[20px] shadow-pop outline-none',
-            'data-[state=open]:animate-railIn motion-reduce:animate-none'
+            'data-[state=open]:animate-railIn motion-reduce:animate-none',
           )}
         >
           <ContextHeader

@@ -38,13 +38,7 @@ function relative(date) {
  * queue. The status keys are shared, so filtering and tone stay one
  * implementation; only the words a seat uses for them change.
  */
-export function ApprovalInbox({
-  requests,
-  onOpen,
-  emptyState,
-  kinds = REQUEST_KINDS,
-  statusLabels = STATUS_LABELS,
-}) {
+export function ApprovalInbox({ requests, onOpen, emptyState, kinds = REQUEST_KINDS, statusLabels = STATUS_LABELS }) {
   return (
     <StickyTableShell minWidth={860}>
       <div className={cn(GRID, STICKY_HEAD, TABLE_HEAD, 'h-[38px]')}>
@@ -71,7 +65,7 @@ export function ApprovalInbox({
               the same family the badge uses — one meaning, one value — and the
               row surface underneath stays white.
             */
-            STATUS_ROW_EDGE[r.status]
+            STATUS_ROW_EDGE[r.status],
           )}
         >
           <span className="text-[12.5px] text-ink truncate">{kinds[r.kind].short}</span>
@@ -94,7 +88,7 @@ export function ApprovalInbox({
             <span
               className={cn(
                 'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-                STATUS_TONE[r.status]
+                STATUS_TONE[r.status],
               )}
             >
               {statusLabels[r.status] ?? STATUS_LABELS[r.status]}

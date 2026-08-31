@@ -16,13 +16,18 @@ const academicService = require('../src/services/academicService');
 
 test('submitTimetableForApproval resolves its chain via workflowChainService', async (t) => {
   const findClassMock = t.mock.method(classRepository, 'findById', async () => ({
-    id: 'class-1', college_id: 'c1', department_id: 'dept-1',
+    id: 'class-1',
+    college_id: 'c1',
+    department_id: 'dept-1',
   }));
   const resolveChainMock = t.mock.method(workflowChainService, 'resolveApproverChain', async () => [
     { step: 1, role: 'hod', user_id: 'hod-1' },
     { step: 2, role: 'principal', user_id: 'principal-1' },
   ]);
-  const submitMock = t.mock.method(workflowService, 'submitRequest', async (client, fields) => ({ id: 'wf-1', ...fields }));
+  const submitMock = t.mock.method(workflowService, 'submitRequest', async (client, fields) => ({
+    id: 'wf-1',
+    ...fields,
+  }));
   const updateMock = t.mock.method(classRepository, 'update', async (client, id, fields) => ({ id, ...fields }));
   t.after(() => {
     findClassMock.mock.restore();
@@ -35,7 +40,10 @@ test('submitTimetableForApproval resolves its chain via workflowChainService', a
 
   assert.equal(resolveChainMock.mock.callCount(), 1);
   assert.deepEqual(resolveChainMock.mock.calls[0].arguments[1], {
-    collegeId: 'c1', entityType: 'timetable_approval', classId: 'class-1', departmentId: 'dept-1',
+    collegeId: 'c1',
+    entityType: 'timetable_approval',
+    classId: 'class-1',
+    departmentId: 'dept-1',
   });
   assert.deepEqual(submitMock.mock.calls[0].arguments[1].approverChain, [
     { step: 1, role: 'hod', user_id: 'hod-1' },

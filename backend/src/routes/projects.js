@@ -40,93 +40,133 @@ function mapProjectServiceError(err, res) {
 function createProjectsRouter() {
   const router = express.Router();
 
-  router.get('/projects', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const projects = await projectService.listOwnProjects(req.dbClient, { userId: identityService.resolveActorUserId(req.capabilities) });
-    res.json(projects);
-  }));
+  router.get(
+    '/projects',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const projects = await projectService.listOwnProjects(req.dbClient, {
+        userId: identityService.resolveActorUserId(req.capabilities),
+      });
+      res.json(projects);
+    }),
+  );
 
-  router.post('/projects', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { name } = req.body || {};
-    try {
-      const project = await projectService.createProject(
-        req.dbClient, { name }, { userId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
-      );
-      res.status(201).json(project);
-    } catch (err) {
-      if (mapProjectServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/projects',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { name } = req.body || {};
+      try {
+        const project = await projectService.createProject(
+          req.dbClient,
+          { name },
+          { userId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
+        );
+        res.status(201).json(project);
+      } catch (err) {
+        if (mapProjectServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.put('/projects/:id', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { name, instructions, pinned } = req.body || {};
-    try {
-      const project = await projectService.updateProject(
-        req.dbClient, req.params.id, { name, instructions, pinned }, { userId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.json(project);
-    } catch (err) {
-      if (mapProjectServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.put(
+    '/projects/:id',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { name, instructions, pinned } = req.body || {};
+      try {
+        const project = await projectService.updateProject(
+          req.dbClient,
+          req.params.id,
+          { name, instructions, pinned },
+          { userId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.json(project);
+      } catch (err) {
+        if (mapProjectServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.delete('/projects/:id', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      await projectService.deleteProject(req.dbClient, req.params.id, { userId: identityService.resolveActorUserId(req.capabilities) });
-      res.status(204).end();
-    } catch (err) {
-      if (mapProjectServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.delete(
+    '/projects/:id',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        await projectService.deleteProject(req.dbClient, req.params.id, {
+          userId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.status(204).end();
+      } catch (err) {
+        if (mapProjectServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // Reference-only document context (Approved Spec §12) — never a new
   // upload path (CLAUDE.md rule 2 / ADR-009 Amendment 1), only a link
   // to a document the user already owns.
-  router.get('/projects/:id/documents', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const documents = await projectService.listProjectDocuments(
-        req.dbClient, req.params.id, { userId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.json(documents);
-    } catch (err) {
-      if (mapProjectServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.get(
+    '/projects/:id/documents',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const documents = await projectService.listProjectDocuments(req.dbClient, req.params.id, {
+          userId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.json(documents);
+      } catch (err) {
+        if (mapProjectServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/projects/:id/documents', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { document_id: documentId } = req.body || {};
-    try {
-      const link = await projectService.attachProjectDocument(
-        req.dbClient, req.params.id, { documentId }, { userId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(201).json(link);
-    } catch (err) {
-      if (mapProjectServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/projects/:id/documents',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { document_id: documentId } = req.body || {};
+      try {
+        const link = await projectService.attachProjectDocument(
+          req.dbClient,
+          req.params.id,
+          { documentId },
+          { userId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.status(201).json(link);
+      } catch (err) {
+        if (mapProjectServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.delete('/projects/:id/documents/:documentId', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      await projectService.detachProjectDocument(
-        req.dbClient, req.params.id, req.params.documentId, { userId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(204).end();
-    } catch (err) {
-      if (mapProjectServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.delete(
+    '/projects/:id/documents/:documentId',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        await projectService.detachProjectDocument(req.dbClient, req.params.id, req.params.documentId, {
+          userId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.status(204).end();
+      } catch (err) {
+        if (mapProjectServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   return router;
 }

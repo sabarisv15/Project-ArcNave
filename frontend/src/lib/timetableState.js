@@ -54,12 +54,7 @@ export const PENDING_CLASS_IDS = ['dept-cse-s4a', 'dept-cse-s4b'];
  * readiness panel demonstrates that a headless department's *other* classes
  * are still approved and still running.
  */
-export const NOT_SUBMITTED_CLASS_IDS = [
-  'dept-civil-s8a',
-  'dept-comm-s6b',
-  'dept-mech-s8b',
-  'dept-ece-s6a',
-];
+export const NOT_SUBMITTED_CLASS_IDS = ['dept-civil-s8a', 'dept-comm-s6b', 'dept-mech-s8b', 'dept-ece-s6a'];
 
 export function timetableStateOfClass(classId) {
   if (NOT_SUBMITTED_CLASS_IDS.includes(classId)) return 'not_submitted';
@@ -114,7 +109,7 @@ export function attendanceLockReason(classId, yearActive = IS_YEAR_ACTIVE) {
  * approved grid and an active year, and nothing else, produce attendance.
  */
 export const BASELINE_TIMETABLE_STATES = Object.fromEntries(
-  ACTIVE_CLASSES.map((c) => [c.id, timetableStateOfClass(c.id)])
+  ACTIVE_CLASSES.map((c) => [c.id, timetableStateOfClass(c.id)]),
 );
 
 /**

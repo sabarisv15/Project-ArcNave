@@ -30,6 +30,7 @@ for page in reader.pages:
 ### pypdf - Basic Operations
 
 #### Merge PDFs
+
 ```python
 from pypdf import PdfWriter, PdfReader
 
@@ -44,6 +45,7 @@ with open("merged.pdf", "wb") as output:
 ```
 
 #### Split PDF
+
 ```python
 reader = PdfReader("input.pdf")
 for i, page in enumerate(reader.pages):
@@ -54,6 +56,7 @@ for i, page in enumerate(reader.pages):
 ```
 
 #### Extract Metadata
+
 ```python
 reader = PdfReader("document.pdf")
 meta = reader.metadata
@@ -64,6 +67,7 @@ print(f"Creator: {meta.creator}")
 ```
 
 #### Rotate Pages
+
 ```python
 reader = PdfReader("input.pdf")
 writer = PdfWriter()
@@ -79,6 +83,7 @@ with open("rotated.pdf", "wb") as output:
 ### pdfplumber - Text and Table Extraction
 
 #### Extract Text with Layout
+
 ```python
 import pdfplumber
 
@@ -89,6 +94,7 @@ with pdfplumber.open("document.pdf") as pdf:
 ```
 
 #### Extract Tables
+
 ```python
 with pdfplumber.open("document.pdf") as pdf:
     for i, page in enumerate(pdf.pages):
@@ -100,6 +106,7 @@ with pdfplumber.open("document.pdf") as pdf:
 ```
 
 #### Advanced Table Extraction
+
 ```python
 import pandas as pd
 
@@ -121,6 +128,7 @@ if all_tables:
 ### reportlab - Create PDFs
 
 #### Basic PDF Creation
+
 ```python
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
@@ -140,6 +148,7 @@ c.save()
 ```
 
 #### Create PDF with Multiple Pages
+
 ```python
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
@@ -171,6 +180,7 @@ doc.build(story)
 **IMPORTANT**: Never use Unicode subscript/superscript characters (₀₁₂₃₄₅₆₇₈₉, ⁰¹²³⁴⁵⁶⁷⁸⁹) in ReportLab PDFs. The built-in fonts do not include these glyphs, causing them to render as solid black boxes.
 
 Instead, use ReportLab's XML markup tags in Paragraph objects:
+
 ```python
 from reportlab.platypus import Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
@@ -189,6 +199,7 @@ For canvas-drawn text (not Paragraph objects), manually adjust font the size and
 ## Command-Line Tools
 
 ### pdftotext (poppler-utils)
+
 ```bash
 # Extract text
 pdftotext input.pdf output.txt
@@ -208,6 +219,7 @@ those instead of reaching for a command-line tool that isn't there.
 ## Common Tasks
 
 ### Extract Text from Scanned PDFs
+
 ```python
 # Requires: pip install pytesseract pdf2image
 import pytesseract
@@ -227,6 +239,7 @@ print(text)
 ```
 
 ### Add Watermark
+
 ```python
 from pypdf import PdfReader, PdfWriter
 
@@ -246,6 +259,7 @@ with open("watermarked.pdf", "wb") as output:
 ```
 
 ### Extract Images
+
 ```bash
 # Using pdfimages (poppler-utils)
 pdfimages -j input.pdf output_prefix
@@ -254,6 +268,7 @@ pdfimages -j input.pdf output_prefix
 ```
 
 ### Password Protection
+
 ```python
 from pypdf import PdfReader, PdfWriter
 
@@ -272,16 +287,16 @@ with open("encrypted.pdf", "wb") as output:
 
 ## Quick Reference
 
-| Task | Best Tool | Command/Code |
-|------|-----------|--------------|
-| Merge PDFs | pypdf | `writer.add_page(page)` |
-| Split PDFs | pypdf | One page per file |
-| Extract text | pdfplumber | `page.extract_text()` |
-| Extract tables | pdfplumber | `page.extract_tables()` |
-| Create PDFs | reportlab | Canvas or Platypus |
-| Extract text (poppler) | pdftotext | `pdftotext -layout in.pdf out.txt` |
-| OCR scanned PDFs | pytesseract | Convert to image first |
-| Fill PDF forms | pdf-lib or pypdf (see FORMS.md) | See FORMS.md |
+| Task                   | Best Tool                       | Command/Code                       |
+| ---------------------- | ------------------------------- | ---------------------------------- |
+| Merge PDFs             | pypdf                           | `writer.add_page(page)`            |
+| Split PDFs             | pypdf                           | One page per file                  |
+| Extract text           | pdfplumber                      | `page.extract_text()`              |
+| Extract tables         | pdfplumber                      | `page.extract_tables()`            |
+| Create PDFs            | reportlab                       | Canvas or Platypus                 |
+| Extract text (poppler) | pdftotext                       | `pdftotext -layout in.pdf out.txt` |
+| OCR scanned PDFs       | pytesseract                     | Convert to image first             |
+| Fill PDF forms         | pdf-lib or pypdf (see FORMS.md) | See FORMS.md                       |
 
 ## Next Steps
 

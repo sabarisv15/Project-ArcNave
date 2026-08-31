@@ -123,16 +123,68 @@ export function initialAssessments(versionId = ACTIVE_VERSION_ID) {
   const pick = (subject) => scopes.find((s) => s.subject === subject) ?? scopes[0];
 
   const seeds = [
-    { id: 'as-1', name: 'Internal Test 1', type: 'internal', scope: pick('Data Structures'), date: daysAgo(9), maxMarks: 50, status: 'published', entered: Infinity, absentIndexes: [4] },
-    { id: 'as-2', name: 'Unit 3 Quiz', type: 'quiz', scope: pick('Operating Systems'), date: daysAgo(4), maxMarks: 20, status: 'published', entered: Infinity, absentIndexes: [] },
-    { id: 'as-3', name: 'Model Exam', type: 'model', scope: pick('Database Systems'), date: daysAgo(1), maxMarks: 100, status: 'draft', entered: 18, absentIndexes: [2] },
-    { id: 'as-4', name: 'Record Assignment 2', type: 'assignment', scope: pick('Computer Networks'), date: daysAgo(6), maxMarks: 25, status: 'draft', entered: 0, absentIndexes: [] },
-    { id: 'as-5', name: 'Lab Practical 1', type: 'practical', scope: pick('Networks Lab'), date: daysAgo(12), maxMarks: 40, status: 'published', entered: Infinity, absentIndexes: [7] },
+    {
+      id: 'as-1',
+      name: 'Internal Test 1',
+      type: 'internal',
+      scope: pick('Data Structures'),
+      date: daysAgo(9),
+      maxMarks: 50,
+      status: 'published',
+      entered: Infinity,
+      absentIndexes: [4],
+    },
+    {
+      id: 'as-2',
+      name: 'Unit 3 Quiz',
+      type: 'quiz',
+      scope: pick('Operating Systems'),
+      date: daysAgo(4),
+      maxMarks: 20,
+      status: 'published',
+      entered: Infinity,
+      absentIndexes: [],
+    },
+    {
+      id: 'as-3',
+      name: 'Model Exam',
+      type: 'model',
+      scope: pick('Database Systems'),
+      date: daysAgo(1),
+      maxMarks: 100,
+      status: 'draft',
+      entered: 18,
+      absentIndexes: [2],
+    },
+    {
+      id: 'as-4',
+      name: 'Record Assignment 2',
+      type: 'assignment',
+      scope: pick('Computer Networks'),
+      date: daysAgo(6),
+      maxMarks: 25,
+      status: 'draft',
+      entered: 0,
+      absentIndexes: [],
+    },
+    {
+      id: 'as-5',
+      name: 'Lab Practical 1',
+      type: 'practical',
+      scope: pick('Networks Lab'),
+      date: daysAgo(12),
+      maxMarks: 40,
+      status: 'published',
+      entered: Infinity,
+      absentIndexes: [7],
+    },
   ];
 
   return seeds
     .filter((s) => s.scope)
-    .map((s) => makeAssessment({ ...s, entered: s.entered === Infinity ? studentsForScope(s.scope).length : s.entered }));
+    .map((s) =>
+      makeAssessment({ ...s, entered: s.entered === Infinity ? studentsForScope(s.scope).length : s.entered }),
+    );
 }
 
 /** `38 / 45 entered` — an absent student counts as entered; a blank does not. */

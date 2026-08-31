@@ -58,14 +58,8 @@ function EdgeTrigger({ onReveal, onCancel, onOpenNow }) {
  * in the normal composition is the workspace itself, inset from the app frame.
  */
 export function AppShell() {
-  const {
-    sidebarMode,
-    revealSidebar,
-    hideOverlay,
-    collapseSidebar,
-    activeWorkspaceMode,
-    setActiveWorkspaceMode,
-  } = useWorkspace();
+  const { sidebarMode, revealSidebar, hideOverlay, collapseSidebar, activeWorkspaceMode, setActiveWorkspaceMode } =
+    useWorkspace();
   const [mobileNav, setMobileNav] = useState(false);
   const [overlayClosing, setOverlayClosing] = useState(false);
   const [revealHint, setRevealHint] = useState(false);
@@ -130,18 +124,30 @@ export function AppShell() {
   }, [activeWorkspaceMode, sidebarMode]);
 
   const clearTimers = () => {
-    if (openTimer.current) { clearTimeout(openTimer.current); openTimer.current = null; }
-    if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null; }
+    if (openTimer.current) {
+      clearTimeout(openTimer.current);
+      openTimer.current = null;
+    }
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
   };
 
-  useEffect(() => () => {
-    clearTimers();
-    if (exitTimer.current) clearTimeout(exitTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      clearTimers();
+      if (exitTimer.current) clearTimeout(exitTimer.current);
+    },
+    [],
+  );
 
   const openOverlay = () => {
     clearTimers();
-    if (exitTimer.current) { clearTimeout(exitTimer.current); exitTimer.current = null; }
+    if (exitTimer.current) {
+      clearTimeout(exitTimer.current);
+      exitTimer.current = null;
+    }
     setOverlayClosing(false);
     revealSidebar();
   };
@@ -172,7 +178,9 @@ export function AppShell() {
 
   useEffect(() => {
     if (sidebarMode !== 'overlay') return undefined;
-    const onKey = (e) => { if (e.key === 'Escape') closeOverlay(); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') closeOverlay();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [sidebarMode, hideOverlay]);
@@ -193,10 +201,7 @@ export function AppShell() {
       {revealHint && <SidebarRevealHint onDismiss={() => setRevealHint(false)} />}
 
       {curriculumHint && (
-        <CurriculumFullscreenHint
-          onGoFullScreen={collapseSidebar}
-          onDismiss={() => setCurriculumHint(false)}
-        />
+        <CurriculumFullscreenHint onGoFullScreen={collapseSidebar} onDismiss={() => setCurriculumHint(false)} />
       )}
 
       {/* Overlay: fixed above the workspace, reserving no layout width. */}
@@ -213,7 +218,7 @@ export function AppShell() {
             className={cn(
               'hidden lg:block fixed left-0 top-0 bottom-0 z-[90] w-[282px]',
               overlayClosing ? 'animate-railOut' : 'animate-railIn',
-              'motion-reduce:animate-none'
+              'motion-reduce:animate-none',
             )}
           >
             <Sidebar floating />
@@ -254,7 +259,7 @@ export function AppShell() {
       <main
         className={cn(
           'relative flex-1 min-w-0 flex flex-col bg-paper overflow-hidden',
-          'm-[8px] lg:m-[10px] rounded-[22px] border border-divider shadow-island'
+          'm-[8px] lg:m-[10px] rounded-[22px] border border-divider shadow-island',
         )}
       >
         <button

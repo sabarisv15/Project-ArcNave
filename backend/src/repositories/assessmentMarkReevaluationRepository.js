@@ -8,9 +8,10 @@
 // because the two apply at different submission states with different
 // approvers (see the migration's own file-level comment).
 
-async function create(client, {
-  collegeId, assessmentMarkId, requestedByUserId, proposedMarksObtained, reason, workflowRequestId,
-}) {
+async function create(
+  client,
+  { collegeId, assessmentMarkId, requestedByUserId, proposedMarksObtained, reason, workflowRequestId },
+) {
   const result = await client.query(
     `INSERT INTO assessment_mark_reevaluations
        (college_id, assessment_mark_id, requested_by_user_id, proposed_marks_obtained, reason, workflow_request_id)
@@ -53,5 +54,9 @@ async function markApplied(client, id) {
 }
 
 module.exports = {
-  create, findById, listForMark, findLatestApplied, markApplied,
+  create,
+  findById,
+  listForMark,
+  findLatestApplied,
+  markApplied,
 };

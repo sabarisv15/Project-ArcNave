@@ -40,7 +40,10 @@ test('StudentService.flagStudent', async (t) => {
   await t.test('allows a missing remark (optional since ADL-030)', async () => {
     mockStudent(t, { class_id: 'class-1' });
     mockCanView(t, true);
-    const createMock = t.mock.method(studentFlagRepository, 'create', async (client, fields) => ({ id: 'flag-1', ...fields }));
+    const createMock = t.mock.method(studentFlagRepository, 'create', async (client, fields) => ({
+      id: 'flag-1',
+      ...fields,
+    }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
       createMock.mock.restore();
@@ -61,23 +64,35 @@ test('StudentService.flagStudent', async (t) => {
     );
   });
 
-  await t.test('throws StudentNotAuthorizedError for a staff member outside the visibility boundary (neither tutor nor subject faculty)', async () => {
-    mockStudent(t, { class_id: 'class-1' });
-    mockCanView(t, false);
-    const createMock = t.mock.method(studentFlagRepository, 'create');
-    t.after(() => createMock.mock.restore());
+  await t.test(
+    'throws StudentNotAuthorizedError for a staff member outside the visibility boundary (neither tutor nor subject faculty)',
+    async () => {
+      mockStudent(t, { class_id: 'class-1' });
+      mockCanView(t, false);
+      const createMock = t.mock.method(studentFlagRepository, 'create');
+      t.after(() => createMock.mock.restore());
 
-    await assert.rejects(
-      () => studentService.flagStudent({}, 'student-1', { remark: 'Repeated absence' }, { actorUserId: 'u1', actorRole: 'staff' }),
-      studentService.StudentNotAuthorizedError,
-    );
-    assert.equal(createMock.mock.callCount(), 0);
-  });
+      await assert.rejects(
+        () =>
+          studentService.flagStudent(
+            {},
+            'student-1',
+            { remark: 'Repeated absence' },
+            { actorUserId: 'u1', actorRole: 'staff' },
+          ),
+        studentService.StudentNotAuthorizedError,
+      );
+      assert.equal(createMock.mock.callCount(), 0);
+    },
+  );
 
   await t.test('creates a flag and audit-logs it for a subject faculty member who is not the class tutor', async () => {
     mockStudent(t, { class_id: 'class-1' });
     mockCanView(t, true);
-    const createMock = t.mock.method(studentFlagRepository, 'create', async (client, fields) => ({ id: 'flag-1', ...fields }));
+    const createMock = t.mock.method(studentFlagRepository, 'create', async (client, fields) => ({
+      id: 'flag-1',
+      ...fields,
+    }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
       createMock.mock.restore();
@@ -85,7 +100,10 @@ test('StudentService.flagStudent', async (t) => {
     });
 
     const result = await studentService.flagStudent(
-      {}, 'student-1', { remark: 'Repeated late arrival' }, { actorUserId: 'u1', actorRole: 'staff' },
+      {},
+      'student-1',
+      { remark: 'Repeated late arrival' },
+      { actorUserId: 'u1', actorRole: 'staff' },
     );
     assert.equal(result.remark, 'Repeated late arrival');
     assert.equal(auditMock.mock.calls[0].arguments[1].action, 'student_flagged');
@@ -114,7 +132,11 @@ test('StudentService.clearStudentFlag', async (t) => {
     mockStudent(t, { class_id: 'class-1' });
     mockCanView(t, true);
     const activeMock = t.mock.method(studentFlagRepository, 'findActiveByStudentId', async () => ({ id: 'flag-1' }));
-    const clearMock = t.mock.method(studentFlagRepository, 'clear', async (client, id, opts) => ({ id, ...opts, cleared_at: '2026-07-26' }));
+    const clearMock = t.mock.method(studentFlagRepository, 'clear', async (client, id, opts) => ({
+      id,
+      ...opts,
+      cleared_at: '2026-07-26',
+    }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
       activeMock.mock.restore();
@@ -164,7 +186,10 @@ test('StudentService.getActiveFlag / listFlagHistory', async (t) => {
   await t.test('listFlagHistory returns every past flag/clear event for the student', async () => {
     mockStudent(t);
     const viewMock = t.mock.method(visibilityService, 'assertCanViewStudent', async () => {});
-    const listMock = t.mock.method(studentFlagRepository, 'listHistoryForStudent', async () => [{ id: 'flag-1' }, { id: 'flag-2' }]);
+    const listMock = t.mock.method(studentFlagRepository, 'listHistoryForStudent', async () => [
+      { id: 'flag-1' },
+      { id: 'flag-2' },
+    ]);
     t.after(() => {
       viewMock.mock.restore();
       listMock.mock.restore();

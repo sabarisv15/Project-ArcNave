@@ -15,13 +15,13 @@ function renderApp(route = '/') {
       <MemoryRouter initialEntries={[route]}>
         <Tooltip.Provider>
           <WorkspaceProvider>
-              <ComposerProvider>
-                <App />
-              </ComposerProvider>
+            <ComposerProvider>
+              <App />
+            </ComposerProvider>
           </WorkspaceProvider>
         </Tooltip.Provider>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 

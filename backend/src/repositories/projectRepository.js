@@ -36,10 +36,7 @@ async function findById(client, id) {
 }
 
 async function listByUser(client, userId) {
-  const result = await client.query(
-    'SELECT * FROM projects WHERE user_id = $1 ORDER BY created_at DESC',
-    [userId],
-  );
+  const result = await client.query('SELECT * FROM projects WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
   return result.rows;
 }
 

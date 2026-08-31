@@ -79,10 +79,10 @@ function hostFor(subdomain) {
 async function seedTenant(adminPool, label) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const college = { collegeId: `ttp${label}${suffix}`, subdomain: `ttptenant${label}${suffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [college.collegeId, college.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    college.collegeId,
+    college.subdomain,
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userIds = {};
   for (const username of ['principaluser', 'staffuser']) {
@@ -129,12 +129,10 @@ test('timetable periods', async (t) => {
   });
 
   async function login(college, username) {
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/auth/login',
-      'POST',
-      { headers: { host: hostFor(college.subdomain) }, body: { username, password: PASSWORD } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/auth/login', 'POST', {
+      headers: { host: hostFor(college.subdomain) },
+      body: { username, password: PASSWORD },
+    });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -150,7 +148,10 @@ test('timetable periods', async (t) => {
   await t.test('create returns 201 with the created row, snake_case', async () => {
     const token = await login(collegeA, 'principaluser');
     const resp = await post(baseUrl, '/api/v1/timetable-periods', headersFor(collegeA, token), {
-      day_of_week: 'Monday', hour_index: 1, start_time: '09:00', end_time: '10:00',
+      day_of_week: 'Monday',
+      hour_index: 1,
+      start_time: '09:00',
+      end_time: '10:00',
     });
     assert.equal(resp.status, 201);
     assert.equal(resp.body.day_of_week, 'Monday');
@@ -193,44 +194,49 @@ test('timetable periods', async (t) => {
     assert.equal(resp.body.total_rows, 3);
   });
 
-  await t.test('CSV import with class_id/subject/staff_user_id columns also creates faculty_allocation and appends classes.timetable_data', async () => {
-    const token = await login(collegeA, 'principaluser');
-    const classResp = await post(baseUrl, '/api/v1/classes', headersFor(collegeA, token), {
-      class_name: 'CSV Alloc Class',
-    });
-    assert.equal(classResp.status, 201);
-    const classId = classResp.body.id;
-    const staffUserId = collegeA.userIds.staffuser;
+  await t.test(
+    'CSV import with class_id/subject/staff_user_id columns also creates faculty_allocation and appends classes.timetable_data',
+    async () => {
+      const token = await login(collegeA, 'principaluser');
+      const classResp = await post(baseUrl, '/api/v1/classes', headersFor(collegeA, token), {
+        class_name: 'CSV Alloc Class',
+      });
+      assert.equal(classResp.status, 201);
+      const classId = classResp.body.id;
+      const staffUserId = collegeA.userIds.staffuser;
 
-    const csv = [
-      'day_of_week,hour_index,start_time,end_time,class_id,subject,staff_user_id',
-      `Thursday,61,09:00,10:00,${classId},Maths,${staffUserId}`,
-    ].join('\n');
-    const resp = await post(baseUrl, '/api/v1/timetable-periods/import-csv', headersFor(collegeA, token), {
-      file_name: 'timetable-alloc.csv',
-      file_base64: Buffer.from(csv).toString('base64'),
-    });
-    assert.equal(resp.status, 201);
-    assert.equal(resp.body.imported.length, 1);
-    assert.equal(resp.body.skipped.length, 0);
+      const csv = [
+        'day_of_week,hour_index,start_time,end_time,class_id,subject,staff_user_id',
+        `Thursday,61,09:00,10:00,${classId},Maths,${staffUserId}`,
+      ].join('\n');
+      const resp = await post(baseUrl, '/api/v1/timetable-periods/import-csv', headersFor(collegeA, token), {
+        file_name: 'timetable-alloc.csv',
+        file_base64: Buffer.from(csv).toString('base64'),
+      });
+      assert.equal(resp.status, 201);
+      assert.equal(resp.body.imported.length, 1);
+      assert.equal(resp.body.skipped.length, 0);
 
-    const allocation = await adminPool.query(
-      'SELECT subject, staff_user_id FROM faculty_allocation WHERE class_id = $1',
-      [classId],
-    );
-    assert.equal(allocation.rows.length, 1);
-    assert.equal(allocation.rows[0].subject, 'Maths');
-    assert.equal(allocation.rows[0].staff_user_id, staffUserId);
+      const allocation = await adminPool.query(
+        'SELECT subject, staff_user_id FROM faculty_allocation WHERE class_id = $1',
+        [classId],
+      );
+      assert.equal(allocation.rows.length, 1);
+      assert.equal(allocation.rows[0].subject, 'Maths');
+      assert.equal(allocation.rows[0].staff_user_id, staffUserId);
 
-    const cls = await adminPool.query('SELECT timetable_data FROM classes WHERE id = $1', [classId]);
-    assert.equal(cls.rows[0].timetable_data.length, 1);
-    assert.equal(cls.rows[0].timetable_data[0].subject, 'Maths');
-  });
+      const cls = await adminPool.query('SELECT timetable_data FROM classes WHERE id = $1', [classId]);
+      assert.equal(cls.rows[0].timetable_data.length, 1);
+      assert.equal(cls.rows[0].timetable_data[0].subject, 'Maths');
+    },
+  );
 
   await t.test('create rejects a missing day_of_week with 400, not a 500', async () => {
     const token = await login(collegeA, 'principaluser');
     const resp = await post(baseUrl, '/api/v1/timetable-periods', headersFor(collegeA, token), {
-      hour_index: 1, start_time: '09:00', end_time: '10:00',
+      hour_index: 1,
+      start_time: '09:00',
+      end_time: '10:00',
     });
     assert.equal(resp.status, 400);
   });
@@ -238,12 +244,18 @@ test('timetable periods', async (t) => {
   await t.test('create on a duplicate (day_of_week, hour_index) within the same tenant is a real 409', async () => {
     const token = await login(collegeA, 'principaluser');
     const first = await post(baseUrl, '/api/v1/timetable-periods', headersFor(collegeA, token), {
-      day_of_week: 'Tuesday', hour_index: 1, start_time: '09:00', end_time: '10:00',
+      day_of_week: 'Tuesday',
+      hour_index: 1,
+      start_time: '09:00',
+      end_time: '10:00',
     });
     assert.equal(first.status, 201);
 
     const dup = await post(baseUrl, '/api/v1/timetable-periods', headersFor(collegeA, token), {
-      day_of_week: 'Tuesday', hour_index: 1, start_time: '09:30', end_time: '10:30',
+      day_of_week: 'Tuesday',
+      hour_index: 1,
+      start_time: '09:30',
+      end_time: '10:30',
     });
     assert.equal(dup.status, 409);
   });
@@ -251,7 +263,10 @@ test('timetable periods', async (t) => {
   await t.test('get by id returns 200 for an existing period, 404 for an unknown id', async () => {
     const token = await login(collegeA, 'principaluser');
     const created = await post(baseUrl, '/api/v1/timetable-periods', headersFor(collegeA, token), {
-      day_of_week: 'Wednesday', hour_index: 1, start_time: '09:00', end_time: '10:00',
+      day_of_week: 'Wednesday',
+      hour_index: 1,
+      start_time: '09:00',
+      end_time: '10:00',
     });
     const found = await get(baseUrl, `/api/v1/timetable-periods/${created.body.id}`, headersFor(collegeA, token));
     assert.equal(found.status, 200);
@@ -263,8 +278,18 @@ test('timetable periods', async (t) => {
 
   await t.test('list returns an array and respects limit', async () => {
     const token = await login(collegeA, 'principaluser');
-    await post(baseUrl, '/api/v1/timetable-periods', headersFor(collegeA, token), { day_of_week: 'Thursday', hour_index: 1, start_time: '09:00', end_time: '10:00' });
-    await post(baseUrl, '/api/v1/timetable-periods', headersFor(collegeA, token), { day_of_week: 'Thursday', hour_index: 2, start_time: '10:00', end_time: '11:00' });
+    await post(baseUrl, '/api/v1/timetable-periods', headersFor(collegeA, token), {
+      day_of_week: 'Thursday',
+      hour_index: 1,
+      start_time: '09:00',
+      end_time: '10:00',
+    });
+    await post(baseUrl, '/api/v1/timetable-periods', headersFor(collegeA, token), {
+      day_of_week: 'Thursday',
+      hour_index: 2,
+      start_time: '10:00',
+      end_time: '11:00',
+    });
 
     const resp = await get(baseUrl, '/api/v1/timetable-periods?limit=1', headersFor(collegeA, token));
     assert.equal(resp.status, 200);
@@ -274,7 +299,10 @@ test('timetable periods', async (t) => {
   await t.test('delete removes the row and returns 204; a second delete 404s', async () => {
     const token = await login(collegeA, 'principaluser');
     const created = await post(baseUrl, '/api/v1/timetable-periods', headersFor(collegeA, token), {
-      day_of_week: 'Friday', hour_index: 1, start_time: '09:00', end_time: '10:00',
+      day_of_week: 'Friday',
+      hour_index: 1,
+      start_time: '09:00',
+      end_time: '10:00',
     });
 
     const firstDelete = await del(baseUrl, `/api/v1/timetable-periods/${created.body.id}`, headersFor(collegeA, token));
@@ -283,14 +311,21 @@ test('timetable periods', async (t) => {
     const getAfter = await get(baseUrl, `/api/v1/timetable-periods/${created.body.id}`, headersFor(collegeA, token));
     assert.equal(getAfter.status, 404);
 
-    const secondDelete = await del(baseUrl, `/api/v1/timetable-periods/${created.body.id}`, headersFor(collegeA, token));
+    const secondDelete = await del(
+      baseUrl,
+      `/api/v1/timetable-periods/${created.body.id}`,
+      headersFor(collegeA, token),
+    );
     assert.equal(secondDelete.status, 404);
   });
 
   await t.test('delete on a period still referenced by a faculty_allocation is a real 409, not a 500', async () => {
     const token = await login(collegeA, 'principaluser');
     const period = await post(baseUrl, '/api/v1/timetable-periods', headersFor(collegeA, token), {
-      day_of_week: 'Saturday', hour_index: 1, start_time: '09:00', end_time: '10:00',
+      day_of_week: 'Saturday',
+      hour_index: 1,
+      start_time: '09:00',
+      end_time: '10:00',
     });
     const passwordHash = await security.hashPassword(PASSWORD);
     const teacher = await adminPool.query(
@@ -317,14 +352,20 @@ test('timetable periods', async (t) => {
   await t.test('create is rejected for a non-principal role', async () => {
     const token = await login(collegeA, 'staffuser');
     const resp = await post(baseUrl, '/api/v1/timetable-periods', headersFor(collegeA, token), {
-      day_of_week: 'Monday', hour_index: 9, start_time: '09:00', end_time: '10:00',
+      day_of_week: 'Monday',
+      hour_index: 9,
+      start_time: '09:00',
+      end_time: '10:00',
     });
     assert.equal(resp.status, 403);
   });
 
   await t.test('create requires authentication', async () => {
     const resp = await post(baseUrl, '/api/v1/timetable-periods', headersFor(collegeA), {
-      day_of_week: 'Monday', hour_index: 9, start_time: '09:00', end_time: '10:00',
+      day_of_week: 'Monday',
+      hour_index: 9,
+      start_time: '09:00',
+      end_time: '10:00',
     });
     assert.equal(resp.status, 401);
   });
@@ -332,7 +373,10 @@ test('timetable periods', async (t) => {
   await t.test('read is allowed for staff, not just principal', async () => {
     const principalToken = await login(collegeA, 'principaluser');
     const created = await post(baseUrl, '/api/v1/timetable-periods', headersFor(collegeA, principalToken), {
-      day_of_week: 'Monday', hour_index: 10, start_time: '16:00', end_time: '17:00',
+      day_of_week: 'Monday',
+      hour_index: 10,
+      start_time: '16:00',
+      end_time: '17:00',
     });
 
     const staffToken = await login(collegeA, 'staffuser');
@@ -354,7 +398,10 @@ test('timetable periods', async (t) => {
   await t.test('generate-grid is rejected for plain staff (Capability Coverage Audit fix)', async () => {
     const token = await login(collegeA, 'staffuser');
     const resp = await post(baseUrl, '/api/v1/timetable-periods/generate-grid', headersFor(collegeA, token), {
-      working_days: ['Monday'], start_time: '09:00', end_time: '10:00', slot_duration_minutes: 60,
+      working_days: ['Monday'],
+      start_time: '09:00',
+      end_time: '10:00',
+      slot_duration_minutes: 60,
     });
     assert.equal(resp.status, 403);
   });
@@ -362,7 +409,10 @@ test('timetable periods', async (t) => {
   await t.test('generate-grid is allowed for principal', async () => {
     const token = await login(collegeA, 'principaluser');
     const resp = await post(baseUrl, '/api/v1/timetable-periods/generate-grid', headersFor(collegeA, token), {
-      working_days: ['Monday'], start_time: '09:00', end_time: '10:00', slot_duration_minutes: 60,
+      working_days: ['Monday'],
+      start_time: '09:00',
+      end_time: '10:00',
+      slot_duration_minutes: 60,
     });
     assert.equal(resp.status, 201);
   });
@@ -374,10 +424,16 @@ test('timetable periods', async (t) => {
     const tokenB = await login(collegeB, 'principaluser');
 
     const respA = await post(baseUrl, '/api/v1/timetable-periods', headersFor(collegeA, tokenA), {
-      day_of_week: 'Monday', hour_index: 20, start_time: '09:00', end_time: '10:00',
+      day_of_week: 'Monday',
+      hour_index: 20,
+      start_time: '09:00',
+      end_time: '10:00',
     });
     const respB = await post(baseUrl, '/api/v1/timetable-periods', headersFor(collegeB, tokenB), {
-      day_of_week: 'Monday', hour_index: 20, start_time: '09:00', end_time: '10:00',
+      day_of_week: 'Monday',
+      hour_index: 20,
+      start_time: '09:00',
+      end_time: '10:00',
     });
     assert.equal(respA.status, 201);
     assert.equal(respB.status, 201);
@@ -392,7 +448,10 @@ test('timetable periods', async (t) => {
     const token = await login(collegeA, 'principaluser');
 
     const resp = await post(baseUrl, '/api/v1/timetable-periods', headersFor(collegeA, token), {
-      day_of_week: 'Monday', hour_index: 30, start_time: '09:00', end_time: '10:00',
+      day_of_week: 'Monday',
+      hour_index: 30,
+      start_time: '09:00',
+      end_time: '10:00',
     });
     assert.equal(resp.status, 201);
 

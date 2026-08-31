@@ -71,9 +71,15 @@ async function ensureEmbeddings(client, tools) {
   if (missing.length === 0) return;
 
   const vectors = await embeddingService.embed(missing.map(toolEmbeddingText), { inputType: 'passage' });
-  await Promise.all(missing.map((tool, i) => aiToolEmbeddingRepository.upsert(client, {
-    toolName: tool.name, embedding: vectors[i], model,
-  })));
+  await Promise.all(
+    missing.map((tool, i) =>
+      aiToolEmbeddingRepository.upsert(client, {
+        toolName: tool.name,
+        embedding: vectors[i],
+        model,
+      }),
+    ),
+  );
 }
 
 async function retrieveSemantic(client, roleTools, question) {

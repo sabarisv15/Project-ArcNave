@@ -40,7 +40,11 @@ const CLASS_TUTOR_POSITION_ACCOUNT_ID = '40966ff8-f36c-466d-ac04-33cbe3a161a8'; 
 
 const SAMPLE_PDF = '/tmp/sample-exam-fees.pdf'; // copied into the app container via `docker compose cp` before running this script
 
-function sleep(ms) { return new Promise((resolve) => { setTimeout(resolve, ms); }); }
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 const INTER_TURN_DELAY_MS = 4000;
 
 async function withTenantClient(appPool, collegeId, fn) {
@@ -84,7 +88,9 @@ async function resolveIdentity(appPool, kind) {
     await client.query("SELECT set_config('app.current_tenant', $1, true)", [COLLEGE_ID]);
     let identityContext;
     if (kind === 'class_tutor') {
-      const caps = await identityService.resolveCapabilitiesForPosition(client, { positionAccountId: CLASS_TUTOR_POSITION_ACCOUNT_ID });
+      const caps = await identityService.resolveCapabilitiesForPosition(client, {
+        positionAccountId: CLASS_TUTOR_POSITION_ACCOUNT_ID,
+      });
       identityContext = buildIdentityContext(caps, COLLEGE_ID);
     } else {
       const userId = { principal: PRINCIPAL_USER_ID, hod: HOD_USER_ID, staff: STAFF_USER_ID }[kind];
@@ -122,9 +128,12 @@ async function runOneTurn(appPool, identityContext, question, opts = {}) {
   let threw = null;
   const start = Date.now();
   try {
-    result = await withTenantClient(appPool, COLLEGE_ID, (client) => aiService.askAgent(client, question, {
-      identityContext, attachmentIds: opts.attachmentIds,
-    }));
+    result = await withTenantClient(appPool, COLLEGE_ID, (client) =>
+      aiService.askAgent(client, question, {
+        identityContext,
+        attachmentIds: opts.attachmentIds,
+      }),
+    );
   } catch (err) {
     threw = err;
   } finally {
@@ -133,7 +142,11 @@ async function runOneTurn(appPool, identityContext, question, opts = {}) {
   }
   const wallClockMs = Date.now() - start;
   return {
-    result, threw, llmCalls, invocationLog, wallClockMs,
+    result,
+    threw,
+    llmCalls,
+    invocationLog,
+    wallClockMs,
     usedPlan: Boolean(result && result.plan),
     pendingConfirmation: Boolean(result && result.pendingConfirmation),
     answer: result && (result.answer || result.text),
@@ -147,12 +160,26 @@ function sumBy(rows, purposes, field) {
 function tokenTotals(llmCalls) {
   const decisionIn = sumBy(llmCalls, ['tool_select', 'tool_select_continue'], 'inputTokens');
   const decisionOut = sumBy(llmCalls, ['tool_select', 'tool_select_continue'], 'outputTokens');
-  const synthesisIn = sumBy(llmCalls, ['tool_answer', 'plan_synthesis', 'general_chat', 'tool_question'], 'inputTokens');
-  const synthesisOut = sumBy(llmCalls, ['tool_answer', 'plan_synthesis', 'general_chat', 'tool_question'], 'outputTokens');
+  const synthesisIn = sumBy(
+    llmCalls,
+    ['tool_answer', 'plan_synthesis', 'general_chat', 'tool_question'],
+    'inputTokens',
+  );
+  const synthesisOut = sumBy(
+    llmCalls,
+    ['tool_answer', 'plan_synthesis', 'general_chat', 'tool_question'],
+    'outputTokens',
+  );
   const total = decisionIn + decisionOut + synthesisIn + synthesisOut;
   const latency = llmCalls.reduce((s, r) => s + (r.latencyMs || 0), 0);
   return {
-    decisionIn, decisionOut, synthesisIn, synthesisOut, total, latency, calls: llmCalls.length,
+    decisionIn,
+    decisionOut,
+    synthesisIn,
+    synthesisOut,
+    total,
+    latency,
+    calls: llmCalls.length,
   };
 }
 
@@ -165,103 +192,198 @@ function toolNames(invocationLog) {
 const ROLE_TESTS = {
   principal: [
     {
-      label: 'simple-read', question: '3rd Sem CSE-A attendance percentage enna?', expectedTools: ['attendance_summary'], checkKind: 'coverage',
+      label: 'simple-read',
+      question: '3rd Sem CSE-A attendance percentage enna?',
+      expectedTools: ['attendance_summary'],
+      checkKind: 'coverage',
     },
     {
-      label: 'compound-2tool', question: 'low attendance students matrum fee status kudu', expectedTools: ['students_low_attendance', 'finance_status_summary'], checkKind: 'coverage',
+      label: 'compound-2tool',
+      question: 'low attendance students matrum fee status kudu',
+      expectedTools: ['students_low_attendance', 'finance_status_summary'],
+      checkKind: 'coverage',
     },
     {
-      label: 'multi-3tool', question: 'low attendance, fee pending, attendance summary moonrayum kudu', expectedTools: ['students_low_attendance', 'finance_status_summary', 'attendance_summary'], checkKind: 'coverage',
+      label: 'multi-3tool',
+      question: 'low attendance, fee pending, attendance summary moonrayum kudu',
+      expectedTools: ['students_low_attendance', 'finance_status_summary', 'attendance_summary'],
+      checkKind: 'coverage',
     },
     {
-      label: 'restricted-confirmation', question: "எல்லா staff-க்கும் ஒரு notification அனுப்பு: 'Tomorrow is a holiday'", expectedTools: ['request_notification_send'], checkKind: 'confirmation-gate',
+      label: 'restricted-confirmation',
+      question: "எல்லா staff-க்கும் ஒரு notification அனுப்பு: 'Tomorrow is a holiday'",
+      expectedTools: ['request_notification_send'],
+      checkKind: 'confirmation-gate',
     },
     {
-      label: 'write-execute', question: "3rd Sem CSE-A ல இன்னைக்கு (2026-08-29) Data Structures subject-ல topic 'Stacks and Queues' pathi oru class log entry podu", expectedTools: ['class_log_create'], checkKind: 'write-success',
+      label: 'write-execute',
+      question:
+        "3rd Sem CSE-A ல இன்னைக்கு (2026-08-29) Data Structures subject-ல topic 'Stacks and Queues' pathi oru class log entry podu",
+      expectedTools: ['class_log_create'],
+      checkKind: 'write-success',
     },
     {
-      label: 'ambiguous', question: 'help me with the thing', expectedTools: [], checkKind: 'coverage',
+      label: 'ambiguous',
+      question: 'help me with the thing',
+      expectedTools: [],
+      checkKind: 'coverage',
     },
     {
-      label: 'internal-routing', question: '3rd Sem CSE-A attendance percentage enna?', expectedTools: ['attendance_summary'], checkKind: 'coverage',
+      label: 'internal-routing',
+      question: '3rd Sem CSE-A attendance percentage enna?',
+      expectedTools: ['attendance_summary'],
+      checkKind: 'coverage',
     },
     {
-      label: 'external-routing', question: 'latest UGC NEP 2026 guidelines pathi sollu', expectedTools: ['web_search'], checkKind: 'external-routing',
+      label: 'external-routing',
+      question: 'latest UGC NEP 2026 guidelines pathi sollu',
+      expectedTools: ['web_search'],
+      checkKind: 'external-routing',
     },
     {
-      label: 'document-multimodal', question: 'இந்த document-ல எத்தனை records irukku, table-ஐ பாரு', expectedTools: [], checkKind: 'document', useAttachment: true,
+      label: 'document-multimodal',
+      question: 'இந்த document-ல எத்தனை records irukku, table-ஐ பாரு',
+      expectedTools: [],
+      checkKind: 'document',
+      useAttachment: true,
     },
   ],
   hod: [
     {
-      label: 'simple-read', question: 'CSE department attendance percentage enna?', expectedTools: ['attendance_summary'], checkKind: 'coverage',
+      label: 'simple-read',
+      question: 'CSE department attendance percentage enna?',
+      expectedTools: ['attendance_summary'],
+      checkKind: 'coverage',
     },
     {
-      label: 'compound-2tool', question: 'CSE department-ல low attendance students matrum fee status kudu', expectedTools: ['students_low_attendance', 'finance_status_summary'], checkKind: 'coverage',
+      label: 'compound-2tool',
+      question: 'CSE department-ல low attendance students matrum fee status kudu',
+      expectedTools: ['students_low_attendance', 'finance_status_summary'],
+      checkKind: 'coverage',
     },
     {
-      label: 'multi-3tool', question: 'CSE department-ல low attendance, fee pending, attendance summary moonrayum kudu', expectedTools: ['students_low_attendance', 'finance_status_summary', 'attendance_summary'], checkKind: 'coverage',
+      label: 'multi-3tool',
+      question: 'CSE department-ல low attendance, fee pending, attendance summary moonrayum kudu',
+      expectedTools: ['students_low_attendance', 'finance_status_summary', 'attendance_summary'],
+      checkKind: 'coverage',
     },
     {
-      label: 'restricted-role', question: 'puthu academic year 2027-2028 create pannu', expectedTools: ['academic_year_create'], checkKind: 'role-blocked',
+      label: 'restricted-role',
+      question: 'puthu academic year 2027-2028 create pannu',
+      expectedTools: ['academic_year_create'],
+      checkKind: 'role-blocked',
     },
     {
-      label: 'write-execute', question: "CSE-A ல இன்னைக்கு (2026-08-29) DBMS subject-ல topic 'Normalization' pathi class log podu", expectedTools: ['class_log_create'], checkKind: 'write-success',
+      label: 'write-execute',
+      question: "CSE-A ல இன்னைக்கு (2026-08-29) DBMS subject-ல topic 'Normalization' pathi class log podu",
+      expectedTools: ['class_log_create'],
+      checkKind: 'write-success',
     },
     {
-      label: 'ambiguous', question: 'help me with the thing', expectedTools: [], checkKind: 'coverage',
+      label: 'ambiguous',
+      question: 'help me with the thing',
+      expectedTools: [],
+      checkKind: 'coverage',
     },
     {
-      label: 'external-routing', question: 'latest AICTE accreditation news enna irukku', expectedTools: ['web_search'], checkKind: 'external-routing',
+      label: 'external-routing',
+      question: 'latest AICTE accreditation news enna irukku',
+      expectedTools: ['web_search'],
+      checkKind: 'external-routing',
     },
   ],
   staff: [
     {
-      label: 'simple-read', question: '5th Sem ECE-A attendance percentage enna?', expectedTools: ['attendance_summary'], checkKind: 'coverage',
+      label: 'simple-read',
+      question: '5th Sem ECE-A attendance percentage enna?',
+      expectedTools: ['attendance_summary'],
+      checkKind: 'coverage',
     },
     {
-      label: 'compound-2tool', question: 'ECE-A ல low attendance students matrum assessment marks summary kudu', expectedTools: ['students_low_attendance', 'assessment_marks_summary'], checkKind: 'coverage',
+      label: 'compound-2tool',
+      question: 'ECE-A ல low attendance students matrum assessment marks summary kudu',
+      expectedTools: ['students_low_attendance', 'assessment_marks_summary'],
+      checkKind: 'coverage',
     },
     {
-      label: 'multi-3tool', question: 'ECE-A ல low attendance, assessment marks, attendance summary moonrayum kudu', expectedTools: ['students_low_attendance', 'assessment_marks_summary', 'attendance_summary'], checkKind: 'coverage',
+      label: 'multi-3tool',
+      question: 'ECE-A ல low attendance, assessment marks, attendance summary moonrayum kudu',
+      expectedTools: ['students_low_attendance', 'assessment_marks_summary', 'attendance_summary'],
+      checkKind: 'coverage',
     },
     {
-      label: 'restricted-role', question: 'fee status full ah kudu', expectedTools: ['finance_status_summary'], checkKind: 'role-blocked',
+      label: 'restricted-role',
+      question: 'fee status full ah kudu',
+      expectedTools: ['finance_status_summary'],
+      checkKind: 'role-blocked',
     },
     {
-      label: 'write-execute', question: "ECE-A ல இன்னைக்கு (2026-08-29) Digital Electronics subject-ல topic 'Logic Gates' pathi class log podu", expectedTools: ['class_log_create'], checkKind: 'write-success',
+      label: 'write-execute',
+      question: "ECE-A ல இன்னைக்கு (2026-08-29) Digital Electronics subject-ல topic 'Logic Gates' pathi class log podu",
+      expectedTools: ['class_log_create'],
+      checkKind: 'write-success',
     },
     {
-      label: 'ambiguous', question: 'help me with the thing', expectedTools: [], checkKind: 'coverage',
+      label: 'ambiguous',
+      question: 'help me with the thing',
+      expectedTools: [],
+      checkKind: 'coverage',
     },
     {
-      label: 'external-routing', question: 'latest UGC NEP 2026 guidelines pathi sollu', expectedTools: ['web_search'], checkKind: 'external-routing',
+      label: 'external-routing',
+      question: 'latest UGC NEP 2026 guidelines pathi sollu',
+      expectedTools: ['web_search'],
+      checkKind: 'external-routing',
     },
   ],
   class_tutor: [
     {
-      label: 'simple-read', question: '3rd Sem CSE-A attendance percentage enna?', expectedTools: ['attendance_summary'], checkKind: 'coverage',
+      label: 'simple-read',
+      question: '3rd Sem CSE-A attendance percentage enna?',
+      expectedTools: ['attendance_summary'],
+      checkKind: 'coverage',
     },
     {
-      label: 'compound-2tool', question: 'CSE-A ல low attendance students matrum assessment marks summary kudu', expectedTools: ['students_low_attendance', 'assessment_marks_summary'], checkKind: 'coverage',
+      label: 'compound-2tool',
+      question: 'CSE-A ல low attendance students matrum assessment marks summary kudu',
+      expectedTools: ['students_low_attendance', 'assessment_marks_summary'],
+      checkKind: 'coverage',
     },
     {
-      label: 'multi-3tool', question: 'CSE-A ல low attendance, assessment marks, attendance summary moonrayum kudu', expectedTools: ['students_low_attendance', 'assessment_marks_summary', 'attendance_summary'], checkKind: 'coverage',
+      label: 'multi-3tool',
+      question: 'CSE-A ல low attendance, assessment marks, attendance summary moonrayum kudu',
+      expectedTools: ['students_low_attendance', 'assessment_marks_summary', 'attendance_summary'],
+      checkKind: 'coverage',
     },
     {
-      label: 'restricted-role', question: 'fee status full ah kudu', expectedTools: ['finance_status_summary'], checkKind: 'role-blocked',
+      label: 'restricted-role',
+      question: 'fee status full ah kudu',
+      expectedTools: ['finance_status_summary'],
+      checkKind: 'role-blocked',
     },
     {
-      label: 'write-execute', question: "CSE-A ல இன்னைக்கு (2026-08-29) Data Structures subject-ல topic 'Stacks' pathi class log podu", expectedTools: ['class_log_create'], checkKind: 'write-success',
+      label: 'write-execute',
+      question: "CSE-A ல இன்னைக்கு (2026-08-29) Data Structures subject-ல topic 'Stacks' pathi class log podu",
+      expectedTools: ['class_log_create'],
+      checkKind: 'write-success',
     },
     {
-      label: 'write-incomplete', question: 'student roll number 1 fee paid nu mark pannu', expectedTools: ['finance_record_payment'], checkKind: 'ask-not-guess',
+      label: 'write-incomplete',
+      question: 'student roll number 1 fee paid nu mark pannu',
+      expectedTools: ['finance_record_payment'],
+      checkKind: 'ask-not-guess',
     },
     {
-      label: 'ambiguous', question: 'help me with the thing', expectedTools: [], checkKind: 'coverage',
+      label: 'ambiguous',
+      question: 'help me with the thing',
+      expectedTools: [],
+      checkKind: 'coverage',
     },
     {
-      label: 'external-routing', question: 'latest UGC NEP 2026 guidelines pathi sollu', expectedTools: ['web_search'], checkKind: 'external-routing',
+      label: 'external-routing',
+      question: 'latest UGC NEP 2026 guidelines pathi sollu',
+      expectedTools: ['web_search'],
+      checkKind: 'external-routing',
     },
   ],
 };
@@ -283,13 +405,18 @@ function evaluateCheck(test, turn) {
   if (turn.threw) {
     // For role-blocked, a thrown AiToolRoleNotPermittedError IS the
     // correct, expected outcome (Policy Gate held) — not a failure.
-    if (test.checkKind === 'role-blocked' && /not permitted|RoleNotPermitted/i.test(turn.threw.message || turn.threw.name || '')) {
+    if (
+      test.checkKind === 'role-blocked' &&
+      /not permitted|RoleNotPermitted/i.test(turn.threw.message || turn.threw.name || '')
+    ) {
       return { ok: true, note: `Policy Gate correctly blocked: ${turn.threw.message}` };
     }
     return { ok: false, note: `THREW: ${turn.threw.name}: ${(turn.threw.message || '').slice(0, 200)}` };
   }
   if (test.checkKind === 'confirmation-gate') {
-    const ok = turn.pendingConfirmation && !invoked.some((n) => n === test.expectedTools[0] && turn.invocationLog.find((i) => i.toolName === n).ok);
+    const ok =
+      turn.pendingConfirmation &&
+      !invoked.some((n) => n === test.expectedTools[0] && turn.invocationLog.find((i) => i.toolName === n).ok);
     return { ok, note: `pendingConfirmation=${turn.pendingConfirmation}, invoked=${JSON.stringify(invoked)}` };
   }
   if (test.checkKind === 'role-blocked') {
@@ -304,10 +431,15 @@ function evaluateCheck(test, turn) {
     // a receipt_document_id.
     const calledWithFabricatedReceipt = turn.invocationLog.some((i) => i.toolName === 'finance_record_payment' && i.ok);
     const ok = !calledWithFabricatedReceipt;
-    return { ok, note: `invoked=${JSON.stringify(invoked)}, pendingConfirmation=${turn.pendingConfirmation}, answer="${(turn.answer || '').slice(0, 200)}"` };
+    return {
+      ok,
+      note: `invoked=${JSON.stringify(invoked)}, pendingConfirmation=${turn.pendingConfirmation}, answer="${(turn.answer || '').slice(0, 200)}"`,
+    };
   }
   if (test.checkKind === 'write-success') {
-    const ok = invoked.includes(test.expectedTools[0]) && turn.invocationLog.find((i) => i.toolName === test.expectedTools[0]).ok;
+    const ok =
+      invoked.includes(test.expectedTools[0]) &&
+      turn.invocationLog.find((i) => i.toolName === test.expectedTools[0]).ok;
     return { ok, note: `invoked=${JSON.stringify(invoked)}` };
   }
   if (test.checkKind === 'external-routing') {
@@ -319,7 +451,10 @@ function evaluateCheck(test, turn) {
     return { ok, note: `invoked=${JSON.stringify(invoked)}, answer="${(turn.answer || '').slice(0, 200)}"` };
   }
   const acc = summarizeAccuracy(test.expectedTools, invoked);
-  return { ok: acc.fullCoverage, note: `invoked=${JSON.stringify(invoked)}, recall=${acc.recall.toFixed(2)}, precision=${acc.precision.toFixed(2)}` };
+  return {
+    ok: acc.fullCoverage,
+    note: `invoked=${JSON.stringify(invoked)}, recall=${acc.recall.toFixed(2)}, precision=${acc.precision.toFixed(2)}`,
+  };
 }
 
 async function uploadSampleAttachment(appPool, identityContext) {
@@ -348,10 +483,16 @@ async function main() {
 
   // --- Baseline verification ---
   console.log('========== BASELINE VERIFICATION ==========');
-  console.log(`config.experimentalReasoningModel (production default): ${JSON.stringify(originalReasoningModel)} (expect null)`);
-  console.log(`config.experimentalCatalogueVariant (production default): ${JSON.stringify(originalCatalogueVariant)} (expect null)`);
+  console.log(
+    `config.experimentalReasoningModel (production default): ${JSON.stringify(originalReasoningModel)} (expect null)`,
+  );
+  console.log(
+    `config.experimentalCatalogueVariant (production default): ${JSON.stringify(originalCatalogueVariant)} (expect null)`,
+  );
   console.log(`config.toolSearch.enabled (production default): ${originalToolSearchEnabled} (expect false)`);
-  console.log('This run will set experimentalCatalogueVariant=\'hybrid\' for the duration of the test, restoring the original value in a finally block. Gemini stays the reasoning model; Tool Search stays off throughout.');
+  console.log(
+    "This run will set experimentalCatalogueVariant='hybrid' for the duration of the test, restoring the original value in a finally block. Gemini stays the reasoning model; Tool Search stays off throughout.",
+  );
 
   const appPool = new Pool({ connectionString: config.databaseUrl });
   const allResults = [];
@@ -378,13 +519,15 @@ async function main() {
           if (!fs.existsSync(SAMPLE_PDF)) {
             console.log('  SKIPPED (sample PDF missing)');
             allResults.push({
-              role: roleKey, label: test.label, skipped: true,
+              role: roleKey,
+              label: test.label,
+              skipped: true,
             });
             // eslint-disable-next-line no-continue
             continue;
           }
           // eslint-disable-next-line no-await-in-loop
-          attachmentId = attachmentId || await uploadSampleAttachment(appPool, identityContext);
+          attachmentId = attachmentId || (await uploadSampleAttachment(appPool, identityContext));
           opts.attachmentIds = [attachmentId];
         }
         // eslint-disable-next-line no-await-in-loop
@@ -392,7 +535,9 @@ async function main() {
         const check = evaluateCheck(test, turn);
         const totals = tokenTotals(turn.llmCalls);
         console.log(`  RESULT: ${check.ok ? 'PASS' : 'FAIL'} — ${check.note}`);
-        console.log(`  tokens: decision(in=${totals.decisionIn},out=${totals.decisionOut}) synthesis(in=${totals.synthesisIn},out=${totals.synthesisOut}) total=${totals.total} llmLatencyMs=${totals.latency} wallClockMs=${turn.wallClockMs} usedPlan=${turn.usedPlan}`);
+        console.log(
+          `  tokens: decision(in=${totals.decisionIn},out=${totals.decisionOut}) synthesis(in=${totals.synthesisIn},out=${totals.synthesisOut}) total=${totals.total} llmLatencyMs=${totals.latency} wallClockMs=${turn.wallClockMs} usedPlan=${turn.usedPlan}`,
+        );
         allResults.push({
           role: roleKey,
           label: test.label,
@@ -416,7 +561,9 @@ async function main() {
     // exact questions, so the comparison is real and paired.
     console.log('\n\n========== CATALOGUE TOKEN COMPARISON: current vs hybrid (principal, core 3 tests) ==========');
     const principalIdentity = await resolveIdentity(appPool, 'principal');
-    const coreTests = ROLE_TESTS.principal.filter((t) => ['simple-read', 'compound-2tool', 'multi-3tool'].includes(t.label));
+    const coreTests = ROLE_TESTS.principal.filter((t) =>
+      ['simple-read', 'compound-2tool', 'multi-3tool'].includes(t.label),
+    );
     const catalogueComparison = [];
     for (const variant of [null, 'hybrid']) {
       config.experimentalCatalogueVariant = variant;
@@ -426,9 +573,15 @@ async function main() {
         // eslint-disable-next-line no-await-in-loop
         const turn = await runOneTurn(appPool, principalIdentity, test.question);
         const totals = tokenTotals(turn.llmCalls);
-        console.log(`  variant=${variant || 'current'} ${test.label}: total=${totals.total} (decision in=${totals.decisionIn} out=${totals.decisionOut}) wallClockMs=${turn.wallClockMs} threw=${turn.threw ? turn.threw.message : 'no'}`);
+        console.log(
+          `  variant=${variant || 'current'} ${test.label}: total=${totals.total} (decision in=${totals.decisionIn} out=${totals.decisionOut}) wallClockMs=${turn.wallClockMs} threw=${turn.threw ? turn.threw.message : 'no'}`,
+        );
         catalogueComparison.push({
-          variant: variant || 'current', label: test.label, totals, wallClockMs: turn.wallClockMs, threw: Boolean(turn.threw),
+          variant: variant || 'current',
+          label: test.label,
+          totals,
+          wallClockMs: turn.wallClockMs,
+          threw: Boolean(turn.threw),
         });
       }
     }
@@ -437,12 +590,19 @@ async function main() {
     // --- Final summary ---
     console.log('\n\n========== FINAL SUMMARY: role-by-role pass/fail ==========');
     allResults.forEach((r) => {
-      if (r.skipped) { console.log(`${r.role.padEnd(12)}| ${r.label.padEnd(20)}| SKIPPED`); return; }
-      console.log(`${r.role.padEnd(12)}| ${r.label.padEnd(20)}| ${r.ok ? 'PASS' : 'FAIL'} | total=${r.totals.total} | wallMs=${r.wallClockMs} | ${r.note}`);
+      if (r.skipped) {
+        console.log(`${r.role.padEnd(12)}| ${r.label.padEnd(20)}| SKIPPED`);
+        return;
+      }
+      console.log(
+        `${r.role.padEnd(12)}| ${r.label.padEnd(20)}| ${r.ok ? 'PASS' : 'FAIL'} | total=${r.totals.total} | wallMs=${r.wallClockMs} | ${r.note}`,
+      );
     });
 
     const failed = allResults.filter((r) => !r.skipped && !r.ok);
-    console.log(`\nTotal: ${allResults.length}, PASS: ${allResults.filter((r) => r.ok).length}, FAIL: ${failed.length}, SKIPPED: ${allResults.filter((r) => r.skipped).length}`);
+    console.log(
+      `\nTotal: ${allResults.length}, PASS: ${allResults.filter((r) => r.ok).length}, FAIL: ${failed.length}, SKIPPED: ${allResults.filter((r) => r.skipped).length}`,
+    );
     if (failed.length) {
       console.log('FAILURES:');
       failed.forEach((f) => console.log(`  ${f.role}/${f.label}: ${f.note}`));
@@ -450,7 +610,11 @@ async function main() {
 
     console.log('\n========== CATALOGUE COMPARISON TABLE ==========');
     console.log('variant | test | total tokens | wallClockMs');
-    catalogueComparison.forEach((c) => console.log(`${c.variant.padEnd(9)}| ${c.label.padEnd(14)}| ${c.totals.total.toString().padEnd(13)}| ${c.wallClockMs}`));
+    catalogueComparison.forEach((c) =>
+      console.log(
+        `${c.variant.padEnd(9)}| ${c.label.padEnd(14)}| ${c.totals.total.toString().padEnd(13)}| ${c.wallClockMs}`,
+      ),
+    );
   } finally {
     config.experimentalCatalogueVariant = originalCatalogueVariant;
     config.experimentalReasoningModel = originalReasoningModel;
@@ -463,4 +627,7 @@ async function main() {
   }
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

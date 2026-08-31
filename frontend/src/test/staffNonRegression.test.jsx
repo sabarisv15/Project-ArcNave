@@ -33,7 +33,7 @@ function renderApp(route = '/curriculum') {
           </WorkspaceProvider>
         </Tooltip.Provider>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -59,9 +59,7 @@ describe('Personal Staff — unchanged by the institutional foundation', () => {
     const links = within(nav).getAllByRole('link');
     // Students and Staff carry their own count badge inside the link, so the
     // label is compared without the trailing digits rather than by exact text.
-    expect(links.map((l) => l.textContent.trim().replace(/\d+$/, ''))).toEqual(
-      STAFF_DESTINATIONS.map((d) => d.label)
-    );
+    expect(links.map((l) => l.textContent.trim().replace(/\d+$/, ''))).toEqual(STAFF_DESTINATIONS.map((d) => d.label));
 
     // No institutional destination leaks into the Staff menu.
     ['My Class', 'Department', 'Institution', 'Approvals'].forEach((label) => {
@@ -86,10 +84,10 @@ describe('Personal Staff — unchanged by the institutional foundation', () => {
   it('keeps the Home menu it always had', async () => {
     renderApp('/');
     const nav = await screen.findByRole('navigation', { name: /home navigation/i });
-    expect(within(nav).getAllByRole('link').map((l) => l.textContent.trim())).toEqual([
-      'New',
-      'Projects',
-      'Artifacts',
-    ]);
+    expect(
+      within(nav)
+        .getAllByRole('link')
+        .map((l) => l.textContent.trim()),
+    ).toEqual(['New', 'Projects', 'Artifacts']);
   });
 });

@@ -3,9 +3,7 @@
 // jobType/payload are optional (both default to NULL at the DB level) —
 // routes/backgroundJobs.js's own generic POST /background-jobs still
 // calls this with neither, unchanged.
-async function create(client, {
-  collegeId, name, createdByUserId, jobType, payload,
-}) {
+async function create(client, { collegeId, name, createdByUserId, jobType, payload }) {
   const result = await client.query(
     `INSERT INTO background_jobs (college_id, name, status, created_by_user_id, job_type, payload)
      VALUES ($1, $2, 'queued', $3, $4, $5)
@@ -19,10 +17,10 @@ async function create(client, {
 // 0-100 write, no status change (that's markRunning/markCompleted/
 // markFailed's job, not this one's).
 async function updateProgress(client, id, progress) {
-  const result = await client.query(
-    'UPDATE background_jobs SET progress = $2 WHERE id = $1 RETURNING *',
-    [id, progress],
-  );
+  const result = await client.query('UPDATE background_jobs SET progress = $2 WHERE id = $1 RETURNING *', [
+    id,
+    progress,
+  ]);
   return result.rows[0] || null;
 }
 
@@ -62,10 +60,7 @@ async function markFailed(client, id, error) {
 }
 
 async function findById(client, id) {
-  const result = await client.query(
-    'SELECT * FROM background_jobs WHERE id = $1',
-    [id],
-  );
+  const result = await client.query('SELECT * FROM background_jobs WHERE id = $1', [id]);
   return result.rows[0] || null;
 }
 

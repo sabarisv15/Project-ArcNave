@@ -6,15 +6,32 @@
 // migration's file-level comment); update() here exists only to set
 // applied_at, never to edit the proposal itself.
 
-async function create(client, {
-  collegeId, attendanceSessionId, requestedByUserId, proposedAbsentStudentIds, proposedTotalStudents, reason, workflowRequestId,
-}) {
+async function create(
+  client,
+  {
+    collegeId,
+    attendanceSessionId,
+    requestedByUserId,
+    proposedAbsentStudentIds,
+    proposedTotalStudents,
+    reason,
+    workflowRequestId,
+  },
+) {
   const result = await client.query(
     `INSERT INTO attendance_corrections
        (college_id, attendance_session_id, requested_by_user_id, proposed_absent_student_ids, proposed_total_students, reason, workflow_request_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [collegeId, attendanceSessionId, requestedByUserId, proposedAbsentStudentIds, proposedTotalStudents, reason || null, workflowRequestId || null],
+    [
+      collegeId,
+      attendanceSessionId,
+      requestedByUserId,
+      proposedAbsentStudentIds,
+      proposedTotalStudents,
+      reason || null,
+      workflowRequestId || null,
+    ],
   );
   return result.rows[0];
 }
@@ -46,13 +63,16 @@ async function findLatestApplied(client, attendanceSessionId) {
 }
 
 async function markApplied(client, id) {
-  const result = await client.query(
-    'UPDATE attendance_corrections SET applied_at = now() WHERE id = $1 RETURNING *',
-    [id],
-  );
+  const result = await client.query('UPDATE attendance_corrections SET applied_at = now() WHERE id = $1 RETURNING *', [
+    id,
+  ]);
   return result.rows[0] || null;
 }
 
 module.exports = {
-  create, findById, listForSession, findLatestApplied, markApplied,
+  create,
+  findById,
+  listForSession,
+  findLatestApplied,
+  markApplied,
 };

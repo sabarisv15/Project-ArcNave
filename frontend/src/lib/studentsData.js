@@ -15,9 +15,41 @@
 
 const DEPTS = ['Computer Science', 'Electronics', 'Mechanical', 'Civil'];
 const SECTIONS = ['A', 'B', 'C'];
-const FIRST = ['Arjun', 'Priya', 'Rahul', 'Ananya', 'Vikram', 'Sneha', 'Karan', 'Divya', 'Rohan', 'Meera', 'Aditya', 'Kavya', 'Nikhil', 'Pooja', 'Sanjay', 'Isha', 'Varun', 'Neha', 'Aakash', 'Ritika'];
+const FIRST = [
+  'Arjun',
+  'Priya',
+  'Rahul',
+  'Ananya',
+  'Vikram',
+  'Sneha',
+  'Karan',
+  'Divya',
+  'Rohan',
+  'Meera',
+  'Aditya',
+  'Kavya',
+  'Nikhil',
+  'Pooja',
+  'Sanjay',
+  'Isha',
+  'Varun',
+  'Neha',
+  'Aakash',
+  'Ritika',
+];
 const LAST = ['Mehta', 'Nair', 'Sharma', 'Iyer', 'Reddy', 'Gupta', 'Rao', 'Kapoor', 'Verma', 'Menon'];
-const SUBJECTS = ['Mathematics II', 'Data Structures', 'Operating Systems', 'Digital Circuits', 'Thermodynamics', 'Data Communication', 'Engineering Physics', 'Electronics I', 'Signals & Systems', 'Fluid Mechanics'];
+const SUBJECTS = [
+  'Mathematics II',
+  'Data Structures',
+  'Operating Systems',
+  'Digital Circuits',
+  'Thermodynamics',
+  'Data Communication',
+  'Engineering Physics',
+  'Electronics I',
+  'Signals & Systems',
+  'Fluid Mechanics',
+];
 
 export const TREND_GLYPHS = { up: '↑', down: '↓', flat: '↔' };
 export const TREND_TITLES = {
@@ -48,8 +80,17 @@ export const EXPORT_COLUMNS = [
 ];
 
 export const DEFAULT_EXPORT_COLUMNS = {
-  name: true, roll: true, reg: true, dept: true, semester: true, academic: true,
-  attendance: true, fee: true, status: true, studentPhone: false, guardianPhone: false,
+  name: true,
+  roll: true,
+  reg: true,
+  dept: true,
+  semester: true,
+  academic: true,
+  attendance: true,
+  fee: true,
+  status: true,
+  studentPhone: false,
+  guardianPhone: false,
 };
 
 function seeded(seed) {
@@ -86,12 +127,72 @@ function buildSemesters(rnd, year, heavy) {
 
 /** The classes the signed-in staff member teaches — the whole page is scoped to these. */
 const CLASS_DEFS = [
-  { id: 'cl-ds', code: 'II B.Sc CS — A', programme: 'II B.Sc Computer Science', dept: 'Computer Science', year: 2, section: 'A', subject: 'Data Structures', slot: '09:15 – 10:10 · Lab 2', when: 'live' },
-  { id: 'cl-os', code: 'II B.Sc CS — B', programme: 'II B.Sc Computer Science', dept: 'Computer Science', year: 2, section: 'B', subject: 'Operating Systems', slot: '11:00 – 11:55 · Room 214', when: 'next' },
-  { id: 'cl-dbms', code: 'III B.Sc CS — A', programme: 'III B.Sc Computer Science', dept: 'Computer Science', year: 3, section: 'A', subject: 'Database Systems', slot: '13:30 – 14:25 · Room 108', when: 'today' },
-  { id: 'cl-dc', code: 'II B.Sc ECE — A', programme: 'II B.Sc Electronics', dept: 'Electronics', year: 2, section: 'A', subject: 'Data Communication', slot: '14:30 – 15:25 · Room 302', when: 'today' },
-  { id: 'cl-py', code: 'II B.Sc CS — C', programme: 'II B.Sc Computer Science', dept: 'Computer Science', year: 2, section: 'C', subject: 'Python Programming', slot: 'Tomorrow 10:15', when: 'later' },
-  { id: 'cl-cn', code: 'III B.Sc CS — B', programme: 'III B.Sc Computer Science', dept: 'Computer Science', year: 3, section: 'B', subject: 'Computer Networks', slot: 'Thursday 09:15', when: 'later' },
+  {
+    id: 'cl-ds',
+    code: 'II B.Sc CS — A',
+    programme: 'II B.Sc Computer Science',
+    dept: 'Computer Science',
+    year: 2,
+    section: 'A',
+    subject: 'Data Structures',
+    slot: '09:15 – 10:10 · Lab 2',
+    when: 'live',
+  },
+  {
+    id: 'cl-os',
+    code: 'II B.Sc CS — B',
+    programme: 'II B.Sc Computer Science',
+    dept: 'Computer Science',
+    year: 2,
+    section: 'B',
+    subject: 'Operating Systems',
+    slot: '11:00 – 11:55 · Room 214',
+    when: 'next',
+  },
+  {
+    id: 'cl-dbms',
+    code: 'III B.Sc CS — A',
+    programme: 'III B.Sc Computer Science',
+    dept: 'Computer Science',
+    year: 3,
+    section: 'A',
+    subject: 'Database Systems',
+    slot: '13:30 – 14:25 · Room 108',
+    when: 'today',
+  },
+  {
+    id: 'cl-dc',
+    code: 'II B.Sc ECE — A',
+    programme: 'II B.Sc Electronics',
+    dept: 'Electronics',
+    year: 2,
+    section: 'A',
+    subject: 'Data Communication',
+    slot: '14:30 – 15:25 · Room 302',
+    when: 'today',
+  },
+  {
+    id: 'cl-py',
+    code: 'II B.Sc CS — C',
+    programme: 'II B.Sc Computer Science',
+    dept: 'Computer Science',
+    year: 2,
+    section: 'C',
+    subject: 'Python Programming',
+    slot: 'Tomorrow 10:15',
+    when: 'later',
+  },
+  {
+    id: 'cl-cn',
+    code: 'III B.Sc CS — B',
+    programme: 'III B.Sc Computer Science',
+    dept: 'Computer Science',
+    year: 3,
+    section: 'B',
+    subject: 'Computer Networks',
+    slot: 'Thursday 09:15',
+    when: 'later',
+  },
 ];
 
 function build() {
@@ -118,7 +219,14 @@ function build() {
       id: `st-${i}`,
       name: `${first} ${last}`,
       rollNo: String(((i * 13 + 21) % 60) + 1).padStart(2, '0'),
-      attendance, gender, entry, accom, feeDue, feeTier, status, trend,
+      attendance,
+      gender,
+      entry,
+      accom,
+      feeDue,
+      feeTier,
+      status,
+      trend,
       phone: `+91 9${(800000000 + i * 137931) % 100000000}`,
       guardianPhone: `+91 8${(700000000 + i * 92341) % 100000000}`,
       cgpa: (6 + rnd() * 3.4).toFixed(1),
@@ -174,7 +282,10 @@ export function defaultScope() {
 }
 
 export function slug(text) {
-  return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 export function attendanceTone(pct) {

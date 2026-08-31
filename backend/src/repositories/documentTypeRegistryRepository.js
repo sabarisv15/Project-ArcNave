@@ -8,10 +8,9 @@
 // migration's own comment.
 
 async function findByModule(client, moduleName) {
-  const result = await client.query(
-    'SELECT * FROM document_type_registry WHERE module = $1 ORDER BY sort_order',
-    [moduleName],
-  );
+  const result = await client.query('SELECT * FROM document_type_registry WHERE module = $1 ORDER BY sort_order', [
+    moduleName,
+  ]);
   return result.rows;
 }
 

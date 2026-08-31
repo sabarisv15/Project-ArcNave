@@ -43,7 +43,7 @@ test('studentService.resolveStudentId', async (t) => {
     assert.equal(id, REAL_UUID);
   });
 
-  await t.test('a roll number resolves to the matching student\'s real id', async () => {
+  await t.test("a roll number resolves to the matching student's real id", async () => {
     const mock = t.mock.method(studentRepository, 'findByRollNo', async (client, collegeId, rollNo) => {
       assert.equal(collegeId, 'college-1');
       assert.equal(rollNo, 'CSE21001');
@@ -77,7 +77,7 @@ test('staffService.resolveStaffId', async (t) => {
     assert.equal(id, REAL_UUID);
   });
 
-  await t.test('a staff code resolves to the matching staff member\'s real id', async () => {
+  await t.test("a staff code resolves to the matching staff member's real id", async () => {
     const mock = t.mock.method(staffRepository, 'findByStaffCode', async () => ({ id: 'staff-real-id' }));
     t.after(() => mock.mock.restore());
 
@@ -107,7 +107,7 @@ test('academicService.resolveClassId', async (t) => {
     assert.equal(id, REAL_UUID);
   });
 
-  await t.test('a class name resolves to the matching class\'s real id', async () => {
+  await t.test("a class name resolves to the matching class's real id", async () => {
     const mock = t.mock.method(classRepository, 'findByCollegeAndClassName', async () => ({ id: 'class-real-id' }));
     t.after(() => mock.mock.restore());
 
@@ -119,10 +119,7 @@ test('academicService.resolveClassId', async (t) => {
     const mock = t.mock.method(classRepository, 'findByCollegeAndClassName', async () => null);
     t.after(() => mock.mock.restore());
 
-    await assert.rejects(
-      () => academicService.resolveClassId({}, 'college-1', 'CSE-A'),
-      IdentifierResolutionError,
-    );
+    await assert.rejects(() => academicService.resolveClassId({}, 'college-1', 'CSE-A'), IdentifierResolutionError);
   });
 });
 

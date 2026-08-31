@@ -26,7 +26,14 @@ async function main() {
 
   const appPool = new Pool({ connectionString: config.databaseUrl });
   const identityContext = {
-    userId: '32b4721e-e58a-4aa1-9c7d-81d5865be9b2', role: 'principal', collegeId: 'demo', departmentIds: [], departmentId: null, classIds: [], scopeLevel: 'college', positionAccountId: null,
+    userId: '32b4721e-e58a-4aa1-9c7d-81d5865be9b2',
+    role: 'principal',
+    collegeId: 'demo',
+    departmentIds: [],
+    departmentId: null,
+    classIds: [],
+    scopeLevel: 'college',
+    positionAccountId: null,
   };
 
   const invocationLog = [];
@@ -36,12 +43,17 @@ async function main() {
     try {
       const r = await realInvoke(name, opts);
       invocationLog.push({
-        name, ok: true, ms: Date.now() - start,
+        name,
+        ok: true,
+        ms: Date.now() - start,
       });
       return r;
     } catch (err) {
       invocationLog.push({
-        name, ok: false, ms: Date.now() - start, error: err.message,
+        name,
+        ok: false,
+        ms: Date.now() - start,
+        error: err.message,
       });
       throw err;
     }
@@ -57,13 +69,19 @@ async function main() {
     const attachment = await documentService.uploadChatAttachment(
       client,
       {
-        collegeId: 'demo', fileName: '111_cons_result_apr2026.pdf', mimeType: 'application/pdf', fileBuffer: fs.readFileSync(SOURCE_PDF),
+        collegeId: 'demo',
+        fileName: '111_cons_result_apr2026.pdf',
+        mimeType: 'application/pdf',
+        fileBuffer: fs.readFileSync(SOURCE_PDF),
       },
       { actorUserId: identityContext.userId },
     );
     const attachmentId = attachment.id || (attachment.document && attachment.document.id);
     console.log('attachmentId:', attachmentId);
-    result = await aiService.askAgent(client, 'ECE SW and ECE result ah compare pani, Excel and PDF la report kudu', { identityContext, attachmentIds: [attachmentId] });
+    result = await aiService.askAgent(client, 'ECE SW and ECE result ah compare pani, Excel and PDF la report kudu', {
+      identityContext,
+      attachmentIds: [attachmentId],
+    });
     await client.query('COMMIT');
   } catch (err) {
     threw = err;
@@ -84,4 +102,7 @@ async function main() {
   await appPool.end();
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

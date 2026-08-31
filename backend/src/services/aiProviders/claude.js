@@ -90,7 +90,9 @@ async function getAccessToken(cfg) {
   const client = await getAuth().getClient();
   const { token } = await client.getAccessToken();
   if (!token) {
-    throw new LlmRequestError('Google ADC did not return an access token for Claude-on-Vertex — run `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS');
+    throw new LlmRequestError(
+      'Google ADC did not return an access token for Claude-on-Vertex — run `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS',
+    );
   }
   return token;
 }
@@ -174,7 +176,10 @@ async function doFetch(url, headers, body) {
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
       return await fetch(url, {
-        method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal,
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
       });
     } catch (err) {
       throw new LlmRequestError(`request to Claude failed: ${err.message}`);
@@ -221,9 +226,10 @@ async function completeWithMeta(cfg, arcnaveContext) {
     throw new LlmRequestError('Claude response did not contain a text content block');
   }
 
-  const usage = payload && payload.usage
-    ? { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens }
-    : undefined;
+  const usage =
+    payload && payload.usage
+      ? { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens }
+      : undefined;
   return { text: block.text, usage };
 }
 
@@ -255,13 +261,17 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey/projectId)');
   }
 
-  const { url, headers, body } = await buildRequest(cfg, {
-    model: cfg.model,
-    max_tokens: MAX_TOKENS,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: buildUserContent(userPrompt, images) }],
-    stream: true,
-  }, 'stream');
+  const { url, headers, body } = await buildRequest(
+    cfg,
+    {
+      model: cfg.model,
+      max_tokens: MAX_TOKENS,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: buildUserContent(userPrompt, images) }],
+      stream: true,
+    },
+    'stream',
+  );
   const response = await doFetch(url, headers, body);
 
   if (!response.ok) {
@@ -310,9 +320,14 @@ function buildPriorTurnMessages(priorTurns) {
   return priorTurns.flatMap((turn) => [
     {
       role: 'assistant',
-      content: [turn.rawToolCall || {
-        type: 'tool_use', id: turn.callId, name: turn.toolName, input: turn.arguments || {},
-      }],
+      content: [
+        turn.rawToolCall || {
+          type: 'tool_use',
+          id: turn.callId,
+          name: turn.toolName,
+          input: turn.arguments || {},
+        },
+      ],
     },
     {
       role: 'user',
@@ -322,9 +337,7 @@ function buildPriorTurnMessages(priorTurns) {
 }
 
 async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
-  const {
-    systemPrompt, userPrompt, tools, images,
-  } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, tools, images } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey/projectId)');
   }
@@ -333,10 +346,7 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
     model: cfg.model,
     max_tokens: MAX_TOKENS,
     system: systemPrompt,
-    messages: [
-      { role: 'user', content: buildUserContent(userPrompt, images) },
-      ...buildPriorTurnMessages(priorTurns),
-    ],
+    messages: [{ role: 'user', content: buildUserContent(userPrompt, images) }, ...buildPriorTurnMessages(priorTurns)],
     // Prompt caching (P1.2): a cache_control breakpoint on the LAST
     // tool caches this entire tools array — the ~10k-token role-
     // filtered tool schema list, unlike the system/user prompt which
@@ -359,11 +369,17 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   const toolUse = blocks.find((b) => b.type === 'tool_use');
   if (toolUse) {
     // ADR-030 P0 telemetry — see gemini.js's own equivalent comment.
-    const usage = payload && payload.usage
-      ? { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens }
-      : undefined;
+    const usage =
+      payload && payload.usage
+        ? { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens }
+        : undefined;
     return {
-      type: 'tool_call', toolName: toolUse.name, arguments: toolUse.input || {}, callId: toolUse.id, rawToolCall: toolUse, usage,
+      type: 'tool_call',
+      toolName: toolUse.name,
+      arguments: toolUse.input || {},
+      callId: toolUse.id,
+      rawToolCall: toolUse,
+      usage,
     };
   }
 
@@ -371,21 +387,26 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   if (!textBlock) {
     throw new LlmRequestError('Claude response contained neither a tool_use block nor a text block');
   }
-  const usage = payload && payload.usage
-    ? { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens }
-    : undefined;
+  const usage =
+    payload && payload.usage
+      ? { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens }
+      : undefined;
   return { type: 'answer', text: textBlock.text, usage };
 }
 
 async function embed() {
-  throw new AiProviderCapabilityError('claude has no embeddings endpoint — configure a different provider for RAG/embedding features');
+  throw new AiProviderCapabilityError(
+    'claude has no embeddings endpoint — configure a different provider for RAG/embedding features',
+  );
 }
 
 // No image-generation endpoint (RS-AIG-025): Anthropic's Messages API has
 // no first-party image-generation capability, same honest-limitation
 // treatment embed() above already gets — never a silent no-op.
 async function generateImage() {
-  throw new AiProviderCapabilityError('claude has no image-generation endpoint — configure a different provider for this feature');
+  throw new AiProviderCapabilityError(
+    'claude has no image-generation endpoint — configure a different provider for this feature',
+  );
 }
 
 module.exports = {

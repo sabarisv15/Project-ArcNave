@@ -60,7 +60,7 @@ export function LedgerFilterPopover({ l }) {
                 'h-[28px] px-[10px] rounded-[9px] font-sans text-[11.5px] cursor-pointer transition-colors duration-200',
                 l.datePreset === p.key
                   ? 'bg-accent-soft border border-accent-line text-accent font-[600]'
-                  : 'bg-tint2 border border-transparent text-ink-soft font-[500] hover:bg-hoverline'
+                  : 'bg-tint2 border border-transparent text-ink-soft font-[500] hover:bg-hoverline',
               )}
             >
               {p.label}
@@ -70,10 +70,22 @@ export function LedgerFilterPopover({ l }) {
         {l.datePreset === 'custom' && (
           <div className="grid grid-cols-2 gap-[8px] mt-[8px]">
             <FilterField label="From">
-              <input type="date" aria-label="Custom range from" value={l.customFrom} onChange={(e) => l.setCustomFrom(e.target.value)} className={FILTER_FIELD_INPUT} />
+              <input
+                type="date"
+                aria-label="Custom range from"
+                value={l.customFrom}
+                onChange={(e) => l.setCustomFrom(e.target.value)}
+                className={FILTER_FIELD_INPUT}
+              />
             </FilterField>
             <FilterField label="To">
-              <input type="date" aria-label="Custom range to" value={l.customTo} onChange={(e) => l.setCustomTo(e.target.value)} className={FILTER_FIELD_INPUT} />
+              <input
+                type="date"
+                aria-label="Custom range to"
+                value={l.customTo}
+                onChange={(e) => l.setCustomTo(e.target.value)}
+                className={FILTER_FIELD_INPUT}
+              />
             </FilterField>
           </div>
         )}

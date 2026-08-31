@@ -1,7 +1,4 @@
-import {
-  getAccessToken, setAccessToken, getRefreshToken, setRefreshToken,
-  getCollegeCode, clearSession,
-} from '@/lib/authStorage';
+import { getAccessToken, setAccessToken, getCollegeCode, clearSession } from '@/lib/authStorage';
 
 export class ApiError extends Error {
   constructor(status, detail, body) {
@@ -17,17 +14,18 @@ const BASE_URL = '/api/v1';
 
 let refreshPromise = null;
 
+// ARCNAVE modernization P0 (PDF 5.1 / clash C6): the refresh token is
+// an httpOnly cookie now — `credentials: 'include'` is what makes the
+// browser attach it, there is no token for this function to read or
+// write on the JS side at all anymore.
 async function doRefresh() {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) throw new ApiError(401, 'No refresh token');
   const collegeCode = getCollegeCode();
   const res = await fetch(`${BASE_URL}/auth/refresh`, {
     method: 'POST',
+    credentials: 'include',
     headers: {
-      'Content-Type': 'application/json',
       ...(collegeCode ? { 'X-College-Code': collegeCode } : {}),
     },
-    body: JSON.stringify({ refresh_token: refreshToken }),
   });
   if (!res.ok) {
     clearSession();
@@ -35,7 +33,6 @@ async function doRefresh() {
   }
   const data = await res.json();
   setAccessToken(data.access_token);
-  setRefreshToken(data.refresh_token);
   return data.access_token;
 }
 
@@ -63,6 +60,11 @@ async function request(path, { method = 'GET', body, headers = {}, isRetry = fal
     headers: finalHeaders,
     body: body !== undefined ? JSON.stringify(body) : undefined,
     signal,
+    // Only /auth/login, /auth/refresh and /auth/logout actually carry
+    // the httpOnly refresh-token cookie (it's path-scoped server-side
+    // to /api/v1/auth) — harmless to set on every request rather than
+    // special-casing three paths here.
+    credentials: 'include',
   });
 
   if (res.status === 401 && !isRetry && token) {

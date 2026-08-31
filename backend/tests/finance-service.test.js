@@ -34,11 +34,14 @@ const financeService = require('../src/services/financeService');
 // Shared by markFeePayment/requestFeeCorrection tests: mocks the
 // student->class->tutor resolution chain financeService.loadStudentClass/
 // assertIsClassTutor use internally.
-function mockTutorChain(t, {
-  student = { id: 's1', college_id: 'c1', class_id: 'class-1' },
-  cls = { id: 'class-1', college_id: 'c1', department_id: 'dept-1' },
-  tutorUserId = 'tutor-1',
-} = {}) {
+function mockTutorChain(
+  t,
+  {
+    student = { id: 's1', college_id: 'c1', class_id: 'class-1' },
+    cls = { id: 'class-1', college_id: 'c1', department_id: 'dept-1' },
+    tutorUserId = 'tutor-1',
+  } = {},
+) {
   const getStudentMock = t.mock.method(studentService, 'getStudent', async () => student);
   const findClassMock = t.mock.method(classRepository, 'findById', async () => cls);
   const resolveTutorMock = t.mock.method(identityService, 'resolvePositionOccupant', async () => tutorUserId);
@@ -51,29 +54,36 @@ function mockTutorChain(t, {
 }
 
 test('FinanceService.markFeePayment (RS-FIN-002)', async (t) => {
-  await t.test('rejects missing collegeId/studentId/actorUserId/status/receiptDocumentId without touching the DB', async () => {
-    const findMock = t.mock.method(feePaymentRepository, 'findByStudentId');
-    t.after(() => findMock.mock.restore());
+  await t.test(
+    'rejects missing collegeId/studentId/actorUserId/status/receiptDocumentId without touching the DB',
+    async () => {
+      const findMock = t.mock.method(feePaymentRepository, 'findByStudentId');
+      t.after(() => findMock.mock.restore());
 
-    await assert.rejects(
-      () => financeService.markFeePayment({}, { studentId: 'student-1' }, {}),
-      financeService.FeePaymentValidationError,
-    );
-    assert.equal(findMock.mock.callCount(), 0);
-  });
+      await assert.rejects(
+        () => financeService.markFeePayment({}, { studentId: 'student-1' }, {}),
+        financeService.FeePaymentValidationError,
+      );
+      assert.equal(findMock.mock.callCount(), 0);
+    },
+  );
 
   await t.test('rejects an unknown status without touching the DB', async () => {
     const findMock = t.mock.method(feePaymentRepository, 'findByStudentId');
     t.after(() => findMock.mock.restore());
 
     await assert.rejects(
-      () => financeService.markFeePayment(
-        {},
-        {
-          collegeId: 'c1', studentId: 'student-1', status: 'partially_paid', receiptDocumentId: 'doc-1',
-        },
-        { actorUserId: 'staff-1' },
-      ),
+      () =>
+        financeService.markFeePayment(
+          {},
+          {
+            collegeId: 'c1',
+            studentId: 'student-1',
+            status: 'partially_paid',
+            receiptDocumentId: 'doc-1',
+          },
+          { actorUserId: 'staff-1' },
+        ),
       financeService.FeePaymentStatusError,
     );
     assert.equal(findMock.mock.callCount(), 0);
@@ -84,13 +94,17 @@ test('FinanceService.markFeePayment (RS-FIN-002)', async (t) => {
     t.after(() => getStudentMock.mock.restore());
 
     await assert.rejects(
-      () => financeService.markFeePayment(
-        {},
-        {
-          collegeId: 'c1', studentId: 'missing-student', status: 'paid', receiptDocumentId: 'doc-1',
-        },
-        { actorUserId: 'staff-1' },
-      ),
+      () =>
+        financeService.markFeePayment(
+          {},
+          {
+            collegeId: 'c1',
+            studentId: 'missing-student',
+            status: 'paid',
+            receiptDocumentId: 'doc-1',
+          },
+          { actorUserId: 'staff-1' },
+        ),
       financeService.FeePaymentStudentNotFoundError,
     );
   });
@@ -102,32 +116,43 @@ test('FinanceService.markFeePayment (RS-FIN-002)', async (t) => {
   // Account login. Must be rejected exactly like a stranger — this is
   // the exact reference pattern (financeService.assertIsClassTutor)
   // the rest of the codebase's L4-only checks now follow.
-  await t.test('rejects a personal Staff login even when that person is the real, verified tutor of the student\'s own class', async () => {
-    mockTutorChain(t);
+  await t.test(
+    "rejects a personal Staff login even when that person is the real, verified tutor of the student's own class",
+    async () => {
+      mockTutorChain(t);
 
-    await assert.rejects(
-      () => financeService.markFeePayment(
-        {},
-        {
-          collegeId: 'c1', studentId: 's1', status: 'paid', receiptDocumentId: 'doc-1',
-        },
-        { actorUserId: 'tutor-1', actorRole: 'staff' },
-      ),
-      financeService.FeePaymentNotAuthorizedError,
-    );
-  });
+      await assert.rejects(
+        () =>
+          financeService.markFeePayment(
+            {},
+            {
+              collegeId: 'c1',
+              studentId: 's1',
+              status: 'paid',
+              receiptDocumentId: 'doc-1',
+            },
+            { actorUserId: 'tutor-1', actorRole: 'staff' },
+          ),
+        financeService.FeePaymentNotAuthorizedError,
+      );
+    },
+  );
 
-  await t.test('rejects an actor who is not the real, verified tutor of the student\'s own class', async () => {
+  await t.test("rejects an actor who is not the real, verified tutor of the student's own class", async () => {
     mockTutorChain(t, { tutorUserId: 'someone-else' });
 
     await assert.rejects(
-      () => financeService.markFeePayment(
-        {},
-        {
-          collegeId: 'c1', studentId: 's1', status: 'paid', receiptDocumentId: 'doc-1',
-        },
-        { actorUserId: 'tutor-1', actorRole: 'class_tutor' },
-      ),
+      () =>
+        financeService.markFeePayment(
+          {},
+          {
+            collegeId: 'c1',
+            studentId: 's1',
+            status: 'paid',
+            receiptDocumentId: 'doc-1',
+          },
+          { actorUserId: 'tutor-1', actorRole: 'class_tutor' },
+        ),
       financeService.FeePaymentNotAuthorizedError,
     );
   });
@@ -136,43 +161,60 @@ test('FinanceService.markFeePayment (RS-FIN-002)', async (t) => {
     mockTutorChain(t, { student: { id: 's1', college_id: 'c1', class_id: null }, cls: null });
 
     await assert.rejects(
-      () => financeService.markFeePayment(
-        {},
-        {
-          collegeId: 'c1', studentId: 's1', status: 'paid', receiptDocumentId: 'doc-1',
-        },
-        { actorUserId: 'tutor-1', actorRole: 'class_tutor' },
-      ),
+      () =>
+        financeService.markFeePayment(
+          {},
+          {
+            collegeId: 'c1',
+            studentId: 's1',
+            status: 'paid',
+            receiptDocumentId: 'doc-1',
+          },
+          { actorUserId: 'tutor-1', actorRole: 'class_tutor' },
+        ),
       financeService.FeePaymentNotAuthorizedError,
     );
   });
 
-  await t.test('refuses (FeePaymentAlreadyMarkedError) when the student already has a fee status on record', async () => {
-    mockTutorChain(t);
-    const findMock = t.mock.method(feePaymentRepository, 'findByStudentId', async () => ({ id: 'payment-1', status: 'not_paid' }));
-    const createMock = t.mock.method(feePaymentRepository, 'create');
-    t.after(() => {
-      findMock.mock.restore();
-      createMock.mock.restore();
-    });
+  await t.test(
+    'refuses (FeePaymentAlreadyMarkedError) when the student already has a fee status on record',
+    async () => {
+      mockTutorChain(t);
+      const findMock = t.mock.method(feePaymentRepository, 'findByStudentId', async () => ({
+        id: 'payment-1',
+        status: 'not_paid',
+      }));
+      const createMock = t.mock.method(feePaymentRepository, 'create');
+      t.after(() => {
+        findMock.mock.restore();
+        createMock.mock.restore();
+      });
 
-    await assert.rejects(
-      () => financeService.markFeePayment(
-        {},
-        {
-          collegeId: 'c1', studentId: 's1', status: 'paid', receiptDocumentId: 'doc-1',
-        },
-        { actorUserId: 'tutor-1', actorRole: 'class_tutor' },
-      ),
-      financeService.FeePaymentAlreadyMarkedError,
-    );
-    assert.equal(createMock.mock.callCount(), 0);
-  });
+      await assert.rejects(
+        () =>
+          financeService.markFeePayment(
+            {},
+            {
+              collegeId: 'c1',
+              studentId: 's1',
+              status: 'paid',
+              receiptDocumentId: 'doc-1',
+            },
+            { actorUserId: 'tutor-1', actorRole: 'class_tutor' },
+          ),
+        financeService.FeePaymentAlreadyMarkedError,
+      );
+      assert.equal(createMock.mock.callCount(), 0);
+    },
+  );
 
   await t.test('creates a fee payment for a real, unmarked student and audit-logs it', async () => {
     mockTutorChain(t);
     const findMock = t.mock.method(feePaymentRepository, 'findByStudentId', async () => null);
-    const createMock = t.mock.method(feePaymentRepository, 'create', async (client, fields) => ({ id: 'payment-1', ...fields }));
+    const createMock = t.mock.method(feePaymentRepository, 'create', async (client, fields) => ({
+      id: 'payment-1',
+      ...fields,
+    }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
       findMock.mock.restore();
@@ -183,7 +225,10 @@ test('FinanceService.markFeePayment (RS-FIN-002)', async (t) => {
     const payment = await financeService.markFeePayment(
       {},
       {
-        collegeId: 'c1', studentId: 's1', status: 'paid', receiptDocumentId: 'doc-1',
+        collegeId: 'c1',
+        studentId: 's1',
+        status: 'paid',
+        receiptDocumentId: 'doc-1',
       },
       { actorUserId: 'tutor-1', actorRole: 'class_tutor' },
     );
@@ -197,31 +242,38 @@ test('FinanceService.markFeePayment (RS-FIN-002)', async (t) => {
     assert.equal(auditMock.mock.calls[0].arguments[1].entity, 'fee_payments');
   });
 
-  await t.test('maps a fee_payments_receipt_document_id_fkey violation to FeePaymentDocumentNotFoundError', async () => {
-    mockTutorChain(t);
-    const findMock = t.mock.method(feePaymentRepository, 'findByStudentId', async () => null);
-    const createMock = t.mock.method(feePaymentRepository, 'create', async () => {
-      const err = new Error('violates foreign key constraint "fee_payments_receipt_document_id_fkey"');
-      err.code = '23503';
-      err.constraint = 'fee_payments_receipt_document_id_fkey';
-      throw err;
-    });
-    t.after(() => {
-      findMock.mock.restore();
-      createMock.mock.restore();
-    });
+  await t.test(
+    'maps a fee_payments_receipt_document_id_fkey violation to FeePaymentDocumentNotFoundError',
+    async () => {
+      mockTutorChain(t);
+      const findMock = t.mock.method(feePaymentRepository, 'findByStudentId', async () => null);
+      const createMock = t.mock.method(feePaymentRepository, 'create', async () => {
+        const err = new Error('violates foreign key constraint "fee_payments_receipt_document_id_fkey"');
+        err.code = '23503';
+        err.constraint = 'fee_payments_receipt_document_id_fkey';
+        throw err;
+      });
+      t.after(() => {
+        findMock.mock.restore();
+        createMock.mock.restore();
+      });
 
-    await assert.rejects(
-      () => financeService.markFeePayment(
-        {},
-        {
-          collegeId: 'c1', studentId: 's1', status: 'paid', receiptDocumentId: 'missing-doc',
-        },
-        { actorUserId: 'tutor-1', actorRole: 'class_tutor' },
-      ),
-      financeService.FeePaymentDocumentNotFoundError,
-    );
-  });
+      await assert.rejects(
+        () =>
+          financeService.markFeePayment(
+            {},
+            {
+              collegeId: 'c1',
+              studentId: 's1',
+              status: 'paid',
+              receiptDocumentId: 'missing-doc',
+            },
+            { actorUserId: 'tutor-1', actorRole: 'class_tutor' },
+          ),
+        financeService.FeePaymentDocumentNotFoundError,
+      );
+    },
+  );
 
   await t.test('maps a fee_payments_student_id_key race to FeePaymentConflictError', async () => {
     mockTutorChain(t);
@@ -238,13 +290,17 @@ test('FinanceService.markFeePayment (RS-FIN-002)', async (t) => {
     });
 
     await assert.rejects(
-      () => financeService.markFeePayment(
-        {},
-        {
-          collegeId: 'c1', studentId: 's1', status: 'paid', receiptDocumentId: 'doc-1',
-        },
-        { actorUserId: 'tutor-1', actorRole: 'class_tutor' },
-      ),
+      () =>
+        financeService.markFeePayment(
+          {},
+          {
+            collegeId: 'c1',
+            studentId: 's1',
+            status: 'paid',
+            receiptDocumentId: 'doc-1',
+          },
+          { actorUserId: 'tutor-1', actorRole: 'class_tutor' },
+        ),
       financeService.FeePaymentConflictError,
     );
   });
@@ -259,41 +315,58 @@ test('FinanceService fee_payments reads/removal', async (t) => {
     assert.equal(result.id, 'payment-9');
   });
 
-  await t.test('getFeePaymentForStudent with no actor context (internal system call) is a thin passthrough to findByStudentId', async () => {
-    const findMock = t.mock.method(feePaymentRepository, 'findByStudentId', async (client, studentId) => ({ studentId }));
-    t.after(() => findMock.mock.restore());
+  await t.test(
+    'getFeePaymentForStudent with no actor context (internal system call) is a thin passthrough to findByStudentId',
+    async () => {
+      const findMock = t.mock.method(feePaymentRepository, 'findByStudentId', async (client, studentId) => ({
+        studentId,
+      }));
+      t.after(() => findMock.mock.restore());
 
-    const result = await financeService.getFeePaymentForStudent({}, 'student-1');
-    assert.deepEqual(result, { studentId: 'student-1' });
-  });
+      const result = await financeService.getFeePaymentForStudent({}, 'student-1');
+      assert.deepEqual(result, { studentId: 'student-1' });
+    },
+  );
 
   await t.test('getFeePaymentForStudent with an actor scopes via studentService.getStudent first', async () => {
     const getStudentMock = t.mock.method(studentService, 'getStudent', async () => ({ id: 'student-1' }));
-    const findMock = t.mock.method(feePaymentRepository, 'findByStudentId', async (client, studentId) => ({ studentId }));
+    const findMock = t.mock.method(feePaymentRepository, 'findByStudentId', async (client, studentId) => ({
+      studentId,
+    }));
     t.after(() => {
       getStudentMock.mock.restore();
       findMock.mock.restore();
     });
 
-    const result = await financeService.getFeePaymentForStudent({}, 'student-1', { actorUserId: 'tutor-u1', actorRole: 'staff' });
+    const result = await financeService.getFeePaymentForStudent({}, 'student-1', {
+      actorUserId: 'tutor-u1',
+      actorRole: 'staff',
+    });
     assert.deepEqual(result, { studentId: 'student-1' });
     assert.equal(getStudentMock.mock.calls[0].arguments[1], 'student-1');
   });
 
-  await t.test('getFeePaymentForStudent throws FeePaymentStudentNotFoundError when the actor-scoped lookup finds nothing', async () => {
-    const getStudentMock = t.mock.method(studentService, 'getStudent', async () => null);
-    const findMock = t.mock.method(feePaymentRepository, 'findByStudentId');
-    t.after(() => {
-      getStudentMock.mock.restore();
-      findMock.mock.restore();
-    });
+  await t.test(
+    'getFeePaymentForStudent throws FeePaymentStudentNotFoundError when the actor-scoped lookup finds nothing',
+    async () => {
+      const getStudentMock = t.mock.method(studentService, 'getStudent', async () => null);
+      const findMock = t.mock.method(feePaymentRepository, 'findByStudentId');
+      t.after(() => {
+        getStudentMock.mock.restore();
+        findMock.mock.restore();
+      });
 
-    await assert.rejects(
-      () => financeService.getFeePaymentForStudent({}, 'missing-student', { actorUserId: 'tutor-u1', actorRole: 'staff' }),
-      financeService.FeePaymentStudentNotFoundError,
-    );
-    assert.equal(findMock.mock.callCount(), 0);
-  });
+      await assert.rejects(
+        () =>
+          financeService.getFeePaymentForStudent({}, 'missing-student', {
+            actorUserId: 'tutor-u1',
+            actorRole: 'staff',
+          }),
+        financeService.FeePaymentStudentNotFoundError,
+      );
+      assert.equal(findMock.mock.callCount(), 0);
+    },
+  );
 
   await t.test('getEffectiveFeePaymentForStudent returns null when the student has no fee payment at all', async () => {
     const findMock = t.mock.method(feePaymentRepository, 'findByStudentId', async () => null);
@@ -303,64 +376,89 @@ test('FinanceService fee_payments reads/removal', async (t) => {
     assert.equal(result, null);
   });
 
-  await t.test('getEffectiveFeePaymentForStudent reports the original status, effective:false, when no correction has been applied', async () => {
-    const findMock = t.mock.method(feePaymentRepository, 'findByStudentId', async () => ({ id: 'payment-1', status: 'not_paid' }));
-    const findLatestMock = t.mock.method(feeCorrectionRepository, 'findLatestApplied', async () => null);
-    t.after(() => {
-      findMock.mock.restore();
-      findLatestMock.mock.restore();
-    });
+  await t.test(
+    'getEffectiveFeePaymentForStudent reports the original status, effective:false, when no correction has been applied',
+    async () => {
+      const findMock = t.mock.method(feePaymentRepository, 'findByStudentId', async () => ({
+        id: 'payment-1',
+        status: 'not_paid',
+      }));
+      const findLatestMock = t.mock.method(feeCorrectionRepository, 'findLatestApplied', async () => null);
+      t.after(() => {
+        findMock.mock.restore();
+        findLatestMock.mock.restore();
+      });
 
-    const result = await financeService.getEffectiveFeePaymentForStudent({}, 'student-1');
-    assert.equal(result.status, 'not_paid');
-    assert.equal(result.effective, false);
-  });
+      const result = await financeService.getEffectiveFeePaymentForStudent({}, 'student-1');
+      assert.equal(result.status, 'not_paid');
+      assert.equal(result.effective, false);
+    },
+  );
 
-  await t.test('getEffectiveFeePaymentForStudent layers the latest APPLIED correction on top, never mutating the original', async () => {
-    const findMock = t.mock.method(feePaymentRepository, 'findByStudentId', async () => ({ id: 'payment-1', status: 'not_paid' }));
-    const findLatestMock = t.mock.method(feeCorrectionRepository, 'findLatestApplied', async () => ({ id: 'corr-1', proposed_status: 'paid' }));
-    t.after(() => {
-      findMock.mock.restore();
-      findLatestMock.mock.restore();
-    });
+  await t.test(
+    'getEffectiveFeePaymentForStudent layers the latest APPLIED correction on top, never mutating the original',
+    async () => {
+      const findMock = t.mock.method(feePaymentRepository, 'findByStudentId', async () => ({
+        id: 'payment-1',
+        status: 'not_paid',
+      }));
+      const findLatestMock = t.mock.method(feeCorrectionRepository, 'findLatestApplied', async () => ({
+        id: 'corr-1',
+        proposed_status: 'paid',
+      }));
+      t.after(() => {
+        findMock.mock.restore();
+        findLatestMock.mock.restore();
+      });
 
-    const result = await financeService.getEffectiveFeePaymentForStudent({}, 'student-1');
-    assert.equal(result.status, 'paid');
-    assert.equal(result.effective, true);
-    assert.equal(result.effective_correction_id, 'corr-1');
-  });
+      const result = await financeService.getEffectiveFeePaymentForStudent({}, 'student-1');
+      assert.equal(result.status, 'paid');
+      assert.equal(result.effective, true);
+      assert.equal(result.effective_correction_id, 'corr-1');
+    },
+  );
 
-  await t.test('removeFeePayment on a nonexistent (or already soft-deleted) id is a no-op, no audit entry', async () => {
-    const softDeleteMock = t.mock.method(feePaymentRepository, 'softDelete', async () => null);
-    const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
-    t.after(() => {
-      softDeleteMock.mock.restore();
-      auditMock.mock.restore();
-    });
+  await t.test(
+    'removeFeePayment on a nonexistent (or already soft-deleted) id is a no-op, no audit entry',
+    async () => {
+      const softDeleteMock = t.mock.method(feePaymentRepository, 'softDelete', async () => null);
+      const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
+      t.after(() => {
+        softDeleteMock.mock.restore();
+        auditMock.mock.restore();
+      });
 
-    const result = await financeService.removeFeePayment({}, 'missing-id', { userId: 'u1' });
+      const result = await financeService.removeFeePayment({}, 'missing-id', { userId: 'u1' });
 
-    assert.equal(result, null);
-    assert.equal(auditMock.mock.callCount(), 0);
-  });
+      assert.equal(result, null);
+      assert.equal(auditMock.mock.callCount(), 0);
+    },
+  );
 
-  await t.test('removeFeePayment on an existing id soft-deletes (never a hard DELETE) and writes an audit entry', async () => {
-    const softDeleteMock = t.mock.method(feePaymentRepository, 'softDelete', async (client, id) => ({ id, college_id: 'c1', deleted_at: '2026-07-04T00:00:00Z' }));
-    const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
-    t.after(() => {
-      softDeleteMock.mock.restore();
-      auditMock.mock.restore();
-    });
+  await t.test(
+    'removeFeePayment on an existing id soft-deletes (never a hard DELETE) and writes an audit entry',
+    async () => {
+      const softDeleteMock = t.mock.method(feePaymentRepository, 'softDelete', async (client, id) => ({
+        id,
+        college_id: 'c1',
+        deleted_at: '2026-07-04T00:00:00Z',
+      }));
+      const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
+      t.after(() => {
+        softDeleteMock.mock.restore();
+        auditMock.mock.restore();
+      });
 
-    const result = await financeService.removeFeePayment({}, 'payment-1', { userId: 'u1' });
+      const result = await financeService.removeFeePayment({}, 'payment-1', { userId: 'u1' });
 
-    assert.equal(result.deleted_at, '2026-07-04T00:00:00Z');
-    assert.equal(auditMock.mock.calls[0].arguments[1].action, 'fee_payment_removed');
-    assert.equal('remove' in feePaymentRepository, false);
-  });
+      assert.equal(result.deleted_at, '2026-07-04T00:00:00Z');
+      assert.equal(auditMock.mock.calls[0].arguments[1].action, 'fee_payment_removed');
+      assert.equal('remove' in feePaymentRepository, false);
+    },
+  );
 
   await t.test('listFeePayments is a thin passthrough to list', async () => {
-    const listMock = t.mock.method(feePaymentRepository, 'list', async (client, opts) => ([{ opts }]));
+    const listMock = t.mock.method(feePaymentRepository, 'list', async (client, opts) => [{ opts }]);
     t.after(() => listMock.mock.restore());
 
     const result = await financeService.listFeePayments({}, { limit: 10, offset: 0 });
@@ -385,7 +483,13 @@ test('FinanceService fee corrections (RS-FIN-003)', async (t) => {
 
   await t.test('requestFeeCorrection rejects an unknown proposedStatus', async () => {
     await assert.rejects(
-      () => financeService.requestFeeCorrection({}, 'payment-1', { proposedStatus: 'partial' }, { requestedByUserId: 'u1' }),
+      () =>
+        financeService.requestFeeCorrection(
+          {},
+          'payment-1',
+          { proposedStatus: 'partial' },
+          { requestedByUserId: 'u1' },
+        ),
       financeService.FeePaymentStatusError,
     );
   });
@@ -402,46 +506,75 @@ test('FinanceService fee corrections (RS-FIN-003)', async (t) => {
     t.after(() => findMock.mock.restore());
 
     await assert.rejects(
-      () => financeService.requestFeeCorrection({}, 'missing-payment', { proposedStatus: 'paid' }, { requestedByUserId: 'u1' }),
+      () =>
+        financeService.requestFeeCorrection(
+          {},
+          'missing-payment',
+          { proposedStatus: 'paid' },
+          { requestedByUserId: 'u1' },
+        ),
       financeService.FeeCorrectionNotFoundError,
     );
   });
 
-  await t.test('requestFeeCorrection resolves the real hod and submits a single-step chain, then creates the correction row', async () => {
-    const findPaymentMock = t.mock.method(feePaymentRepository, 'findById', async () => ({ id: 'payment-1', college_id: 'c1', student_id: 's1' }));
-    const getStudentMock = t.mock.method(studentService, 'getStudent', async () => ({ id: 's1', college_id: 'c1', class_id: 'class-1' }));
-    const findClassMock = t.mock.method(classRepository, 'findById', async () => ({ id: 'class-1', college_id: 'c1', department_id: 'dept-1' }));
-    const resolveChainMock = t.mock.method(workflowChainService, 'resolveApproverChain', async () => ([{ step: 1, role: 'hod', user_id: 'hod-1' }]));
-    const submitMock = t.mock.method(workflowService, 'submitRequest', async (client, fields) => ({ id: 'wf-1', ...fields }));
-    const createCorrectionMock = t.mock.method(feeCorrectionRepository, 'create', async (client, fields) => ({ id: 'corr-1', ...fields }));
-    t.after(() => {
-      findPaymentMock.mock.restore();
-      getStudentMock.mock.restore();
-      findClassMock.mock.restore();
-      resolveChainMock.mock.restore();
-      submitMock.mock.restore();
-      createCorrectionMock.mock.restore();
-    });
+  await t.test(
+    'requestFeeCorrection resolves the real hod and submits a single-step chain, then creates the correction row',
+    async () => {
+      const findPaymentMock = t.mock.method(feePaymentRepository, 'findById', async () => ({
+        id: 'payment-1',
+        college_id: 'c1',
+        student_id: 's1',
+      }));
+      const getStudentMock = t.mock.method(studentService, 'getStudent', async () => ({
+        id: 's1',
+        college_id: 'c1',
+        class_id: 'class-1',
+      }));
+      const findClassMock = t.mock.method(classRepository, 'findById', async () => ({
+        id: 'class-1',
+        college_id: 'c1',
+        department_id: 'dept-1',
+      }));
+      const resolveChainMock = t.mock.method(workflowChainService, 'resolveApproverChain', async () => [
+        { step: 1, role: 'hod', user_id: 'hod-1' },
+      ]);
+      const submitMock = t.mock.method(workflowService, 'submitRequest', async (client, fields) => ({
+        id: 'wf-1',
+        ...fields,
+      }));
+      const createCorrectionMock = t.mock.method(feeCorrectionRepository, 'create', async (client, fields) => ({
+        id: 'corr-1',
+        ...fields,
+      }));
+      t.after(() => {
+        findPaymentMock.mock.restore();
+        getStudentMock.mock.restore();
+        findClassMock.mock.restore();
+        resolveChainMock.mock.restore();
+        submitMock.mock.restore();
+        createCorrectionMock.mock.restore();
+      });
 
-    const result = await financeService.requestFeeCorrection(
-      {},
-      'payment-1',
-      { proposedStatus: 'paid', reason: 'receipt found' },
-      { requestedByUserId: 'requester-1' },
-    );
+      const result = await financeService.requestFeeCorrection(
+        {},
+        'payment-1',
+        { proposedStatus: 'paid', reason: 'receipt found' },
+        { requestedByUserId: 'requester-1' },
+      );
 
-    assert.equal(result.workflowRequest.id, 'wf-1');
-    assert.equal(result.correction.id, 'corr-1');
-    const resolvedFor = resolveChainMock.mock.calls[0].arguments[1];
-    assert.equal(resolvedFor.entityType, 'fee_correction');
-    assert.equal(resolvedFor.collegeId, 'c1');
-    assert.equal(resolvedFor.departmentId, 'dept-1');
-    const submitted = submitMock.mock.calls[0].arguments[1];
-    assert.equal(submitted.entityType, 'fee_correction');
-    assert.equal(submitted.entityId, 'payment-1');
-    assert.deepEqual(submitted.approverChain, [{ step: 1, role: 'hod', user_id: 'hod-1' }]);
-    assert.equal(createCorrectionMock.mock.calls[0].arguments[1].proposedStatus, 'paid');
-  });
+      assert.equal(result.workflowRequest.id, 'wf-1');
+      assert.equal(result.correction.id, 'corr-1');
+      const resolvedFor = resolveChainMock.mock.calls[0].arguments[1];
+      assert.equal(resolvedFor.entityType, 'fee_correction');
+      assert.equal(resolvedFor.collegeId, 'c1');
+      assert.equal(resolvedFor.departmentId, 'dept-1');
+      const submitted = submitMock.mock.calls[0].arguments[1];
+      assert.equal(submitted.entityType, 'fee_correction');
+      assert.equal(submitted.entityId, 'payment-1');
+      assert.deepEqual(submitted.approverChain, [{ step: 1, role: 'hod', user_id: 'hod-1' }]);
+      assert.equal(createCorrectionMock.mock.calls[0].arguments[1].proposedStatus, 'paid');
+    },
+  );
 
   // Proves the fix: fee_correction is now resolved through
   // workflowChainService.resolveApproverChain instead of a hardcoded
@@ -450,65 +583,105 @@ test('FinanceService fee corrections (RS-FIN-003)', async (t) => {
   // approverChain" proof workflow-chain-service.test.js already
   // establishes for record_restoration/substitute_assignment, just
   // exercised here through requestFeeCorrection's own call site.
-  await t.test('requestFeeCorrection is institution-configurable: an overridden chain changes the approver', async () => {
-    const findPaymentMock = t.mock.method(feePaymentRepository, 'findById', async () => ({ id: 'payment-1', college_id: 'c1', student_id: 's1' }));
-    const getStudentMock = t.mock.method(studentService, 'getStudent', async () => ({ id: 's1', college_id: 'c1', class_id: 'class-1' }));
-    const findClassMock = t.mock.method(classRepository, 'findById', async () => ({ id: 'class-1', college_id: 'c1', department_id: 'dept-1' }));
-    const resolveChainMock = t.mock.method(
-      workflowChainService,
-      'resolveApproverChain',
-      async () => ([{ step: 1, role: 'hod', user_id: 'hod-1' }, { step: 2, role: 'principal', user_id: 'principal-1' }]),
-    );
-    const submitMock = t.mock.method(workflowService, 'submitRequest', async (client, fields) => ({ id: 'wf-2', ...fields }));
-    const createCorrectionMock = t.mock.method(feeCorrectionRepository, 'create', async (client, fields) => ({ id: 'corr-2', ...fields }));
-    t.after(() => {
-      findPaymentMock.mock.restore();
-      getStudentMock.mock.restore();
-      findClassMock.mock.restore();
-      resolveChainMock.mock.restore();
-      submitMock.mock.restore();
-      createCorrectionMock.mock.restore();
-    });
+  await t.test(
+    'requestFeeCorrection is institution-configurable: an overridden chain changes the approver',
+    async () => {
+      const findPaymentMock = t.mock.method(feePaymentRepository, 'findById', async () => ({
+        id: 'payment-1',
+        college_id: 'c1',
+        student_id: 's1',
+      }));
+      const getStudentMock = t.mock.method(studentService, 'getStudent', async () => ({
+        id: 's1',
+        college_id: 'c1',
+        class_id: 'class-1',
+      }));
+      const findClassMock = t.mock.method(classRepository, 'findById', async () => ({
+        id: 'class-1',
+        college_id: 'c1',
+        department_id: 'dept-1',
+      }));
+      const resolveChainMock = t.mock.method(workflowChainService, 'resolveApproverChain', async () => [
+        { step: 1, role: 'hod', user_id: 'hod-1' },
+        { step: 2, role: 'principal', user_id: 'principal-1' },
+      ]);
+      const submitMock = t.mock.method(workflowService, 'submitRequest', async (client, fields) => ({
+        id: 'wf-2',
+        ...fields,
+      }));
+      const createCorrectionMock = t.mock.method(feeCorrectionRepository, 'create', async (client, fields) => ({
+        id: 'corr-2',
+        ...fields,
+      }));
+      t.after(() => {
+        findPaymentMock.mock.restore();
+        getStudentMock.mock.restore();
+        findClassMock.mock.restore();
+        resolveChainMock.mock.restore();
+        submitMock.mock.restore();
+        createCorrectionMock.mock.restore();
+      });
 
-    await financeService.requestFeeCorrection(
-      {},
-      'payment-1',
-      { proposedStatus: 'paid' },
-      { requestedByUserId: 'requester-1' },
-    );
+      await financeService.requestFeeCorrection(
+        {},
+        'payment-1',
+        { proposedStatus: 'paid' },
+        { requestedByUserId: 'requester-1' },
+      );
 
-    const submitted = submitMock.mock.calls[0].arguments[1];
-    assert.deepEqual(submitted.approverChain, [
-      { step: 1, role: 'hod', user_id: 'hod-1' },
-      { step: 2, role: 'principal', user_id: 'principal-1' },
-    ]);
-  });
+      const submitted = submitMock.mock.calls[0].arguments[1];
+      assert.deepEqual(submitted.approverChain, [
+        { step: 1, role: 'hod', user_id: 'hod-1' },
+        { step: 2, role: 'principal', user_id: 'principal-1' },
+      ]);
+    },
+  );
 
-  await t.test('approveFeeCorrection calls workflowService.approveRequest then marks the correction applied — never touches the original fee_payments row', async () => {
-    const findCorrectionMock = t.mock.method(feeCorrectionRepository, 'findById', async () => ({ id: 'corr-1', college_id: 'c1', workflow_request_id: 'wf-1' }));
-    const getRequestMock = t.mock.method(workflowService, 'getRequest', async () => ({ id: 'wf-1', status: 'Pending' }));
-    const approveMock = t.mock.method(workflowService, 'approveRequest', async () => ({ id: 'wf-1', status: 'Approved' }));
-    const markAppliedMock = t.mock.method(feeCorrectionRepository, 'markApplied', async (client, id) => ({ id, applied_at: '2026-07-25T00:00:00Z' }));
-    const updatePaymentMock = t.mock.method(feePaymentRepository, 'update');
-    const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
-    t.after(() => {
-      findCorrectionMock.mock.restore();
-      getRequestMock.mock.restore();
-      approveMock.mock.restore();
-      markAppliedMock.mock.restore();
-      updatePaymentMock.mock.restore();
-      auditMock.mock.restore();
-    });
+  await t.test(
+    'approveFeeCorrection calls workflowService.approveRequest then marks the correction applied — never touches the original fee_payments row',
+    async () => {
+      const findCorrectionMock = t.mock.method(feeCorrectionRepository, 'findById', async () => ({
+        id: 'corr-1',
+        college_id: 'c1',
+        workflow_request_id: 'wf-1',
+      }));
+      const getRequestMock = t.mock.method(workflowService, 'getRequest', async () => ({
+        id: 'wf-1',
+        status: 'Pending',
+      }));
+      const approveMock = t.mock.method(workflowService, 'approveRequest', async () => ({
+        id: 'wf-1',
+        status: 'Approved',
+      }));
+      const markAppliedMock = t.mock.method(feeCorrectionRepository, 'markApplied', async (client, id) => ({
+        id,
+        applied_at: '2026-07-25T00:00:00Z',
+      }));
+      const updatePaymentMock = t.mock.method(feePaymentRepository, 'update');
+      const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
+      t.after(() => {
+        findCorrectionMock.mock.restore();
+        getRequestMock.mock.restore();
+        approveMock.mock.restore();
+        markAppliedMock.mock.restore();
+        updatePaymentMock.mock.restore();
+        auditMock.mock.restore();
+      });
 
-    const result = await financeService.approveFeeCorrection({}, 'corr-1', { actorUserId: 'hod-1' });
+      const result = await financeService.approveFeeCorrection({}, 'corr-1', { actorUserId: 'hod-1' });
 
-    assert.ok(result.applied_at);
-    assert.equal(updatePaymentMock.mock.callCount(), 0);
-    assert.equal(auditMock.mock.calls[0].arguments[1].action, 'fee_correction_approved');
-  });
+      assert.ok(result.applied_at);
+      assert.equal(updatePaymentMock.mock.callCount(), 0);
+      assert.equal(auditMock.mock.calls[0].arguments[1].action, 'fee_correction_approved');
+    },
+  );
 
   await t.test('approveFeeCorrection throws FeeCorrectionNoPendingRequestError when nothing is pending', async () => {
-    const findCorrectionMock = t.mock.method(feeCorrectionRepository, 'findById', async () => ({ id: 'corr-1', college_id: 'c1', workflow_request_id: null }));
+    const findCorrectionMock = t.mock.method(feeCorrectionRepository, 'findById', async () => ({
+      id: 'corr-1',
+      college_id: 'c1',
+      workflow_request_id: null,
+    }));
     t.after(() => findCorrectionMock.mock.restore());
 
     await assert.rejects(
@@ -517,29 +690,44 @@ test('FinanceService fee corrections (RS-FIN-003)', async (t) => {
     );
   });
 
-  await t.test('rejectFeeCorrection calls workflowService.rejectRequest and never marks the correction applied', async () => {
-    const findCorrectionMock = t.mock.method(feeCorrectionRepository, 'findById', async () => ({ id: 'corr-1', college_id: 'c1', workflow_request_id: 'wf-1' }));
-    const getRequestMock = t.mock.method(workflowService, 'getRequest', async () => ({ id: 'wf-1', status: 'Pending' }));
-    const rejectMock = t.mock.method(workflowService, 'rejectRequest', async () => ({ id: 'wf-1', status: 'Rejected' }));
-    const markAppliedMock = t.mock.method(feeCorrectionRepository, 'markApplied');
-    const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
-    t.after(() => {
-      findCorrectionMock.mock.restore();
-      getRequestMock.mock.restore();
-      rejectMock.mock.restore();
-      markAppliedMock.mock.restore();
-      auditMock.mock.restore();
-    });
+  await t.test(
+    'rejectFeeCorrection calls workflowService.rejectRequest and never marks the correction applied',
+    async () => {
+      const findCorrectionMock = t.mock.method(feeCorrectionRepository, 'findById', async () => ({
+        id: 'corr-1',
+        college_id: 'c1',
+        workflow_request_id: 'wf-1',
+      }));
+      const getRequestMock = t.mock.method(workflowService, 'getRequest', async () => ({
+        id: 'wf-1',
+        status: 'Pending',
+      }));
+      const rejectMock = t.mock.method(workflowService, 'rejectRequest', async () => ({
+        id: 'wf-1',
+        status: 'Rejected',
+      }));
+      const markAppliedMock = t.mock.method(feeCorrectionRepository, 'markApplied');
+      const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
+      t.after(() => {
+        findCorrectionMock.mock.restore();
+        getRequestMock.mock.restore();
+        rejectMock.mock.restore();
+        markAppliedMock.mock.restore();
+        auditMock.mock.restore();
+      });
 
-    const result = await financeService.rejectFeeCorrection({}, 'corr-1', { actorUserId: 'hod-1', remarks: 'no' });
+      const result = await financeService.rejectFeeCorrection({}, 'corr-1', { actorUserId: 'hod-1', remarks: 'no' });
 
-    assert.equal(result.id, 'corr-1');
-    assert.equal(markAppliedMock.mock.callCount(), 0);
-    assert.equal(auditMock.mock.calls[0].arguments[1].action, 'fee_correction_rejected');
-  });
+      assert.equal(result.id, 'corr-1');
+      assert.equal(markAppliedMock.mock.callCount(), 0);
+      assert.equal(auditMock.mock.calls[0].arguments[1].action, 'fee_correction_rejected');
+    },
+  );
 
   await t.test('listFeeCorrectionsForPayment is a thin passthrough to listForFeePayment', async () => {
-    const listMock = t.mock.method(feeCorrectionRepository, 'listForFeePayment', async (client, feePaymentId) => ([{ feePaymentId }]));
+    const listMock = t.mock.method(feeCorrectionRepository, 'listForFeePayment', async (client, feePaymentId) => [
+      { feePaymentId },
+    ]);
     t.after(() => listMock.mock.restore());
 
     const result = await financeService.listFeeCorrectionsForPayment({}, 'payment-1');
@@ -563,37 +751,52 @@ test('FinanceService.checkScholarshipEligibility (no DB)', async (t) => {
     );
   });
 
-  await t.test('reports ineligible with reason no_income_on_file when annual_income is null, never reads the threshold config', async () => {
-    const getStudentMock = t.mock.method(studentService, 'getStudent', async () => ({ id: 's1', annual_income: null }));
-    const getConfigMock = t.mock.method(configurationService, 'getConfiguration');
-    t.after(() => {
-      getStudentMock.mock.restore();
-      getConfigMock.mock.restore();
-    });
+  await t.test(
+    'reports ineligible with reason no_income_on_file when annual_income is null, never reads the threshold config',
+    async () => {
+      const getStudentMock = t.mock.method(studentService, 'getStudent', async () => ({
+        id: 's1',
+        annual_income: null,
+      }));
+      const getConfigMock = t.mock.method(configurationService, 'getConfiguration');
+      t.after(() => {
+        getStudentMock.mock.restore();
+        getConfigMock.mock.restore();
+      });
 
-    const result = await financeService.checkScholarshipEligibility({}, 'c1', 's1');
+      const result = await financeService.checkScholarshipEligibility({}, 'c1', 's1');
 
-    assert.equal(result.eligible, false);
-    assert.equal(result.reason, 'no_income_on_file');
-    assert.equal(getConfigMock.mock.callCount(), 0);
-  });
+      assert.equal(result.eligible, false);
+      assert.equal(result.reason, 'no_income_on_file');
+      assert.equal(getConfigMock.mock.callCount(), 0);
+    },
+  );
 
-  await t.test('throws ScholarshipThresholdNotConfiguredError when the tenant has no finance.scholarshipIncomeThreshold set', async () => {
-    const getStudentMock = t.mock.method(studentService, 'getStudent', async () => ({ id: 's1', annual_income: 50000 }));
-    const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => null);
-    t.after(() => {
-      getStudentMock.mock.restore();
-      getConfigMock.mock.restore();
-    });
+  await t.test(
+    'throws ScholarshipThresholdNotConfiguredError when the tenant has no finance.scholarshipIncomeThreshold set',
+    async () => {
+      const getStudentMock = t.mock.method(studentService, 'getStudent', async () => ({
+        id: 's1',
+        annual_income: 50000,
+      }));
+      const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => null);
+      t.after(() => {
+        getStudentMock.mock.restore();
+        getConfigMock.mock.restore();
+      });
 
-    await assert.rejects(
-      () => financeService.checkScholarshipEligibility({}, 'c1', 's1'),
-      financeService.ScholarshipThresholdNotConfiguredError,
-    );
-  });
+      await assert.rejects(
+        () => financeService.checkScholarshipEligibility({}, 'c1', 's1'),
+        financeService.ScholarshipThresholdNotConfiguredError,
+      );
+    },
+  );
 
   await t.test('reports eligible when annual_income is below the configured threshold', async () => {
-    const getStudentMock = t.mock.method(studentService, 'getStudent', async () => ({ id: 's1', annual_income: 40000 }));
+    const getStudentMock = t.mock.method(studentService, 'getStudent', async () => ({
+      id: 's1',
+      annual_income: 40000,
+    }));
     const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => ({
       configuration: { scholarshipIncomeThreshold: 100000 },
     }));
@@ -611,7 +814,10 @@ test('FinanceService.checkScholarshipEligibility (no DB)', async (t) => {
   });
 
   await t.test('reports ineligible when annual_income is at or above the configured threshold', async () => {
-    const getStudentMock = t.mock.method(studentService, 'getStudent', async () => ({ id: 's1', annual_income: 150000 }));
+    const getStudentMock = t.mock.method(studentService, 'getStudent', async () => ({
+      id: 's1',
+      annual_income: 150000,
+    }));
     const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => ({
       configuration: { scholarshipIncomeThreshold: 100000 },
     }));

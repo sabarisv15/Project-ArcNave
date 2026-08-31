@@ -25,7 +25,7 @@ function renderPanel(setup = INSTITUTION_SETUP) {
   return render(
     <MemoryRouter>
       <InstitutionSetupPanel setup={setup} />
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
@@ -42,7 +42,7 @@ function renderApp(route = '/') {
           </WorkspaceProvider>
         </Tooltip.Provider>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -147,7 +147,7 @@ describe('Institution setup — status calculation', () => {
     // are both stated on their own rows.
     const { withHod, departmentCount } = INSTITUTION_SETUP.counts;
     expect(
-      screen.getByText(new RegExp(`${withHod} of ${departmentCount} departments have an active head`))
+      screen.getByText(new RegExp(`${withHod} of ${departmentCount} departments have an active head`)),
     ).toBeInTheDocument();
     expect(screen.getByText('1 vacancy')).toBeInTheDocument();
     expect(screen.getByText('4 not submitted')).toBeInTheDocument();
@@ -224,9 +224,7 @@ describe('Institution setup — a pending revision does not un-approve the live 
      * it already had, and no register opens against a timetable that is
      * mid-decision.
      */
-    expect(INSTITUTION_SETUP.counts.attendanceLive).toBe(
-      INSTITUTION_SETUP.counts.approved - pendingClasses.length
-    );
+    expect(INSTITUTION_SETUP.counts.attendanceLive).toBe(INSTITUTION_SETUP.counts.approved - pendingClasses.length);
   });
 
   it('describes a pending revision as review, never as a failure', () => {
@@ -266,9 +264,7 @@ describe('Institution setup — attendance is derived, never switched on', () =>
     expect(setup.counts.attendanceLive).toBe(0);
 
     renderPanel(setup);
-    expect(
-      screen.getByText(/attendance is not available without an active academic year/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/attendance is not available without an active academic year/i)).toBeInTheDocument();
   });
 
   it('explains both conditions and offers no enable control', () => {
@@ -276,8 +272,8 @@ describe('Institution setup — attendance is derived, never switched on', () =>
     const row = screen.getByText('Attendance readiness').closest('li');
     expect(
       within(row).getByText(
-        /attendance becomes available after a class timetable is approved and an academic year is active/i
-      )
+        /attendance becomes available after a class timetable is approved and an academic year is active/i,
+      ),
     ).toBeInTheDocument();
     expect(within(row).queryByRole('button')).not.toBeInTheDocument();
     expect(within(row).queryByRole('link')).not.toBeInTheDocument();
@@ -291,9 +287,7 @@ describe('Institution setup — Class Tutor coverage is read-only', () => {
     const row = screen.getByText('Class Tutor coverage').closest('li');
     expect(within(row).queryByRole('button')).not.toBeInTheDocument();
     expect(within(row).queryByRole('link')).not.toBeInTheDocument();
-    expect(
-      within(row).getByText(/class tutor assignment is managed by each department hod/i)
-    ).toBeInTheDocument();
+    expect(within(row).getByText(/class tutor assignment is managed by each department hod/i)).toBeInTheDocument();
   });
 
   it('does not control timetable or attendance readiness', () => {
@@ -344,11 +338,7 @@ describe('Institution setup — only built destinations are clickable', () => {
   });
 
   it('gives every action it does render a route that exists', () => {
-    const built = [
-      '/institution/departments',
-      '/institution/timetable',
-      '/institution/academic-year',
-    ];
+    const built = ['/institution/departments', '/institution/timetable', '/institution/academic-year'];
     INSTITUTION_SETUP.rows.forEach((row) => {
       if (!row.action) return;
       expect(built).toContain(row.action.to);

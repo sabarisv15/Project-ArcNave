@@ -79,9 +79,7 @@ function renderQuiz(quiz) {
     const optionLines = q.options.map((opt, i) => `${QUIZ_OPTION_LETTERS[i]}. ${opt}`).join('\n');
     return `${index + 1}. ${q.question}\n${optionLines}`;
   });
-  const answerKey = quiz.questions
-    .map((q, index) => `${index + 1}. ${QUIZ_OPTION_LETTERS[q.correctIndex]}`)
-    .join(', ');
+  const answerKey = quiz.questions.map((q, index) => `${index + 1}. ${QUIZ_OPTION_LETTERS[q.correctIndex]}`).join(', ');
   const parts = quiz.title ? [`**${quiz.title}**`, ...questionBlocks] : questionBlocks;
   return [...parts, `**Answer key:** ${answerKey}`].join('\n\n');
 }
@@ -154,9 +152,7 @@ function renderPlaces(places) {
 }
 
 function renderRecipe(recipe) {
-  const ingredientLines = recipe.ingredients
-    .map((i) => `- ${i.quantity} ${i.unit} ${i.name}`)
-    .join('\n');
+  const ingredientLines = recipe.ingredients.map((i) => `- ${i.quantity} ${i.unit} ${i.name}`).join('\n');
   const stepLines = recipe.steps.map((s, index) => `${index + 1}. ${s}`).join('\n');
   return `**${recipe.title}** (serves ${recipe.servings})\n\n${ingredientLines}\n\n${stepLines}`;
 }
@@ -176,7 +172,9 @@ function renderMarkdown(sections) {
   if (sections.summary) parts.push(sections.summary);
 
   if (sections.keyMetrics && sections.keyMetrics.length > 0) {
-    parts.push(['### Key Metrics', sections.keyMetrics.map((m) => `- **${m.label}:** ${m.value}`).join('\n')].join('\n\n'));
+    parts.push(
+      ['### Key Metrics', sections.keyMetrics.map((m) => `- **${m.label}:** ${m.value}`).join('\n')].join('\n\n'),
+    );
   }
 
   if (sections.chart) {

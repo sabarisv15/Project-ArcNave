@@ -81,7 +81,7 @@ function DepartmentStates({ onOpen }) {
             aria-label={`${dept?.name ?? s.departmentId} — open timetable decision`}
             className={cn(
               GRID,
-              'w-full h-[50px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2'
+              'w-full h-[50px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2',
             )}
           >
             <span className="min-w-0">
@@ -109,9 +109,7 @@ function DepartmentStates({ onOpen }) {
                   <span className="block text-[12.5px] text-ink-muted truncate" title={s.revision.label}>
                     {s.revision.label}
                   </span>
-                  <span className="block text-[11px] text-ink-faint truncate">
-                    Live timetable unchanged
-                  </span>
+                  <span className="block text-[11px] text-ink-faint truncate">Live timetable unchanged</span>
                 </>
               ) : (
                 <span className="text-[12.5px] text-ink-faint">Nothing submitted</span>
@@ -127,7 +125,7 @@ function DepartmentStates({ onOpen }) {
               <span
                 className={cn(
                   'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500] max-w-full truncate',
-                  definition.tone
+                  definition.tone,
                 )}
                 title={definition.hint}
               >
@@ -176,10 +174,7 @@ function Exceptions() {
         {INSTITUTION_EXCEPTIONS.map((e) => {
           const depts = exceptionDepartments(e);
           return (
-            <li
-              key={e.id}
-              className="px-[16px] py-[12px] border-t border-line-light first:border-t-0"
-            >
+            <li key={e.id} className="px-[16px] py-[12px] border-t border-line-light first:border-t-0">
               <div className="flex items-start gap-[10px]">
                 <span className="min-w-0 flex-1">
                   <span className="block text-[13px] text-ink">
@@ -206,7 +201,7 @@ export function InstitutionTimetableView() {
   const [view, setView] = useState('departments');
   const [openId, setOpenId] = useState('');
 
-  const openRow = openId ? TIMETABLE_STATES.find((s) => s.departmentId === openId) ?? null : null;
+  const openRow = openId ? (TIMETABLE_STATES.find((s) => s.departmentId === openId) ?? null) : null;
 
   return (
     <div className={PANE}>
@@ -230,7 +225,7 @@ export function InstitutionTimetableView() {
                 'flex-none h-[27px] px-[10px] border-0 rounded-[8px] bg-transparent font-sans text-[12.5px] cursor-pointer transition-colors duration-200',
                 view === v.key
                   ? 'bg-accent-soft text-accent font-[600]'
-                  : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2'
+                  : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2',
               )}
             >
               {v.label}
@@ -244,11 +239,7 @@ export function InstitutionTimetableView() {
         </div>
       </div>
 
-      {view === 'departments' ? (
-        <DepartmentStates onOpen={(s) => setOpenId(s.departmentId)} />
-      ) : (
-        <Exceptions />
-      )}
+      {view === 'departments' ? <DepartmentStates onOpen={(s) => setOpenId(s.departmentId)} /> : <Exceptions />}
 
       <p className="flex-none m-0 mt-[8px] text-[11.5px] text-ink-faint">
         A revision in review never replaces a department's live timetable · approving one makes it ready to lock ·{' '}

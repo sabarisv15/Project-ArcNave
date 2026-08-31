@@ -72,10 +72,7 @@ async function create(client, fields) {
 }
 
 async function findById(client, id) {
-  const result = await client.query(
-    'SELECT * FROM documents WHERE id = $1 AND deleted_at IS NULL',
-    [id],
-  );
+  const result = await client.query('SELECT * FROM documents WHERE id = $1 AND deleted_at IS NULL', [id]);
   return result.rows[0] || null;
 }
 
@@ -141,18 +138,17 @@ async function findByClassId(client, classId) {
 // explicit opt-in caller (the list_institutional_documents AI tool)
 // gets a capped result, already "most recent first" per this query's
 // own ORDER BY and this tool's own description.
-async function findInstitutional(client, {
-  docType, classId, categoryId, academicYearId, departmentId, search, publicationStatuses, limit,
-} = {}) {
+async function findInstitutional(
+  client,
+  { docType, classId, categoryId, academicYearId, departmentId, search, publicationStatuses, limit } = {},
+) {
   // student_id IS NULL alone doesn't distinguish an institutional
   // document from a personal one (uploadPersonalDocument also sets
   // studentId: null) or a template — confirmed live: a personal upload
   // was showing up in the Institutional browse tab until this
   // exclusion was added. docType below can still narrow further
   // within real institutional types; this floor always applies.
-  const conditions = [
-    'student_id IS NULL', 'deleted_at IS NULL', "doc_type NOT IN ('personal', 'template')",
-  ];
+  const conditions = ['student_id IS NULL', 'deleted_at IS NULL', "doc_type NOT IN ('personal', 'template')"];
   const values = [];
   if (docType !== undefined) {
     values.push(docType);
@@ -249,9 +245,7 @@ async function findLatestInGroup(client, documentGroupId) {
 // version, e.g. a metadata-only correction, is not the same situation
 // as an accidental duplicate upload).
 async function findByContentHash(client, { collegeId, contentHash, excludeGroupId }) {
-  const conditions = [
-    'college_id = $1', 'student_id IS NULL', 'deleted_at IS NULL', 'content_hash = $2',
-  ];
+  const conditions = ['college_id = $1', 'student_id IS NULL', 'deleted_at IS NULL', 'content_hash = $2'];
   const values = [collegeId, contentHash];
   if (excludeGroupId !== undefined) {
     values.push(excludeGroupId);
@@ -273,12 +267,8 @@ async function findByContentHash(client, { collegeId, contentHash, excludeGroupI
 // category/year is already a strong, low-noise signal for "this is
 // probably the same document," without the false-positive risk a
 // broad free-text match would add.
-async function findSimilarInstitutional(client, {
-  collegeId, title, categoryId, academicYearId, excludeGroupId,
-}) {
-  const conditions = [
-    'college_id = $1', 'student_id IS NULL', 'deleted_at IS NULL', 'lower(title) = lower($2)',
-  ];
+async function findSimilarInstitutional(client, { collegeId, title, categoryId, academicYearId, excludeGroupId }) {
+  const conditions = ['college_id = $1', 'student_id IS NULL', 'deleted_at IS NULL', 'lower(title) = lower($2)'];
   const values = [collegeId, title];
   if (categoryId !== undefined && categoryId !== null) {
     values.push(categoryId);

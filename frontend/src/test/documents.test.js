@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
-  INSTITUTIONAL_DOCS, ME, PERSONAL_ROOT,
-  assertScope, canMoveInto, canMutate, descendantIds, initialPersonalNodes, pathTo, uniqueName,
+  INSTITUTIONAL_DOCS,
+  ME,
+  PERSONAL_ROOT,
+  assertScope,
+  canMoveInto,
+  canMutate,
+  descendantIds,
+  initialPersonalNodes,
+  pathTo,
+  uniqueName,
 } from '../lib/documentsData';
 
 describe('the two document scopes stay apart', () => {

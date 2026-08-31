@@ -69,23 +69,27 @@ const INTENT_RULES = [
   {
     shape: 'formal_document',
     destination: DESTINATIONS.DOCUMENT,
-    pattern: /\b(circular|notice|letter|memo|certificate|official|bonafide|attach(ment)?ing this|for the record|file this)\b/i,
-    reason: 'A circular, notice or certificate is an institutional record, so it belongs in DocumentService — '
-      + 'use generate_document, not a chat reply.',
+    pattern:
+      /\b(circular|notice|letter|memo|certificate|official|bonafide|attach(ment)?ing this|for the record|file this)\b/i,
+    reason:
+      'A circular, notice or certificate is an institutional record, so it belongs in DocumentService — ' +
+      'use generate_document, not a chat reply.',
   },
   {
     shape: 'report_export',
     destination: DESTINATIONS.DOCUMENT,
     pattern: /\b(export|download|spreadsheet|xlsx|excel|csv|pdf copy|printable)\b/i,
-    reason: 'The user wants a file they keep, so route to the reports_generate_* tools or export_artifact_as '
-      + 'rather than pasting the content into chat.',
+    reason:
+      'The user wants a file they keep, so route to the reports_generate_* tools or export_artifact_as ' +
+      'rather than pasting the content into chat.',
   },
   {
     shape: 'reusable_draft',
     destination: DESTINATIONS.ARTIFACT,
     pattern: /\b(draft|write up|compose|prepare a|policy|proposal|plan document|syllabus|template)\b/i,
-    reason: 'A draft the user will revise and reuse is a structured, versioned artifact — create it with the '
-      + 'artifact tools so it can be edited and later published, rather than re-pasted every turn.',
+    reason:
+      'A draft the user will revise and reuse is a structured, versioned artifact — create it with the ' +
+      'artifact tools so it can be edited and later published, rather than re-pasted every turn.',
   },
   {
     shape: 'comparison',
@@ -109,8 +113,9 @@ const INTENT_RULES = [
     shape: 'trend',
     destination: DESTINATIONS.SECTION,
     pattern: /\b(trend|over time|chart|graph|month by month|term by term)\b/i,
-    reason: 'A chart section is built automatically when a tool returns 2-30 rows with one label and one '
-      + 'numeric field — return that shape rather than describing the numbers in prose.',
+    reason:
+      'A chart section is built automatically when a tool returns 2-30 rows with one label and one ' +
+      'numeric field — return that shape rather than describing the numbers in prose.',
   },
   {
     shape: 'schedule',
@@ -128,17 +133,19 @@ const INTENT_RULES = [
     shape: 'explanation',
     destination: DESTINATIONS.PROSE,
     pattern: /\b(why|explain|what does .* mean|summar(y|ise|ize)|overview|brief me)\b/i,
-    reason: 'An explanation is read once, in the chat. Prose is the lightest format that fully serves it — '
-      + 'do not manufacture a card or a file for it.',
+    reason:
+      'An explanation is read once, in the chat. Prose is the lightest format that fully serves it — ' +
+      'do not manufacture a card or a file for it.',
   },
 ];
 
 const DEFAULT_DECISION = {
   shape: 'direct_answer',
   destination: DESTINATIONS.PROSE,
-  reason: 'Nothing in the request asks for a artifact, file or visual. Answer in plain chat prose — under this '
-    + 'policy the lightest format that fully serves the request always wins, and a format is only earned when '
-    + 'it changes what the user actually gets.',
+  reason:
+    'Nothing in the request asks for a artifact, file or visual. Answer in plain chat prose — under this ' +
+    'policy the lightest format that fully serves the request always wins, and a format is only earned when ' +
+    'it changes what the user actually gets.',
 };
 
 function decideOutputFormat(request) {
@@ -154,8 +161,9 @@ function decideOutputFormat(request) {
     // Restated on every response, not just the prose one: the source
     // framework's failure mode is a model that reads "use a card" and
     // stacks three of them.
-    restraint: 'At most one visual per natural point in the conversation, and never a visual that repeats what '
-      + 'the prose already said. If a two-line answer would do, give the two lines.',
+    restraint:
+      'At most one visual per natural point in the conversation, and never a visual that repeats what ' +
+      'the prose already said. If a two-line answer would do, give the two lines.',
   };
 }
 
@@ -176,32 +184,36 @@ function decideImageRoute(purpose) {
     return {
       route: 'diagram',
       tool: 'present_diagram',
-      reason: 'Anything structural should be drawn as an SVG diagram, not searched for or generated — it stays '
-        + 'accurate to the data and carries no licensing question.',
+      reason:
+        'Anything structural should be drawn as an SVG diagram, not searched for or generated — it stays ' +
+        'accurate to the data and carries no licensing question.',
     };
   }
   if (wantsMade) {
     return {
       route: 'generate',
       tool: 'generate_image',
-      reason: 'ARCNAVE has image generation available (unlike the consumer assistant this policy was adapted '
-        + 'from) — use it for original artwork rather than searching for something to reuse.',
+      reason:
+        'ARCNAVE has image generation available (unlike the consumer assistant this policy was adapted ' +
+        'from) — use it for original artwork rather than searching for something to reuse.',
     };
   }
   if (wantsReal) {
     return {
       route: 'search',
       tool: 'image_search',
-      reason: 'A real existing photo is wanted, so search rather than generate. Never search for images of '
-        + 'identifiable people.',
+      reason:
+        'A real existing photo is wanted, so search rather than generate. Never search for images of ' +
+        'identifiable people.',
     };
   }
   return {
     route: 'none',
     tool: null,
-    reason: 'No image is warranted. The source framework\'s own test applies: "would this genuinely help the '
-      + 'reader understand", not "could I produce one". Data answers, drafted text and instructions are not '
-      + 'helped by pictures.',
+    reason:
+      'No image is warranted. The source framework\'s own test applies: "would this genuinely help the ' +
+      'reader understand", not "could I produce one". Data answers, drafted text and instructions are not ' +
+      'helped by pictures.',
   };
 }
 
@@ -223,27 +235,31 @@ const skillService = require('./skillService');
 
 const KNOWN_FILE_TYPES = {
   xlsx: {
-    note: 'A spreadsheet with formulas needs its formulas actually recalculated before delivery, or the cells '
-      + 'ship with no cached values and read as blank. Build it with execute_code\'s saveAs + expectFormulasIn — '
-      + 'see the xlsx skill (describe_skill(\'xlsx\')) before writing the code, not after it fails.',
+    note:
+      'A spreadsheet with formulas needs its formulas actually recalculated before delivery, or the cells ' +
+      "ship with no cached values and read as blank. Build it with execute_code's saveAs + expectFormulasIn — " +
+      "see the xlsx skill (describe_skill('xlsx')) before writing the code, not after it fails.",
     qualityGate: 'recalc',
   },
   docx: {
-    note: 'A Word document needs structural validation before delivery. ARCNAVE\'s sandbox has no python-docx '
-      + 'and no word-processing engine — this is not currently possible through execute_code. generate_document '
-      + 'covers markdown-sourced docx through a different, already-reviewed path.',
+    note:
+      "A Word document needs structural validation before delivery. ARCNAVE's sandbox has no python-docx " +
+      'and no word-processing engine — this is not currently possible through execute_code. generate_document ' +
+      'covers markdown-sourced docx through a different, already-reviewed path.',
     qualityGate: null,
   },
   pptx: {
-    note: 'A presentation needs layout and embedded-asset checks before delivery. ARCNAVE\'s sandbox has no '
-      + 'python-pptx and no presentation engine — this is not currently possible through execute_code.',
+    note:
+      "A presentation needs layout and embedded-asset checks before delivery. ARCNAVE's sandbox has no " +
+      'python-pptx and no presentation engine — this is not currently possible through execute_code.',
     qualityGate: null,
   },
   pdf: {
-    note: 'A generated PDF should be rasterised and visually inspected before delivery — a merged header cell '
-      + 'silently zeroing a column is a real, observed failure of this kind. ARCNAVE\'s sandbox has no PDF-writing '
-      + 'library — this is not currently possible through execute_code. generate_document/export_artifact_as '
-      + 'cover markdown-sourced pdf through a different, already-reviewed path.',
+    note:
+      'A generated PDF should be rasterised and visually inspected before delivery — a merged header cell ' +
+      "silently zeroing a column is a real, observed failure of this kind. ARCNAVE's sandbox has no PDF-writing " +
+      'library — this is not currently possible through execute_code. generate_document/export_artifact_as ' +
+      'cover markdown-sourced pdf through a different, already-reviewed path.',
     qualityGate: null,
   },
 };
@@ -264,8 +280,8 @@ function fileTypeGuidance(fileType) {
     note: (known && known.note) || `ARCNAVE has no format-specific guidance for ${JSON.stringify(normalized)}.`,
     warning: qualityGate
       ? null
-      : 'No quality gate exists for this format — do not tell the user a generated file of this type has been '
-        + 'verified, because nothing checked it.',
+      : 'No quality gate exists for this format — do not tell the user a generated file of this type has been ' +
+        'verified, because nothing checked it.',
   };
 }
 

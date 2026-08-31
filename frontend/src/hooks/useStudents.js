@@ -15,9 +15,20 @@ import {
 } from '../lib/studentsData';
 
 const EMPTY_FILTERS = {
-  dept: '', section: '', batch: '', gender: '', entry: '', accom: '',
-  attendance: '', feedue: '', acad: '',
-  cgpaMin: '', arrearsMin: '', arrearsMax: '', attMin: '', attMax: '',
+  dept: '',
+  section: '',
+  batch: '',
+  gender: '',
+  entry: '',
+  accom: '',
+  attendance: '',
+  feedue: '',
+  acad: '',
+  cgpaMin: '',
+  arrearsMin: '',
+  arrearsMax: '',
+  attMin: '',
+  attMax: '',
 };
 
 /** Persisted so the selection hint is a first-visit-only onboarding cue. */
@@ -97,7 +108,7 @@ export function useStudents() {
       clearTimeout(timer.current);
       timer.current = setTimeout(() => setSettling(false), 420);
     },
-    [scope]
+    [scope],
   );
 
   const scopePool = useMemo(() => {
@@ -216,12 +227,12 @@ export function useStudents() {
     `arcnave-students-${scopeIsAll ? 'all-my-classes' : `${slug(scopeClass.code)}-${slug(scopeClass.subject)}`}.${ext}`;
 
   const columnList =
-    EXPORT_COLUMNS.filter(([key]) => exportColumns[key]).map(([, label]) => label).join(', ') || 'none';
+    EXPORT_COLUMNS.filter(([key]) => exportColumns[key])
+      .map(([, label]) => label)
+      .join(', ') || 'none';
 
   const runExport = (ext) => {
-    toast(
-      `Exporting ${rows.length} student(s) from ${scopeLabel} → ${exportFileName(ext)} — columns: ${columnList}`
-    );
+    toast(`Exporting ${rows.length} student(s) from ${scopeLabel} → ${exportFileName(ext)} — columns: ${columnList}`);
     setExportMenuOpen(false);
   };
 
@@ -238,26 +249,50 @@ export function useStudents() {
 
   return {
     // scope
-    scope, scopeIsAll, scopeClass, scopeTotal, scopeLabel, lastClassScope, selectScope, scopeTick,
-    classes: STAFF_CLASSES, scopeUniqueTotal: SCOPE_TOTAL,
+    scope,
+    scopeIsAll,
+    scopeClass,
+    scopeTotal,
+    scopeLabel,
+    lastClassScope,
+    selectScope,
+    scopeTick,
+    classes: STAFF_CLASSES,
+    scopeUniqueTotal: SCOPE_TOTAL,
     // list
-    rows, resultCountLabel, settling,
+    rows,
+    resultCountLabel,
+    settling,
     // search / sort
-    query, setQuery,
-    sortKey, setSortKey,
+    query,
+    setQuery,
+    sortKey,
+    setSortKey,
     sortLabel: SORTS.find((o) => o.key === sortKey).label,
     // panels
-    panel, setPanel,
+    panel,
+    setPanel,
     toggleSortMenu: () => setPanel((p) => (p === 'sort' ? null : 'sort')),
     toggleFilters: () => setPanel((p) => (p === 'filters' ? null : 'filters')),
     filtersOpen: panel === 'filters',
     sortMenuOpen: panel === 'sort',
     // filters
-    filters, setFilter, clearFilters, activeChips, activeFilterCount,
-    advancedOpen, setAdvancedOpen,
+    filters,
+    setFilter,
+    clearFilters,
+    activeChips,
+    activeFilterCount,
+    advancedOpen,
+    setAdvancedOpen,
     // selection
-    selected, selectedIds, selectedCount, allSelected, someSelected,
-    toggleRow, toggleSelectAll, clearSelection,
+    selected,
+    selectedIds,
+    selectedCount,
+    allSelected,
+    someSelected,
+    toggleRow,
+    toggleSelectAll,
+    clearSelection,
     notifyHintOpen: notifyHintOpen && selectedCount === 0,
     dismissNotifyHint,
     notifySelected: () => {
@@ -267,7 +302,8 @@ export function useStudents() {
     exportSelected: () =>
       toast(`Exporting ${selectedCount} selected student(s) from ${scopeLabel} — columns: ${columnList}`),
     // export menu
-    exportMenuOpen, setExportMenuOpen,
+    exportMenuOpen,
+    setExportMenuOpen,
     exportColumns,
     toggleExportColumn: (key) => setExportColumns((c) => ({ ...c, [key]: !c[key] })),
     exportAsCsv: () => runExport('csv'),
@@ -276,8 +312,10 @@ export function useStudents() {
       scopeIsAll ? 'all my classes' : `${scopeClass.code} · ${scopeClass.subject}`
     }`,
     // overlays
-    statusPopoverId, setStatusPopoverId,
-    rowMenuId, setRowMenuId,
+    statusPopoverId,
+    setStatusPopoverId,
+    rowMenuId,
+    setRowMenuId,
     detailStudent,
     openDetail: (id) => {
       setDetailStudentId(id);

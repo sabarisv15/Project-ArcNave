@@ -94,7 +94,10 @@ async function extractPdfText(buffer, { lang } = {}) {
     if (parser) await parser.destroy();
   }
 
-  const text = (result.pages || []).map((page) => page.text || '').join('\n\n').trim();
+  const text = (result.pages || [])
+    .map((page) => page.text || '')
+    .join('\n\n')
+    .trim();
   const numPages = result.total || Math.max((result.pages || []).length, 1);
   const avgCharsPerPage = text.length / Math.max(numPages, 1);
   if (text.length >= MIN_TEXT_LAYER_CHARS && avgCharsPerPage >= MIN_AVG_CHARS_PER_PAGE) {
@@ -113,7 +116,9 @@ async function extractPdfText(buffer, { lang } = {}) {
   try {
     const ocr = await documentExtractionService.runOcr(buffer, PDF_MIME_TYPE, { lang });
     return {
-      text: truncateToMax(ocr.text || ''), method: 'ocr_fallback', ocrConfidence: ocr.ocrConfidence,
+      text: truncateToMax(ocr.text || ''),
+      method: 'ocr_fallback',
+      ocrConfidence: ocr.ocrConfidence,
     };
   } catch {
     return { text: null, failureReason: 'extraction_failed' };
@@ -156,15 +161,18 @@ function htmlToLines(html) {
     if (block.startsWith('<table')) {
       const rows = block.match(/<tr[\s\S]*?<\/tr>/g) || [];
       rows.forEach((rowHtml) => {
-        const cells = (rowHtml.match(/<t[dh][\s\S]*?<\/t[dh]>/g) || [])
-          .map((cellHtml) => stripXmlTags(cellHtml).replace(/\s+/g, ' ').trim());
+        const cells = (rowHtml.match(/<t[dh][\s\S]*?<\/t[dh]>/g) || []).map((cellHtml) =>
+          stripXmlTags(cellHtml).replace(/\s+/g, ' ').trim(),
+        );
         if (cells.some((c) => c !== '')) lines.push(cells.join(' | '));
       });
       return;
     }
     const paragraphs = block.match(/<p[\s\S]*?<\/p>/g) || [];
     paragraphs.forEach((paragraphHtml) => {
-      const text = stripXmlTags(paragraphHtml).replace(/[ \t]+/g, ' ').trim();
+      const text = stripXmlTags(paragraphHtml)
+        .replace(/[ \t]+/g, ' ')
+        .trim();
       if (text) lines.push(text);
     });
   });
@@ -400,7 +408,9 @@ async function extractPlainText(buffer, mimeType, { lang } = {}) {
   if (mimeType === ODS_MIME_TYPE) return extractOdsText(buffer);
   if (mimeType === CSV_MIME_TYPE) return extractCsvText(buffer);
   if (PLAIN_TEXT_MIME_TYPES.has(mimeType)) return extractPlainTextDirect(buffer);
-  throw new DocumentTextExtractionUnsupportedTypeError(`mimeType ${JSON.stringify(mimeType)} is not supported for text extraction`);
+  throw new DocumentTextExtractionUnsupportedTypeError(
+    `mimeType ${JSON.stringify(mimeType)} is not supported for text extraction`,
+  );
 }
 
 module.exports = {

@@ -24,9 +24,7 @@ async function pageRows(page) {
     if (bucket) bucket.items.push(it);
     else buckets.push({ y: it.y, items: [it] });
   });
-  return buckets
-    .sort((a, b) => b.y - a.y)
-    .map((b) => b.items.sort((p, q) => p.x - q.x));
+  return buckets.sort((a, b) => b.y - a.y).map((b) => b.items.sort((p, q) => p.x - q.x));
 }
 
 async function main() {
@@ -49,4 +47,7 @@ async function main() {
   console.log(`\nrows containing a DoB marker across all pages: ${studentRows}`);
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

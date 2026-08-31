@@ -14,7 +14,9 @@ export function ClassLogsView() {
     <div className={PANE}>
       {/* The Level 1 tab already says "Class log" — no repeated heading, just the count and this view's controls. */}
       <div className="flex-none flex items-center gap-[8px] mb-[12px]">
-        <span aria-live="polite" className="text-[12px] text-ink-faint">{c.resultCountLabel}</span>
+        <span aria-live="polite" className="text-[12px] text-ink-faint">
+          {c.resultCountLabel}
+        </span>
         <div className="flex-1" />
         <SearchPopoverField
           value={c.query}

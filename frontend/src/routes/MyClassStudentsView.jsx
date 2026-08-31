@@ -210,7 +210,7 @@ export function MyClassStudentsView() {
             aria-label={`${s.name}, roll ${s.roll} — open record`}
             className={cn(
               GRID,
-              'w-full h-[46px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2'
+              'w-full h-[46px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2',
             )}
           >
             <span className="text-[12.5px] text-ink-muted tabular-nums">{s.roll}</span>
@@ -236,7 +236,7 @@ export function MyClassStudentsView() {
             <span
               className={cn(
                 'text-[13px] tabular-nums',
-                s.attendance < ATTENDANCE_THRESHOLD ? 'font-[500] text-danger' : 'text-ink'
+                s.attendance < ATTENDANCE_THRESHOLD ? 'font-[500] text-danger' : 'text-ink',
               )}
             >
               {s.attendance}%
@@ -246,7 +246,7 @@ export function MyClassStudentsView() {
               <span
                 className={cn(
                   'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-                  FEE_TONE[s.feeTier]
+                  FEE_TONE[s.feeTier],
                 )}
               >
                 {FEE_LABEL[s.feeTier]}

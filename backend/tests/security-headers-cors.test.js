@@ -47,8 +47,10 @@ test('security headers and CORS', async (t) => {
   await t.test('helmet security headers are present on a real response', async () => {
     const res = await requestRaw(baseUrl, '/api/v1/health');
     assert.ok(res.headers['x-content-type-options'], 'expected X-Content-Type-Options to be set by helmet');
-    assert.ok(res.headers['x-dns-prefetch-control'] !== undefined || res.headers['x-frame-options'] !== undefined,
-      'expected at least one of helmet\'s standard headers to be present');
+    assert.ok(
+      res.headers['x-dns-prefetch-control'] !== undefined || res.headers['x-frame-options'] !== undefined,
+      "expected at least one of helmet's standard headers to be present",
+    );
   });
 
   await t.test('a CORS preflight from the configured frontend origin is allowed', async () => {

@@ -22,16 +22,20 @@ function requireResolvedTenant(req, res) {
 function createSearchRouter() {
   const router = express.Router();
 
-  router.get('/search', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const results = await searchService.searchAll(req.dbClient, {
-      query: req.query.q,
-      actorUserId: identityService.resolveActorUserId(req.capabilities),
-      actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
-      collegeId: req.collegeId,
-    });
-    res.json(results);
-  }));
+  router.get(
+    '/search',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const results = await searchService.searchAll(req.dbClient, {
+        query: req.query.q,
+        actorUserId: identityService.resolveActorUserId(req.capabilities),
+        actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+        collegeId: req.collegeId,
+      });
+      res.json(results);
+    }),
+  );
 
   return router;
 }

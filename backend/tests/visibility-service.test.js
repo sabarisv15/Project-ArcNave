@@ -33,19 +33,28 @@ function mockResolveCapabilities(t, capabilities) {
 
 function staffCapabilities({ assignedClassIds = [] } = {}) {
   return {
-    effectiveRole: 'staff', scopeLevel: 'self_assigned', departmentIds: [], assignedClassIds,
+    effectiveRole: 'staff',
+    scopeLevel: 'self_assigned',
+    departmentIds: [],
+    assignedClassIds,
   };
 }
 
 function hodCapabilities({ departmentIds = [] } = {}) {
   return {
-    effectiveRole: 'hod', scopeLevel: 'department', departmentIds, assignedClassIds: [],
+    effectiveRole: 'hod',
+    scopeLevel: 'department',
+    departmentIds,
+    assignedClassIds: [],
   };
 }
 
 function principalCapabilities() {
   return {
-    effectiveRole: 'principal', scopeLevel: 'college', departmentIds: [], assignedClassIds: [],
+    effectiveRole: 'principal',
+    scopeLevel: 'college',
+    departmentIds: [],
+    assignedClassIds: [],
   };
 }
 
@@ -58,21 +67,33 @@ function mockFindClassById(t, byId = { 'class-a': CLASS_A, 'class-b': CLASS_B })
 test('visibilityService.getVisibleClassIds / assertCanViewClass', async (t) => {
   await t.test('staff sees only their tutored class, not another class they have no allocation for', async () => {
     mockResolveCapabilities(t, staffCapabilities({ assignedClassIds: ['class-a'] }));
-    const ids = await visibilityService.getVisibleClassIds({}, { collegeId: 'c1', actorUserId: 'staff-a', actorRole: 'staff' });
+    const ids = await visibilityService.getVisibleClassIds(
+      {},
+      { collegeId: 'c1', actorUserId: 'staff-a', actorRole: 'staff' },
+    );
     assert.deepEqual(ids, ['class-a']);
   });
 
   await t.test('staff from class A cannot view class B (not tutor, not allocated)', async () => {
     mockResolveCapabilities(t, staffCapabilities({ assignedClassIds: ['class-a'] }));
     await assert.rejects(
-      () => visibilityService.assertCanViewClass({}, 'class-b', { collegeId: 'c1', actorUserId: 'staff-a', actorRole: 'staff' }),
+      () =>
+        visibilityService.assertCanViewClass({}, 'class-b', {
+          collegeId: 'c1',
+          actorUserId: 'staff-a',
+          actorRole: 'staff',
+        }),
       visibilityService.VisibilityForbiddenError,
     );
   });
 
   await t.test('staff faculty-allocated to class B (but not its tutor) can view class B', async () => {
     mockResolveCapabilities(t, staffCapabilities({ assignedClassIds: ['class-a', 'class-b'] }));
-    await visibilityService.assertCanViewClass({}, 'class-b', { collegeId: 'c1', actorUserId: 'staff-a', actorRole: 'staff' });
+    await visibilityService.assertCanViewClass({}, 'class-b', {
+      collegeId: 'c1',
+      actorUserId: 'staff-a',
+      actorRole: 'staff',
+    });
   });
 
   await t.test('hod of department-1 cannot view a class in department-2', async () => {
@@ -81,27 +102,50 @@ test('visibilityService.getVisibleClassIds / assertCanViewClass', async (t) => {
     t.after(() => findByDeptMock.mock.restore());
 
     await assert.rejects(
-      () => visibilityService.assertCanViewClass({}, 'class-b', { collegeId: 'c1', actorUserId: 'hod-1', actorRole: 'hod' }),
+      () =>
+        visibilityService.assertCanViewClass({}, 'class-b', {
+          collegeId: 'c1',
+          actorUserId: 'hod-1',
+          actorRole: 'hod',
+        }),
       visibilityService.VisibilityForbiddenError,
     );
   });
 
   await t.test('principal sees every class in the college (unrestricted)', async () => {
     mockResolveCapabilities(t, principalCapabilities());
-    const ids = await visibilityService.getVisibleClassIds({}, { collegeId: 'c1', actorUserId: 'principal-1', actorRole: 'principal' });
+    const ids = await visibilityService.getVisibleClassIds(
+      {},
+      { collegeId: 'c1', actorUserId: 'principal-1', actorRole: 'principal' },
+    );
     assert.equal(ids, null);
-    await visibilityService.assertCanViewClass({}, 'class-b', { collegeId: 'c1', actorUserId: 'principal-1', actorRole: 'principal' });
+    await visibilityService.assertCanViewClass({}, 'class-b', {
+      collegeId: 'c1',
+      actorUserId: 'principal-1',
+      actorRole: 'principal',
+    });
   });
 
-  await t.test('a user with no active position and no class assignments has no class visibility by default', async () => {
-    mockResolveCapabilities(t, staffCapabilities());
-    const ids = await visibilityService.getVisibleClassIds({}, { collegeId: 'c1', actorUserId: 'someone-1', actorRole: 'unmapped_role' });
-    assert.deepEqual(ids, []);
-    await assert.rejects(
-      () => visibilityService.assertCanViewClass({}, 'class-a', { collegeId: 'c1', actorUserId: 'someone-1', actorRole: 'unmapped_role' }),
-      visibilityService.VisibilityForbiddenError,
-    );
-  });
+  await t.test(
+    'a user with no active position and no class assignments has no class visibility by default',
+    async () => {
+      mockResolveCapabilities(t, staffCapabilities());
+      const ids = await visibilityService.getVisibleClassIds(
+        {},
+        { collegeId: 'c1', actorUserId: 'someone-1', actorRole: 'unmapped_role' },
+      );
+      assert.deepEqual(ids, []);
+      await assert.rejects(
+        () =>
+          visibilityService.assertCanViewClass({}, 'class-a', {
+            collegeId: 'c1',
+            actorUserId: 'someone-1',
+            actorRole: 'unmapped_role',
+          }),
+        visibilityService.VisibilityForbiddenError,
+      );
+    },
+  );
 });
 
 test('visibilityService.assertCanViewStudent', async (t) => {
@@ -136,10 +180,16 @@ test('visibilityService.assertCanViewStudent', async (t) => {
 // unchanged.
 test('visibilityService.assertCanViewStaff', async (t) => {
   const STAFF_ROW = {
-    id: 'staff-row-1', user_id: 'user-1', college_id: 'c1', department_id: 'dept-1',
+    id: 'staff-row-1',
+    user_id: 'user-1',
+    college_id: 'c1',
+    department_id: 'dept-1',
   };
   const OTHER_STAFF_ROW = {
-    id: 'staff-row-2', user_id: 'user-2', college_id: 'c1', department_id: 'dept-2',
+    id: 'staff-row-2',
+    user_id: 'user-2',
+    college_id: 'c1',
+    department_id: 'dept-2',
   };
 
   function mockFindById(t, row = STAFF_ROW) {
@@ -150,22 +200,35 @@ test('visibilityService.assertCanViewStaff', async (t) => {
 
   await t.test('self may always view their own profile', async () => {
     mockFindById(t, STAFF_ROW);
-    const result = await visibilityService.assertCanViewStaff({}, { staffId: 'staff-row-1' }, { actorUserId: 'user-1', actorRole: 'staff' });
+    const result = await visibilityService.assertCanViewStaff(
+      {},
+      { staffId: 'staff-row-1' },
+      { actorUserId: 'user-1', actorRole: 'staff' },
+    );
     assert.equal(result.id, 'staff-row-1');
   });
 
-  await t.test('an ordinary staff member cannot view an unrelated staff member\'s private profile', async () => {
+  await t.test("an ordinary staff member cannot view an unrelated staff member's private profile", async () => {
     mockFindById(t, OTHER_STAFF_ROW);
     await assert.rejects(
-      () => visibilityService.assertCanViewStaff({}, { staffId: 'staff-row-2' }, { actorUserId: 'user-1', actorRole: 'staff' }),
+      () =>
+        visibilityService.assertCanViewStaff(
+          {},
+          { staffId: 'staff-row-2' },
+          { actorUserId: 'user-1', actorRole: 'staff' },
+        ),
       visibilityService.VisibilityForbiddenError,
     );
   });
 
-  await t.test('hod of the target\'s own department may view them', async () => {
+  await t.test("hod of the target's own department may view them", async () => {
     mockFindById(t, STAFF_ROW);
     mockResolveCapabilities(t, hodCapabilities({ departmentIds: ['dept-1'] }));
-    const result = await visibilityService.assertCanViewStaff({}, { staffId: 'staff-row-1' }, { actorUserId: 'hod-1', actorRole: 'hod' });
+    const result = await visibilityService.assertCanViewStaff(
+      {},
+      { staffId: 'staff-row-1' },
+      { actorUserId: 'hod-1', actorRole: 'hod' },
+    );
     assert.equal(result.id, 'staff-row-1');
   });
 
@@ -173,7 +236,12 @@ test('visibilityService.assertCanViewStaff', async (t) => {
     mockFindById(t, STAFF_ROW);
     mockResolveCapabilities(t, hodCapabilities({ departmentIds: ['dept-2'] }));
     await assert.rejects(
-      () => visibilityService.assertCanViewStaff({}, { staffId: 'staff-row-1' }, { actorUserId: 'hod-2', actorRole: 'hod' }),
+      () =>
+        visibilityService.assertCanViewStaff(
+          {},
+          { staffId: 'staff-row-1' },
+          { actorUserId: 'hod-2', actorRole: 'hod' },
+        ),
       visibilityService.VisibilityForbiddenError,
     );
   });
@@ -181,19 +249,31 @@ test('visibilityService.assertCanViewStaff', async (t) => {
   await t.test('principal may view any staff member college-wide', async () => {
     mockFindById(t, STAFF_ROW);
     mockResolveCapabilities(t, principalCapabilities());
-    await visibilityService.assertCanViewStaff({}, { staffId: 'staff-row-1' }, { actorUserId: 'principal-1', actorRole: 'principal' });
+    await visibilityService.assertCanViewStaff(
+      {},
+      { staffId: 'staff-row-1' },
+      { actorUserId: 'principal-1', actorRole: 'principal' },
+    );
   });
 
   await t.test('resolves by userId as well as staffId', async () => {
     const m = t.mock.method(staffRepository, 'findByUserId', async () => STAFF_ROW);
     t.after(() => m.mock.restore());
-    const result = await visibilityService.assertCanViewStaff({}, { userId: 'user-1' }, { actorUserId: 'user-1', actorRole: 'staff' });
+    const result = await visibilityService.assertCanViewStaff(
+      {},
+      { userId: 'user-1' },
+      { actorUserId: 'user-1', actorRole: 'staff' },
+    );
     assert.equal(result.id, 'staff-row-1');
   });
 
   await t.test('returns null (not an error) for a nonexistent target', async () => {
     mockFindById(t, null);
-    const result = await visibilityService.assertCanViewStaff({}, { staffId: 'missing' }, { actorUserId: 'user-1', actorRole: 'principal' });
+    const result = await visibilityService.assertCanViewStaff(
+      {},
+      { staffId: 'missing' },
+      { actorUserId: 'user-1', actorRole: 'principal' },
+    );
     assert.equal(result, null);
   });
 });
@@ -252,55 +332,64 @@ test('visibilityService dual-input support (legacy shape vs. pre-built ActorCont
     assert.deepEqual(viaLegacy, viaActorContext);
   });
 
-  await t.test('assertCanViewClass: an ActorContext-shaped input is rejected exactly like the equivalent legacy shape', async () => {
-    mockResolveCapabilities(t, staffCapabilities({ assignedClassIds: ['class-a'] }));
-    const legacyInput = { collegeId: 'c1', actorUserId: 'staff-a', actorRole: 'staff' };
-    await assert.rejects(
-      () => visibilityService.assertCanViewClass({}, 'class-b', legacyInput),
-      visibilityService.VisibilityForbiddenError,
-    );
+  await t.test(
+    'assertCanViewClass: an ActorContext-shaped input is rejected exactly like the equivalent legacy shape',
+    async () => {
+      mockResolveCapabilities(t, staffCapabilities({ assignedClassIds: ['class-a'] }));
+      const legacyInput = { collegeId: 'c1', actorUserId: 'staff-a', actorRole: 'staff' };
+      await assert.rejects(
+        () => visibilityService.assertCanViewClass({}, 'class-b', legacyInput),
+        visibilityService.VisibilityForbiddenError,
+      );
 
-    const actorContext = {
-      actorId: 'staff-a',
-      tenantId: 'c1',
-      role: 'staff',
-      scopeLevel: 'self_assigned',
-      departmentIds: [],
-      assignedClassIds: ['class-a'],
-      campusIds: ['c1'],
-    };
-    await assert.rejects(
-      () => visibilityService.assertCanViewClass({}, 'class-b', actorContext),
-      visibilityService.VisibilityForbiddenError,
-    );
-  });
+      const actorContext = {
+        actorId: 'staff-a',
+        tenantId: 'c1',
+        role: 'staff',
+        scopeLevel: 'self_assigned',
+        departmentIds: [],
+        assignedClassIds: ['class-a'],
+        campusIds: ['c1'],
+      };
+      await assert.rejects(
+        () => visibilityService.assertCanViewClass({}, 'class-b', actorContext),
+        visibilityService.VisibilityForbiddenError,
+      );
+    },
+  );
 
-  await t.test('assertCanViewStaff: hod legacy shape and ActorContext shape both grant access to their own department\'s staff', async () => {
-    const STAFF_ROW = {
-      id: 'staff-row-1', user_id: 'user-1', college_id: 'c1', department_id: 'dept-1',
-    };
-    const findByIdMock = t.mock.method(staffRepository, 'findById', async () => STAFF_ROW);
-    t.after(() => findByIdMock.mock.restore());
-    mockResolveCapabilities(t, hodCapabilities({ departmentIds: ['dept-1'] }));
+  await t.test(
+    "assertCanViewStaff: hod legacy shape and ActorContext shape both grant access to their own department's staff",
+    async () => {
+      const STAFF_ROW = {
+        id: 'staff-row-1',
+        user_id: 'user-1',
+        college_id: 'c1',
+        department_id: 'dept-1',
+      };
+      const findByIdMock = t.mock.method(staffRepository, 'findById', async () => STAFF_ROW);
+      t.after(() => findByIdMock.mock.restore());
+      mockResolveCapabilities(t, hodCapabilities({ departmentIds: ['dept-1'] }));
 
-    const viaLegacy = await visibilityService.assertCanViewStaff(
-      {},
-      { staffId: 'staff-row-1' },
-      { actorUserId: 'hod-1', actorRole: 'hod' },
-    );
+      const viaLegacy = await visibilityService.assertCanViewStaff(
+        {},
+        { staffId: 'staff-row-1' },
+        { actorUserId: 'hod-1', actorRole: 'hod' },
+      );
 
-    const actorContext = {
-      actorId: 'hod-1',
-      tenantId: 'c1',
-      role: 'hod',
-      scopeLevel: 'department',
-      departmentIds: ['dept-1'],
-      assignedClassIds: [],
-      campusIds: ['c1'],
-    };
-    const viaActorContext = await visibilityService.assertCanViewStaff({}, { staffId: 'staff-row-1' }, actorContext);
+      const actorContext = {
+        actorId: 'hod-1',
+        tenantId: 'c1',
+        role: 'hod',
+        scopeLevel: 'department',
+        departmentIds: ['dept-1'],
+        assignedClassIds: [],
+        campusIds: ['c1'],
+      };
+      const viaActorContext = await visibilityService.assertCanViewStaff({}, { staffId: 'staff-row-1' }, actorContext);
 
-    assert.equal(viaLegacy.id, STAFF_ROW.id);
-    assert.equal(viaActorContext.id, STAFF_ROW.id);
-  });
+      assert.equal(viaLegacy.id, STAFF_ROW.id);
+      assert.equal(viaActorContext.id, STAFF_ROW.id);
+    },
+  );
 });

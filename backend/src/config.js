@@ -21,14 +21,58 @@ module.exports = {
 
   // The one browser origin allowed to make cross-origin requests to
   // this API (see tenantApp.js/platformApp.js's cors() wiring) — never
-  // a wildcard: this app serves student/staff PII across every tenant,
-  // and auth is bearer-token-in-header (see security.js — no cookies
-  // anywhere in this codebase), so an overly permissive CORS policy
-  // would let any third-party page read a response if it ever got hold
-  // of a token, not just enable convenience. Defaults to the frontend's
-  // own local dev server (frontend/vite.config.js, port 3100) —
-  // deploy-specific, must be set for any non-local frontend origin.
+  // a wildcard: this app serves student/staff PII across every tenant.
+  // Defaults to the frontend's own local dev server
+  // (frontend/vite.config.js, port 3100) — deploy-specific, must be
+  // set for any non-local frontend origin.
   frontendOrigin: process.env.FRONTEND_ORIGIN || 'http://localhost:3100',
+
+  // ARCNAVE modernization P0 (PDF 5.1 / clash C6): the refresh token
+  // moved from browser-readable storage (frontend's sessionStorage) to
+  // an httpOnly cookie the browser attaches automatically and no
+  // client-side script can read — the actual fix for the XSS-theft
+  // finding. `credentials: true` on cors() (tenantApp.js/platformApp.js)
+  // is required for the browser to send/accept this cookie
+  // cross-origin; CORS still allows exactly one explicit origin, never
+  // a wildcard, so this does not open the door any wider than before.
+  refreshCookie: {
+    name: 'arcnave_refresh_token',
+    // Scoped to the one path prefix that ever reads it
+    // (routes/auth.js's /auth/refresh and /auth/logout) — never sent
+    // on any other request, unlike the old bearer-token-in-header
+    // pattern which had no way to scope by path at all.
+    path: '/api/v1/auth',
+    httpOnly: true,
+    sameSite: 'strict',
+    // False only for local http:// dev — a real deploy is always
+    // https:// and must set this true (COOKIE_SECURE=true), same
+    // "defaults safe for prod, opt out only for local dev" posture
+    // config.js already uses elsewhere in this file.
+    secure: process.env.COOKIE_SECURE !== 'false',
+    // Unset (host-only cookie) by default — correct for local dev,
+    // where the Vite proxy makes frontend and backend the same origin
+    // from the browser's point of view. A production deploy that
+    // splits frontend/API across sibling subdomains of one parent
+    // domain (e.g. app.arcnave.com / api.arcnave.com) sets this to
+    // the shared parent (".arcnave.com") so the cookie is sent to
+    // both.
+    domain: process.env.REFRESH_COOKIE_DOMAIN || undefined,
+  },
+
+  // Same fix, same reasoning, for the separate Position Account login
+  // surface (routes/positionAccounts.js mirrors routes/auth.js's
+  // shape exactly) — a distinct cookie name/path so a browser that
+  // happens to hold both a personal login and a Position Account
+  // login session at once (different tabs, same origin) never has one
+  // flow's refresh silently clobber the other's cookie.
+  positionRefreshCookie: {
+    name: 'arcnave_position_refresh_token',
+    path: '/api/v1/position-accounts',
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: process.env.COOKIE_SECURE !== 'false',
+    domain: process.env.REFRESH_COOKIE_DOMAIN || undefined,
+  },
 
   // Runtime app connection — must use the least-privilege arcnave_app
   // role, never the migration-owner role. That role is a Postgres
@@ -331,6 +375,28 @@ module.exports = {
   // logs them (audit-only, never returned to any API response —
   // RS-AIG-027 still bars user-facing exposure).
   experimentalThinkingTraceVisibility: process.env.EXPERIMENTAL_THINKING_TRACE_VISIBILITY === 'true',
+
+  // ADR-030 P3 follow-up (2026-08-30, cache-hit-analysis.js's own "worst
+  // offenders" section — real turns like "google epa kandupudichanga"
+  // paying 4,600+ input tokens for a 1-line answer). When
+  // aiToolRetrievalService's semantic shortlist genuinely finds ZERO
+  // relevant tools for a Curriculum-mode question (not a role/permission
+  // decision — every role-permitted tool was considered and none scored
+  // close), this additionally drops the always-on tool catalogue
+  // (buildToolCatalogueForExperiment, ~2,176 tok) and the describe_tools
+  // recovery meta-tool from that turn's offered set, structurally rather
+  // than by prompt instruction — same "no tool exists to call" posture
+  // Research mode's own askGeneralChat already uses. Off by default:
+  // this trades away the catalogue's own documented purpose (ai-tool-
+  // catalogue-approved-spec.md — "makes a retrieval miss non-fatal") for
+  // exactly the turns this flag fires on, so a genuine retrieval false-
+  // negative on a real data question would lose its only recovery path.
+  // Opt in only after measuring how often SIMILARITY_DISTANCE_THRESHOLD
+  // (0.8, deliberately recall-biased) actually returns zero for real
+  // in-scope questions vs. genuine small-talk/general-knowledge ones —
+  // same "verify before defaulting on" posture every other experimental
+  // flag in this file already follows.
+  experimentalZeroToolFastPath: process.env.EXPERIMENTAL_ZERO_TOOL_FAST_PATH === 'true',
 
   // Which provider a college with no college_ai_config row of its own
   // falls back to (configurationService.getAiConfig). Defaults to

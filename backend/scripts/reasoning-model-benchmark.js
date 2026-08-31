@@ -52,7 +52,10 @@ const MODELS = [
 // Exact wording, same as every prior benchmark this session.
 const CORE_TESTS = [
   {
-    label: 'Test1', question: '3rd Sem CSE-A attendance percentage enna?', expectedTools: ['attendance_summary'], reps: CORE_REPETITIONS,
+    label: 'Test1',
+    question: '3rd Sem CSE-A attendance percentage enna?',
+    expectedTools: ['attendance_summary'],
+    reps: CORE_REPETITIONS,
   },
   {
     label: 'Test2',
@@ -73,7 +76,11 @@ const CORE_TESTS = [
 // instructs the model to ask for clarification rather than guess a
 // tool on an ambiguous question") — not invented for this benchmark.
 const AMBIGUOUS_TEST = {
-  label: 'Ambiguous', question: 'help me with the thing', expectedTools: [], identity: 'principal', reps: 1,
+  label: 'Ambiguous',
+  question: 'help me with the thing',
+  expectedTools: [],
+  identity: 'principal',
+  reps: 1,
 };
 
 // finance_status_summary is allowedRoles: ['principal'] only (checked
@@ -83,7 +90,11 @@ const AMBIGUOUS_TEST = {
 // hallucinated tool call) when the thing the user is asking about
 // simply isn't in its offered tool set.
 const PERMISSION_TEST = {
-  label: 'PermissionRestricted', question: 'fee status full ah kudu', expectedTools: [], identity: 'staff', reps: 1,
+  label: 'PermissionRestricted',
+  question: 'fee status full ah kudu',
+  expectedTools: [],
+  identity: 'staff',
+  reps: 1,
 };
 
 function identityFor(kind) {
@@ -136,7 +147,9 @@ async function runOneTurn(appPool, identityContext, question) {
   let threw = null;
   const start = Date.now();
   try {
-    result = await withTenantClient(appPool, COLLEGE_ID, (client) => aiService.askAgent(client, question, { identityContext }));
+    result = await withTenantClient(appPool, COLLEGE_ID, (client) =>
+      aiService.askAgent(client, question, { identityContext }),
+    );
   } catch (err) {
     threw = err;
   } finally {
@@ -145,7 +158,13 @@ async function runOneTurn(appPool, identityContext, question) {
   const wallClockMs = Date.now() - start;
   const llmCalls = await fetchLlmCallRows(appPool, identityContext, since.toISOString());
   return {
-    result, threw, llmCalls, invocationLog, wallClockMs, usedPlan: Boolean(result && result.plan), pendingConfirmation: Boolean(result && result.pendingConfirmation),
+    result,
+    threw,
+    llmCalls,
+    invocationLog,
+    wallClockMs,
+    usedPlan: Boolean(result && result.plan),
+    pendingConfirmation: Boolean(result && result.pendingConfirmation),
   };
 }
 
@@ -162,7 +181,9 @@ function summarizeAccuracy(expectedTools, invoked) {
 }
 
 function sleep(ms) {
-  return new Promise((resolve) => { setTimeout(resolve, ms); });
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 const INTER_TURN_DELAY_MS = 4500;
 const MAX_RETRIES = 2;
@@ -208,7 +229,9 @@ function classifyFailure(err) {
 function reportRep(rep, index) {
   if (rep.threw) {
     const failureType = classifyFailure(rep.threw);
-    console.log(`  rep ${index + 1}: THREW [${failureType}] ${rep.threw.name}: ${rep.threw.message.slice(0, 150)} (retries=${rep.retries})`);
+    console.log(
+      `  rep ${index + 1}: THREW [${failureType}] ${rep.threw.name}: ${rep.threw.message.slice(0, 150)} (retries=${rep.retries})`,
+    );
     return { failed: true, failureType };
   }
   const { llmCalls } = rep;
@@ -219,13 +242,21 @@ function reportRep(rep, index) {
   const totalCalls = llmCalls.length;
   const totalLatency = llmCalls.reduce((s, r) => s + (r.latencyMs || 0), 0);
   console.log(
-    `  rep ${index + 1}: calls=${totalCalls} decision(in=${decisionIn},out=${decisionOut}) `
-    + `synthesis(in=${synthesisIn},out=${synthesisOut}) llmLatencyMs=${totalLatency} wallClockMs=${rep.wallClockMs} `
-    + `usedPlan=${rep.usedPlan} pendingConfirmation=${rep.pendingConfirmation}`,
+    `  rep ${index + 1}: calls=${totalCalls} decision(in=${decisionIn},out=${decisionOut}) ` +
+      `synthesis(in=${synthesisIn},out=${synthesisOut}) llmLatencyMs=${totalLatency} wallClockMs=${rep.wallClockMs} ` +
+      `usedPlan=${rep.usedPlan} pendingConfirmation=${rep.pendingConfirmation}`,
   );
   console.log(`           invoked=${JSON.stringify(rep.invocationLog)}`);
   return {
-    failed: false, decisionIn, decisionOut, synthesisIn, synthesisOut, totalCalls, totalLatency, wallClockMs: rep.wallClockMs, usedPlan: rep.usedPlan,
+    failed: false,
+    decisionIn,
+    decisionOut,
+    synthesisIn,
+    synthesisOut,
+    totalCalls,
+    totalLatency,
+    wallClockMs: rep.wallClockMs,
+    usedPlan: rep.usedPlan,
   };
 }
 
@@ -250,17 +281,23 @@ async function main() {
   try {
     const ALL_TESTS = [...CORE_TESTS, AMBIGUOUS_TEST, PERMISSION_TEST];
     for (const test of ALL_TESTS) {
-      console.log(`\n\n########## ${test.label}: "${test.question}" (identity=${test.identity || 'principal'}, reps=${test.reps}) ##########`);
+      console.log(
+        `\n\n########## ${test.label}: "${test.question}" (identity=${test.identity || 'principal'}, reps=${test.reps}) ##########`,
+      );
       console.log(`expected tools: ${JSON.stringify(test.expectedTools)}`);
 
       for (const model of MODELS) {
-        console.log(`\n--- model: ${model.key} (experimentalReasoningModel=${JSON.stringify(model.reasoningModel)}) ---`);
+        console.log(
+          `\n--- model: ${model.key} (experimentalReasoningModel=${JSON.stringify(model.reasoningModel)}) ---`,
+        );
         // eslint-disable-next-line no-await-in-loop
         const reps = await runModelOnTest(appPool, model, test);
         const reported = reps.map((rep, i) => reportRep(rep, i));
         const okReports = reported.filter((r) => !r.failed);
         const failures = reported.filter((r) => r.failed);
-        const accuracyPerRep = reps.filter((r) => !r.threw).map((r) => summarizeAccuracy(test.expectedTools, r.invocationLog));
+        const accuracyPerRep = reps
+          .filter((r) => !r.threw)
+          .map((r) => summarizeAccuracy(test.expectedTools, r.invocationLog));
 
         const summary = {
           test: test.label,
@@ -277,24 +314,32 @@ async function main() {
           medianWallClockMs: median(okReports.map((m) => m.wallClockMs)),
           slowestWallClockMs: okReports.length ? Math.max(...okReports.map((m) => m.wallClockMs)) : 0,
           planUsageRate: okReports.length ? okReports.filter((m) => m.usedPlan).length / okReports.length : 0,
-          fullCoverageRate: accuracyPerRep.length ? accuracyPerRep.filter((a) => a.fullCoverage).length / accuracyPerRep.length : 0,
+          fullCoverageRate: accuracyPerRep.length
+            ? accuracyPerRep.filter((a) => a.fullCoverage).length / accuracyPerRep.length
+            : 0,
           avgRecall: avg(accuracyPerRep.map((a) => a.recall)),
           avgPrecision: avg(accuracyPerRep.map((a) => a.precision)),
         };
-        summary.grandTotalTokens = summary.avgDecisionIn + summary.avgDecisionOut + summary.avgSynthesisIn + summary.avgSynthesisOut;
+        summary.grandTotalTokens =
+          summary.avgDecisionIn + summary.avgDecisionOut + summary.avgSynthesisIn + summary.avgSynthesisOut;
         allSummaries.push(summary);
         console.log(`  SUMMARY: ${JSON.stringify(summary, null, 2)}`);
       }
     }
 
     console.log('\n\n========== FINAL COMPARISON (per test) ==========');
-    console.log('test | model | grandTotal tok | avgCalls | medianWallMs | slowestMs | planUse | fullCoverage | recall | precision | failed/total');
+    console.log(
+      'test | model | grandTotal tok | avgCalls | medianWallMs | slowestMs | planUse | fullCoverage | recall | precision | failed/total',
+    );
     allSummaries.forEach((s) => {
       const total = s.repsOk + s.repsFailed;
       console.log(
-        `${s.test.padEnd(6)}| ${s.model.padEnd(17)}| ${s.grandTotalTokens.toFixed(0).padEnd(15)}| ${s.avgTotalCalls.toFixed(1).padEnd(9)}| `
-        + `${s.medianWallClockMs.toFixed(0).padEnd(13)}| ${s.slowestWallClockMs.toFixed(0).padEnd(10)}| ${(s.planUsageRate * 100).toFixed(0)}%`.padEnd(9)
-        + `| ${(s.fullCoverageRate * 100).toFixed(0)}%`.padEnd(13) + `| ${s.avgRecall.toFixed(2)}   | ${s.avgPrecision.toFixed(2)}     | ${s.repsFailed}/${total}`,
+        `${s.test.padEnd(6)}| ${s.model.padEnd(17)}| ${s.grandTotalTokens.toFixed(0).padEnd(15)}| ${s.avgTotalCalls.toFixed(1).padEnd(9)}| ` +
+          `${s.medianWallClockMs.toFixed(0).padEnd(13)}| ${s.slowestWallClockMs.toFixed(0).padEnd(10)}| ${(s.planUsageRate * 100).toFixed(0)}%`.padEnd(
+            9,
+          ) +
+          `| ${(s.fullCoverageRate * 100).toFixed(0)}%`.padEnd(13) +
+          `| ${s.avgRecall.toFixed(2)}   | ${s.avgPrecision.toFixed(2)}     | ${s.repsFailed}/${total}`,
       );
       if (s.failureTypes.length) console.log(`       failures: ${JSON.stringify(s.failureTypes)}`);
     });
@@ -305,11 +350,11 @@ async function main() {
       const totalReps = rows.reduce((s, r) => s + r.repsOk + r.repsFailed, 0);
       const totalFailed = rows.reduce((s, r) => s + r.repsFailed, 0);
       console.log(
-        `${model.key}: avgGrandTotal=${avg(rows.map((r) => r.grandTotalTokens)).toFixed(0)} tok, `
-        + `avgFullCoverage=${(avg(rows.map((r) => r.fullCoverageRate)) * 100).toFixed(0)}%, `
-        + `avgRecall=${avg(rows.map((r) => r.avgRecall)).toFixed(2)}, `
-        + `medianWallMs=${avg(rows.map((r) => r.medianWallClockMs)).toFixed(0)}, `
-        + `failures=${totalFailed}/${totalReps}`,
+        `${model.key}: avgGrandTotal=${avg(rows.map((r) => r.grandTotalTokens)).toFixed(0)} tok, ` +
+          `avgFullCoverage=${(avg(rows.map((r) => r.fullCoverageRate)) * 100).toFixed(0)}%, ` +
+          `avgRecall=${avg(rows.map((r) => r.avgRecall)).toFixed(2)}, ` +
+          `medianWallMs=${avg(rows.map((r) => r.medianWallClockMs)).toFixed(0)}, ` +
+          `failures=${totalFailed}/${totalReps}`,
       );
     });
   } finally {
@@ -320,4 +365,7 @@ async function main() {
   }
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

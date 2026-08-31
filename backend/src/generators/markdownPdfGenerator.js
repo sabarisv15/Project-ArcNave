@@ -30,7 +30,10 @@ function hex(h) {
 function drawTitleBanner(doc, title) {
   const bannerHeight = 70;
   doc.rect(0, 0, doc.page.width, bannerHeight).fill(hex(HEX.accent));
-  doc.fillColor('white').fontSize(20).font('Helvetica-Bold')
+  doc
+    .fillColor('white')
+    .fontSize(20)
+    .font('Helvetica-Bold')
     .text(title, PAGE_MARGIN, 26, { width: doc.page.width - PAGE_MARGIN * 2 });
   doc.y = bannerHeight + 24;
   doc.fillColor(hex(HEX.inkSoft));
@@ -45,8 +48,13 @@ function drawHeading(doc, text, level) {
     // markdownDocxGenerator.js's border-left treatment.
     doc.rect(PAGE_MARGIN, y, 3, sizes[level] + 6).fill(hex(HEX.accent));
   }
-  doc.fillColor(hex(HEX.ink)).fontSize(sizes[level]).font('Helvetica-Bold')
-    .text(text, PAGE_MARGIN + (level > 1 ? 12 : 0), y, { width: doc.page.width - PAGE_MARGIN * 2 - (level > 1 ? 12 : 0) });
+  doc
+    .fillColor(hex(HEX.ink))
+    .fontSize(sizes[level])
+    .font('Helvetica-Bold')
+    .text(text, PAGE_MARGIN + (level > 1 ? 12 : 0), y, {
+      width: doc.page.width - PAGE_MARGIN * 2 - (level > 1 ? 12 : 0),
+    });
   doc.moveDown(0.4);
   doc.fillColor(hex(HEX.inkSoft)).fontSize(10.5).font('Helvetica');
 }
@@ -60,9 +68,13 @@ function drawTable(doc, columns, rows) {
 
   doc.rect(PAGE_MARGIN, y, pageWidth, TABLE_ROW_HEIGHT).fill(hex(HEX.accent));
   doc.fillColor('white').fontSize(9).font('Helvetica-Bold');
-  columns.forEach((c, i) => doc.text(c.label, PAGE_MARGIN + 4 + i * columnWidth, y + 5, {
-    width: columnWidth - 8, ellipsis: true, lineBreak: false,
-  }));
+  columns.forEach((c, i) =>
+    doc.text(c.label, PAGE_MARGIN + 4 + i * columnWidth, y + 5, {
+      width: columnWidth - 8,
+      ellipsis: true,
+      lineBreak: false,
+    }),
+  );
   y += TABLE_ROW_HEIGHT;
 
   doc.font('Helvetica').fontSize(9);
@@ -78,7 +90,9 @@ function drawTable(doc, columns, rows) {
     columns.forEach((c, i) => {
       const value = row[c.id];
       doc.text(value === undefined || value === null ? '' : String(value), PAGE_MARGIN + 4 + i * columnWidth, y + 5, {
-        width: columnWidth - 8, ellipsis: true, lineBreak: false,
+        width: columnWidth - 8,
+        ellipsis: true,
+        lineBreak: false,
       });
     });
     y += TABLE_ROW_HEIGHT;
@@ -96,7 +110,10 @@ function drawPageNumbers(doc) {
   for (let i = range.start; i < range.start + range.count; i += 1) {
     doc.switchToPage(i);
     const label = `${i + 1} of ${range.count}`;
-    doc.fontSize(8.5).fillColor(hex(HEX.inkMuted)).font('Helvetica')
+    doc
+      .fontSize(8.5)
+      .fillColor(hex(HEX.inkMuted))
+      .font('Helvetica')
       .text(label, 0, doc.page.height - 30, { align: 'center', width: doc.page.width });
   }
 }
@@ -106,7 +123,9 @@ async function generate({ title, markdown }) {
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
-      margin: PAGE_MARGIN, size: 'A4', bufferPages: true,
+      margin: PAGE_MARGIN,
+      size: 'A4',
+      bufferPages: true,
     });
     const chunks = [];
     doc.on('data', (chunk) => chunks.push(chunk));

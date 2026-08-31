@@ -37,34 +37,54 @@ function mapKeyError(err, res) {
 function createStructuralAuthorizationKeysRouter() {
   const router = express.Router();
 
-  router.post('/structural-authorization-keys', requirePermission('structural_authorization_keys.create'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { action_type: actionType, action_payload: actionPayload } = req.body || {};
-    try {
-      const key = await platformService.generateStructuralAuthorizationKey(req.dbClient, {
-        collegeId: req.collegeId, actionType, actionPayload,
-      }, { actorUserId: identityService.resolveActorUserId(req.capabilities) });
-      res.status(201).json({
-        key_id: key.keyId, token: key.rawToken, action_type: key.actionType, expires_at: key.expiresAt,
-      });
-    } catch (err) {
-      if (mapKeyError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/structural-authorization-keys',
+    requirePermission('structural_authorization_keys.create'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { action_type: actionType, action_payload: actionPayload } = req.body || {};
+      try {
+        const key = await platformService.generateStructuralAuthorizationKey(
+          req.dbClient,
+          {
+            collegeId: req.collegeId,
+            actionType,
+            actionPayload,
+          },
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.status(201).json({
+          key_id: key.keyId,
+          token: key.rawToken,
+          action_type: key.actionType,
+          expires_at: key.expiresAt,
+        });
+      } catch (err) {
+        if (mapKeyError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/structural-authorization-keys/:id/cancel', requirePermission('structural_authorization_keys.cancel'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const cancelled = await platformService.cancelStructuralAuthorizationKey(
-        req.dbClient, req.collegeId, req.params.id, { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.json({ id: cancelled.id, status: cancelled.status, cancelled_at: cancelled.cancelled_at });
-    } catch (err) {
-      if (mapKeyError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/structural-authorization-keys/:id/cancel',
+    requirePermission('structural_authorization_keys.cancel'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const cancelled = await platformService.cancelStructuralAuthorizationKey(
+          req.dbClient,
+          req.collegeId,
+          req.params.id,
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.json({ id: cancelled.id, status: cancelled.status, cancelled_at: cancelled.cancelled_at });
+      } catch (err) {
+        if (mapKeyError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   return router;
 }

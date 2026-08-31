@@ -28,10 +28,10 @@ const DATABASE_URL = process.env.DATABASE_URL;
 async function seedTenant(adminPool, label) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const collegeId = `analytics${label}${suffix}`;
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [collegeId, `analyticstenant${label}${suffix}`],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    collegeId,
+    `analyticstenant${label}${suffix}`,
+  ]);
   const user = await adminPool.query(
     `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
      VALUES ($1, $2, $3, 'x', 'staff', true) RETURNING id`,
@@ -112,9 +112,9 @@ test('AnalyticsService.getAttendanceRateByClass', async (t) => {
   });
 
   await t.test('computes attendance rate per class, excluding soft-deleted sessions', async () => {
-    const rows = await withTenantClient(appPool, tenantA.collegeId, (client) => (
-      analyticsService.getAttendanceRateByClass(client)
-    ));
+    const rows = await withTenantClient(appPool, tenantA.collegeId, (client) =>
+      analyticsService.getAttendanceRateByClass(client),
+    );
 
     assert.equal(rows.length, 2);
 
@@ -135,32 +135,35 @@ test('AnalyticsService.getAttendanceRateByClass', async (t) => {
   });
 
   await t.test('filters by classId', async () => {
-    const rows = await withTenantClient(appPool, tenantA.collegeId, (client) => (
-      analyticsService.getAttendanceRateByClass(client, { classId: tenantA.classIds.a })
-    ));
+    const rows = await withTenantClient(appPool, tenantA.collegeId, (client) =>
+      analyticsService.getAttendanceRateByClass(client, { classId: tenantA.classIds.a }),
+    );
     assert.equal(rows.length, 1);
     assert.equal(rows[0].classId, tenantA.classIds.a);
   });
 
-  await t.test('cross-tenant isolation: tenant B never sees tenant A\'s classes', async () => {
-    const rows = await withTenantClient(appPool, tenantB.collegeId, (client) => (
-      analyticsService.getAttendanceRateByClass(client)
-    ));
+  await t.test("cross-tenant isolation: tenant B never sees tenant A's classes", async () => {
+    const rows = await withTenantClient(appPool, tenantB.collegeId, (client) =>
+      analyticsService.getAttendanceRateByClass(client),
+    );
     assert.ok(rows.every((r) => r.classId === tenantB.classIds.a || r.classId === tenantB.classIds.b));
   });
 
-  await t.test('a class with no attendance_sessions is simply absent from the result, not a null-filled row', async () => {
-    const untouchedClass = await adminPool.query(
-      `INSERT INTO classes (college_id, class_name, timetable_status) VALUES ($1, 'Untouched Class', 'Approved') RETURNING id`,
-      [tenantA.collegeId],
-    );
-    try {
-      const rows = await withTenantClient(appPool, tenantA.collegeId, (client) => (
-        analyticsService.getAttendanceRateByClass(client, { classId: untouchedClass.rows[0].id })
-      ));
-      assert.equal(rows.length, 0);
-    } finally {
-      await adminPool.query('DELETE FROM classes WHERE id = $1', [untouchedClass.rows[0].id]);
-    }
-  });
+  await t.test(
+    'a class with no attendance_sessions is simply absent from the result, not a null-filled row',
+    async () => {
+      const untouchedClass = await adminPool.query(
+        `INSERT INTO classes (college_id, class_name, timetable_status) VALUES ($1, 'Untouched Class', 'Approved') RETURNING id`,
+        [tenantA.collegeId],
+      );
+      try {
+        const rows = await withTenantClient(appPool, tenantA.collegeId, (client) =>
+          analyticsService.getAttendanceRateByClass(client, { classId: untouchedClass.rows[0].id }),
+        );
+        assert.equal(rows.length, 0);
+      } finally {
+        await adminPool.query('DELETE FROM classes WHERE id = $1', [untouchedClass.rows[0].id]);
+      }
+    },
+  );
 });

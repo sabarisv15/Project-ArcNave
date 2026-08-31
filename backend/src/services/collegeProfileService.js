@@ -88,9 +88,7 @@ async function resolveDepartmentId(client, collegeId, identifier) {
   }
   const department = await departmentRepository.findByCollegeAndName(client, collegeId, identifier);
   if (department === null) {
-    throw new IdentifierResolutionError(
-      `no department found named ${JSON.stringify(identifier)} in this college`,
-    );
+    throw new IdentifierResolutionError(`no department found named ${JSON.stringify(identifier)} in this college`);
   }
   return department.id;
 }
@@ -101,9 +99,11 @@ async function resolveDepartmentId(client, collegeId, identifier) {
 // section-count default (product decision), so the creator (L1, here)
 // must supply it explicitly, same as onboarding-time creation
 // (platformService.createDepartmentAtOnboarding) now requires too.
-async function createDepartment(client, {
-  collegeId, name, approvedIntake, courseDuration, defaultSections,
-}, { actorUserId } = {}) {
+async function createDepartment(
+  client,
+  { collegeId, name, approvedIntake, courseDuration, defaultSections },
+  { actorUserId } = {},
+) {
   if (!name) {
     throw new DepartmentValidationError('name is required');
   }
@@ -117,7 +117,11 @@ async function createDepartment(client, {
   let department;
   try {
     department = await departmentRepository.create(client, {
-      collegeId, name, approvedIntake, courseDuration, defaultSections,
+      collegeId,
+      name,
+      approvedIntake,
+      courseDuration,
+      defaultSections,
     });
   } catch (err) {
     if (err.code === '23505' && err.constraint === 'departments_college_id_name_key') {
@@ -135,9 +139,17 @@ async function createDepartment(client, {
     metadata: null,
   });
 
-  const classes = await academicService.generateClassesForDepartment(client, {
-    departmentId: department.id, collegeId, name, courseDuration, defaultSections,
-  }, { actorUserId });
+  const classes = await academicService.generateClassesForDepartment(
+    client,
+    {
+      departmentId: department.id,
+      collegeId,
+      name,
+      courseDuration,
+      defaultSections,
+    },
+    { actorUserId },
+  );
 
   return { ...department, generatedClasses: classes };
 }

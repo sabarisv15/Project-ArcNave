@@ -16,10 +16,13 @@ const LABEL = { fast: 'Fast', balanced: 'Balanced', deep: 'Deep' };
 const LEVELS = ['fast', 'balanced', 'deep'];
 
 export function ThinkingLevelToggle({ level, onLevel }) {
-  const base =
-    'w-[76px] h-[28px] rounded-[8px] border-0 text-[12.5px] cursor-pointer transition-colors duration-200';
+  const base = 'w-[76px] h-[28px] rounded-[8px] border-0 text-[12.5px] cursor-pointer transition-colors duration-200';
   return (
-    <div role="group" aria-label="Thinking level" className="flex items-center gap-[2px] p-[2px] bg-tint2 rounded-[10px]">
+    <div
+      role="group"
+      aria-label="Thinking level"
+      className="flex items-center gap-[2px] p-[2px] bg-tint2 rounded-[10px]"
+    >
       {LEVELS.map((l) => {
         const active = level === l;
         return (
@@ -32,7 +35,7 @@ export function ThinkingLevelToggle({ level, onLevel }) {
               base,
               active
                 ? 'bg-paper text-ink-soft font-[600] shadow-chip'
-                : 'bg-transparent text-ink-muted font-[500] hover:text-ink-soft'
+                : 'bg-transparent text-ink-muted font-[500] hover:text-ink-soft',
             )}
           >
             {LABEL[l]}

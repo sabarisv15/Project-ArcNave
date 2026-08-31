@@ -88,7 +88,7 @@ export function useSubstitute() {
       date: dateFromDayKey(e.dateKey),
       dateKey: e.dateKey,
       timeRange: slotTimeRange(e.slot),
-      period: e.periodId ? PERIOD_BY_ID[e.periodId] ?? null : null,
+      period: e.periodId ? (PERIOD_BY_ID[e.periodId] ?? null) : null,
       slot: e.slot,
       subject: e.slot.subject,
       classCode: e.slot.code,
@@ -116,27 +116,30 @@ export function useSubstitute() {
       if (filters.state && e.attendanceState !== filters.state) return false;
       if (!term) return true;
       return [e.subject, e.classCode, e.originalStaff, LOG_ATTENDANCE_LABELS[e.attendanceState]]
-        .filter(Boolean).join(' ').toLowerCase().includes(term);
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(term);
     });
 
     const byRecency = (a, b) => b.date - a.date || (b.slot.period ?? 0) - (a.slot.period ?? 0);
     if (sortKey === 'oldest') return rows.sort((a, b) => -byRecency(a, b));
     if (sortKey === 'subject') return rows.sort((a, b) => a.subject.localeCompare(b.subject) || byRecency(a, b));
-    if (sortKey === 'staff') return rows.sort((a, b) => a.originalStaff.localeCompare(b.originalStaff) || byRecency(a, b));
+    if (sortKey === 'staff')
+      return rows.sort((a, b) => a.originalStaff.localeCompare(b.originalStaff) || byRecency(a, b));
     return rows.sort(byRecency);
   }, [allEntries, query, sortKey, now, datePreset, customFrom, customTo, filters]);
 
-  const activeFilterCount =
-    Object.values(filters).filter(Boolean).length + (datePreset !== 'all' ? 1 : 0);
+  const activeFilterCount = Object.values(filters).filter(Boolean).length + (datePreset !== 'all' ? 1 : 0);
 
   // --- Requests ---
   const incoming = useMemo(
     () => requests.filter((r) => r.direction === 'incoming').sort((a, b) => b.dateKey.localeCompare(a.dateKey)),
-    [requests]
+    [requests],
   );
   const outgoing = useMemo(
     () => requests.filter((r) => r.direction === 'outgoing').sort((a, b) => b.dateKey.localeCompare(a.dateKey)),
-    [requests]
+    [requests],
   );
 
   /** Only accepted-but-unacknowledged duties genuinely need the staff member's attention. */
@@ -144,13 +147,31 @@ export function useSubstitute() {
   const pendingIncomingCount = incoming.filter((r) => r.status === 'pending').length;
 
   return {
-    section, setSection,
+    section,
+    setSection,
     now,
-    query, setQuery, sortKey, setSortKey,
-    filtersOpen, setFiltersOpen,
-    datePreset, setDatePreset, customFrom, setCustomFrom, customTo, setCustomTo,
-    filters, setFilter, clearFilters, activeFilterCount, options,
-    entries, totalEntries: allEntries.length,
-    incoming, outgoing, pendingAckCount, pendingIncomingCount,
+    query,
+    setQuery,
+    sortKey,
+    setSortKey,
+    filtersOpen,
+    setFiltersOpen,
+    datePreset,
+    setDatePreset,
+    customFrom,
+    setCustomFrom,
+    customTo,
+    setCustomTo,
+    filters,
+    setFilter,
+    clearFilters,
+    activeFilterCount,
+    options,
+    entries,
+    totalEntries: allEntries.length,
+    incoming,
+    outgoing,
+    pendingAckCount,
+    pendingIncomingCount,
   };
 }

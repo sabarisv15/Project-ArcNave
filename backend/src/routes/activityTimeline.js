@@ -20,16 +20,20 @@ function requireResolvedTenant(req, res) {
 function createActivityTimelineRouter() {
   const router = express.Router();
 
-  router.get('/activity-timeline', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { limit: rawLimit, offset: rawOffset } = req.query;
-    const entries = await activityTimelineService.getOwnActivity(req.dbClient, {
-      actorUserId: identityService.resolveActorUserId(req.capabilities),
-      limit: rawLimit === undefined ? undefined : Number(rawLimit),
-      offset: rawOffset === undefined ? undefined : Number(rawOffset),
-    });
-    res.json(entries);
-  }));
+  router.get(
+    '/activity-timeline',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { limit: rawLimit, offset: rawOffset } = req.query;
+      const entries = await activityTimelineService.getOwnActivity(req.dbClient, {
+        actorUserId: identityService.resolveActorUserId(req.capabilities),
+        limit: rawLimit === undefined ? undefined : Number(rawLimit),
+        offset: rawOffset === undefined ? undefined : Number(rawOffset),
+      });
+      res.json(entries);
+    }),
+  );
 
   return router;
 }

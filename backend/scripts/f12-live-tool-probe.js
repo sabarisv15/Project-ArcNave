@@ -52,10 +52,11 @@ const QUESTIONS = [
 async function seedTenant(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const collegeId = `f12${suffix}`;
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain, address) VALUES ($1, $1, $2, $3)',
-    [collegeId, `f12tenant${suffix}`, 'f12-live-probe-address'],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain, address) VALUES ($1, $1, $2, $3)', [
+    collegeId,
+    `f12tenant${suffix}`,
+    'f12-live-probe-address',
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userResult = await adminPool.query(
     `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
@@ -122,13 +123,18 @@ async function main() {
   const identityContext = { userId, role: 'principal', collegeId };
 
   try {
-    const attachment = await withTenantClient(appPool, collegeId, (client) => documentService.uploadChatAttachment(
-      client,
-      {
-        collegeId, fileName: '111_cons_result_apr2026.pdf', mimeType: 'application/pdf', fileBuffer: fs.readFileSync(RESULT_SHEET),
-      },
-      { actorUserId: userId },
-    ));
+    const attachment = await withTenantClient(appPool, collegeId, (client) =>
+      documentService.uploadChatAttachment(
+        client,
+        {
+          collegeId,
+          fileName: '111_cons_result_apr2026.pdf',
+          mimeType: 'application/pdf',
+          fileBuffer: fs.readFileSync(RESULT_SHEET),
+        },
+        { actorUserId: userId },
+      ),
+    );
     const attachmentId = attachment.id || (attachment.document && attachment.document.id);
     console.log(`Seeded tenant ${collegeId}, attachment ${attachmentId}`);
 
@@ -140,9 +146,9 @@ async function main() {
       const attachmentIds = i === 1 ? [] : [attachmentId];
       let turn;
       try {
-        turn = await withTenantClient(appPool, collegeId, (client) => aiService.askAgent(
-          client, question, { identityContext, attachmentIds },
-        ));
+        turn = await withTenantClient(appPool, collegeId, (client) =>
+          aiService.askAgent(client, question, { identityContext, attachmentIds }),
+        );
       } catch (err) {
         turn = { error: err };
       }

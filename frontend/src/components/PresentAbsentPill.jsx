@@ -14,7 +14,7 @@ export function PresentAbsentPill({ present, onToggle, disabled, size = 'md' }) 
           'px-[10px] transition-colors duration-200',
           present ? 'bg-success-soft text-success' : 'bg-transparent text-ink-faint',
           !disabled && !present && 'hover:bg-tint2 cursor-pointer',
-          disabled && 'cursor-default'
+          disabled && 'cursor-default',
         )}
       >
         Present
@@ -28,7 +28,7 @@ export function PresentAbsentPill({ present, onToggle, disabled, size = 'md' }) 
           'px-[10px] transition-colors duration-200',
           !present ? 'bg-danger-soft text-danger' : 'bg-transparent text-ink-faint',
           !disabled && present && 'hover:bg-tint2 cursor-pointer',
-          disabled && 'cursor-default'
+          disabled && 'cursor-default',
         )}
       >
         Absent

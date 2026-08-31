@@ -244,7 +244,7 @@ export function facultyInitials(name) {
  */
 export function tutorOf(classId) {
   const cls = CLASS_BY_ID[classId];
-  return cls?.tutorId ? FACULTY_BY_ID[cls.tutorId] ?? null : null;
+  return cls?.tutorId ? (FACULTY_BY_ID[cls.tutorId] ?? null) : null;
 }
 
 export function classLabel(classId) {
@@ -253,5 +253,5 @@ export function classLabel(classId) {
 
 /** Students below the eligibility threshold, lowest first, across the department. */
 export const DEPT_AT_RISK = DEPT_STUDENTS.filter((s) => s.attendance < ATTENDANCE_THRESHOLD).sort(
-  (a, b) => a.attendance - b.attendance
+  (a, b) => a.attendance - b.attendance,
 );

@@ -9,10 +9,7 @@ import { WorkspaceProvider } from '../store/WorkspaceProvider';
 import { ComposerProvider } from '../store/ComposerProvider';
 import { AcademicTermProvider } from '../store/AcademicTermProvider';
 import { AcademicRosterProvider } from '../store/AcademicRosterProvider';
-import {
-  InstitutionalLifecycleProvider,
-  useInstitutionalLifecycle,
-} from '../store/InstitutionalLifecycleProvider';
+import { InstitutionalLifecycleProvider, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
 import {
   CLASS_TUTOR_SEATS,
   applySeatChange,
@@ -22,12 +19,7 @@ import {
   hasClassTutor,
   tutorCoverage,
 } from '../lib/seatState';
-import {
-  ACTIVE_BAND,
-  ACTIVE_CLASSES,
-  BAND_SEMESTERS,
-  activeClassesOfDepartment,
-} from '../lib/academicCalendar';
+import { ACTIVE_BAND, ACTIVE_CLASSES, BAND_SEMESTERS, activeClassesOfDepartment } from '../lib/academicCalendar';
 import { DEPARTMENT_ID, DEPT_CLASSES } from '../lib/departmentData';
 
 /**
@@ -52,7 +44,7 @@ function renderApp(route = '/department/classes') {
           </WorkspaceProvider>
         </Tooltip.Provider>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -247,7 +239,7 @@ describe('Department → Classes as the seat surface', () => {
     expect(within(seatDrawer).getByText('Reassignment history')).toBeInTheDocument();
     expect(within(seatDrawer).getByRole('button', { name: /^Invite$/ })).toBeInTheDocument();
     expect(
-      within(seatDrawer).getByText(/A class tutor is changed only here — never through class details/i)
+      within(seatDrawer).getByText(/A class tutor is changed only here — never through class details/i),
     ).toBeInTheDocument();
   });
 
@@ -268,7 +260,8 @@ describe('Department → Classes as the seat surface', () => {
     await user.click(await within(seatDrawer).findByText('Ms. Priya Nair'));
     await user.click(within(seatDrawer).getByRole('button', { name: /^Assign$/ }));
 
-    expect(await screen.findByText(`${before.active + 1} of ${before.total} class tutor seats held`, { exact: false }))
-      .toBeInTheDocument();
+    expect(
+      await screen.findByText(`${before.active + 1} of ${before.total} class tutor seats held`, { exact: false }),
+    ).toBeInTheDocument();
   });
 });

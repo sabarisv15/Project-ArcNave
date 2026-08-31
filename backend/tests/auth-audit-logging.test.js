@@ -35,7 +35,12 @@ test('login audit logging', async (t) => {
   });
 
   await t.test('audits a failed login for a wrong password, with the real userId', async () => {
-    const getUserMock = t.mock.method(authRepository, 'getUserByUsername', async () => ({ id: 'u1', college_id: 'c1', password_hash: 'hash', is_active: true }));
+    const getUserMock = t.mock.method(authRepository, 'getUserByUsername', async () => ({
+      id: 'u1',
+      college_id: 'c1',
+      password_hash: 'hash',
+      is_active: true,
+    }));
     const verifyMock = t.mock.method(security, 'verifyPassword', async () => false);
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
@@ -53,7 +58,12 @@ test('login audit logging', async (t) => {
   });
 
   await t.test('audits a failed login for an inactive account', async () => {
-    const getUserMock = t.mock.method(authRepository, 'getUserByUsername', async () => ({ id: 'u1', college_id: 'c1', password_hash: 'hash', is_active: false }));
+    const getUserMock = t.mock.method(authRepository, 'getUserByUsername', async () => ({
+      id: 'u1',
+      college_id: 'c1',
+      password_hash: 'hash',
+      is_active: false,
+    }));
     const verifyMock = t.mock.method(security, 'verifyPassword', async () => true);
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
@@ -71,7 +81,11 @@ test('login audit logging', async (t) => {
 
   await t.test('audits a successful login', async () => {
     const getUserMock = t.mock.method(authRepository, 'getUserByUsername', async () => ({
-      id: 'u1', college_id: 'c1', role: 'staff', password_hash: 'hash', is_active: true,
+      id: 'u1',
+      college_id: 'c1',
+      role: 'staff',
+      password_hash: 'hash',
+      is_active: true,
     }));
     const verifyMock = t.mock.method(security, 'verifyPassword', async () => true);
     const needsRehashMock = t.mock.method(security, 'needsRehash', async () => false);
@@ -100,7 +114,10 @@ test('login audit logging', async (t) => {
 test('refresh audit logging', async (t) => {
   await t.test('audits refresh_token_reuse_detected when an already-revoked token is presented', async () => {
     const getTokenMock = t.mock.method(authRepository, 'getRefreshTokenByHash', async () => ({
-      id: 'rt-1', college_id: 'c1', user_id: 'u1', revoked_at: '2026-01-01T00:00:00Z',
+      id: 'rt-1',
+      college_id: 'c1',
+      user_id: 'u1',
+      revoked_at: '2026-01-01T00:00:00Z',
     }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
@@ -108,10 +125,7 @@ test('refresh audit logging', async (t) => {
       auditMock.mock.restore();
     });
 
-    await assert.rejects(
-      () => authService.refresh({}, 'some-token'),
-      authService.RefreshTokenReuseError,
-    );
+    await assert.rejects(() => authService.refresh({}, 'some-token'), authService.RefreshTokenReuseError);
     assert.equal(auditMock.mock.calls[0].arguments[1].action, 'refresh_token_reuse_detected');
     assert.equal(auditMock.mock.calls[0].arguments[1].userId, 'u1');
   });
@@ -120,7 +134,10 @@ test('refresh audit logging', async (t) => {
 test('revoke (logout) audit logging', async (t) => {
   await t.test('audits user_logout when an active token is actually revoked', async () => {
     const getTokenMock = t.mock.method(authRepository, 'getRefreshTokenByHash', async () => ({
-      id: 'rt-1', college_id: 'c1', user_id: 'u1', revoked_at: null,
+      id: 'rt-1',
+      college_id: 'c1',
+      user_id: 'u1',
+      revoked_at: null,
     }));
     const revokeMock = t.mock.method(authRepository, 'revokeRefreshToken', async () => {});
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});

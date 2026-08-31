@@ -99,9 +99,7 @@ const REQUESTS = [
     scope: 'II B.Sc CS — B · Hour 4',
     classId: 'dept-cse-s4b',
     reason: 'On duty leave until 29 Aug. The period needs a substitute or it will go unmarked.',
-    changes: [
-      { label: 'Assigned faculty', from: 'Ms. Deepa Chandran', to: 'Not assigned — awaiting your allocation' },
-    ],
+    changes: [{ label: 'Assigned faculty', from: 'Ms. Deepa Chandran', to: 'Not assigned — awaiting your allocation' }],
     timeline: [
       step('Raised', 'done', ago(5 * HOUR), 'Ms. Deepa Chandran'),
       step('Pending your decision', 'current'),

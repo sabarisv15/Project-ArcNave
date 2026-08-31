@@ -32,15 +32,17 @@ const TARGET_VALUES = new Set(['system', 'user']);
 // call sites), not caller-input validation — same "fail loudly on a
 // coding mistake" posture used elsewhere (e.g. aiToolRegistry's
 // registerTool). Never reachable from untrusted input.
-function segment({
-  source, stability, target, content,
-}) {
+function segment({ source, stability, target, content }) {
   if (!source || typeof source !== 'string') throw new Error('segment() requires a string source');
   if (!STABILITY_VALUES.has(stability)) throw new Error(`segment() got an unknown stability: ${stability}`);
   if (!TARGET_VALUES.has(target)) throw new Error(`segment() target must be 'system' or 'user', got: ${target}`);
-  if (!content || typeof content !== 'string') throw new Error(`segment() requires non-empty string content (source: ${source})`);
+  if (!content || typeof content !== 'string')
+    throw new Error(`segment() requires non-empty string content (source: ${source})`);
   return {
-    source, stability, target, content,
+    source,
+    stability,
+    target,
+    content,
   };
 }
 
@@ -113,11 +115,20 @@ function computeFingerprint(segments) {
 // sets it yet (no internal eval tooling consumes it today), same
 // "built ahead of a consumer" precedent vertexCapabilityRegistry.js
 // itself already set.
-function buildContext(segments, {
-  tools, images, media, responseSchema, thinkingLevel, includeThoughts, logprobsTopK,
-} = {}) {
+function buildContext(
+  segments,
+  { tools, images, media, responseSchema, thinkingLevel, includeThoughts, logprobsTopK } = {},
+) {
   return {
-    segments, tools, images, media, responseSchema, thinkingLevel, includeThoughts, logprobsTopK, fingerprint: computeFingerprint(segments),
+    segments,
+    tools,
+    images,
+    media,
+    responseSchema,
+    thinkingLevel,
+    includeThoughts,
+    logprobsTopK,
+    fingerprint: computeFingerprint(segments),
   };
 }
 
@@ -160,21 +171,45 @@ function flattenToPrompts(context) {
 // static instruction + a single turn-scoped OCR text blob) don't need to
 // hand-build a segment list.
 function contextFromFlatPrompts({
-  systemPrompt, userPrompt, tools, images, media, responseSchema, thinkingLevel, includeThoughts, logprobsTopK,
+  systemPrompt,
+  userPrompt,
+  tools,
+  images,
+  media,
+  responseSchema,
+  thinkingLevel,
+  includeThoughts,
+  logprobsTopK,
 } = {}) {
   const segments = [];
   if (systemPrompt) {
-    segments.push(segment({
-      source: 'flat-system', stability: STABILITY.STATIC, target: 'system', content: systemPrompt,
-    }));
+    segments.push(
+      segment({
+        source: 'flat-system',
+        stability: STABILITY.STATIC,
+        target: 'system',
+        content: systemPrompt,
+      }),
+    );
   }
   if (userPrompt) {
-    segments.push(segment({
-      source: 'flat-user', stability: STABILITY.TURN, target: 'user', content: userPrompt,
-    }));
+    segments.push(
+      segment({
+        source: 'flat-user',
+        stability: STABILITY.TURN,
+        target: 'user',
+        content: userPrompt,
+      }),
+    );
   }
   return buildContext(segments, {
-    tools, images, media, responseSchema, thinkingLevel, includeThoughts, logprobsTopK,
+    tools,
+    images,
+    media,
+    responseSchema,
+    thinkingLevel,
+    includeThoughts,
+    logprobsTopK,
   });
 }
 

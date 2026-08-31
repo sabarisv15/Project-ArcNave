@@ -1,6 +1,12 @@
 import { cn } from '../lib/utils';
 import {
-  DAYS, SLOTS, currentSlotIndex, dayCellMap, periodCountForVersion, todayDayKey, versionMeta,
+  DAYS,
+  SLOTS,
+  currentSlotIndex,
+  dayCellMap,
+  periodCountForVersion,
+  todayDayKey,
+  versionMeta,
 } from '../lib/timetableData';
 import { formatClock12 } from '../lib/ist';
 import { PANE, TABLE_HEAD } from '../components/WorkspaceLayout';
@@ -25,14 +31,14 @@ function TimeCell({ slot, isNow, slotIndex }) {
     <div
       className={cn(
         'sticky left-0 z-[30] flex flex-col justify-center px-[9px] border-r border-line',
-        isNow ? 'bg-accent-soft' : isInterval ? 'bg-tint2' : 'bg-paper'
+        isNow ? 'bg-accent-soft' : isInterval ? 'bg-tint2' : 'bg-paper',
       )}
       style={{ gridColumn: 1, gridRow: rowFor(slotIndex), height: isInterval ? INTERVAL_ROW_H : PERIOD_ROW_H }}
     >
       <span
         className={cn(
           'tabular-nums leading-[1.2] whitespace-nowrap',
-          isInterval ? 'text-[10px] text-ink-faint' : cn('text-[11px] font-[500]', isNow ? 'text-accent' : 'text-ink')
+          isInterval ? 'text-[10px] text-ink-faint' : cn('text-[11px] font-[500]', isNow ? 'text-accent' : 'text-ink'),
         )}
       >
         {formatClock12(slot.start)}
@@ -61,7 +67,10 @@ function IntervalBand({ slot, slotIndex, isNow }) {
 function FreeCell({ slotIndex, dayIndex, isToday, isNow }) {
   return (
     <div
-      className={cn('flex items-center px-[9px] border-r border-line-lighter', isNow ? 'bg-accent-soft/40' : isToday && 'bg-accent-soft/25')}
+      className={cn(
+        'flex items-center px-[9px] border-r border-line-lighter',
+        isNow ? 'bg-accent-soft/40' : isToday && 'bg-accent-soft/25',
+      )}
       style={{ gridColumn: colFor(dayIndex), gridRow: rowFor(slotIndex), height: PERIOD_ROW_H }}
     >
       <span className="text-[11px] text-ink-faint">Free</span>
@@ -90,7 +99,7 @@ function SessionCell({ block, slotIndex, dayIndex, isToday, isNow }) {
         meta.cell,
         // Current period: a quiet teal edge, never a filled highlight block.
         isNow ? 'border-l-accent' : meta.edge,
-        isToday && !isNow && 'shadow-[inset_0_0_0_100vmax_rgba(11,114,133,.02)]'
+        isToday && !isNow && 'shadow-[inset_0_0_0_100vmax_rgba(11,114,133,.02)]',
       )}
       style={{
         gridColumn: colFor(dayIndex),
@@ -103,7 +112,10 @@ function SessionCell({ block, slotIndex, dayIndex, isToday, isNow }) {
         <SessionTypeIcon type={type} />
         <span className="text-[12px] font-[500] text-ink truncate leading-[1.3]">{cls.subject}</span>
         {cls.ownership === 'substitute' && (
-          <span className="flex-none text-[9px] font-[600] uppercase tracking-[.04em] text-pending" aria-label="Substitute">
+          <span
+            className="flex-none text-[9px] font-[600] uppercase tracking-[.04em] text-pending"
+            aria-label="Substitute"
+          >
             Sub
           </span>
         )}
@@ -142,13 +154,19 @@ export function TimetableView() {
       <div className="flex-none flex items-center gap-[10px] flex-wrap mb-[10px]">
         <div className="flex items-center gap-[8px] text-[11.5px] text-ink-muted">
           <span>Approved allocation</span>
-          <span className="text-ink-faint" aria-hidden="true">·</span>
+          <span className="text-ink-faint" aria-hidden="true">
+            ·
+          </span>
           <span>Mon–Fri · 8 periods</span>
-          <span className="text-ink-faint" aria-hidden="true">·</span>
+          <span className="text-ink-faint" aria-hidden="true">
+            ·
+          </span>
           <span className="tabular-nums">{periodCountForVersion(timetableVersionId)} periods/week</span>
           {meta?.effectiveFrom && (
             <>
-              <span className="text-ink-faint" aria-hidden="true">·</span>
+              <span className="text-ink-faint" aria-hidden="true">
+                ·
+              </span>
               <span className="text-ink-faint">Effective from {meta.effectiveFrom}</span>
             </>
           )}
@@ -163,7 +181,10 @@ export function TimetableView() {
           <div className={cn(GRID, 'min-w-[832px]')}>
             {/* Header row — sticky to the top; its first cell is sticky in both axes. */}
             <div
-              className={cn('sticky top-0 left-0 z-[50] flex items-center px-[9px] bg-tint border-b border-r border-line', TABLE_HEAD)}
+              className={cn(
+                'sticky top-0 left-0 z-[50] flex items-center px-[9px] bg-tint border-b border-r border-line',
+                TABLE_HEAD,
+              )}
               style={{ gridColumn: 1, gridRow: 1, height: HEADER_ROW_H }}
             >
               Time
@@ -174,7 +195,7 @@ export function TimetableView() {
                 className={cn(
                   'sticky top-0 z-[40] flex items-center gap-[5px] px-[9px] bg-tint border-b border-r border-line',
                   TABLE_HEAD,
-                  day.key === activeDay && 'text-accent'
+                  day.key === activeDay && 'text-accent',
                 )}
                 style={{ gridColumn: colFor(dayIndex), gridRow: 1, height: HEADER_ROW_H }}
               >
@@ -186,13 +207,23 @@ export function TimetableView() {
             ))}
 
             {SLOTS.map((slot, slotIndex) => (
-              <TimeCell key={`t-${slot.key}`} slot={slot} slotIndex={slotIndex} isNow={slotIndex === activeSlot && !!activeDay} />
+              <TimeCell
+                key={`t-${slot.key}`}
+                slot={slot}
+                slotIndex={slotIndex}
+                isNow={slotIndex === activeSlot && !!activeDay}
+              />
             ))}
 
             {SLOTS.map((slot, slotIndex) =>
               slot.period === null ? (
-                <IntervalBand key={`i-${slot.key}`} slot={slot} slotIndex={slotIndex} isNow={slotIndex === activeSlot && !!activeDay} />
-              ) : null
+                <IntervalBand
+                  key={`i-${slot.key}`}
+                  slot={slot}
+                  slotIndex={slotIndex}
+                  isNow={slotIndex === activeSlot && !!activeDay}
+                />
+              ) : null,
             )}
 
             {DAYS.map((day, dayIndex) => {
@@ -209,7 +240,9 @@ export function TimetableView() {
                 const key = `${day.key}-${SLOTS[slotIndex].key}`;
 
                 if (!cell) {
-                  return <FreeCell key={key} slotIndex={slotIndex} dayIndex={dayIndex} isToday={isToday} isNow={isNow} />;
+                  return (
+                    <FreeCell key={key} slotIndex={slotIndex} dayIndex={dayIndex} isToday={isToday} isNow={isNow} />
+                  );
                 }
                 return (
                   <SessionCell

@@ -54,10 +54,15 @@ export function buildAttendanceReportRows(sessions) {
       const key = `${session.classCode}|${student.id}`;
       if (!byStudent.has(key)) {
         byStudent.set(key, {
-          classCode: session.classCode, subject: session.subject,
-          rollNumber: student.roll, registerNumber: student.registerNumber, studentName: student.name,
-          semester: session.semester, academicYear: session.academicYear,
-          totalHours: 0, presentHours: 0,
+          classCode: session.classCode,
+          subject: session.subject,
+          rollNumber: student.roll,
+          registerNumber: student.registerNumber,
+          studentName: student.name,
+          semester: session.semester,
+          academicYear: session.academicYear,
+          totalHours: 0,
+          presentHours: 0,
         });
       }
       const row = byStudent.get(key);
@@ -103,7 +108,9 @@ export function subjectHoursSummary(sessions) {
   for (const s of sessions) {
     totals.set(s.subject, (totals.get(s.subject) || 0) + sessionDurationHours(s));
   }
-  return [...totals.entries()].map(([subject, hours]) => ({ subject, hours: round1(hours) })).sort((a, b) => b.hours - a.hours);
+  return [...totals.entries()]
+    .map(([subject, hours]) => ({ subject, hours: round1(hours) }))
+    .sort((a, b) => b.hours - a.hours);
 }
 
 function round1(n) {
@@ -123,7 +130,14 @@ export const ATTENDANCE_REPORT_COLUMNS = [
 ];
 
 export const ATTENDANCE_REPORT_DEFAULT_COLUMNS = [
-  'rollNumber', 'registerNumber', 'studentName', 'semester', 'academicYear', 'totalHours', 'presentHours', 'attendancePercentage',
+  'rollNumber',
+  'registerNumber',
+  'studentName',
+  'semester',
+  'academicYear',
+  'totalHours',
+  'presentHours',
+  'attendancePercentage',
 ];
 
 export const CLASS_LOG_REPORT_COLUMNS = [
@@ -164,7 +178,12 @@ export function downloadTextFile(filename, content, mime = 'text/csv;charset=utf
 }
 
 function slug(text) {
-  return String(text || 'scope').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'scope';
+  return (
+    String(text || 'scope')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '') || 'scope'
+  );
 }
 
 export function attendanceReportFilename(scopeLabel, periodMode, ext) {
@@ -177,15 +196,23 @@ export function classLogReportFilename(scopeLabel, dateFrom, dateTo, ext) {
 }
 
 /** Opens a print-formatted window and triggers the browser print dialog (user chooses "Save as PDF"). No client PDF library needed. */
-export function printReport({ title, generatedAt, scopeLines, filterLines, columns, columnDefs, rows, summary, landscape }) {
+export function printReport({
+  title,
+  generatedAt,
+  scopeLines,
+  filterLines,
+  columns,
+  columnDefs,
+  rows,
+  summary,
+  landscape,
+}) {
   const labelFor = Object.fromEntries(columnDefs);
   const win = window.open('', '_blank', 'width=1000,height=800');
   if (!win) return;
 
   const headCells = columns.map((k) => `<th>${escapeHtml(labelFor[k])}</th>`).join('');
-  const bodyRows = rows
-    .map((r) => `<tr>${columns.map((k) => `<td>${escapeHtml(r[k])}</td>`).join('')}</tr>`)
-    .join('');
+  const bodyRows = rows.map((r) => `<tr>${columns.map((k) => `<td>${escapeHtml(r[k])}</td>`).join('')}</tr>`).join('');
 
   const summaryHtml = summary
     ? `<h2>${escapeHtml(summary.title)}</h2><table class="summary"><tbody>${summary.rows

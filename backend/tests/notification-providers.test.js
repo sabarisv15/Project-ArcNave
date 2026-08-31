@@ -33,7 +33,12 @@ test('email/smtp.js', async (t) => {
     const result = await smtp.send('a@b.com', 'hello', {
       subject: 'Hi',
       credentials: {
-        host: 'smtp.college.edu', port: 587, secure: false, user: 'u', password: 'p', fromAddress: 'no-reply@college.edu',
+        host: 'smtp.college.edu',
+        port: 587,
+        secure: false,
+        user: 'u',
+        password: 'p',
+        fromAddress: 'no-reply@college.edu',
       },
     });
 
@@ -42,7 +47,9 @@ test('email/smtp.js', async (t) => {
   });
 
   await t.test('reports failed (does not throw) when the real send rejects', async () => {
-    const sendMailMock = t.mock.fn(async () => { throw new Error('connection refused'); });
+    const sendMailMock = t.mock.fn(async () => {
+      throw new Error('connection refused');
+    });
     const createTransportMock = t.mock.method(nodemailer, 'createTransport', () => ({ sendMail: sendMailMock }));
     t.after(() => createTransportMock.mock.restore());
 
@@ -55,7 +62,9 @@ test('email/smtp.js', async (t) => {
 
 test('sms/msg91.js', async (t) => {
   await t.test('stubs when no credentials are supplied', async () => {
-    const fetchMock = t.mock.method(global, 'fetch', async () => { throw new Error('must not be called'); });
+    const fetchMock = t.mock.method(global, 'fetch', async () => {
+      throw new Error('must not be called');
+    });
     t.after(() => fetchMock.mock.restore());
 
     const result = await msg91.send('+919999999999', 'hello sms', {});
@@ -100,7 +109,9 @@ test('sms/msg91.js', async (t) => {
 
 test('whatsapp/meta.js', async (t) => {
   await t.test('stubs when no credentials are supplied', async () => {
-    const fetchMock = t.mock.method(global, 'fetch', async () => { throw new Error('must not be called'); });
+    const fetchMock = t.mock.method(global, 'fetch', async () => {
+      throw new Error('must not be called');
+    });
     t.after(() => fetchMock.mock.restore());
 
     const result = await meta.send('919999999999', 'hello whatsapp', {});

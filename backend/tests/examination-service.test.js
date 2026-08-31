@@ -36,7 +36,13 @@ test('uploadExamDocument', async (t) => {
       resolveTutorMock.mock.restore();
     });
     await assert.rejects(
-      () => examinationService.uploadExamDocument({}, 'class-1', {}, { actorUserId: 'someone-else', actorRole: 'class_tutor' }),
+      () =>
+        examinationService.uploadExamDocument(
+          {},
+          'class-1',
+          {},
+          { actorUserId: 'someone-else', actorRole: 'class_tutor' },
+        ),
       examinationService.ExaminationNotTutorError,
     );
   });
@@ -62,15 +68,26 @@ test('uploadExamDocument', async (t) => {
   await t.test('uploads through documentService with the class id attached', async () => {
     const findClassMock = t.mock.method(classRepository, 'findById', async () => ({ id: 'class-1', college_id: 'c1' }));
     const resolveTutorMock = t.mock.method(identityService, 'resolvePositionOccupant', async () => 'tutor-1');
-    const uploadMock = t.mock.method(documentService, 'uploadDocument', async (client, fields) => ({ id: 'doc-1', ...fields }));
+    const uploadMock = t.mock.method(documentService, 'uploadDocument', async (client, fields) => ({
+      id: 'doc-1',
+      ...fields,
+    }));
     t.after(() => {
       findClassMock.mock.restore();
       resolveTutorMock.mock.restore();
       uploadMock.mock.restore();
     });
-    const result = await examinationService.uploadExamDocument({}, 'class-1', {
-      docType: 'exam_timetable', fileName: 't.pdf', mimeType: 'application/pdf', fileBuffer: Buffer.from('x'),
-    }, { actorUserId: 'tutor-1', actorRole: 'class_tutor' });
+    const result = await examinationService.uploadExamDocument(
+      {},
+      'class-1',
+      {
+        docType: 'exam_timetable',
+        fileName: 't.pdf',
+        mimeType: 'application/pdf',
+        fileBuffer: Buffer.from('x'),
+      },
+      { actorUserId: 'tutor-1', actorRole: 'class_tutor' },
+    );
     assert.equal(result.classId, 'class-1');
     assert.equal(uploadMock.mock.calls[0].arguments[1].collegeId, 'c1');
   });
@@ -82,7 +99,9 @@ test('publishExamTimetableVersion', async (t) => {
     const resolveTutorMock = t.mock.method(identityService, 'resolvePositionOccupant', async () => 'tutor-1');
     const getDocumentMock = t.mock.method(documentService, 'getDocument', async () => document);
     return {
-      findClassMock, resolveTutorMock, getDocumentMock,
+      findClassMock,
+      resolveTutorMock,
+      getDocumentMock,
     };
   }
 
@@ -94,20 +113,30 @@ test('publishExamTimetableVersion', async (t) => {
       getDocumentMock.mock.restore();
     });
     await assert.rejects(
-      () => examinationService.publishExamTimetableVersion({}, 'class-1', 'missing', { actorUserId: 'tutor-1', actorRole: 'class_tutor' }),
+      () =>
+        examinationService.publishExamTimetableVersion({}, 'class-1', 'missing', {
+          actorUserId: 'tutor-1',
+          actorRole: 'class_tutor',
+        }),
       examinationService.ExaminationDocumentNotFoundError,
     );
   });
 
   await t.test('rejects a document belonging to a different class', async () => {
-    const { findClassMock, resolveTutorMock, getDocumentMock } = mockTutorAndDoc(t, { document: { id: 'doc-1', class_id: 'other-class' } });
+    const { findClassMock, resolveTutorMock, getDocumentMock } = mockTutorAndDoc(t, {
+      document: { id: 'doc-1', class_id: 'other-class' },
+    });
     t.after(() => {
       findClassMock.mock.restore();
       resolveTutorMock.mock.restore();
       getDocumentMock.mock.restore();
     });
     await assert.rejects(
-      () => examinationService.publishExamTimetableVersion({}, 'class-1', 'doc-1', { actorUserId: 'tutor-1', actorRole: 'class_tutor' }),
+      () =>
+        examinationService.publishExamTimetableVersion({}, 'class-1', 'doc-1', {
+          actorUserId: 'tutor-1',
+          actorRole: 'class_tutor',
+        }),
       examinationService.ExaminationDocumentClassMismatchError,
     );
   });
@@ -116,7 +145,10 @@ test('publishExamTimetableVersion', async (t) => {
     const { findClassMock, resolveTutorMock, getDocumentMock } = mockTutorAndDoc(t);
     const clearMock = t.mock.method(examTimetableVersionRepository, 'clearCurrentOfficialForClass', async () => {});
     const countMock = t.mock.method(examTimetableVersionRepository, 'countForClass', async () => 1);
-    const createMock = t.mock.method(examTimetableVersionRepository, 'create', async (client, fields) => ({ id: 'ver-2', ...fields }));
+    const createMock = t.mock.method(examTimetableVersionRepository, 'create', async (client, fields) => ({
+      id: 'ver-2',
+      ...fields,
+    }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
       findClassMock.mock.restore();
@@ -128,7 +160,10 @@ test('publishExamTimetableVersion', async (t) => {
       auditMock.mock.restore();
     });
 
-    const result = await examinationService.publishExamTimetableVersion({}, 'class-1', 'doc-1', { actorUserId: 'tutor-1', actorRole: 'class_tutor' });
+    const result = await examinationService.publishExamTimetableVersion({}, 'class-1', 'doc-1', {
+      actorUserId: 'tutor-1',
+      actorRole: 'class_tutor',
+    });
     assert.equal(clearMock.mock.callCount(), 1);
     assert.equal(result.versionNumber, 2);
     assert.equal(auditMock.mock.calls[0].arguments[1].action, 'exam_timetable_published');
@@ -137,14 +172,19 @@ test('publishExamTimetableVersion', async (t) => {
 
 test('getCurrentOfficialTimetable / listExamTimetableVersions / listExamDocumentsForClass delegate to their repositories', async (t) => {
   await t.test('getCurrentOfficialTimetable', async () => {
-    const findMock = t.mock.method(examTimetableVersionRepository, 'findCurrentOfficialForClass', async () => ({ id: 'ver-1' }));
+    const findMock = t.mock.method(examTimetableVersionRepository, 'findCurrentOfficialForClass', async () => ({
+      id: 'ver-1',
+    }));
     t.after(() => findMock.mock.restore());
     const result = await examinationService.getCurrentOfficialTimetable({}, 'class-1');
     assert.equal(result.id, 'ver-1');
   });
 
   await t.test('listExamTimetableVersions', async () => {
-    const listMock = t.mock.method(examTimetableVersionRepository, 'listForClass', async () => [{ id: 'ver-1' }, { id: 'ver-2' }]);
+    const listMock = t.mock.method(examTimetableVersionRepository, 'listForClass', async () => [
+      { id: 'ver-1' },
+      { id: 'ver-2' },
+    ]);
     t.after(() => listMock.mock.restore());
     const result = await examinationService.listExamTimetableVersions({}, 'class-1');
     assert.equal(result.length, 2);

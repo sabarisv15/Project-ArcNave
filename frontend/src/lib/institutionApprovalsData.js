@@ -85,7 +85,11 @@ const REQUESTS = [
     reason:
       'Endorsed at department level and reviewed by the Dean — Academic Affairs. The revision clears the second-year lab clash; it needs Principal approval before it can be locked and take effect.',
     changes: [
-      { label: 'Revision status', from: 'Reviewed by Dean — Academic Affairs', to: 'Approved by Principal — ready to lock' },
+      {
+        label: 'Revision status',
+        from: 'Reviewed by Dean — Academic Affairs',
+        to: 'Approved by Principal — ready to lock',
+      },
       { label: 'Live timetable', from: 'Revision 2 — current', to: 'Revision 2 — unchanged until locked' },
       { label: 'Unresolved conflicts on the proposed grid', from: '1', to: '0' },
     ],

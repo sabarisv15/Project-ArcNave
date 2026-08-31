@@ -13,12 +13,18 @@ const { withOcrSlot, OCR_CONCURRENCY_LIMIT } = require('../src/ocr/ocrConcurrenc
 
 function deferred() {
   let resolve;
-  const promise = new Promise((r) => { resolve = r; });
+  const promise = new Promise((r) => {
+    resolve = r;
+  });
   return { promise, resolve };
 }
 
 test('withOcrSlot never lets more than OCR_CONCURRENCY_LIMIT jobs run at once, and every job still completes', async () => {
-  assert.equal(OCR_CONCURRENCY_LIMIT, 2, 'this test is written against the current limit of 2 — update both together if that ever changes');
+  assert.equal(
+    OCR_CONCURRENCY_LIMIT,
+    2,
+    'this test is written against the current limit of 2 — update both together if that ever changes',
+  );
 
   const jobCount = 5;
   let concurrentNow = 0;
@@ -26,20 +32,26 @@ test('withOcrSlot never lets more than OCR_CONCURRENCY_LIMIT jobs run at once, a
   const gates = Array.from({ length: jobCount }, () => deferred());
   const completed = [];
 
-  const runs = gates.map((gate, i) => withOcrSlot(async () => {
-    concurrentNow += 1;
-    maxConcurrentSeen = Math.max(maxConcurrentSeen, concurrentNow);
-    await gate.promise;
-    concurrentNow -= 1;
-    completed.push(i);
-    return i;
-  }));
+  const runs = gates.map((gate, i) =>
+    withOcrSlot(async () => {
+      concurrentNow += 1;
+      maxConcurrentSeen = Math.max(maxConcurrentSeen, concurrentNow);
+      await gate.promise;
+      concurrentNow -= 1;
+      completed.push(i);
+      return i;
+    }),
+  );
 
   // Let the first wave of microtasks/acquires settle, then release jobs
   // one at a time — proving a released slot picks up the next queued
   // job rather than the queue getting stuck.
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(maxConcurrentSeen, OCR_CONCURRENCY_LIMIT, `expected exactly ${OCR_CONCURRENCY_LIMIT} jobs running concurrently, the rest queued`);
+  assert.equal(
+    maxConcurrentSeen,
+    OCR_CONCURRENCY_LIMIT,
+    `expected exactly ${OCR_CONCURRENCY_LIMIT} jobs running concurrently, the rest queued`,
+  );
 
   for (const gate of gates) {
     // eslint-disable-next-line no-await-in-loop

@@ -41,12 +41,19 @@ async function send(to, body, { subject, credentials } = {}) {
 
   try {
     await transporter.sendMail({
-      from: smtpConfig.fromAddress, to, subject, text: body,
+      from: smtpConfig.fromAddress,
+      to,
+      subject,
+      text: body,
     });
     return { channel: 'email', status: 'sent', to, subject };
   } catch (err) {
     return {
-      channel: 'email', status: 'failed', to, subject, error: err.message,
+      channel: 'email',
+      status: 'failed',
+      to,
+      subject,
+      error: err.message,
     };
   }
 }

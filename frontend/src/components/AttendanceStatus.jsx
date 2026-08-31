@@ -22,7 +22,13 @@ export function PhaseBadge({ phase, className }) {
   const { Icon, tone } = meta;
   const label = PHASE_LABELS[phase];
   return (
-    <span className={cn('inline-flex items-center gap-[5px] h-[24px] px-[9px] rounded-[8px] text-[11.5px] font-[500]', tone, className)}>
+    <span
+      className={cn(
+        'inline-flex items-center gap-[5px] h-[24px] px-[9px] rounded-[8px] text-[11.5px] font-[500]',
+        tone,
+        className,
+      )}
+    >
       <Icon size={12.5} strokeWidth={2} aria-hidden="true" />
       {label}
     </span>
@@ -69,7 +75,9 @@ export function CompactPhase({ phase, detail, isDraft, needsAck }) {
       <span className="font-[600] whitespace-nowrap">{label}</span>
       {detail && (
         <>
-          <span className="text-ink-faint" aria-hidden="true">·</span>
+          <span className="text-ink-faint" aria-hidden="true">
+            ·
+          </span>
           <span className="text-ink-muted tabular-nums whitespace-nowrap">{detail}</span>
         </>
       )}
@@ -80,7 +88,12 @@ export function CompactPhase({ phase, detail, isDraft, needsAck }) {
 export function OwnershipBadge({ ownership, className }) {
   if (ownership === 'substitute') {
     return (
-      <span className={cn('inline-flex items-center gap-[5px] h-[24px] px-[9px] rounded-[8px] text-[11.5px] font-[500] text-pending bg-pending-soft', className)}>
+      <span
+        className={cn(
+          'inline-flex items-center gap-[5px] h-[24px] px-[9px] rounded-[8px] text-[11.5px] font-[500] text-pending bg-pending-soft',
+          className,
+        )}
+      >
         <Repeat size={12.5} strokeWidth={2} aria-hidden="true" />
         Substitute
       </span>
@@ -88,7 +101,12 @@ export function OwnershipBadge({ ownership, className }) {
   }
   if (ownership === 'other') return null;
   return (
-    <span className={cn('inline-flex items-center gap-[5px] h-[24px] px-[9px] rounded-[8px] text-[11.5px] font-[500] text-ink-muted bg-tint2', className)}>
+    <span
+      className={cn(
+        'inline-flex items-center gap-[5px] h-[24px] px-[9px] rounded-[8px] text-[11.5px] font-[500] text-ink-muted bg-tint2',
+        className,
+      )}
+    >
       <UserRound size={12.5} strokeWidth={2} aria-hidden="true" />
       My class
     </span>

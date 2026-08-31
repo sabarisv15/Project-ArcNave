@@ -54,15 +54,7 @@ function UnverifiedBadge() {
 const QUIET_BTN =
   'h-[36px] px-[13px] rounded-[9px] font-sans text-[13px] font-[500] cursor-pointer transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-45';
 
-export function MobileVerification({
-  editing,
-  dialCode,
-  number,
-  verifiedPhone,
-  verifiedAt,
-  onChange,
-  onVerified,
-}) {
+export function MobileVerification({ editing, dialCode, number, verifiedPhone, verifiedAt, onChange, onVerified }) {
   const [phase, setPhase] = useState('idle'); // idle | sending | code | verifying
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
@@ -147,7 +139,7 @@ export function MobileVerification({
           <span className="text-[13.5px] font-[500] text-ink">
             {digits ? `${dialCode} ${digits}` : <span className="text-ink-faint font-[400]">Not provided</span>}
           </span>
-          {digits ? (isVerified ? <VerifiedBadge verifiedAt={verifiedAt} /> : <UnverifiedBadge />) : null}
+          {digits ? isVerified ? <VerifiedBadge verifiedAt={verifiedAt} /> : <UnverifiedBadge /> : null}
         </div>
       </div>
     );
@@ -247,7 +239,7 @@ export function MobileVerification({
                 className={cn(
                   PROFILE_CONTROL,
                   'w-[150px] tracking-[.34em] text-center font-[500]',
-                  error && 'border-danger'
+                  error && 'border-danger',
                 )}
               />
             </div>

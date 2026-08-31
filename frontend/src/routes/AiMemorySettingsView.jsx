@@ -60,11 +60,14 @@ export function AiMemorySettingsView() {
   const [facts, setFacts] = useState([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const load = () => Promise.all([aiMemoryApi.getConsent(), aiMemoryApi.list(), aiMemoryApi.listFacts()]).then(([consent, list, factList]) => {
-    setConsented(Boolean(consent.consented));
-    setMemories(list);
-    setFacts(factList);
-  });
+  const load = () =>
+    Promise.all([aiMemoryApi.getConsent(), aiMemoryApi.list(), aiMemoryApi.listFacts()]).then(
+      ([consent, list, factList]) => {
+        setConsented(Boolean(consent.consented));
+        setMemories(list);
+        setFacts(factList);
+      },
+    );
 
   useEffect(() => {
     load()
@@ -148,7 +151,9 @@ export function AiMemorySettingsView() {
                   onChange={(e) => toggleConsent(e.target.checked)}
                   className="w-[16px] h-[16px] accent-[rgb(var(--c-accent))]"
                 />
-                <span className="text-[13px] text-ink">{consented ? 'On for your account' : 'Off for your account'}</span>
+                <span className="text-[13px] text-ink">
+                  {consented ? 'On for your account' : 'Off for your account'}
+                </span>
               </label>
             </Section>
 
@@ -160,11 +165,16 @@ export function AiMemorySettingsView() {
                 {Object.values(MEMORY_TYPE_LABELS).map((label) => (
                   <li key={label}>{label}</li>
                 ))}
-                <li>Anything else about how you work, in your own words (up to {MAX_GENERAL_FACTS} things at a time)</li>
+                <li>
+                  Anything else about how you work, in your own words (up to {MAX_GENERAL_FACTS} things at a time)
+                </li>
               </ul>
             </Section>
 
-            <Section title="Currently remembered" description={consented ? undefined : 'Nothing is remembered while AI Memory is off.'}>
+            <Section
+              title="Currently remembered"
+              description={consented ? undefined : 'Nothing is remembered while AI Memory is off.'}
+            >
               {memories.length === 0 ? (
                 <p className="m-0 text-[12.5px] text-ink-faint">Nothing remembered yet.</p>
               ) : (
@@ -188,7 +198,7 @@ export function AiMemorySettingsView() {
                         className={cn(
                           'flex-none w-[28px] h-[28px] grid place-items-center border-0 bg-transparent rounded-[8px]',
                           'text-ink-faint cursor-pointer transition-colors duration-200 hover:bg-danger-soft hover:text-danger',
-                          'disabled:opacity-40 disabled:cursor-not-allowed'
+                          'disabled:opacity-40 disabled:cursor-not-allowed',
                         )}
                       >
                         <Trash2 size={14} strokeWidth={1.9} />
@@ -208,10 +218,7 @@ export function AiMemorySettingsView() {
               ) : (
                 <ul className="m-0 p-0 flex flex-col gap-[6px] list-none">
                   {facts.map((f) => (
-                    <li
-                      key={f.id}
-                      className="flex items-center gap-[8px] px-[10px] py-[8px] rounded-[10px] bg-tint2"
-                    >
+                    <li key={f.id} className="flex items-center gap-[8px] px-[10px] py-[8px] rounded-[10px] bg-tint2">
                       <div className="flex-1 min-w-0 text-[13px] text-ink">{f.fact}</div>
                       <button
                         type="button"
@@ -221,7 +228,7 @@ export function AiMemorySettingsView() {
                         className={cn(
                           'flex-none w-[28px] h-[28px] grid place-items-center border-0 bg-transparent rounded-[8px]',
                           'text-ink-faint cursor-pointer transition-colors duration-200 hover:bg-danger-soft hover:text-danger',
-                          'disabled:opacity-40 disabled:cursor-not-allowed'
+                          'disabled:opacity-40 disabled:cursor-not-allowed',
                         )}
                       >
                         <Trash2 size={14} strokeWidth={1.9} />

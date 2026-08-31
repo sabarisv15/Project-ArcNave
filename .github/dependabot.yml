@@ -1,0 +1,20 @@
+version: 2
+# ARCNAVE modernization P0 item 3 ("turn on dependency scanning") —
+# ongoing half of the fix; ci.yml's `npm audit` step covers every PR
+# retroactively, this covers new advisories proactively as they're
+# published, without anyone having to remember to re-run an audit.
+updates:
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

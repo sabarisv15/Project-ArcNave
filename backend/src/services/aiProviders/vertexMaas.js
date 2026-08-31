@@ -32,12 +32,13 @@
 
 const crypto = require('crypto');
 const { GoogleAuth } = require('google-auth-library');
-const {
-  LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError,
-} = require('./errors');
+const { LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError } = require('./errors');
 const { withRetry } = require('./retry');
 const {
-  fetchWithTimeout, parseJsonResponse, extractOpenAiCompatibleUsage, buildOpenAiCompatiblePriorTurnMessages,
+  fetchWithTimeout,
+  parseJsonResponse,
+  extractOpenAiCompatibleUsage,
+  buildOpenAiCompatiblePriorTurnMessages,
 } = require('./openAiCompatibleUtils');
 const { flattenToPrompts } = require('../aiContextAssembly');
 const vertexCapabilityRegistry = require('../vertexCapabilityRegistry');
@@ -123,12 +124,15 @@ function getCapabilityProfile(cfg = {}) {
 }
 
 function supportsCapability(cfg = {}, capability) {
-  return vertexCapabilityRegistry.hasCapability({
-    projectId: cfg.projectId,
-    location: location(cfg),
-    model: cfg.model,
-    modelVersion: cfg.modelVersion,
-  }, capability);
+  return vertexCapabilityRegistry.hasCapability(
+    {
+      projectId: cfg.projectId,
+      location: location(cfg),
+      model: cfg.model,
+      modelVersion: cfg.modelVersion,
+    },
+    capability,
+  );
 }
 
 // The one fixed MaaS route — every model shares this same URL, selected
@@ -163,7 +167,9 @@ async function getAccessToken(cfg) {
   const client = await getAuth().getClient();
   const { token } = await client.getAccessToken();
   if (!token) {
-    throw new LlmRequestError('Google ADC did not return an access token — run `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS');
+    throw new LlmRequestError(
+      'Google ADC did not return an access token — run `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS',
+    );
   }
   return token;
 }
@@ -180,7 +186,9 @@ async function postJson(cfg, body) {
   const response = await withRetry(async () => {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
-      throw new LlmRequestError('Vertex AI MaaS request exceeded its overall time budget before a response was received');
+      throw new LlmRequestError(
+        'Vertex AI MaaS request exceeded its overall time budget before a response was received',
+      );
     }
     return fetchWithTimeout({
       url: chatCompletionsUrl(cfg),
@@ -304,15 +312,17 @@ function normalizeFinishReason(rawFinishReason) {
 // content that follows it).
 function truncationError(rawFinishReason) {
   return new LlmRequestError(
-    `Vertex AI MaaS response was cut off before completion (finish_reason: ${rawFinishReason}) — `
-    + 'refusing to treat partial text or a partial tool call as a completed result',
+    `Vertex AI MaaS response was cut off before completion (finish_reason: ${rawFinishReason}) — ` +
+      'refusing to treat partial text or a partial tool call as a completed result',
   );
 }
 
 async function completeWithMeta(cfg, arcnaveContext) {
   const { systemPrompt, userPrompt } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
-    throw new LlmNotConfiguredError('no Vertex AI MaaS provider is configured for this college (missing projectId or model)');
+    throw new LlmNotConfiguredError(
+      'no Vertex AI MaaS provider is configured for this college (missing projectId or model)',
+    );
   }
 
   const payload = await postJson(cfg, {
@@ -440,7 +450,9 @@ function extractToolCallFromContent(content) {
 async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   const { systemPrompt, userPrompt, tools } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
-    throw new LlmNotConfiguredError('no Vertex AI MaaS provider is configured for this college (missing projectId or model)');
+    throw new LlmNotConfiguredError(
+      'no Vertex AI MaaS provider is configured for this college (missing projectId or model)',
+    );
   }
 
   const payload = await postJson(cfg, {
@@ -498,7 +510,12 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
     // string; a native response missing even this would be unusual, but
     // is still covered rather than assumed impossible.
     return {
-      type: 'tool_call', toolName: fn.name, arguments: toolArguments, callId: resolveToolCallId(toolCalls[0].id), rawToolCall: toolCalls[0], usage,
+      type: 'tool_call',
+      toolName: fn.name,
+      arguments: toolArguments,
+      callId: resolveToolCallId(toolCalls[0].id),
+      rawToolCall: toolCalls[0],
+      usage,
     };
   }
 
@@ -513,7 +530,12 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
     // buildPriorTurnMessages's own `turn.rawToolCall ||` fallback
     // constructs a synthetic one FROM this same resolved callId instead.
     return {
-      type: 'tool_call', toolName: fallbackCall.name, arguments: fallbackCall.arguments, callId: resolveToolCallId(undefined), rawToolCall: undefined, usage,
+      type: 'tool_call',
+      toolName: fallbackCall.name,
+      arguments: fallbackCall.arguments,
+      callId: resolveToolCallId(undefined),
+      rawToolCall: undefined,
+      usage,
     };
   }
 
@@ -533,11 +555,15 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
 // adapter's only real job (Phase 1) is Tool Search, which never calls
 // either.
 async function embed() {
-  throw new AiProviderCapabilityError('the Vertex AI MaaS adapter has no embeddings endpoint — configure a different provider for embeddings');
+  throw new AiProviderCapabilityError(
+    'the Vertex AI MaaS adapter has no embeddings endpoint — configure a different provider for embeddings',
+  );
 }
 
 async function generateImage() {
-  throw new AiProviderCapabilityError('the Vertex AI MaaS adapter has no image-generation endpoint — configure a different provider for this feature');
+  throw new AiProviderCapabilityError(
+    'the Vertex AI MaaS adapter has no image-generation endpoint — configure a different provider for this feature',
+  );
 }
 
 module.exports = {

@@ -85,8 +85,8 @@ export function DepartmentSeatDrawer({ cls, onClose }) {
   }, [cls?.id]);
 
   const options = useMemo(() => candidates(seat?.holderId ?? null, seats), [seat?.holderId, seats]);
-  const holder = seat?.state === 'active' ? FACULTY_BY_ID[seat.holderId] ?? null : null;
-  const picked = pickedId ? FACULTY_BY_ID[pickedId] ?? null : null;
+  const holder = seat?.state === 'active' ? (FACULTY_BY_ID[seat.holderId] ?? null) : null;
+  const picked = pickedId ? (FACULTY_BY_ID[pickedId] ?? null) : null;
 
   const title = seatTitle(CLASS_TUTOR_L4);
 
@@ -177,9 +177,7 @@ export function DepartmentSeatDrawer({ cls, onClose }) {
                 Reassignment history
               </div>
               {seat.history.length === 0 ? (
-                <p className="m-0 mt-[5px] text-[13px] text-ink-muted">
-                  This seat has not been handed over.
-                </p>
+                <p className="m-0 mt-[5px] text-[13px] text-ink-muted">This seat has not been handed over.</p>
               ) : (
                 <ol className="m-0 mt-[6px] p-0 list-none">
                   {seat.history.map((h, i) => (
@@ -210,7 +208,7 @@ export function DepartmentSeatDrawer({ cls, onClose }) {
                         className={cn(
                           'w-full grid grid-cols-[26px_1fr_auto] gap-x-[9px] items-center px-[8px] py-[7px] border rounded-[10px] bg-paper text-left transition-colors duration-200',
                           pickedId === faculty.id ? 'border-accent-line bg-accent-soft' : 'border-transparent',
-                          assignable ? 'cursor-pointer hover:bg-tint2' : 'cursor-not-allowed opacity-70'
+                          assignable ? 'cursor-pointer hover:bg-tint2' : 'cursor-not-allowed opacity-70',
                         )}
                       >
                         <span

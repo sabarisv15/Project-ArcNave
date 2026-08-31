@@ -2,13 +2,7 @@ import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Markdown } from './Markdown';
 import { cn } from '../lib/utils';
-import {
-  MESSAGE_PREVIEW_LINES,
-  isLongContent,
-  lineCountLabel,
-  previewLines,
-  showMoreLabel,
-} from '../lib/longContent';
+import { MESSAGE_PREVIEW_LINES, isLongContent, lineCountLabel, previewLines, showMoreLabel } from '../lib/longContent';
 
 /**
  * A sent message that happens to be 271 lines long.
@@ -34,19 +28,17 @@ export function CollapsibleContent({ text, className, fadeClass = 'to-[rgb(var(-
 
   return (
     <div className="flex flex-col items-start gap-[6px] w-full">
-      <div
-        className={cn(
-          'relative w-full',
-          expanded && 'max-h-[420px] overflow-y-auto scroll-quiet pr-[4px]'
-        )}
-      >
+      <div className={cn('relative w-full', expanded && 'max-h-[420px] overflow-y-auto scroll-quiet pr-[4px]')}>
         <Markdown className={className}>{expanded ? text : preview}</Markdown>
         {!expanded && (
           // Crop rather than cut: the last preview line fades out, so it is
           // obvious there is more without a hard edge implying an ending.
           <div
             aria-hidden="true"
-            className={cn('pointer-events-none absolute inset-x-0 bottom-0 h-[26px] bg-gradient-to-b from-transparent', fadeClass)}
+            className={cn(
+              'pointer-events-none absolute inset-x-0 bottom-0 h-[26px] bg-gradient-to-b from-transparent',
+              fadeClass,
+            )}
           />
         )}
       </div>

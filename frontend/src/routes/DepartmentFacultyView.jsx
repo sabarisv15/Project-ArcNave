@@ -79,7 +79,13 @@ export function DepartmentFacultyView() {
   const rows = useMemo(() => {
     const term = query.trim().toLowerCase();
     const filtered = FACULTY_LOAD.filter((l) => {
-      if (term && ![l.faculty.name, l.faculty.employeeId, l.faculty.designation, l.faculty.email].join(' ').toLowerCase().includes(term)) {
+      if (
+        term &&
+        ![l.faculty.name, l.faculty.employeeId, l.faculty.designation, l.faculty.email]
+          .join(' ')
+          .toLowerCase()
+          .includes(term)
+      ) {
         return false;
       }
       if (state && l.state !== state) return false;
@@ -124,7 +130,9 @@ export function DepartmentFacultyView() {
       <div className="flex-none flex items-center gap-[8px] mb-[12px]">
         <h1 className="m-0 text-[17px] font-[600] tracking-[-.01em]">Faculty</h1>
         <span className="text-[11.5px] text-ink-faint tabular-nums" aria-live="polite">
-          {rows.length === FACULTY_LOAD.length ? `${FACULTY_LOAD.length} faculty` : `${rows.length} of ${FACULTY_LOAD.length}`}
+          {rows.length === FACULTY_LOAD.length
+            ? `${FACULTY_LOAD.length} faculty`
+            : `${rows.length} of ${FACULTY_LOAD.length}`}
         </span>
         <div className="flex-1" />
         <SearchPopoverField
@@ -174,7 +182,7 @@ export function DepartmentFacultyView() {
             aria-label={`${l.faculty.name} — open record`}
             className={cn(
               GRID,
-              'w-full h-[48px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2'
+              'w-full h-[48px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2',
             )}
           >
             <span className="min-w-0 flex items-center gap-[9px]">
@@ -207,7 +215,7 @@ export function DepartmentFacultyView() {
             <span
               className={cn(
                 'text-[13px] tabular-nums',
-                l.state === 'high' ? 'font-[500] text-pending' : l.periods === 0 ? 'text-ink-faint' : 'text-ink'
+                l.state === 'high' ? 'font-[500] text-pending' : l.periods === 0 ? 'text-ink-faint' : 'text-ink',
               )}
             >
               {l.periods} <span className="text-[11px] text-ink-faint">/wk</span>
@@ -223,7 +231,7 @@ export function DepartmentFacultyView() {
               <span
                 className={cn(
                   'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500] max-w-full truncate',
-                  FACULTY_LIFECYCLE_STATES[l.faculty.lifecycle]?.tone
+                  FACULTY_LIFECYCLE_STATES[l.faculty.lifecycle]?.tone,
                 )}
               >
                 {FACULTY_LIFECYCLE_STATES[l.faculty.lifecycle]?.label ?? '—'}
@@ -234,7 +242,7 @@ export function DepartmentFacultyView() {
               <span
                 className={cn(
                   'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500] max-w-full truncate',
-                  WORKLOAD_STATES[l.state].tone
+                  WORKLOAD_STATES[l.state].tone,
                 )}
               >
                 {WORKLOAD_STATES[l.state].label}

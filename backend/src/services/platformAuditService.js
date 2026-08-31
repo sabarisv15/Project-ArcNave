@@ -17,16 +17,22 @@
 const platformAuditLogRepository = require('../repositories/platformAuditLogRepository');
 const { logError } = require('../logging/logger');
 
-async function record(pool, {
-  actorAdminId, action, entity, entityId, ipAddress, metadata,
-}) {
+async function record(pool, { actorAdminId, action, entity, entityId, ipAddress, metadata }) {
   try {
     await platformAuditLogRepository.createEntry(pool, {
-      actorAdminId, action, entity, entityId, ipAddress, metadata,
+      actorAdminId,
+      action,
+      entity,
+      entityId,
+      ipAddress,
+      metadata,
     });
   } catch (err) {
     logError('platform_audit_write_failed', {
-      action, entity, entityId, error: err.message,
+      action,
+      entity,
+      entityId,
+      error: err.message,
     });
   }
 }

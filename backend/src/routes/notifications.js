@@ -85,49 +85,59 @@ function createNotificationsRouter() {
   // hitting a REST route, so that default is almost always correct
   // here, but a caller is free to pass 'ai' if some future automation
   // drafts through this same route instead of the tool registry.
-  router.post('/notifications', requirePermission('notifications.draft'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const notification = await notificationService.draftNotification(
-        req.dbClient,
-        { collegeId: req.collegeId, ...bodyToServiceFields(req.body || {}) },
-        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(201).json(notification);
-    } catch (err) {
-      if (mapNotificationServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/notifications',
+    requirePermission('notifications.draft'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const notification = await notificationService.draftNotification(
+          req.dbClient,
+          { collegeId: req.collegeId, ...bodyToServiceFields(req.body || {}) },
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.status(201).json(notification);
+      } catch (err) {
+        if (mapNotificationServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // 200, not 201: submitForApproval mutates the existing Draft row
   // (stores workflow_request_id back onto it) rather than creating a
   // new resource — same reasoning classes.js's submit-for-approval
   // route uses.
-  router.post('/notifications/:id/submit', requirePermission('notifications.submit'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const notification = await notificationService.submitForApproval(
-        req.dbClient,
-        req.params.id,
-        { requestedByUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(200).json(notification);
-    } catch (err) {
-      if (mapNotificationServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/notifications/:id/submit',
+    requirePermission('notifications.submit'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const notification = await notificationService.submitForApproval(req.dbClient, req.params.id, {
+          requestedByUserId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.status(200).json(notification);
+      } catch (err) {
+        if (mapNotificationServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.get('/notifications', requirePermission('notifications.read'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { limit, offset } = req.query;
-    const notifications = await notificationService.listNotifications(req.dbClient, {
-      limit: limit !== undefined ? Number(limit) : undefined,
-      offset: offset !== undefined ? Number(offset) : undefined,
-    });
-    res.json(notifications);
-  }));
+  router.get(
+    '/notifications',
+    requirePermission('notifications.read'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { limit, offset } = req.query;
+      const notifications = await notificationService.listNotifications(req.dbClient, {
+        limit: limit !== undefined ? Number(limit) : undefined,
+        offset: offset !== undefined ? Number(offset) : undefined,
+      });
+      res.json(notifications);
+    }),
+  );
 
   return router;
 }

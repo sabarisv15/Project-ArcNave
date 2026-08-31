@@ -1,12 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
-import {
-  ATTENDANCE_THRESHOLD,
-  CLASS_BY_ID,
-  DEPARTMENT,
-  DEPT_CLASSES,
-} from '../lib/departmentData';
+import { ATTENDANCE_THRESHOLD, CLASS_BY_ID, DEPARTMENT, DEPT_CLASSES } from '../lib/departmentData';
 import { DocumentsPendingBadge, StudentOriginBadge } from '../components/StudentOriginBadge';
 import { useAcademicRoster } from '../store/AcademicRosterProvider';
 import { DepartmentScopeHeader } from '../components/DepartmentScopeHeader';
@@ -109,7 +104,7 @@ export function DepartmentStudentsView() {
 
   const CLASS_OPTIONS = useMemo(
     () => [{ value: '', label: 'All classes' }, ...DEPT_CLASSES.map((c) => ({ value: c.id, label: c.code }))],
-    []
+    [],
   );
 
   const rows = useMemo(() => {
@@ -163,9 +158,7 @@ export function DepartmentStudentsView() {
       <div className="flex-none flex items-center gap-[8px] mb-[12px]">
         <h1 className="m-0 text-[17px] font-[600] tracking-[-.01em]">Students</h1>
         <span className="text-[11.5px] text-ink-faint tabular-nums" aria-live="polite">
-          {rows.length === students.length
-            ? `${students.length} students`
-            : `${rows.length} of ${students.length}`}
+          {rows.length === students.length ? `${students.length} students` : `${rows.length} of ${students.length}`}
         </span>
         <div className="flex-1" />
         <SearchPopoverField
@@ -210,7 +203,7 @@ export function DepartmentStudentsView() {
             aria-label={`${s.name}, roll ${s.roll} — open record`}
             className={cn(
               GRID,
-              'w-full h-[58px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2'
+              'w-full h-[58px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2',
             )}
           >
             <span className="min-w-0">
@@ -239,7 +232,7 @@ export function DepartmentStudentsView() {
             <span
               className={cn(
                 'text-[13px] tabular-nums',
-                s.attendance < ATTENDANCE_THRESHOLD ? 'font-[500] text-danger' : 'text-ink'
+                s.attendance < ATTENDANCE_THRESHOLD ? 'font-[500] text-danger' : 'text-ink',
               )}
             >
               {s.attendance}%
@@ -249,7 +242,7 @@ export function DepartmentStudentsView() {
               <span
                 className={cn(
                   'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-                  FEE_TONE[s.feeTier]
+                  FEE_TONE[s.feeTier],
                 )}
               >
                 {FEE_LABEL[s.feeTier]}

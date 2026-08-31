@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { SLOTS, blocksForDay, expandSession, workloadForVersion, TIMETABLE_VERSIONS, dayCellMap } from '../lib/timetableData';
+import {
+  SLOTS,
+  blocksForDay,
+  expandSession,
+  workloadForVersion,
+  TIMETABLE_VERSIONS,
+  dayCellMap,
+} from '../lib/timetableData';
 
 const INTERVALS = SLOTS.map((s, i) => (s.period === null ? i : null)).filter((i) => i !== null);
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri'];

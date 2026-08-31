@@ -27,12 +27,14 @@ export function SubjectScopeSelector({ subjects, value, onChange }) {
           aria-label="Change subject scope"
           className={cn(
             'inline-flex items-center gap-[9px] h-[36px] pl-[13px] pr-[10px] max-w-full rounded-[11px] border font-sans cursor-pointer transition-colors duration-200',
-            open ? 'border-accent-line bg-accent-soft' : 'border-line bg-paper hover:bg-tint2'
+            open ? 'border-accent-line bg-accent-soft' : 'border-line bg-paper hover:bg-tint2',
           )}
         >
           <span className="text-[14px] font-[600] text-ink truncate">{current.subject}</span>
           <span className="text-[12px] text-ink-muted truncate">{scopeLine(current)}</span>
-          <span className="text-ink-faint" aria-hidden="true">·</span>
+          <span className="text-ink-faint" aria-hidden="true">
+            ·
+          </span>
           <span className="text-[12px] font-[500] text-accent tabular-nums whitespace-nowrap">
             {current.submittedHours} / {current.scheduledHours} hrs
           </span>
@@ -48,13 +50,18 @@ export function SubjectScopeSelector({ subjects, value, onChange }) {
               <button
                 key={s.key}
                 type="button"
-                onClick={() => { onChange(s.key); setOpen(false); }}
+                onClick={() => {
+                  onChange(s.key);
+                  setOpen(false);
+                }}
                 className={cn(
-                  'flex items-center gap-[10px] w-full px-[10px] py-[8px] border-0 bg-transparent rounded-[9px] font-sans cursor-pointer text-left hover:bg-tint2'
+                  'flex items-center gap-[10px] w-full px-[10px] py-[8px] border-0 bg-transparent rounded-[9px] font-sans cursor-pointer text-left hover:bg-tint2',
                 )}
               >
                 <span className="min-w-0 flex-1">
-                  <span className={cn('block text-[13px] truncate', on ? 'text-accent font-[500]' : 'text-ink font-[500]')}>
+                  <span
+                    className={cn('block text-[13px] truncate', on ? 'text-accent font-[500]' : 'text-ink font-[500]')}
+                  >
                     {s.subject}
                   </span>
                   <span className="block text-[11px] text-ink-faint truncate">
@@ -80,18 +87,26 @@ export function SubjectSummaryStrip({ ledger }) {
   if (!ledger) return null;
   const metrics = [
     // Doubles as the completeness label: every number here is submitted-only.
-    <>Based on <span className="font-[600] text-ink tabular-nums">{ledger.submittedHours}</span> submitted hrs</>,
-    <>Class average <span className="font-[600] text-ink tabular-nums">{ledger.classAverage}%</span></>,
+    <>
+      Based on <span className="font-[600] text-ink tabular-nums">{ledger.submittedHours}</span> submitted hrs
+    </>,
+    <>
+      Class average <span className="font-[600] text-ink tabular-nums">{ledger.classAverage}%</span>
+    </>,
   ];
   if (ledger.belowThreshold > 0) {
-    metrics.push(<><span className="font-[600] text-danger tabular-nums">{ledger.belowThreshold}</span> below 75%</>);
+    metrics.push(
+      <>
+        <span className="font-[600] text-danger tabular-nums">{ledger.belowThreshold}</span> below 75%
+      </>,
+    );
   }
   if (ledger.unsubmittedHours > 0) {
     metrics.push(
       <>
         <span className="tabular-nums">{ledger.unsubmittedHours}</span>
         {ledger.unsubmittedHours === 1 ? ' hr' : ' hrs'} not yet submitted
-      </>
+      </>,
     );
   }
 
@@ -99,7 +114,11 @@ export function SubjectSummaryStrip({ ledger }) {
     <div className="flex items-center gap-[10px] flex-wrap text-[12px] text-ink-muted">
       {metrics.map((m, i) => (
         <span key={i} className="inline-flex items-center gap-[10px]">
-          {i > 0 && <span className="text-ink-faint" aria-hidden="true">·</span>}
+          {i > 0 && (
+            <span className="text-ink-faint" aria-hidden="true">
+              ·
+            </span>
+          )}
           <span>{m}</span>
         </span>
       ))}

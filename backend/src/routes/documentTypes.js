@@ -22,16 +22,20 @@ function requireResolvedTenant(req, res) {
 function createDocumentTypesRouter() {
   const router = express.Router();
 
-  router.get('/document-types', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const moduleName = req.query.module;
-    if (!moduleName) {
-      res.status(400).json({ detail: 'module query parameter is required' });
-      return;
-    }
-    const rows = await documentTypeRegistryRepository.findByModule(req.dbClient, moduleName);
-    res.json(rows);
-  }));
+  router.get(
+    '/document-types',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const moduleName = req.query.module;
+      if (!moduleName) {
+        res.status(400).json({ detail: 'module query parameter is required' });
+        return;
+      }
+      const rows = await documentTypeRegistryRepository.findByModule(req.dbClient, moduleName);
+      res.json(rows);
+    }),
+  );
 
   return router;
 }

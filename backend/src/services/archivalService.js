@@ -55,17 +55,28 @@ async function archiveRecord(client, { entityType, entityId, reason }, { actorUs
   let record;
   try {
     record = await archivedRecordRepository.create(client, {
-      collegeId, entityType, entityId, reason, archivedByUserId: actorUserId,
+      collegeId,
+      entityType,
+      entityId,
+      reason,
+      archivedByUserId: actorUserId,
     });
   } catch (err) {
     if (err.code === '23505' && err.constraint === 'archived_records_one_active_per_entity') {
-      throw new ArchivalAlreadyArchivedError(`${JSON.stringify(entityType)} ${JSON.stringify(entityId)} is already archived`);
+      throw new ArchivalAlreadyArchivedError(
+        `${JSON.stringify(entityType)} ${JSON.stringify(entityId)} is already archived`,
+      );
     }
     throw err;
   }
 
   await auditLogRepository.createAuditLogEntry(client, {
-    collegeId, userId: actorUserId, action: 'record_archived', entity: entityType, entityId, metadata: { archivedRecordId: record.id },
+    collegeId,
+    userId: actorUserId,
+    action: 'record_archived',
+    entity: entityType,
+    entityId,
+    metadata: { archivedRecordId: record.id },
   });
 
   return record;
@@ -87,7 +98,12 @@ async function listArchivedRecords(client, collegeId, { entityType } = {}) {
 // (entityType 'record_restoration', default chain: Principal) —
 // exactly the same configurable-chain mechanism task #15 built, not a
 // second, bespoke approval path invented for archival specifically.
-async function requestRestoration(client, archivedRecordId, { reason }, { requestedByUserId, collegeId, origin = 'human' } = {}) {
+async function requestRestoration(
+  client,
+  archivedRecordId,
+  { reason },
+  { requestedByUserId, collegeId, origin = 'human' } = {},
+) {
   if (!requestedByUserId) {
     throw new ArchivalValidationError('requestedByUserId is required');
   }
@@ -97,11 +113,14 @@ async function requestRestoration(client, archivedRecordId, { reason }, { reques
     throw new ArchivalNotFoundError(`archived record ${JSON.stringify(archivedRecordId)} does not exist`);
   }
   if (record.restored_at !== null) {
-    throw new ArchivalAlreadyRestoredError(`archived record ${JSON.stringify(archivedRecordId)} has already been restored`);
+    throw new ArchivalAlreadyRestoredError(
+      `archived record ${JSON.stringify(archivedRecordId)} has already been restored`,
+    );
   }
 
   const approverChain = await workflowChainService.resolveApproverChain(client, {
-    collegeId, entityType: 'record_restoration',
+    collegeId,
+    entityType: 'record_restoration',
   });
 
   const workflowRequest = await workflowService.submitRequest(client, {
@@ -124,11 +143,15 @@ async function loadPendingRestoration(client, archivedRecordId) {
     throw new ArchivalNotFoundError(`archived record ${JSON.stringify(archivedRecordId)} does not exist`);
   }
   if (record.workflow_request_id === null) {
-    throw new ArchivalNoPendingRestorationError(`archived record ${JSON.stringify(archivedRecordId)} has no restoration request`);
+    throw new ArchivalNoPendingRestorationError(
+      `archived record ${JSON.stringify(archivedRecordId)} has no restoration request`,
+    );
   }
   const pending = await workflowService.getRequest(client, record.workflow_request_id);
   if (pending === null || pending.status !== 'Pending') {
-    throw new ArchivalNoPendingRestorationError(`archived record ${JSON.stringify(archivedRecordId)} has no pending restoration request`);
+    throw new ArchivalNoPendingRestorationError(
+      `archived record ${JSON.stringify(archivedRecordId)} has no pending restoration request`,
+    );
   }
   return { record, pending };
 }
@@ -137,10 +160,18 @@ async function approveRestoration(client, archivedRecordId, { actorUserId, remar
   const { record, pending } = await loadPendingRestoration(client, archivedRecordId);
   await workflowService.approveRequest(client, pending.id, { actorUserId, remarks });
 
-  const restored = await archivedRecordRepository.markRestored(client, archivedRecordId, { restoredByUserId: actorUserId, restoreReason: remarks });
+  const restored = await archivedRecordRepository.markRestored(client, archivedRecordId, {
+    restoredByUserId: actorUserId,
+    restoreReason: remarks,
+  });
 
   await auditLogRepository.createAuditLogEntry(client, {
-    collegeId: record.college_id, userId: actorUserId, action: 'record_restored', entity: record.entity_type, entityId: record.entity_id, metadata: { archivedRecordId },
+    collegeId: record.college_id,
+    userId: actorUserId,
+    action: 'record_restored',
+    entity: record.entity_type,
+    entityId: record.entity_id,
+    metadata: { archivedRecordId },
   });
 
   return restored;
@@ -151,7 +182,12 @@ async function rejectRestoration(client, archivedRecordId, { actorUserId, remark
   await workflowService.rejectRequest(client, pending.id, { actorUserId, remarks });
 
   await auditLogRepository.createAuditLogEntry(client, {
-    collegeId: record.college_id, userId: actorUserId, action: 'record_restoration_rejected', entity: record.entity_type, entityId: record.entity_id, metadata: { archivedRecordId },
+    collegeId: record.college_id,
+    userId: actorUserId,
+    action: 'record_restoration_rejected',
+    entity: record.entity_type,
+    entityId: record.entity_id,
+    metadata: { archivedRecordId },
   });
 
   return record;

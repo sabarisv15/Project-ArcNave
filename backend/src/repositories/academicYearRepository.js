@@ -34,10 +34,7 @@ async function create(client, fields) {
 }
 
 async function findById(client, id) {
-  const result = await client.query(
-    'SELECT * FROM academic_years WHERE id = $1',
-    [id],
-  );
+  const result = await client.query('SELECT * FROM academic_years WHERE id = $1', [id]);
   return result.rows[0] || null;
 }
 
@@ -56,10 +53,10 @@ async function findActive(client, collegeId) {
 }
 
 async function findByCollegeAndYearLabel(client, collegeId, yearLabel) {
-  const result = await client.query(
-    'SELECT * FROM academic_years WHERE college_id = $1 AND year_label = $2',
-    [collegeId, yearLabel],
-  );
+  const result = await client.query('SELECT * FROM academic_years WHERE college_id = $1 AND year_label = $2', [
+    collegeId,
+    yearLabel,
+  ]);
   return result.rows[0] || null;
 }
 

@@ -17,7 +17,6 @@ function loadConfigWithEnv(value) {
   }
   delete require.cache[require.resolve('../src/config')];
   try {
-    // eslint-disable-next-line global-require, import/no-dynamic-require
     return require('../src/config');
   } finally {
     if (original === undefined) {
@@ -72,7 +71,6 @@ function loadConfigWithPdfPlumberEnv(value) {
   }
   delete require.cache[require.resolve('../src/config')];
   try {
-    // eslint-disable-next-line global-require, import/no-dynamic-require
     return require('../src/config');
   } finally {
     if (original === undefined) {

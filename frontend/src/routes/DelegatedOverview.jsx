@@ -79,17 +79,13 @@ export function DelegatedOverview() {
     hodName: (id) => hodOf(id)?.name ?? null,
   });
   const pending = routed.filter((r) => r.state === 'endorsed_pending_l2');
-  const decidedHere = routed
-    .map((r) => ({ ...r, review: delegatedReviewOf(r.departmentId) }))
-    .filter((r) => r.review);
+  const decidedHere = routed.map((r) => ({ ...r, review: delegatedReviewOf(r.departmentId) })).filter((r) => r.review);
 
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden px-[24px] pt-[18px] pb-[20px]">
       <DelegatedScopeHeader scope={scope} />
 
-      <h1 className="flex-none m-0 mb-[12px] text-[17px] font-[600] tracking-[-.01em]">
-        {scope.title}
-      </h1>
+      <h1 className="flex-none m-0 mb-[12px] text-[17px] font-[600] tracking-[-.01em]">{scope.title}</h1>
 
       <div className="flex-1 min-h-0 overflow-y-auto scroll-quiet flex flex-col gap-[12px]">
         {/* The seat itself, before anything it is responsible for. A vacant
@@ -120,11 +116,7 @@ export function DelegatedOverview() {
             />
             <Row
               label="Approval chain"
-              value={
-                scope.inTimetableChain
-                  ? 'In the timetable approval chain'
-                  : 'Not in the timetable approval chain'
-              }
+              value={scope.inTimetableChain ? 'In the timetable approval chain' : 'Not in the timetable approval chain'}
               hint={endorsementChainLabel()}
             />
           </dl>
@@ -163,7 +155,7 @@ export function DelegatedOverview() {
                       <span
                         className={cn(
                           'flex-none inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-                          ENDORSEMENT_STATES[r.state].tone
+                          ENDORSEMENT_STATES[r.state].tone,
                         )}
                       >
                         {ENDORSEMENT_STATES[r.state].label}
@@ -262,7 +254,7 @@ export function DelegatedOverview() {
                     <span
                       className={cn(
                         'flex-none inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-                        ENDORSEMENT_STATES[state].tone
+                        ENDORSEMENT_STATES[state].tone,
                       )}
                       title={ENDORSEMENT_STATES[state].hint}
                     >

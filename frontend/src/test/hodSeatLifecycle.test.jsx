@@ -9,10 +9,7 @@ import { WorkspaceProvider } from '../store/WorkspaceProvider';
 import { ComposerProvider } from '../store/ComposerProvider';
 import { AcademicTermProvider, useAcademicTerm } from '../store/AcademicTermProvider';
 import { AcademicRosterProvider } from '../store/AcademicRosterProvider';
-import {
-  InstitutionalLifecycleProvider,
-  useInstitutionalLifecycle,
-} from '../store/InstitutionalLifecycleProvider';
+import { InstitutionalLifecycleProvider, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
 import { HOD_SEATS, SEAT_STATES, hodSeat } from '../lib/seatState';
 import { DEPARTMENTS, facultyOfDepartment } from '../lib/institutionData';
 import { seatTitle } from '../lib/seatTitles';
@@ -41,7 +38,7 @@ function renderApp(route = '/curriculum') {
           </WorkspaceProvider>
         </Tooltip.Provider>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -64,9 +61,7 @@ const held = HOD_SEATS.find((s) => s.state === 'active');
 describe('Department leadership seats are canonical records', () => {
   it('derives one seat per provisioned department, one for one', () => {
     expect(HOD_SEATS).toHaveLength(DEPARTMENTS.length);
-    expect(new Set(HOD_SEATS.map((s) => s.departmentId))).toEqual(
-      new Set(DEPARTMENTS.map((d) => d.id))
-    );
+    expect(new Set(HOD_SEATS.map((s) => s.departmentId))).toEqual(new Set(DEPARTMENTS.map((d) => d.id)));
   });
 
   it('gives every seat state a real member so none is an unreachable branch', () => {
@@ -183,10 +178,7 @@ describe('The institution head manages the leadership seat, through shared state
   });
 
   it('survives a term transition — leadership is not a property of a semester', () => {
-    const { result } = renderHook(
-      () => ({ life: useInstitutionalLifecycle(), term: useAcademicTerm() }),
-      { wrapper }
-    );
+    const { result } = renderHook(() => ({ life: useInstitutionalLifecycle(), term: useAcademicTerm() }), { wrapper });
 
     const candidate = facultyOfDepartment(vacant.departmentId)[0];
     act(() => {
@@ -223,14 +215,14 @@ describe('The leadership surface is its own, and is not class-tutor assignment',
     // The configured title, not an L-number, and named as the seat rather than
     // as an attribute of the department.
     expect(
-      within(dialog).getByRole('heading', { name: new RegExp(`${title} — Civil Engineering`, 'i') })
+      within(dialog).getByRole('heading', { name: new RegExp(`${title} — Civil Engineering`, 'i') }),
     ).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: /^assign$/i })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: /^invite$/i })).toBeInTheDocument();
     // The one thing this seat may not do, stated on the surface where somebody
     // would most plausibly go looking for it.
     expect(
-      within(dialog).getByText(/class tutor seats are assigned by this department's own head/i)
+      within(dialog).getByText(/class tutor seats are assigned by this department's own head/i),
     ).toBeInTheDocument();
   });
 
@@ -241,9 +233,7 @@ describe('The leadership surface is its own, and is not class-tutor assignment',
 
     for (const item of [/^institution$/i, /^departments$/i, /^academic year$/i]) {
       await navigateVia(user, item);
-      expect(
-        screen.queryByRole('button', { name: /assign (a )?class tutor/i })
-      ).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /assign (a )?class tutor/i })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /reassign class tutor/i })).not.toBeInTheDocument();
     }
   });

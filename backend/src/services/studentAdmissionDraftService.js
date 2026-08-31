@@ -42,7 +42,9 @@ async function assertOwnsDraft(client, draftId, userId) {
     throw new StudentAdmissionDraftNotFoundError(`no draft found with id ${JSON.stringify(draftId)}`);
   }
   if (draft.created_by_user_id !== userId) {
-    throw new StudentAdmissionDraftForbiddenError(`user ${JSON.stringify(userId)} does not own draft ${JSON.stringify(draftId)}`);
+    throw new StudentAdmissionDraftForbiddenError(
+      `user ${JSON.stringify(userId)} does not own draft ${JSON.stringify(draftId)}`,
+    );
   }
   return draft;
 }
@@ -56,14 +58,18 @@ async function assertOwnsDraft(client, draftId, userId) {
 // login must not reach this even if that person occupies the L4 seat.
 async function createDraft(client, { collegeId, userId, actorRole }) {
   if (actorRole !== 'class_tutor') {
-    throw new StudentAdmissionDraftNotClassTutorError(`user ${JSON.stringify(userId)}'s current login (role ${JSON.stringify(actorRole)}) is not a Class Tutor Position Account`);
+    throw new StudentAdmissionDraftNotClassTutorError(
+      `user ${JSON.stringify(userId)}'s current login (role ${JSON.stringify(actorRole)}) is not a Class Tutor Position Account`,
+    );
   }
   const tutorClassId = await identityService.resolveActiveClassTutorPosition(client, { userId, collegeId });
   if (tutorClassId === null) {
     throw new StudentAdmissionDraftNotClassTutorError(`user ${JSON.stringify(userId)} is not the tutor of any class`);
   }
   return studentAdmissionDraftRepository.create(client, {
-    collegeId, createdByUserId: userId, classId: tutorClassId,
+    collegeId,
+    createdByUserId: userId,
+    classId: tutorClassId,
   });
 }
 
@@ -99,9 +105,7 @@ async function updateDraft(client, draftId, fields, { userId }) {
 // ocr_enabled: true, same gate extractFields itself independently
 // re-checks (CLAUDE.md rule 8 belt-and-suspenders for aadhaar
 // specifically).
-async function uploadDraftDocument(client, draftId, {
-  docType, fileName, mimeType, fileBuffer,
-}, { userId }) {
+async function uploadDraftDocument(client, draftId, { docType, fileName, mimeType, fileBuffer }, { userId }) {
   const draft = await assertOwnsDraft(client, draftId, userId);
   if (!docType || !fileName || !mimeType || !fileBuffer) {
     throw new StudentAdmissionDraftValidationError('docType, fileName, mimeType, and fileBuffer are required');
@@ -109,19 +113,31 @@ async function uploadDraftDocument(client, draftId, {
 
   const registryRow = await documentTypeRegistryRepository.findByKey(client, docType);
   if (registryRow === null) {
-    throw new StudentAdmissionDraftUnknownDocTypeError(`no document_type_registry row for key ${JSON.stringify(docType)}`);
+    throw new StudentAdmissionDraftUnknownDocTypeError(
+      `no document_type_registry row for key ${JSON.stringify(docType)}`,
+    );
   }
 
   const existing = await studentAdmissionDraftDocumentRepository.findByDraftIdAndDocType(client, draftId, docType);
   const oldStoragePath = existing ? existing.storage_path : null;
 
   const stored = await documentService.storeDraftAdmissionDocument({
-    collegeId: draft.college_id, draftId, docType, fileName, mimeType, fileBuffer,
+    collegeId: draft.college_id,
+    draftId,
+    docType,
+    fileName,
+    mimeType,
+    fileBuffer,
   });
 
   const row = existing
     ? await studentAdmissionDraftDocumentRepository.updateFile(client, existing.id, stored)
-    : await studentAdmissionDraftDocumentRepository.create(client, { collegeId: draft.college_id, draftId, docType, ...stored });
+    : await studentAdmissionDraftDocumentRepository.create(client, {
+        collegeId: draft.college_id,
+        draftId,
+        docType,
+        ...stored,
+      });
 
   // Old bytes are discarded only after the new row/file are both safely
   // in place — never the reverse, which could lose the only copy on a
@@ -135,7 +151,9 @@ async function uploadDraftDocument(client, draftId, {
   }
 
   const classification = await documentExtractionService.classifyDocument(client, {
-    collegeId: draft.college_id, fileBuffer, mimeType,
+    collegeId: draft.college_id,
+    fileBuffer,
+    mimeType,
   });
   const classified = await studentAdmissionDraftDocumentRepository.updateClassification(client, row.id, classification);
 
@@ -207,7 +225,9 @@ function buildExtractionHandler(collegeId, draftId, getJobId) {
         const ocrResult = await documentExtractionService.runOcr(buffer, doc.mime_type, { lang });
         // eslint-disable-next-line no-await-in-loop
         const extraction = await documentExtractionService.extractFields(stepClient, {
-          collegeId, docType: doc.doc_type, text: ocrResult.text,
+          collegeId,
+          docType: doc.doc_type,
+          text: ocrResult.text,
         });
         // eslint-disable-next-line no-await-in-loop
         await studentAdmissionDraftDocumentRepository.updateExtractionResult(stepClient, doc.id, {
@@ -221,7 +241,11 @@ function buildExtractionHandler(collegeId, draftId, getJobId) {
         });
         // eslint-disable-next-line no-await-in-loop
         await stepClient.query('COMMIT');
-        perDocumentResults.push({ docType: doc.doc_type, ocrConfidence: ocrResult.ocrConfidence, fields: extraction.fields });
+        perDocumentResults.push({
+          docType: doc.doc_type,
+          ocrConfidence: ocrResult.ocrConfidence,
+          fields: extraction.fields,
+        });
       } catch (err) {
         // eslint-disable-next-line no-await-in-loop
         await stepClient.query('ROLLBACK').catch(() => {});
@@ -233,7 +257,13 @@ function buildExtractionHandler(collegeId, draftId, getJobId) {
           await failClient.query("SELECT set_config('app.current_tenant', $1, true)", [collegeId]);
           // eslint-disable-next-line no-await-in-loop
           await studentAdmissionDraftDocumentRepository.updateExtractionResult(failClient, doc.id, {
-            extractionStatus: 'ocr_failed', extractionJobId: getJobId(), ocrEngine: null, ocrEngineVersion: null, aiModel: null, aiModelVersion: null, promptVersion: null,
+            extractionStatus: 'ocr_failed',
+            extractionJobId: getJobId(),
+            ocrEngine: null,
+            ocrEngineVersion: null,
+            aiModel: null,
+            aiModelVersion: null,
+            promptVersion: null,
           });
           // eslint-disable-next-line no-await-in-loop
           await failClient.query('COMMIT');
@@ -251,7 +281,9 @@ function buildExtractionHandler(collegeId, draftId, getJobId) {
 
     const mergedFields = documentExtractionService.mergeFieldsAcrossDocuments(perDocumentResults);
     const nonConflicting = Object.fromEntries(
-      Object.entries(mergedFields).filter(([, field]) => !field.conflict).map(([name, field]) => [name, field.value]),
+      Object.entries(mergedFields)
+        .filter(([, field]) => !field.conflict)
+        .map(([name, field]) => [name, field.value]),
     );
 
     const finalClient = await appPool.connect();
@@ -298,7 +330,10 @@ async function runExtraction(client, draftId, { userId }) {
   const job = await backgroundJobService.enqueue(
     client,
     {
-      collegeId: draft.college_id, name: 'admission_extraction', jobType: 'admission_extraction', createdByUserId: userId,
+      collegeId: draft.college_id,
+      name: 'admission_extraction',
+      jobType: 'admission_extraction',
+      createdByUserId: userId,
     },
     buildExtractionHandler(draft.college_id, draftId, () => jobId),
   );
@@ -342,7 +377,10 @@ async function completeDraft(client, draftId, { userId, actorRole }) {
   const collegeId = draft.college_id;
 
   const student = await studentService.createStudent(client, {
-    collegeId, userId, actorRole, ...studentAdmissionDraftRepository.toServiceFields(draft),
+    collegeId,
+    userId,
+    actorRole,
+    ...studentAdmissionDraftRepository.toServiceFields(draft),
   });
 
   let documentsUploaded = 0;
@@ -353,14 +391,18 @@ async function completeDraft(client, draftId, { userId, actorRole }) {
     // eslint-disable-next-line no-await-in-loop
     const buffer = await documentService.readDraftAdmissionDocument(doc.storage_path);
     // eslint-disable-next-line no-await-in-loop
-    await documentService.uploadDocument(client, {
-      collegeId,
-      studentId: student.id,
-      docType: doc.doc_type,
-      fileName: doc.file_name,
-      mimeType: doc.mime_type,
-      fileBuffer: buffer,
-    }, { actorUserId: userId });
+    await documentService.uploadDocument(
+      client,
+      {
+        collegeId,
+        studentId: student.id,
+        docType: doc.doc_type,
+        fileName: doc.file_name,
+        mimeType: doc.mime_type,
+        fileBuffer: buffer,
+      },
+      { actorUserId: userId },
+    );
     documentsUploaded += 1;
   }
 

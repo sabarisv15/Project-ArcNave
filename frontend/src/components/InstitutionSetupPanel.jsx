@@ -54,7 +54,7 @@ function StateBadge({ state }) {
     <span
       className={cn(
         'flex-none inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-        state.tone
+        state.tone,
       )}
     >
       {state.label}
@@ -79,12 +79,7 @@ function SetupRow({ row, onOpen }) {
   return (
     <li className="border-t border-line-light first:border-t-0">
       <div className="px-[14px] py-[10px] flex flex-wrap items-center gap-x-[9px] gap-y-[5px]">
-        <Icon
-          size={14}
-          strokeWidth={2}
-          aria-hidden="true"
-          className={cn('order-1 flex-none', marker.tone)}
-        />
+        <Icon size={14} strokeWidth={2} aria-hidden="true" className={cn('order-1 flex-none', marker.tone)} />
 
         <span className="order-2 flex-none text-[13px] font-[500] text-ink">{row.label}</span>
 
@@ -114,9 +109,7 @@ function SetupRow({ row, onOpen }) {
         the label rather than the marker, and never styled as an action.
       */}
       {row.note && (
-        <div className="px-[14px] pb-[10px] -mt-[2px] pl-[33px] text-[11.5px] text-ink-faint">
-          {row.note}
-        </div>
+        <div className="px-[14px] pb-[10px] -mt-[2px] pl-[33px] text-[11.5px] text-ink-faint">{row.note}</div>
       )}
     </li>
   );
@@ -144,7 +137,7 @@ export function InstitutionSetupPanel({ setup = INSTITUTION_SETUP }) {
         <span
           className={cn(
             'flex-none inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-            status.tone
+            status.tone,
           )}
         >
           {status.label}

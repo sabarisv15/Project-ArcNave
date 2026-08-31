@@ -48,7 +48,13 @@ function isFallbackEligible(err) {
 // exactly the same "not a function" a caller would see without this
 // wrapper at all.
 const WRAPPABLE_METHODS = [
-  'complete', 'completeWithMeta', 'completeStream', 'completeWithTools', 'embed', 'generateImage', 'countTokens',
+  'complete',
+  'completeWithMeta',
+  'completeStream',
+  'completeWithTools',
+  'embed',
+  'generateImage',
+  'countTokens',
 ];
 
 // cfg (the first argument every wrapped method takes) is passed through
@@ -66,7 +72,11 @@ function wrapMethod(methodName, primaryAdapter, fallbackAdapter, fallbackConfig,
     try {
       return await primaryFn.apply(primaryAdapter, args);
     } catch (err) {
-      if (!isFallbackEligible(err) || typeof fallbackFn !== 'function' || !fallbackAdapter.isConfigured(fallbackConfig)) {
+      if (
+        !isFallbackEligible(err) ||
+        typeof fallbackFn !== 'function' ||
+        !fallbackAdapter.isConfigured(fallbackConfig)
+      ) {
         throw err;
       }
       onFallback(methodName, err);

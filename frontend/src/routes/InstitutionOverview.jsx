@@ -215,7 +215,7 @@ function PromotionProgress({ promotion }) {
           <span
             className={cn(
               'flex-none inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500] tabular-nums',
-              d.pending === 0 ? 'text-success bg-success-soft' : 'text-pending bg-pending-soft'
+              d.pending === 0 ? 'text-success bg-success-soft' : 'text-pending bg-pending-soft',
             )}
           >
             {d.pending === 0 ? 'Complete' : `${d.pending} left`}
@@ -266,7 +266,7 @@ function DepartmentHealthTable({ DEPARTMENT_HEALTH, onOpen }) {
               aria-label={`${d.name} — open department`}
               className={cn(
                 HEALTH_GRID,
-                'w-full h-[46px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2'
+                'w-full h-[46px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2',
               )}
             >
               <span className="min-w-0 text-[13px] text-ink truncate" title={d.name}>
@@ -293,7 +293,7 @@ function DepartmentHealthTable({ DEPARTMENT_HEALTH, onOpen }) {
               <span
                 className={cn(
                   'text-[13px] tabular-nums',
-                  d.attendance < DEPT_ATTENTION_THRESHOLD ? 'font-[500] text-danger' : 'text-ink'
+                  d.attendance < DEPT_ATTENTION_THRESHOLD ? 'font-[500] text-danger' : 'text-ink',
                 )}
               >
                 {d.attendance}%
@@ -307,7 +307,7 @@ function DepartmentHealthTable({ DEPARTMENT_HEALTH, onOpen }) {
                 <span
                   className={cn(
                     'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500] max-w-full truncate',
-                    DEPT_ATTENTION_STATES[d.attention].tone
+                    DEPT_ATTENTION_STATES[d.attention].tone,
                   )}
                 >
                   {DEPT_ATTENTION_STATES[d.attention].label}
@@ -368,11 +368,7 @@ export function InstitutionOverview() {
               value={readiness.scale.departmentCount}
               caption="Provisioned for this institution"
             />
-            <Metric
-              label="Active classes"
-              value={readiness.scale.classCount}
-              caption={readiness.year.band}
-            />
+            <Metric label="Active classes" value={readiness.scale.classCount} caption={readiness.year.band} />
             {/*
               Enrolment against the capacity the *running* classes actually have
               — not against approved intake, which is how many a department may

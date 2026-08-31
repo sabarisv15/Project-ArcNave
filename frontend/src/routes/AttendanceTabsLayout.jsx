@@ -44,7 +44,7 @@ function PrimaryTabs() {
               'relative -mb-px flex-none pb-[11px] border-b-2 font-sans text-[14.5px] whitespace-nowrap no-underline hover:no-underline transition-colors duration-200',
               isActive
                 ? 'border-accent text-ink font-[600]'
-                : 'border-transparent text-ink-soft font-[500] hover:text-ink'
+                : 'border-transparent text-ink-soft font-[500] hover:text-ink',
             )
           }
         >

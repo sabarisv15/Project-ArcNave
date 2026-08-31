@@ -6,15 +6,36 @@
 // migration's file-level comment); update() here exists only to set
 // applied_at, never to edit the request itself.
 
-async function create(client, {
-  collegeId, studentId, permanentStudentId, transferType, destinationClassId, destinationCollegeId, reason, requestedByUserId, workflowRequestId,
-}) {
+async function create(
+  client,
+  {
+    collegeId,
+    studentId,
+    permanentStudentId,
+    transferType,
+    destinationClassId,
+    destinationCollegeId,
+    reason,
+    requestedByUserId,
+    workflowRequestId,
+  },
+) {
   const result = await client.query(
     `INSERT INTO student_transfer_requests
        (college_id, student_id, permanent_student_id, transfer_type, destination_class_id, destination_college_id, reason, requested_by_user_id, workflow_request_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`,
-    [collegeId, studentId, permanentStudentId, transferType, destinationClassId || null, destinationCollegeId || null, reason || null, requestedByUserId, workflowRequestId || null],
+    [
+      collegeId,
+      studentId,
+      permanentStudentId,
+      transferType,
+      destinationClassId || null,
+      destinationCollegeId || null,
+      reason || null,
+      requestedByUserId,
+      workflowRequestId || null,
+    ],
   );
   return result.rows[0];
 }
@@ -41,5 +62,8 @@ async function markApplied(client, id) {
 }
 
 module.exports = {
-  create, findById, listForStudent, markApplied,
+  create,
+  findById,
+  listForStudent,
+  markApplied,
 };

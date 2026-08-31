@@ -86,9 +86,14 @@ export function DocumentPreviewDrawer({ open, onClose, doc }) {
         <button
           type="button"
           className={PRIMARY_BTN}
-          onClick={() => documentsApi.download(doc.id, doc.name).catch(() => toast(`Could not download “${doc.name}”.`))}
+          onClick={() =>
+            documentsApi.download(doc.id, doc.name).catch(() => toast(`Could not download “${doc.name}”.`))
+          }
         >
-          <span className="inline-flex items-center gap-[6px]"><Download size={13} strokeWidth={2} />Download</span>
+          <span className="inline-flex items-center gap-[6px]">
+            <Download size={13} strokeWidth={2} />
+            Download
+          </span>
         </button>
       </DrawerRail>
     </DrawerShell>

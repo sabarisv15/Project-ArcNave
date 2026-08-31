@@ -45,7 +45,10 @@ test('assertSafeUrl: a plain https URL passes', () => {
 });
 
 test('assertSafeUrl: rejects http:// (not https)', () => {
-  assert.throws(() => webRetrievalService.assertSafeUrl('http://ugc.gov.in'), webRetrievalService.WebRetrievalRequestError);
+  assert.throws(
+    () => webRetrievalService.assertSafeUrl('http://ugc.gov.in'),
+    webRetrievalService.WebRetrievalRequestError,
+  );
 });
 
 test('assertSafeUrl: rejects a malformed URL', () => {
@@ -53,15 +56,24 @@ test('assertSafeUrl: rejects a malformed URL', () => {
 });
 
 test('assertSafeUrl: rejects an IPv4-literal host (SSRF-to-internal-network shape)', () => {
-  assert.throws(() => webRetrievalService.assertSafeUrl('https://169.254.169.254/latest/meta-data'), webRetrievalService.WebRetrievalRequestError);
+  assert.throws(
+    () => webRetrievalService.assertSafeUrl('https://169.254.169.254/latest/meta-data'),
+    webRetrievalService.WebRetrievalRequestError,
+  );
 });
 
 test('assertSafeUrl: rejects embedded credentials in the URL', () => {
-  assert.throws(() => webRetrievalService.assertSafeUrl('https://user:pass@ugc.gov.in'), webRetrievalService.WebRetrievalRequestError);
+  assert.throws(
+    () => webRetrievalService.assertSafeUrl('https://user:pass@ugc.gov.in'),
+    webRetrievalService.WebRetrievalRequestError,
+  );
 });
 
 test('assertSafeUrl: rejects non-http(s) schemes', () => {
-  assert.throws(() => webRetrievalService.assertSafeUrl('file:///etc/passwd'), webRetrievalService.WebRetrievalRequestError);
+  assert.throws(
+    () => webRetrievalService.assertSafeUrl('file:///etc/passwd'),
+    webRetrievalService.WebRetrievalRequestError,
+  );
 });
 
 // --- fetchTrustedPage (mocked fetch + client) ---
@@ -70,7 +82,9 @@ test('fetchTrustedPage: not enabled for this college -> WebRetrievalNotEnabledEr
   const client = fakeClient();
   let fetchCalled = false;
   const originalFetch = global.fetch;
-  global.fetch = async () => { fetchCalled = true; };
+  global.fetch = async () => {
+    fetchCalled = true;
+  };
   try {
     await assert.rejects(
       () => webRetrievalService.fetchTrustedPage(client, 'college-a', 'https://ugc.gov.in/notice'),
@@ -89,7 +103,9 @@ test('fetchTrustedPage: enabled but the URL is not on the allowlist -> WebRetrie
   const client = fakeClient();
   let fetchCalled = false;
   const originalFetch = global.fetch;
-  global.fetch = async () => { fetchCalled = true; };
+  global.fetch = async () => {
+    fetchCalled = true;
+  };
   try {
     await assert.rejects(
       () => webRetrievalService.fetchTrustedPage(client, 'college-a', 'https://not-allowed.example.com/page'),
@@ -110,7 +126,8 @@ test('fetchTrustedPage: enabled + allowlisted -> fetches, strips HTML, caps leng
   global.fetch = async () => ({
     ok: true,
     headers: { get: () => null },
-    text: async () => '<html><head><style>.x{}</style></head><body><script>evil()</script><p>Hello <b>World</b></p></body></html>',
+    text: async () =>
+      '<html><head><style>.x{}</style></head><body><script>evil()</script><p>Hello <b>World</b></p></body></html>',
   });
   try {
     const result = await webRetrievalService.fetchTrustedPage(client, 'college-a', 'https://ugc.gov.in/notice');

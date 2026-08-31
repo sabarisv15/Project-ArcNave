@@ -5,15 +5,25 @@
 // created, is a permanent fact; revoke() sets revoked_at, it never
 // removes the row (see the migration's file-level comment).
 
-async function create(client, {
-  collegeId, role, departmentId, delegateUserId, startDate, endDate, reason, delegatedByUserId,
-}) {
+async function create(
+  client,
+  { collegeId, role, departmentId, delegateUserId, startDate, endDate, reason, delegatedByUserId },
+) {
   const result = await client.query(
     `INSERT INTO workflow_delegations
        (college_id, role, department_id, delegate_user_id, start_date, end_date, reason, delegated_by_user_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
-    [collegeId, role, departmentId || null, delegateUserId, startDate, endDate || null, reason || null, delegatedByUserId],
+    [
+      collegeId,
+      role,
+      departmentId || null,
+      delegateUserId,
+      startDate,
+      endDate || null,
+      reason || null,
+      delegatedByUserId,
+    ],
   );
   return result.rows[0];
 }
@@ -29,9 +39,7 @@ async function findById(client, id) {
 // (IS NOT DISTINCT FROM handles both a college-wide role with no
 // department and a department-scoped role identically, without two
 // separate query shapes).
-async function findActive(client, {
-  collegeId, role, departmentId, date,
-}) {
+async function findActive(client, { collegeId, role, departmentId, date }) {
   const result = await client.query(
     `SELECT * FROM workflow_delegations
      WHERE college_id = $1 AND role = $2 AND department_id IS NOT DISTINCT FROM $3
@@ -63,5 +71,9 @@ async function listForCollege(client, collegeId) {
 }
 
 module.exports = {
-  create, findById, findActive, revoke, listForCollege,
+  create,
+  findById,
+  findActive,
+  revoke,
+  listForCollege,
 };

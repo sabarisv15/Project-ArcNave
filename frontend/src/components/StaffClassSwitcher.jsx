@@ -52,7 +52,7 @@ export function StaffClassSwitcher({ scope, onSelect }) {
                 'flex-none flex flex-col gap-[2px] min-w-[162px] pt-[9px] px-[13px] pb-[10px] rounded-[12px] text-left font-sans cursor-pointer transition-[background-color,border-color,transform] duration-200 active:scale-[.985] motion-reduce:active:scale-100',
                 on
                   ? 'bg-accent-soft border border-accent-line shadow-[inset_0_0_0_1px_rgb(var(--c-accent-line))]'
-                  : 'bg-paper border border-line hover:border-accent-line'
+                  : 'bg-paper border border-line hover:border-accent-line',
               )}
             >
               <span className="flex items-center gap-[7px]">
@@ -63,7 +63,7 @@ export function StaffClassSwitcher({ scope, onSelect }) {
                   <span
                     className={cn(
                       'inline-flex items-center gap-[4px] text-[9px] font-[600] tracking-[.07em] uppercase',
-                      live ? 'text-success' : 'text-accent'
+                      live ? 'text-success' : 'text-accent',
                     )}
                   >
                     <span

@@ -5,7 +5,12 @@ import { DrawerShell, DrawerRail, PRIMARY_BTN, GHOST_BTN } from './AttendanceAct
 import { AssessmentReportDrawer } from './AssessmentReportDrawer';
 import { useAssessmentsStore } from '../store/AssessmentsProvider';
 import {
-  TYPE_LABELS, canPublish, isValidMark, marksProgress, scopeById, studentsForScope,
+  TYPE_LABELS,
+  canPublish,
+  isValidMark,
+  marksProgress,
+  scopeById,
+  studentsForScope,
 } from '../lib/assessmentsData';
 import { formatDateDMY } from '../lib/ist';
 import { AutosaveStatus, DraftRestoredNote } from './AutosaveStatus';
@@ -21,7 +26,7 @@ import { ME } from '../lib/documentsData';
  */
 function StudentRow({ student, index, entry, maxMarks, disabled, onChange, registerRef, onAdvance }) {
   const absent = !!entry?.absent;
-  const value = entry?.absent ? '' : entry?.value ?? '';
+  const value = entry?.absent ? '' : (entry?.value ?? '');
   const invalid = !absent && value !== '' && !isValidMark({ value: Number(value), absent: false }, maxMarks);
 
   return (
@@ -49,13 +54,19 @@ function StudentRow({ student, index, entry, maxMarks, disabled, onChange, regis
           onChange({ value: Number(raw), absent: false });
         }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === 'ArrowDown') { e.preventDefault(); onAdvance(index + 1); }
-          if (e.key === 'ArrowUp') { e.preventDefault(); onAdvance(index - 1); }
+          if (e.key === 'Enter' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            onAdvance(index + 1);
+          }
+          if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            onAdvance(index - 1);
+          }
         }}
         className={cn(
           'h-[30px] w-full px-[9px] border rounded-[8px] bg-paper font-sans text-[12.5px] tabular-nums text-ink outline-none transition-colors duration-200 focus:border-accent-line focus:shadow-[0_0_0_3px_rgba(11,114,133,.1)]',
           invalid ? 'border-danger' : 'border-line',
-          (disabled || absent) && 'bg-tint2 text-ink-disabled cursor-not-allowed'
+          (disabled || absent) && 'bg-tint2 text-ink-disabled cursor-not-allowed',
         )}
       />
 
@@ -67,7 +78,7 @@ function StudentRow({ student, index, entry, maxMarks, disabled, onChange, regis
         className={cn(
           'h-[26px] px-[9px] border rounded-[8px] font-sans text-[11px] font-[500] transition-colors duration-200',
           absent ? 'border-danger bg-danger-soft text-danger' : 'border-line bg-paper text-ink-muted hover:bg-tint2',
-          disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+          disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
         )}
       >
         Absent
@@ -123,7 +134,7 @@ export function AssessmentDetailDrawer({ assessmentId, onClose }) {
     const term = query.trim().toLowerCase();
     if (!term) return students;
     return students.filter(
-      (s) => s.name.toLowerCase().includes(term) || s.roll.includes(term) || s.registerNumber.includes(term)
+      (s) => s.name.toLowerCase().includes(term) || s.roll.includes(term) || s.registerNumber.includes(term),
     );
   }, [students, query]);
 
@@ -135,7 +146,10 @@ export function AssessmentDetailDrawer({ assessmentId, onClose }) {
 
   const advance = (nextIndex) => {
     const el = inputRefs.current[nextIndex];
-    if (el) { el.focus(); el.select?.(); }
+    if (el) {
+      el.focus();
+      el.select?.();
+    }
   };
 
   return (
@@ -186,8 +200,13 @@ export function AssessmentDetailDrawer({ assessmentId, onClose }) {
                 entry={assessment.marks[s.id]}
                 maxMarks={assessment.maxMarks}
                 disabled={published}
-                onChange={(entry) => { setMark(assessment.id, s.id, entry); marksAutosave.schedule(); }}
-                registerRef={(el) => { inputRefs.current[index] = el; }}
+                onChange={(entry) => {
+                  setMark(assessment.id, s.id, entry);
+                  marksAutosave.schedule();
+                }}
+                registerRef={(el) => {
+                  inputRefs.current[index] = el;
+                }}
                 onAdvance={advance}
               />
             );
@@ -205,11 +224,17 @@ export function AssessmentDetailDrawer({ assessmentId, onClose }) {
               Published marks will be available in Class Tutor view.
             </p>
             <div className="flex items-center justify-end gap-[8px]">
-              <button type="button" className={GHOST_BTN} onClick={() => setConfirming(false)}>Cancel</button>
+              <button type="button" className={GHOST_BTN} onClick={() => setConfirming(false)}>
+                Cancel
+              </button>
               <button
                 type="button"
                 className={PRIMARY_BTN}
-                onClick={() => { publishAssessment(assessment.id); marksAutosave.markClean(); setConfirming(false); }}
+                onClick={() => {
+                  publishAssessment(assessment.id);
+                  marksAutosave.markClean();
+                  setConfirming(false);
+                }}
               >
                 Publish marks
               </button>
@@ -222,7 +247,9 @@ export function AssessmentDetailDrawer({ assessmentId, onClose }) {
                 {entered} / {total} entered
                 {!published && (
                   <>
-                    <span className="mx-[5px] text-ink-faint" aria-hidden="true">·</span>
+                    <span className="mx-[5px] text-ink-faint" aria-hidden="true">
+                      ·
+                    </span>
                     {restoredMarks && marksAutosave.status === 'idle' ? (
                       <DraftRestoredNote show />
                     ) : (
@@ -237,14 +264,20 @@ export function AssessmentDetailDrawer({ assessmentId, onClose }) {
               </span>
             }
           >
-            <button type="button" className={GHOST_BTN} onClick={() => setReportOpen(true)}>Report</button>
+            <button type="button" className={GHOST_BTN} onClick={() => setReportOpen(true)}>
+              Report
+            </button>
             {!published && (
               <button
                 type="button"
                 onClick={() => setConfirming(true)}
                 disabled={!publishable}
                 title={publishable ? undefined : 'Every student needs a valid mark before publishing.'}
-                className={cn(publishable ? PRIMARY_BTN : 'flex-none h-[34px] px-[15px] border-0 rounded-[10px] bg-frame text-ink-disabled font-sans text-[12.5px] font-[500] cursor-not-allowed')}
+                className={cn(
+                  publishable
+                    ? PRIMARY_BTN
+                    : 'flex-none h-[34px] px-[15px] border-0 rounded-[10px] bg-frame text-ink-disabled font-sans text-[12.5px] font-[500] cursor-not-allowed',
+                )}
               >
                 Publish marks
               </button>

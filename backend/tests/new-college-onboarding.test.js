@@ -148,10 +148,14 @@ test('new-college onboarding: dual-write consistency', async (t) => {
   }
 
   let lastInvitationToken = null;
-  const emailMock = t.mock.method(notificationService, 'sendPrincipalInvitationEmail', async (client, { to, token }) => {
-    lastInvitationToken = token;
-    return { status: 'stubbed', to };
-  });
+  const emailMock = t.mock.method(
+    notificationService,
+    'sendPrincipalInvitationEmail',
+    async (client, { to, token }) => {
+      lastInvitationToken = token;
+      return { status: 'stubbed', to };
+    },
+  );
   t.after(() => emailMock.mock.restore());
 
   async function invite(token, collegeId, email) {
@@ -169,61 +173,68 @@ test('new-college onboarding: dual-write consistency', async (t) => {
     return post(baseUrl, '/api/v1/invitations/accept', {}, { token: rawToken, username, password });
   }
 
-  await t.test('accept dual-writes the users.role row AND a fully-linked Level 1 position/account/occupant', async () => {
-    const collegeId = await seedCollege('on');
-    const token = await platformToken();
-    const email = 'principal-on@example.com';
-    const inviteResp = await invite(token, collegeId, email);
-    const username = `onuser${crypto.randomUUID().slice(0, 8)}`;
+  await t.test(
+    'accept dual-writes the users.role row AND a fully-linked Level 1 position/account/occupant',
+    async () => {
+      const collegeId = await seedCollege('on');
+      const token = await platformToken();
+      const email = 'principal-on@example.com';
+      const inviteResp = await invite(token, collegeId, email);
+      const username = `onuser${crypto.randomUUID().slice(0, 8)}`;
 
-    const resp = await accept(inviteResp.rawToken, username);
-    assert.equal(resp.status, 201);
-    assert.equal(resp.body.role, 'principal');
+      const resp = await accept(inviteResp.rawToken, username);
+      assert.equal(resp.status, 201);
+      assert.equal(resp.body.role, 'principal');
 
-    const userRow = await adminPool.query(
-      'SELECT id, role, is_active, email, password_hash FROM users WHERE college_id = $1 AND username = $2',
-      [collegeId, username],
-    );
-    assert.equal(userRow.rows.length, 1);
-    const user = userRow.rows[0];
-    assert.equal(user.role, 'principal', 'the users.role dual-write must happen alongside the position account');
-    assert.equal(user.is_active, true);
+      const userRow = await adminPool.query(
+        'SELECT id, role, is_active, email, password_hash FROM users WHERE college_id = $1 AND username = $2',
+        [collegeId, username],
+      );
+      assert.equal(userRow.rows.length, 1);
+      const user = userRow.rows[0];
+      assert.equal(user.role, 'principal', 'the users.role dual-write must happen alongside the position account');
+      assert.equal(user.is_active, true);
 
-    const positions = await adminPool.query('SELECT * FROM positions WHERE college_id = $1', [collegeId]);
-    assert.equal(positions.rows.length, 1);
-    const position = positions.rows[0];
-    assert.equal(position.level, 1);
-    assert.equal(position.title, 'Principal');
-    assert.equal(position.created_by, user.id);
+      const positions = await adminPool.query('SELECT * FROM positions WHERE college_id = $1', [collegeId]);
+      assert.equal(positions.rows.length, 1);
+      const position = positions.rows[0];
+      assert.equal(position.level, 1);
+      assert.equal(position.title, 'Principal');
+      assert.equal(position.created_by, user.id);
 
-    const accounts = await adminPool.query('SELECT * FROM position_accounts WHERE position_id = $1', [position.id]);
-    assert.equal(accounts.rows.length, 1);
-    const account = accounts.rows[0];
-    assert.equal(account.official_email, email);
-    assert.equal(account.password_hash, user.password_hash);
-    assert.equal(account.college_id, collegeId);
+      const accounts = await adminPool.query('SELECT * FROM position_accounts WHERE position_id = $1', [position.id]);
+      assert.equal(accounts.rows.length, 1);
+      const account = accounts.rows[0];
+      assert.equal(account.official_email, email);
+      assert.equal(account.password_hash, user.password_hash);
+      assert.equal(account.college_id, collegeId);
 
-    const occupants = await adminPool.query(
-      'SELECT * FROM position_occupants WHERE position_account_id = $1',
-      [account.id],
-    );
-    assert.equal(occupants.rows.length, 1);
-    const occupant = occupants.rows[0];
-    assert.equal(occupant.user_id, user.id);
-    assert.equal(occupant.assigned_by, user.id);
-    assert.equal(occupant.revoked_at, null, 'the new principal must be the single ACTIVE occupant');
+      const occupants = await adminPool.query('SELECT * FROM position_occupants WHERE position_account_id = $1', [
+        account.id,
+      ]);
+      assert.equal(occupants.rows.length, 1);
+      const occupant = occupants.rows[0];
+      assert.equal(occupant.user_id, user.id);
+      assert.equal(occupant.assigned_by, user.id);
+      assert.equal(occupant.revoked_at, null, 'the new principal must be the single ACTIVE occupant');
 
-    const categories = await adminPool.query(
-      'SELECT name, slug FROM document_categories WHERE college_id = $1 ORDER BY name',
-      [collegeId],
-    );
-    assert.equal(categories.rows.length, 7, 'accept must seed the 7 default document categories for a new college');
-    const slugs = categories.rows.map((r) => r.slug).sort();
-    assert.deepEqual(
-      slugs,
-      ['academic_calendar', 'circular', 'curriculum', 'examination', 'forms', 'notices', 'policies'],
-    );
-  });
+      const categories = await adminPool.query(
+        'SELECT name, slug FROM document_categories WHERE college_id = $1 ORDER BY name',
+        [collegeId],
+      );
+      assert.equal(categories.rows.length, 7, 'accept must seed the 7 default document categories for a new college');
+      const slugs = categories.rows.map((r) => r.slug).sort();
+      assert.deepEqual(slugs, [
+        'academic_calendar',
+        'circular',
+        'curriculum',
+        'examination',
+        'forms',
+        'notices',
+        'policies',
+      ]);
+    },
+  );
 
   await t.test('a Platform-Admin-chosen Level 1 title is honored end-to-end (create -> invite -> accept)', async () => {
     const token = await platformToken();
@@ -233,7 +244,10 @@ test('new-college onboarding: dual-write consistency', async (t) => {
       '/api/v1/platform/colleges',
       { authorization: `Bearer ${token}` },
       {
-        college_id: cid, name: cid, subdomain: cid, level1_position_title: 'Director',
+        college_id: cid,
+        name: cid,
+        subdomain: cid,
+        level1_position_title: 'Director',
       },
     );
     assert.equal(createResp.status, 201);
@@ -249,7 +263,11 @@ test('new-college onboarding: dual-write consistency', async (t) => {
 
     const positions = await adminPool.query('SELECT * FROM positions WHERE college_id = $1', [cid]);
     assert.equal(positions.rows.length, 1);
-    assert.equal(positions.rows[0].title, 'Director', 'the admin-chosen title must be used, not the "Principal" default');
+    assert.equal(
+      positions.rows[0].title,
+      'Director',
+      'the admin-chosen title must be used, not the "Principal" default',
+    );
   });
 
   await t.test('never creates a second Level 1 position for a college that already has one', async () => {
@@ -267,13 +285,22 @@ test('new-college onboarding: dual-write consistency', async (t) => {
     );
     const preexisting = seedUser.rows[0];
     const position = await positionRepository.createPosition(adminPool, {
-      collegeId, level: 1, title: 'Director', createdBy: preexisting.id,
+      collegeId,
+      level: 1,
+      title: 'Director',
+      createdBy: preexisting.id,
     });
     const account = await positionRepository.createPositionAccount(adminPool, {
-      collegeId, positionId: position.id, officialEmail: preexisting.email, passwordHash: preexisting.password_hash,
+      collegeId,
+      positionId: position.id,
+      officialEmail: preexisting.email,
+      passwordHash: preexisting.password_hash,
     });
     await positionRepository.createPositionOccupant(adminPool, {
-      collegeId, positionAccountId: account.id, userId: preexisting.id, assignedBy: preexisting.id,
+      collegeId,
+      positionAccountId: account.id,
+      userId: preexisting.id,
+      assignedBy: preexisting.id,
     });
 
     // users_one_active_principal_per_college means this college's
@@ -298,15 +325,14 @@ test('new-college onboarding: dual-write consistency', async (t) => {
 
     // The new user was still created (dual-write always happens) but
     // was never linked as an occupant of the pre-existing account.
-    const newUserRow = await adminPool.query(
-      'SELECT id FROM users WHERE college_id = $1 AND username = $2',
-      [collegeId, username],
-    );
+    const newUserRow = await adminPool.query('SELECT id FROM users WHERE college_id = $1 AND username = $2', [
+      collegeId,
+      username,
+    ]);
     assert.equal(newUserRow.rows.length, 1);
-    const occupants = await adminPool.query(
-      'SELECT * FROM position_occupants WHERE position_account_id = $1',
-      [account.id],
-    );
+    const occupants = await adminPool.query('SELECT * FROM position_occupants WHERE position_account_id = $1', [
+      account.id,
+    ]);
     assert.equal(occupants.rows.length, 1, 'occupant history for the pre-existing account must be unchanged');
     assert.equal(occupants.rows[0].user_id, preexisting.id);
   });

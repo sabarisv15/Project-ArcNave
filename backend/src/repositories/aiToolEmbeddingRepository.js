@@ -59,5 +59,7 @@ async function search(client, { toolNames, embedding, limit }) {
 }
 
 module.exports = {
-  upsert, findExistingToolNames, search,
+  upsert,
+  findExistingToolNames,
+  search,
 };

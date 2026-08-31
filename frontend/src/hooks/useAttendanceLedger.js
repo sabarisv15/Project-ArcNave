@@ -33,15 +33,15 @@ export function useAttendanceLedger() {
   /** Ownership filters the *subject list*, not students — ownership is a property of the allocation. */
   const subjects = useMemo(
     () => LEDGER_SUBJECTS.filter((s) => !filters.ownership || s.ownership === filters.ownership),
-    [filters.ownership]
+    [filters.ownership],
   );
 
   // If the ownership filter hides the selected subject, fall back to the first visible one.
-  const activeKey = subjects.some((s) => s.key === subjectKey) ? subjectKey : subjects[0]?.key ?? null;
+  const activeKey = subjects.some((s) => s.key === subjectKey) ? subjectKey : (subjects[0]?.key ?? null);
 
   const ledger = useMemo(
     () => (activeKey ? buildSubjectLedger(activeKey, { now, datePreset, customFrom, customTo }) : null),
-    [activeKey, now, datePreset, customFrom, customTo]
+    [activeKey, now, datePreset, customFrom, customTo],
   );
 
   const students = useMemo(() => {
@@ -72,32 +72,62 @@ export function useAttendanceLedger() {
 
   const activeChips = useMemo(() => {
     const chips = [];
-    if (filters.ownership) chips.push({ key: 'ownership', label: filters.ownership === 'own' ? 'My class' : 'Substitute duty' });
+    if (filters.ownership)
+      chips.push({ key: 'ownership', label: filters.ownership === 'own' ? 'My class' : 'Substitute duty' });
     if (filters.threshold) {
-      chips.push({ key: 'threshold', label: filters.threshold === 'below' ? `Below ${ATTENDANCE_THRESHOLD}%` : `Meets ${ATTENDANCE_THRESHOLD}%` });
+      chips.push({
+        key: 'threshold',
+        label: filters.threshold === 'below' ? `Below ${ATTENDANCE_THRESHOLD}%` : `Meets ${ATTENDANCE_THRESHOLD}%`,
+      });
     }
     if (datePreset !== 'all') chips.push({ key: 'date', label: DATE_PRESETS.find((p) => p.key === datePreset)?.label });
     return chips;
   }, [filters, datePreset]);
 
-  const removeChip = useCallback((key) => {
-    if (key === 'date') { setDatePreset('all'); setCustomFrom(''); setCustomTo(''); return; }
-    setFilter(key, '');
-  }, [setFilter]);
+  const removeChip = useCallback(
+    (key) => {
+      if (key === 'date') {
+        setDatePreset('all');
+        setCustomFrom('');
+        setCustomTo('');
+        return;
+      }
+      setFilter(key, '');
+    },
+    [setFilter],
+  );
 
   const selectedStudent = useMemo(
-    () => (selectedStudentId ? ledger?.students.find((s) => s.id === selectedStudentId) ?? null : null),
-    [ledger, selectedStudentId]
+    () => (selectedStudentId ? (ledger?.students.find((s) => s.id === selectedStudentId) ?? null) : null),
+    [ledger, selectedStudentId],
   );
 
   return {
-    now, subjects, subjectKey: activeKey, setSubjectKey, ledger, students,
-    query, setQuery,
-    panel, setPanel,
+    now,
+    subjects,
+    subjectKey: activeKey,
+    setSubjectKey,
+    ledger,
+    students,
+    query,
+    setQuery,
+    panel,
+    setPanel,
     filtersOpen: panel === 'filters',
-    filters, setFilter, clearFilters, activeChips, activeFilterCount: activeChips.length, removeChip,
-    datePreset, setDatePreset, customFrom, setCustomFrom, customTo, setCustomTo,
-    sortKey, setSortKey,
+    filters,
+    setFilter,
+    clearFilters,
+    activeChips,
+    activeFilterCount: activeChips.length,
+    removeChip,
+    datePreset,
+    setDatePreset,
+    customFrom,
+    setCustomFrom,
+    customTo,
+    setCustomTo,
+    sortKey,
+    setSortKey,
     selectedStudent,
     openStudent: setSelectedStudentId,
     closeStudent: () => setSelectedStudentId(null),

@@ -16,7 +16,11 @@ const { validate, EMPTY_STATE_MESSAGE } = require('../src/services/aiExperience/
 const aiToolRegistry = require('../src/services/aiToolRegistry');
 
 function sanitizedContextFor(toolName, data) {
-  return { entries: [{ toolName, dataClassification: 'Internal', retrievedAt: new Date().toISOString(), data: JSON.stringify(data) }] };
+  return {
+    entries: [
+      { toolName, dataClassification: 'Internal', retrievedAt: new Date().toISOString(), data: JSON.stringify(data) },
+    ],
+  };
 }
 
 test('aiExperienceLayer.buildPresentation — structured sections', async (t) => {
@@ -49,7 +53,11 @@ test('aiExperienceLayer.buildPresentation — structured sections', async (t) =>
     const rows = [{ classId: 'uuid-should-not-appear', className: 'CSE-A', attendanceRatePercent: 80 }];
     const presentation = aiExperienceLayer.buildPresentation({
       sanitizedContext: sanitizedContextFor('attendance_summary', rows),
-      question: 'q', answer: 'a', toolUsed: 'attendance_summary', actorRole: 'staff', tool: null,
+      question: 'q',
+      answer: 'a',
+      toolUsed: 'attendance_summary',
+      actorRole: 'staff',
+      tool: null,
     });
     assert.ok(!presentation.markdown.includes('classId'));
     assert.ok(!presentation.markdown.includes('uuid-should-not-appear'));
@@ -58,7 +66,11 @@ test('aiExperienceLayer.buildPresentation — structured sections', async (t) =>
   await t.test('an empty array result gets a graceful empty-state message, not an empty section', () => {
     const presentation = aiExperienceLayer.buildPresentation({
       sanitizedContext: sanitizedContextFor('students_low_attendance', []),
-      question: 'any low attendance classes?', answer: null, toolUsed: 'students_low_attendance', actorRole: 'staff', tool: null,
+      question: 'any low attendance classes?',
+      answer: null,
+      toolUsed: 'students_low_attendance',
+      actorRole: 'staff',
+      tool: null,
     });
     assert.equal(presentation.sections.summary, EMPTY_STATE_MESSAGE);
     assert.equal(presentation.sections.details, null);
@@ -71,18 +83,28 @@ test('aiExperienceLayer.buildPresentation — structured sections', async (t) =>
   // (₹4) instead of a plain number — formatValues.js's
   // AMOUNT_KEY_PATTERN matched the substring, not the field's actual
   // meaning.
-  await t.test('a count field is never rendered as a currency amount, even if its name contains "fee" or "paid"', () => {
-    const presentation = aiExperienceLayer.buildPresentation({
-      sanitizedContext: sanitizedContextFor('finance_status_summary', {
-        feeStructuresCount: 4, paidCount: 2, notPaidCount: 2, collectedAmount: 90000,
-      }),
-      question: 'q', answer: 'a', toolUsed: 'finance_status_summary', actorRole: 'principal', tool: null,
-    });
-    const metrics = Object.fromEntries(presentation.sections.keyMetrics.map((m) => [m.label, m.value]));
-    assert.equal(metrics['Fee Structures Count'], '4');
-    assert.equal(metrics['Paid Count'], '2');
-    assert.equal(metrics['Collected Amount'], '₹90,000');
-  });
+  await t.test(
+    'a count field is never rendered as a currency amount, even if its name contains "fee" or "paid"',
+    () => {
+      const presentation = aiExperienceLayer.buildPresentation({
+        sanitizedContext: sanitizedContextFor('finance_status_summary', {
+          feeStructuresCount: 4,
+          paidCount: 2,
+          notPaidCount: 2,
+          collectedAmount: 90000,
+        }),
+        question: 'q',
+        answer: 'a',
+        toolUsed: 'finance_status_summary',
+        actorRole: 'principal',
+        tool: null,
+      });
+      const metrics = Object.fromEntries(presentation.sections.keyMetrics.map((m) => [m.label, m.value]));
+      assert.equal(metrics['Fee Structures Count'], '4');
+      assert.equal(metrics['Paid Count'], '2');
+      assert.equal(metrics['Collected Amount'], '₹90,000');
+    },
+  );
 
   // UAT finding (live NIM run against finance_status_summary): a flat
   // object's Details section repeated every field already shown in Key
@@ -90,17 +112,30 @@ test('aiExperienceLayer.buildPresentation — structured sections', async (t) =>
   await t.test('a flat object result never duplicates its numeric Key Metrics fields inside Details', () => {
     const presentation = aiExperienceLayer.buildPresentation({
       sanitizedContext: sanitizedContextFor('finance_status_summary', {
-        feeStructuresCount: 4, collectedAmount: 90000,
+        feeStructuresCount: 4,
+        collectedAmount: 90000,
       }),
-      question: 'q', answer: 'a', toolUsed: 'finance_status_summary', actorRole: 'principal', tool: null,
+      question: 'q',
+      answer: 'a',
+      toolUsed: 'finance_status_summary',
+      actorRole: 'principal',
+      tool: null,
     });
-    assert.equal(presentation.sections.details, null, 'nothing non-numeric is left once Key Metrics has claimed both fields');
+    assert.equal(
+      presentation.sections.details,
+      null,
+      'nothing non-numeric is left once Key Metrics has claimed both fields',
+    );
   });
 
   await t.test('no tool picked (askAgent direct-answer branch) still renders a clean Answer section', () => {
     const presentation = aiExperienceLayer.buildPresentation({
       sanitizedContext: { entries: [] },
-      question: 'what is the capital of France?', answer: 'Paris.', toolUsed: null, actorRole: 'staff', tool: null,
+      question: 'what is the capital of France?',
+      answer: 'Paris.',
+      toolUsed: null,
+      actorRole: 'staff',
+      tool: null,
     });
     assert.equal(presentation.sections.title, 'Answer');
     assert.equal(presentation.sections.summary, 'Paris.');
@@ -110,12 +145,20 @@ test('aiExperienceLayer.buildPresentation — structured sections', async (t) =>
 });
 
 test('aiExperienceLayer.buildPresentation — role personas present the same data differently', async (t) => {
-  const rows = Array.from({ length: 15 }, (_, i) => ({ classId: `c${i}`, className: `Class-${i}`, attendanceRatePercent: 50 + i }));
+  const rows = Array.from({ length: 15 }, (_, i) => ({
+    classId: `c${i}`,
+    className: `Class-${i}`,
+    attendanceRatePercent: 50 + i,
+  }));
 
   await t.test('staff (tutor) sees the full row-level table, no truncation', () => {
     const presentation = aiExperienceLayer.buildPresentation({
       sanitizedContext: sanitizedContextFor('attendance_summary', rows),
-      question: 'q', answer: 'a', toolUsed: 'attendance_summary', actorRole: 'staff', tool: null,
+      question: 'q',
+      answer: 'a',
+      toolUsed: 'attendance_summary',
+      actorRole: 'staff',
+      tool: null,
     });
     assert.equal(presentation.sections.persona, 'Tutor');
     assert.equal(presentation.sections.details.rows.length, 15);
@@ -125,7 +168,11 @@ test('aiExperienceLayer.buildPresentation — role personas present the same dat
   await t.test('principal sees an aggregate, capped table with a truncation note', () => {
     const presentation = aiExperienceLayer.buildPresentation({
       sanitizedContext: sanitizedContextFor('attendance_summary', rows),
-      question: 'q', answer: 'a', toolUsed: 'attendance_summary', actorRole: 'principal', tool: null,
+      question: 'q',
+      answer: 'a',
+      toolUsed: 'attendance_summary',
+      actorRole: 'principal',
+      tool: null,
     });
     assert.equal(presentation.sections.persona, 'Principal');
     assert.ok(presentation.sections.details.rows.length < 15);
@@ -136,11 +183,19 @@ test('aiExperienceLayer.buildPresentation — role personas present the same dat
   await t.test('the same underlying rows are unchanged across personas — only presentation differs', () => {
     const staffPresentation = aiExperienceLayer.buildPresentation({
       sanitizedContext: sanitizedContextFor('attendance_summary', rows.slice(0, 3)),
-      question: 'q', answer: 'a', toolUsed: 'attendance_summary', actorRole: 'staff', tool: null,
+      question: 'q',
+      answer: 'a',
+      toolUsed: 'attendance_summary',
+      actorRole: 'staff',
+      tool: null,
     });
     const hodPresentation = aiExperienceLayer.buildPresentation({
       sanitizedContext: sanitizedContextFor('attendance_summary', rows.slice(0, 3)),
-      question: 'q', answer: 'a', toolUsed: 'attendance_summary', actorRole: 'hod', tool: null,
+      question: 'q',
+      answer: 'a',
+      toolUsed: 'attendance_summary',
+      actorRole: 'hod',
+      tool: null,
     });
     assert.deepEqual(staffPresentation.sections.details.rows, hodPresentation.sections.details.rows);
     assert.notEqual(staffPresentation.sections.persona, hodPresentation.sections.persona);
@@ -180,14 +235,22 @@ test('followUpSuggestions.buildFollowUps', async (t) => {
 });
 
 test('qualityGuard.validate', async (t) => {
-  await t.test('drops empty keyMetrics/details/insights/recommendedActions rather than rendering blank sections', () => {
-    const cleaned = validate({
-      title: 'X', summary: 'Some answer', keyMetrics: [], details: null, insights: [], recommendedActions: [],
-    });
-    assert.equal(cleaned.keyMetrics.length, 0);
-    assert.equal(cleaned.details, null);
-    assert.equal(cleaned.insights.length, 0);
-  });
+  await t.test(
+    'drops empty keyMetrics/details/insights/recommendedActions rather than rendering blank sections',
+    () => {
+      const cleaned = validate({
+        title: 'X',
+        summary: 'Some answer',
+        keyMetrics: [],
+        details: null,
+        insights: [],
+        recommendedActions: [],
+      });
+      assert.equal(cleaned.keyMetrics.length, 0);
+      assert.equal(cleaned.details, null);
+      assert.equal(cleaned.insights.length, 0);
+    },
+  );
 
   await t.test('de-duplicates repeated insight/recommendation lines', () => {
     const cleaned = validate({
@@ -204,14 +267,24 @@ test('qualityGuard.validate', async (t) => {
 
   await t.test('a fully empty result gets the graceful empty-state summary, never a blank body', () => {
     const cleaned = validate({
-      title: 'X', summary: null, keyMetrics: [], details: null, insights: [], recommendedActions: [],
+      title: 'X',
+      summary: null,
+      keyMetrics: [],
+      details: null,
+      insights: [],
+      recommendedActions: [],
     });
     assert.equal(cleaned.summary, EMPTY_STATE_MESSAGE);
   });
 
   await t.test('a table with zero rows is normalized away entirely', () => {
     const cleaned = validate({
-      title: 'X', summary: 'a', keyMetrics: [], details: { type: 'table', columns: ['A'], rows: [] }, insights: [], recommendedActions: [],
+      title: 'X',
+      summary: 'a',
+      keyMetrics: [],
+      details: { type: 'table', columns: ['A'], rows: [] },
+      insights: [],
+      recommendedActions: [],
     });
     assert.equal(cleaned.details, null);
   });
@@ -226,7 +299,11 @@ test('aiExperienceLayer.buildPresentation — chart section (consumer-tool-adapt
     ];
     const presentation = aiExperienceLayer.buildPresentation({
       sanitizedContext: sanitizedContextFor('attendance_summary', rows),
-      question: 'attendance by class?', answer: 'Here is attendance by class.', toolUsed: 'attendance_summary', actorRole: 'hod', tool: null,
+      question: 'attendance by class?',
+      answer: 'Here is attendance by class.',
+      toolUsed: 'attendance_summary',
+      actorRole: 'hod',
+      tool: null,
     });
     assert.equal(presentation.sections.chart.type, 'chart');
     assert.equal(presentation.sections.chart.points.length, 3);
@@ -240,15 +317,26 @@ test('aiExperienceLayer.buildPresentation — chart section (consumer-tool-adapt
   await t.test('a single-row result never charts (nothing to compare against)', () => {
     const presentation = aiExperienceLayer.buildPresentation({
       sanitizedContext: sanitizedContextFor('attendance_summary', [{ className: 'CSE-A', attendanceRatePercent: 92 }]),
-      question: 'q', answer: 'a', toolUsed: 'attendance_summary', actorRole: 'staff', tool: null,
+      question: 'q',
+      answer: 'a',
+      toolUsed: 'attendance_summary',
+      actorRole: 'staff',
+      tool: null,
     });
     assert.equal(presentation.sections.chart, null);
   });
 
   await t.test('a result with no numeric field never charts', () => {
     const presentation = aiExperienceLayer.buildPresentation({
-      sanitizedContext: sanitizedContextFor('list_institutional_documents', [{ title: 'Circular A' }, { title: 'Circular B' }]),
-      question: 'q', answer: 'a', toolUsed: 'list_institutional_documents', actorRole: 'staff', tool: null,
+      sanitizedContext: sanitizedContextFor('list_institutional_documents', [
+        { title: 'Circular A' },
+        { title: 'Circular B' },
+      ]),
+      question: 'q',
+      answer: 'a',
+      toolUsed: 'list_institutional_documents',
+      actorRole: 'staff',
+      tool: null,
     });
     assert.equal(presentation.sections.chart, null);
   });
@@ -257,23 +345,44 @@ test('aiExperienceLayer.buildPresentation — chart section (consumer-tool-adapt
 test('aiExperienceLayer.buildPresentation — choices section (consumer-tool-adaptation: ask_user_input_v0)', async (t) => {
   await t.test('ask_user_choice renders as a choices section, never duplicated into Details', () => {
     const presentation = aiExperienceLayer.buildPresentation({
-      sanitizedContext: sanitizedContextFor('ask_user_choice', { prompt: 'Which category?', options: ['Circulars', 'Curriculum', 'Policies'] }),
-      question: 'save this document', answer: 'Which category should this go under?', toolUsed: 'ask_user_choice', actorRole: 'staff', tool: aiToolRegistry.getTool('ask_user_choice'),
+      sanitizedContext: sanitizedContextFor('ask_user_choice', {
+        prompt: 'Which category?',
+        options: ['Circulars', 'Curriculum', 'Policies'],
+      }),
+      question: 'save this document',
+      answer: 'Which category should this go under?',
+      toolUsed: 'ask_user_choice',
+      actorRole: 'staff',
+      tool: aiToolRegistry.getTool('ask_user_choice'),
     });
-    assert.deepEqual(presentation.sections.choices, { kind: 'choices', prompt: 'Which category?', options: ['Circulars', 'Curriculum', 'Policies'] });
+    assert.deepEqual(presentation.sections.choices, {
+      kind: 'choices',
+      prompt: 'Which category?',
+      options: ['Circulars', 'Curriculum', 'Policies'],
+    });
     assert.equal(presentation.sections.details, null);
     assert.equal(presentation.sections.keyMetrics.length, 0);
     const optionOccurrences = (presentation.markdown.match(/Circulars/g) || []).length;
     assert.equal(optionOccurrences, 1);
   });
 
-  await t.test('a non-ask_user_choice tool never produces a choices section even with a similarly-shaped result', () => {
-    const presentation = aiExperienceLayer.buildPresentation({
-      sanitizedContext: sanitizedContextFor('get_college_profile', { prompt: 'not a real question', options: ['a', 'b'] }),
-      question: 'q', answer: 'a', toolUsed: 'get_college_profile', actorRole: 'principal', tool: null,
-    });
-    assert.equal(presentation.sections.choices, null);
-  });
+  await t.test(
+    'a non-ask_user_choice tool never produces a choices section even with a similarly-shaped result',
+    () => {
+      const presentation = aiExperienceLayer.buildPresentation({
+        sanitizedContext: sanitizedContextFor('get_college_profile', {
+          prompt: 'not a real question',
+          options: ['a', 'b'],
+        }),
+        question: 'q',
+        answer: 'a',
+        toolUsed: 'get_college_profile',
+        actorRole: 'principal',
+        tool: null,
+      });
+      assert.equal(presentation.sections.choices, null);
+    },
+  );
 });
 
 test('aiExperienceLayer.buildPresentation — timeline section (consumer-tool-adaptation: itinerary_display_v0)', async (t) => {
@@ -285,7 +394,11 @@ test('aiExperienceLayer.buildPresentation — timeline section (consumer-tool-ad
     ];
     const presentation = aiExperienceLayer.buildPresentation({
       sanitizedContext: sanitizedContextFor('list_calendar_events', rows),
-      question: 'q', answer: 'Here is the calendar.', toolUsed: 'list_calendar_events', actorRole: 'staff', tool: null,
+      question: 'q',
+      answer: 'Here is the calendar.',
+      toolUsed: 'list_calendar_events',
+      actorRole: 'staff',
+      tool: null,
     });
     assert.equal(presentation.sections.timeline.days.length, 2);
     assert.equal(presentation.sections.timeline.days[0].date, '2026-08-01');
@@ -295,8 +408,15 @@ test('aiExperienceLayer.buildPresentation — timeline section (consumer-tool-ad
 
   await t.test('a non-calendar tool never produces a timeline even with a start_date-shaped field', () => {
     const presentation = aiExperienceLayer.buildPresentation({
-      sanitizedContext: sanitizedContextFor('students_roster', [{ name: 'A', start_date: '2026-01-01' }, { name: 'B', start_date: '2026-01-02' }]),
-      question: 'q', answer: 'a', toolUsed: 'students_roster', actorRole: 'staff', tool: null,
+      sanitizedContext: sanitizedContextFor('students_roster', [
+        { name: 'A', start_date: '2026-01-01' },
+        { name: 'B', start_date: '2026-01-02' },
+      ]),
+      question: 'q',
+      answer: 'a',
+      toolUsed: 'students_roster',
+      actorRole: 'staff',
+      tool: null,
     });
     assert.equal(presentation.sections.timeline, null);
   });
@@ -305,8 +425,15 @@ test('aiExperienceLayer.buildPresentation — timeline section (consumer-tool-ad
 test('aiExperienceLayer.buildPresentation — present_options section (consumer-tool-adaptation: options_card_display_v0)', async (t) => {
   await t.test('renders as a neutral options card, never duplicated into Details', () => {
     const presentation = aiExperienceLayer.buildPresentation({
-      sanitizedContext: sanitizedContextFor('present_options', { title: 'Ways to handle this', options: [{ label: 'Mark excused', description: 'valid reason given' }, { label: 'Flag for follow-up' }] }),
-      question: 'q', answer: 'Here are two approaches.', toolUsed: 'present_options', actorRole: 'staff', tool: aiToolRegistry.getTool('present_options'),
+      sanitizedContext: sanitizedContextFor('present_options', {
+        title: 'Ways to handle this',
+        options: [{ label: 'Mark excused', description: 'valid reason given' }, { label: 'Flag for follow-up' }],
+      }),
+      question: 'q',
+      answer: 'Here are two approaches.',
+      toolUsed: 'present_options',
+      actorRole: 'staff',
+      tool: aiToolRegistry.getTool('present_options'),
     });
     assert.equal(presentation.sections.optionsCard.options.length, 2);
     assert.equal(presentation.sections.details, null);
@@ -317,8 +444,15 @@ test('aiExperienceLayer.buildPresentation — present_options section (consumer-
 test('aiExperienceLayer.buildPresentation — present_quiz section (consumer-tool-adaptation: quiz_display_v0)', async (t) => {
   await t.test('renders questions and a separate answer key, never duplicated into Details', () => {
     const presentation = aiExperienceLayer.buildPresentation({
-      sanitizedContext: sanitizedContextFor('present_quiz', { title: 'Quiz', questions: [{ question: 'What gas do plants absorb?', options: ['Oxygen', 'CO2'], correctIndex: 1 }] }),
-      question: 'q', answer: 'Here is a quiz.', toolUsed: 'present_quiz', actorRole: 'staff', tool: aiToolRegistry.getTool('present_quiz'),
+      sanitizedContext: sanitizedContextFor('present_quiz', {
+        title: 'Quiz',
+        questions: [{ question: 'What gas do plants absorb?', options: ['Oxygen', 'CO2'], correctIndex: 1 }],
+      }),
+      question: 'q',
+      answer: 'Here is a quiz.',
+      toolUsed: 'present_quiz',
+      actorRole: 'staff',
+      tool: aiToolRegistry.getTool('present_quiz'),
     });
     assert.equal(presentation.sections.quiz.questions.length, 1);
     assert.equal(presentation.sections.details, null);
@@ -330,9 +464,16 @@ test('aiExperienceLayer.buildPresentation — present_translation section (consu
   await t.test('renders as a source/target table, never duplicated into Details', () => {
     const presentation = aiExperienceLayer.buildPresentation({
       sanitizedContext: sanitizedContextFor('present_translation', {
-        sourceText: 'Hello', sourceLang: 'English', targetText: 'Vanakkam', targetLang: 'Tamil',
+        sourceText: 'Hello',
+        sourceLang: 'English',
+        targetText: 'Vanakkam',
+        targetLang: 'Tamil',
       }),
-      question: 'q', answer: 'Translated below.', toolUsed: 'present_translation', actorRole: 'staff', tool: aiToolRegistry.getTool('present_translation'),
+      question: 'q',
+      answer: 'Translated below.',
+      toolUsed: 'present_translation',
+      actorRole: 'staff',
+      tool: aiToolRegistry.getTool('present_translation'),
     });
     assert.equal(presentation.sections.translation.targetText, 'Vanakkam');
     assert.equal(presentation.sections.details, null);
@@ -343,8 +484,15 @@ test('aiExperienceLayer.buildPresentation — present_translation section (consu
 test('aiExperienceLayer.buildPresentation — present_steps section (consumer-tool-adaptation: step_card_display_v0)', async (t) => {
   await t.test('renders as a numbered walkthrough, never duplicated into Details', () => {
     const presentation = aiExperienceLayer.buildPresentation({
-      sanitizedContext: sanitizedContextFor('present_steps', { title: 'Fee correction', steps: ['Open profile', 'Click Request', 'Submit'] }),
-      question: 'q', answer: 'Here is how.', toolUsed: 'present_steps', actorRole: 'staff', tool: aiToolRegistry.getTool('present_steps'),
+      sanitizedContext: sanitizedContextFor('present_steps', {
+        title: 'Fee correction',
+        steps: ['Open profile', 'Click Request', 'Submit'],
+      }),
+      question: 'q',
+      answer: 'Here is how.',
+      toolUsed: 'present_steps',
+      actorRole: 'staff',
+      tool: aiToolRegistry.getTool('present_steps'),
     });
     assert.equal(presentation.sections.steps.steps.length, 3);
     assert.equal(presentation.sections.details, null);

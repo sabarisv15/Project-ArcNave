@@ -25,7 +25,12 @@ class AiMemoryConsentRequiredError extends Error {}
 // notes, or opinions about a student, staff member, or anyone else — the
 // exact "unbounded/unauditable PII retention risk" CHECKPOINT.md's own
 // roadmap section flagged as the reason this feature has to stay scoped.
-const ALLOWED_MEMORY_TYPES = ['communication_style', 'recurring_focus_area', 'preferred_terminology', 'response_length'];
+const ALLOWED_MEMORY_TYPES = [
+  'communication_style',
+  'recurring_focus_area',
+  'preferred_terminology',
+  'response_length',
+];
 
 // A memory value is one short, human-entered string — not a document, not
 // a nested object. Keeps a single remembered fact bounded and keeps the
@@ -87,9 +92,9 @@ function assertValidFact(fact) {
   }
   if (GENERAL_FACT_IDENTIFIER_PATTERN.test(fact)) {
     throw new AiMemoryValidationError(
-      'this looks like it contains an identifier number (roll number, admission number, phone number, or similar) '
-      + 'rather than a plain preference — AI Memory never stores identifier numbers or facts about a specific '
-      + 'other person, only the acting user\'s own preferences; rephrase without the number',
+      'this looks like it contains an identifier number (roll number, admission number, phone number, or similar) ' +
+        'rather than a plain preference — AI Memory never stores identifier numbers or facts about a specific ' +
+        "other person, only the acting user's own preferences; rephrase without the number",
     );
   }
 }
@@ -128,7 +133,10 @@ async function rememberPreference(client, memoryType, value, { actorUserId, coll
     );
   }
   return aiMemoryRepository.upsertMemory(client, {
-    collegeId, userId: actorUserId, memoryType, value: value.trim(),
+    collegeId,
+    userId: actorUserId,
+    memoryType,
+    value: value.trim(),
   });
 }
 
@@ -159,8 +167,8 @@ async function rememberFact(client, fact, { actorUserId, collegeId }) {
   const count = await aiMemoryRepository.countGeneralFacts(client, actorUserId);
   if (count >= MAX_GENERAL_FACTS) {
     throw new AiMemoryValidationError(
-      `already remembering the maximum of ${MAX_GENERAL_FACTS} things — tell the user AI Memory is full and ask `
-      + 'them to forget something first (in AI Memory settings) before adding another',
+      `already remembering the maximum of ${MAX_GENERAL_FACTS} things — tell the user AI Memory is full and ask ` +
+        'them to forget something first (in AI Memory settings) before adding another',
     );
   }
   return aiMemoryRepository.insertGeneralFact(client, { collegeId, userId: actorUserId, fact: fact.trim() });

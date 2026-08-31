@@ -13,9 +13,7 @@ vi.mock('@/api/aiMemory', () => ({
   },
 }));
 
-// eslint-disable-next-line import/first
 import { aiMemoryApi } from '@/api/aiMemory';
-// eslint-disable-next-line import/first
 import { AiMemorySettingsView } from '../routes/AiMemorySettingsView';
 
 function mockState({ consented = true, memories = [], facts = [] } = {}) {

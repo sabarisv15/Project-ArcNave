@@ -64,12 +64,7 @@ export const composerScope = {
 
 export function isEmptyComposer(draft) {
   if (!draft) return true;
-  return (
-    !draft.text?.trim() &&
-    !(draft.attachments?.length) &&
-    !(draft.contextChips?.length) &&
-    !draft.mention
-  );
+  return !draft.text?.trim() && !draft.attachments?.length && !draft.contextChips?.length && !draft.mention;
 }
 
 /** A stored value is only usable if it still looks like a composer draft. */
@@ -110,7 +105,7 @@ export function ComposerProvider({ children }) {
 
   const value = useMemo(
     () => ({ scopes, peekScope, patchScope, dropScope }),
-    [scopes, peekScope, patchScope, dropScope]
+    [scopes, peekScope, patchScope, dropScope],
   );
 
   return <ComposerContext.Provider value={value}>{children}</ComposerContext.Provider>;
@@ -142,10 +137,8 @@ export function useComposer(scopeKey, { canRestore = true, defaultMode = EMPTY_C
   const storageKey = scopeKey ? draftKey(ME.id, 'composer', scopeKey) : null;
   const empty = useMemo(
     () =>
-      defaultMode === EMPTY_COMPOSER.mode
-        ? EMPTY_COMPOSER
-        : Object.freeze({ ...EMPTY_COMPOSER, mode: defaultMode }),
-    [defaultMode]
+      defaultMode === EMPTY_COMPOSER.mode ? EMPTY_COMPOSER : Object.freeze({ ...EMPTY_COMPOSER, mode: defaultMode }),
+    [defaultMode],
   );
   const draft = (scopeKey && scopes[scopeKey]) || empty;
 
@@ -176,7 +169,7 @@ export function useComposer(scopeKey, { canRestore = true, defaultMode = EMPTY_C
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(commit, PERSIST_DEBOUNCE_MS);
     },
-    [commit]
+    [commit],
   );
 
   // Leaving this scope — by navigation or unmount — lands whatever is pending.
@@ -207,7 +200,7 @@ export function useComposer(scopeKey, { canRestore = true, defaultMode = EMPTY_C
         return next;
       });
     },
-    [patchScope, schedulePersist, scopeKey, storageKey]
+    [patchScope, schedulePersist, scopeKey, storageKey],
   );
 
   const setText = useCallback((text) => patch({ text }), [patch]);
@@ -225,7 +218,7 @@ export function useComposer(scopeKey, { canRestore = true, defaultMode = EMPTY_C
         ...base,
         attachments: typeof next === 'function' ? next(base.attachments ?? []) : next,
       })),
-    [patch]
+    [patch],
   );
   const setContextChips = useCallback((contextChips) => patch({ contextChips }), [patch]);
   const setMention = useCallback((mention) => patch({ mention }), [patch]);

@@ -37,12 +37,18 @@ function statusLabel(attachment, uploading, failed) {
   if (uploading) return `Uploading ${Math.round((attachment.progress ?? 0) * 100)}%`;
   if (failed) return 'Processing failed';
   switch (attachment.processingStatus) {
-    case 'validating': return 'Validating file';
-    case 'queued': return 'Queued';
-    case 'processing': return 'Processing';
-    case 'needs_review': return `${formatBytes(attachment.size)} · Needs review`;
-    case 'blocked': return 'File type is not supported for AI analysis';
-    default: return `${formatBytes(attachment.size)} · Ready for AI analysis`;
+    case 'validating':
+      return 'Validating file';
+    case 'queued':
+      return 'Queued';
+    case 'processing':
+      return 'Processing';
+    case 'needs_review':
+      return `${formatBytes(attachment.size)} · Needs review`;
+    case 'blocked':
+      return 'File type is not supported for AI analysis';
+    default:
+      return `${formatBytes(attachment.size)} · Ready for AI analysis`;
   }
 }
 
@@ -57,7 +63,7 @@ export function AttachmentManager({ open, onOpenChange, attachments, onRemove, o
           className={cn(
             'fixed inset-y-0 right-0 z-[101] w-[min(380px,92vw)] flex flex-col',
             'bg-raised border-l border-line-strong rounded-l-[20px] shadow-pop outline-none',
-            'data-[state=open]:animate-railIn motion-reduce:animate-none'
+            'data-[state=open]:animate-railIn motion-reduce:animate-none',
           )}
         >
           <div className="shrink-0 flex items-center gap-[8px] px-[16px] pt-[16px] pb-[10px]">
@@ -108,9 +114,7 @@ export function AttachmentManager({ open, onOpenChange, attachments, onRemove, o
                         <span className="block text-[12.5px] font-[500] text-ink-soft truncate" title={a.name}>
                           {a.name}
                         </span>
-                        <span className="block text-[11px] text-ink-faint">
-                          {statusLabel(a, uploading, failed)}
-                        </span>
+                        <span className="block text-[11px] text-ink-faint">{statusLabel(a, uploading, failed)}</span>
                       </span>
 
                       {a.previewUrl && !failed && (

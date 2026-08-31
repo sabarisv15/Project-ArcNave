@@ -33,7 +33,13 @@ function feeRecords(rows) {
 }
 
 test('assessRowIntegrity: verifies a document whose numbers carry two independent, non-hand-fit relations', () => {
-  const records = feeRecords([[101, 1], [102, 0], [103, 2], [104, 0], [105, 3]]);
+  const records = feeRecords([
+    [101, 1],
+    [102, 0],
+    [103, 2],
+    [104, 0],
+    [105, 3],
+  ]);
   const result = assessRowIntegrity(records);
   assert.equal(result.verified, true);
   assert.ok(result.relations.length >= 2, `expected >= 2 relations, got ${result.relations.length}`);
@@ -42,7 +48,11 @@ test('assessRowIntegrity: verifies a document whose numbers carry two independen
 });
 
 test('assessRowIntegrity: fewer than MIN_RECORDS never verifies, even with perfect arithmetic', () => {
-  const records = feeRecords([[101, 1], [102, 0], [103, 2]]);
+  const records = feeRecords([
+    [101, 1],
+    [102, 0],
+    [103, 2],
+  ]);
   const result = assessRowIntegrity(records);
   assert.equal(result.verified, false);
 });
@@ -75,7 +85,13 @@ test('assessRowIntegrity: an all-zero column is never credited as a verified rel
 });
 
 test('assessRowIntegrity: a record whose trailing free-text numbers vary in count does not block verification of the shared leading columns', () => {
-  const base = [[101, 1], [102, 0], [103, 2], [104, 0], [105, 3]];
+  const base = [
+    [101, 1],
+    [102, 0],
+    [103, 2],
+    [104, 0],
+    [105, 3],
+  ];
   const records = feeRecords(base).map((r, i) => ({
     ...r,
     // Real pdfplumber reconstructions carry a variable-length arrears-

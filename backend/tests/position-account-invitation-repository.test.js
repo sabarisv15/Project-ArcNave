@@ -24,10 +24,15 @@ async function seedFixtures(pool) {
   );
   const createdBy = userResult.rows[0].id;
   const position = await positionRepository.createPosition(pool, {
-    collegeId, level: 3, title: 'HOD', createdBy,
+    collegeId,
+    level: 3,
+    title: 'HOD',
+    createdBy,
   });
   return {
-    collegeId, createdBy, positionId: position.id,
+    collegeId,
+    createdBy,
+    positionId: position.id,
   };
 }
 
@@ -86,16 +91,17 @@ test('positionAccountInvitationRepository (Phase 2 step 6)', async (t) => {
     });
 
     await assert.rejects(
-      () => positionAccountInvitationRepository.createInvitation(pool, {
-        collegeId: fixtures.collegeId,
-        positionId: fixtures.positionId,
-        level: 3,
-        positionType: null,
-        email: 'b@example.edu',
-        tokenHash: 'dup-hash',
-        createdBy: fixtures.createdBy,
-        expiresAt: new Date(Date.now() + 3600_000),
-      }),
+      () =>
+        positionAccountInvitationRepository.createInvitation(pool, {
+          collegeId: fixtures.collegeId,
+          positionId: fixtures.positionId,
+          level: 3,
+          positionType: null,
+          email: 'b@example.edu',
+          tokenHash: 'dup-hash',
+          createdBy: fixtures.createdBy,
+          expiresAt: new Date(Date.now() + 3600_000),
+        }),
       /duplicate key value violates unique constraint/,
     );
   });
@@ -138,7 +144,8 @@ test('positionAccountInvitationRepository (Phase 2 step 6)', async (t) => {
     assert.ok(revoked.revoked_at);
 
     const resendResult = await positionAccountInvitationRepository.resendInvitation(pool, invitation.id, {
-      tokenHash: 'hash-revoke-2', expiresAt: new Date(Date.now() + 3600_000),
+      tokenHash: 'hash-revoke-2',
+      expiresAt: new Date(Date.now() + 3600_000),
     });
     assert.equal(resendResult, null);
   });
@@ -156,7 +163,8 @@ test('positionAccountInvitationRepository (Phase 2 step 6)', async (t) => {
     });
 
     const resent = await positionAccountInvitationRepository.resendInvitation(pool, invitation.id, {
-      tokenHash: 'hash-resend-2', expiresAt: new Date(Date.now() + 7200_000),
+      tokenHash: 'hash-resend-2',
+      expiresAt: new Date(Date.now() + 7200_000),
     });
     assert.equal(resent.id, invitation.id);
 
@@ -168,7 +176,10 @@ test('positionAccountInvitationRepository (Phase 2 step 6)', async (t) => {
 
   await t.test('listInvitationsForPosition returns every invitation for that position, newest first', async () => {
     const otherPosition = await positionRepository.createPosition(pool, {
-      collegeId: fixtures.collegeId, level: 3, title: 'HOD 2', createdBy: fixtures.createdBy,
+      collegeId: fixtures.collegeId,
+      level: 3,
+      title: 'HOD 2',
+      createdBy: fixtures.createdBy,
     });
 
     await positionAccountInvitationRepository.createInvitation(pool, {

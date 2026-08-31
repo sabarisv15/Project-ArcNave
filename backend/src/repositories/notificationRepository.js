@@ -42,10 +42,7 @@ async function create(client, fields) {
 }
 
 async function findById(client, id) {
-  const result = await client.query(
-    'SELECT * FROM notifications WHERE id = $1',
-    [id],
-  );
+  const result = await client.query('SELECT * FROM notifications WHERE id = $1', [id]);
   return result.rows[0] || null;
 }
 
@@ -97,10 +94,10 @@ async function findDeliveryAttempts(client, notificationId) {
 // until now. Same shape as the others: RLS-scoped implicitly, no
 // explicit college_id filter, newest first.
 async function list(client, { limit = 50, offset = 0 } = {}) {
-  const result = await client.query(
-    'SELECT * FROM notifications ORDER BY created_at DESC LIMIT $1 OFFSET $2',
-    [limit, offset],
-  );
+  const result = await client.query('SELECT * FROM notifications ORDER BY created_at DESC LIMIT $1 OFFSET $2', [
+    limit,
+    offset,
+  ]);
   return result.rows;
 }
 

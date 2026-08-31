@@ -18,7 +18,7 @@ function setup(props = {}) {
         onMode={onMode}
         placeholder="Ask ArcNave anything about your campus…"
       />
-    </Tooltip.Provider>
+    </Tooltip.Provider>,
   );
   return { onSend, onChange, onMode };
 }

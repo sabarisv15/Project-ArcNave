@@ -54,7 +54,11 @@ export function DateNoteDrawer({ open, dateKey, onClose }) {
   });
 
   useEffect(() => {
-    if (!open) { setSeeded(false); setConflict(false); return; }
+    if (!open) {
+      setSeeded(false);
+      setConflict(false);
+      return;
+    }
     if (seeded) return;
     const base = { title: stored?.title ?? '', body: stored?.body ?? '' };
     const recovered = restored?.value;
@@ -78,7 +82,7 @@ export function DateNoteDrawer({ open, dateKey, onClose }) {
     onClose();
   };
 
-  const dayEvents = dateKey ? eventsFor.get(dateKey) ?? [] : [];
+  const dayEvents = dateKey ? (eventsFor.get(dateKey) ?? []) : [];
   const dateLabel = dateKey ? formatDateDMY(parseISTDateBounds(dateKey).start) : '';
 
   return (
@@ -87,7 +91,11 @@ export function DateNoteDrawer({ open, dateKey, onClose }) {
         open={open}
         onOpenChange={(v) => !v && close()}
         title={dateLabel}
-        contextLine={dayEvents.length ? `${dayEvents.length} institutional ${dayEvents.length === 1 ? 'activity' : 'activities'}` : 'No institutional activity'}
+        contextLine={
+          dayEvents.length
+            ? `${dayEvents.length} institutional ${dayEvents.length === 1 ? 'activity' : 'activities'}`
+            : 'No institutional activity'
+        }
         description={`Notes and activities for ${dateLabel}`}
         width="sm:w-[440px]"
       >
@@ -100,7 +108,10 @@ export function DateNoteDrawer({ open, dateKey, onClose }) {
               </div>
               <div className="grid gap-[6px]">
                 {dayEvents.map((e) => (
-                  <div key={e.id} className="flex items-start gap-[8px] px-[11px] py-[8px] border border-line rounded-[11px] bg-paper">
+                  <div
+                    key={e.id}
+                    className="flex items-start gap-[8px] px-[11px] py-[8px] border border-line rounded-[11px] bg-paper"
+                  >
                     <span
                       aria-hidden="true"
                       className="flex-none w-[7px] h-[7px] mt-[5px] rounded-full"
@@ -147,21 +158,24 @@ export function DateNoteDrawer({ open, dateKey, onClose }) {
 
         <DrawerRail
           meta={
-            usedDraft && autosave.status === 'idle'
-              ? <DraftRestoredNote show />
-              : <AutosaveStatus status={autosave.status} savedAt={autosave.savedAt} onRetry={autosave.retry} />
+            usedDraft && autosave.status === 'idle' ? (
+              <DraftRestoredNote show />
+            ) : (
+              <AutosaveStatus status={autosave.status} savedAt={autosave.savedAt} onRetry={autosave.retry} />
+            )
           }
         >
           {noteHasContent(stored) && (
-            <button
-              type="button"
-              className={cn(GHOST_BTN, 'text-danger')}
-              onClick={() => setConfirmDelete(true)}
-            >
-              <span className="inline-flex items-center gap-[6px]"><Trash2 size={13} strokeWidth={2} />Delete</span>
+            <button type="button" className={cn(GHOST_BTN, 'text-danger')} onClick={() => setConfirmDelete(true)}>
+              <span className="inline-flex items-center gap-[6px]">
+                <Trash2 size={13} strokeWidth={2} />
+                Delete
+              </span>
             </button>
           )}
-          <button type="button" className={GHOST_BTN} onClick={close}>Done</button>
+          <button type="button" className={GHOST_BTN} onClick={close}>
+            Done
+          </button>
         </DrawerRail>
       </DrawerShell>
 
@@ -175,7 +189,10 @@ export function DateNoteDrawer({ open, dateKey, onClose }) {
             </AlertDialog.Description>
             <div className="flex justify-end gap-[9px]">
               <AlertDialog.Cancel asChild>
-                <button type="button" className="h-[32px] px-[14px] border border-line rounded-[10px] bg-paper font-sans text-[12.5px] font-[500] text-ink-muted cursor-pointer hover:bg-tint2">
+                <button
+                  type="button"
+                  className="h-[32px] px-[14px] border border-line rounded-[10px] bg-paper font-sans text-[12.5px] font-[500] text-ink-muted cursor-pointer hover:bg-tint2"
+                >
                   Cancel
                 </button>
               </AlertDialog.Cancel>

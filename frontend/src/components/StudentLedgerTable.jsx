@@ -43,11 +43,13 @@ export function StudentLedgerTable({ students, onOpenStudent, hasAnyStudents }) 
           aria-label={`${s.name}, ${s.percentage}% attendance — view absence dates`}
           className={cn(
             GRID,
-            'w-full h-[46px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2'
+            'w-full h-[46px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2',
           )}
         >
           <span className="min-w-0 flex items-baseline gap-[8px]">
-            <span className="text-[13px] text-ink truncate" title={s.name}>{s.name}</span>
+            <span className="text-[13px] text-ink truncate" title={s.name}>
+              {s.name}
+            </span>
             <span className="flex-none text-[11px] text-ink-faint tabular-nums">
               {s.roll} · {s.registerNumber}
             </span>

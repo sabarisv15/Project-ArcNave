@@ -12,7 +12,7 @@ import { AIComposer } from './AIComposer';
  */
 export const ArtifactRevisionComposer = forwardRef(function ArtifactRevisionComposer(
   { revising, artifactType, composer, onSend },
-  ref
+  ref,
 ) {
   return (
     <AIComposer

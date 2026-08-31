@@ -39,10 +39,12 @@ describe('date and range formatting', () => {
 
   it('renders a month as MM/YYYY and an open end date as Present', () => {
     expect(formatMonth('2013-06')).toBe('06/2013');
-    expect(institutionSummary({ institutionName: 'KIT', designationHeld: 'Lecturer', from: '2013-06', to: '2016-05' }))
-      .toBe('KIT · Lecturer · 06/2013–05/2016');
-    expect(institutionSummary({ institutionName: 'KIT', designationHeld: 'Lecturer', from: '2019-06', to: '' }))
-      .toBe('KIT · Lecturer · 06/2019–Present');
+    expect(
+      institutionSummary({ institutionName: 'KIT', designationHeld: 'Lecturer', from: '2013-06', to: '2016-05' }),
+    ).toBe('KIT · Lecturer · 06/2013–05/2016');
+    expect(institutionSummary({ institutionName: 'KIT', designationHeld: 'Lecturer', from: '2019-06', to: '' })).toBe(
+      'KIT · Lecturer · 06/2019–Present',
+    );
   });
 
   it('treats an open end date as ordered, and a reversed range as not', () => {

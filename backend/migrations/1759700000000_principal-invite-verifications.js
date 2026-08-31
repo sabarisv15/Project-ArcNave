@@ -34,7 +34,9 @@ exports.up = (pgm) => {
     )
   `);
 
-  pgm.sql('CREATE INDEX principal_invite_verifications_lookup_idx ON principal_invite_verifications (college_id, email, created_at DESC)');
+  pgm.sql(
+    'CREATE INDEX principal_invite_verifications_lookup_idx ON principal_invite_verifications (college_id, email, created_at DESC)',
+  );
 
   pgm.sql(`GRANT SELECT, INSERT, UPDATE ON principal_invite_verifications TO ${PLATFORM_ROLE}`);
 };

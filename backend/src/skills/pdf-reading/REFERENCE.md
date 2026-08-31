@@ -5,9 +5,11 @@ This document contains advanced PDF processing features, detailed examples, and 
 ## pypdfium2 Library (Apache/BSD License)
 
 ### Overview
+
 pypdfium2 is a Python binding for PDFium (Chromium's PDF library). It's excellent for fast PDF rendering, image generation, and serves as a PyMuPDF replacement.
 
 ### Render PDF to Images
+
 ```python
 import pypdfium2 as pdfium
 from PIL import Image
@@ -34,6 +36,7 @@ for i, page in enumerate(pdf):
 ```
 
 ### Extract Text with pypdfium2
+
 ```python
 import pypdfium2 as pdfium
 
@@ -49,6 +52,7 @@ for i, page in enumerate(pdf):
 ### poppler-utils Advanced Features
 
 #### Extract Text with Bounding Box Coordinates
+
 ```bash
 # Extract text with bounding box coordinates (essential for structured data)
 pdftotext -bbox-layout document.pdf output.xml
@@ -57,6 +61,7 @@ pdftotext -bbox-layout document.pdf output.xml
 ```
 
 #### Advanced Image Conversion
+
 ```bash
 # Convert to PNG images with specific resolution
 pdftoppm -png -r 300 document.pdf output_prefix
@@ -69,6 +74,7 @@ pdftoppm -jpeg -jpegopt quality=85 -r 200 document.pdf jpeg_output
 ```
 
 #### Extract Embedded Images
+
 ```bash
 # Extract all embedded images with metadata
 pdfimages -j -p document.pdf page_images
@@ -88,6 +94,7 @@ Read its SKILL.md (listed in your available skills, or in the same
 skills directory as this file).
 
 Useful qpdf reading/inspection commands:
+
 ```bash
 # Check PDF structure for errors
 qpdf --check input.pdf
@@ -107,29 +114,31 @@ qpdf --password=secret123 --decrypt encrypted.pdf decrypted.pdf
 ### pdfplumber Advanced Features
 
 #### Extract Text with Precise Coordinates
+
 ```python
 import pdfplumber
 
 with pdfplumber.open("document.pdf") as pdf:
     page = pdf.pages[0]
-    
+
     # Extract all text with coordinates
     chars = page.chars
     for char in chars[:10]:  # First 10 characters
         print(f"Char: '{char['text']}' at x:{char['x0']:.1f} y:{char['y0']:.1f}")
-    
+
     # Extract text by bounding box (left, top, right, bottom)
     bbox_text = page.within_bbox((100, 100, 400, 200)).extract_text()
 ```
 
 #### Advanced Table Extraction with Custom Settings
+
 ```python
 import pdfplumber
 import pandas as pd
 
 with pdfplumber.open("complex_table.pdf") as pdf:
     page = pdf.pages[0]
-    
+
     # Extract tables with custom settings for complex layouts
     table_settings = {
         "vertical_strategy": "lines",
@@ -138,7 +147,7 @@ with pdfplumber.open("complex_table.pdf") as pdf:
         "intersection_tolerance": 15
     }
     tables = page.extract_tables(table_settings)
-    
+
     # Visual debugging for table extraction
     img = page.to_image(resolution=150)
     img.save("debug_layout.png")
@@ -154,6 +163,7 @@ with pdfplumber.open("complex_table.pdf") as pdf:
 ## Troubleshooting Common Issues
 
 ### Encrypted PDFs
+
 ```python
 # Handle password-protected PDFs
 from pypdf import PdfReader
@@ -167,6 +177,7 @@ except Exception as e:
 ```
 
 ### Corrupted PDFs
+
 ```bash
 # Use qpdf to repair
 qpdf --check corrupted.pdf
@@ -174,6 +185,7 @@ qpdf --replace-input corrupted.pdf
 ```
 
 ### Text Extraction Issues
+
 ```python
 # Fallback to OCR for scanned PDFs
 import pytesseract

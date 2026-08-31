@@ -17,11 +17,12 @@ const aiToolRegistry = require('../src/services/aiToolRegistry');
 
 const ATTACHMENT_ID = 'd6e46725-401e-4192-834d-953a56fafcb6';
 
-const QUESTION = 'Intha document-la Serial number 818 to 872 varaikum ECE Sandwich (SW) students-oda arrear list kudu. '
-  + 'ABSENT nu irundhaalum, RA (Reappear) nu irundhaalum, rendume arrear-ஆ தான் consider pannu. '
-  + 'Oru student multiple semesters-la arrear vechurundha, andha maadhiri ella semesters-layum irukra arrear subjects-um '
-  + 'sேர்த்து ஒரே consolidated entry-ஆ andha student-ku kudu — next student name varaikum irukra ella semester rows-um '
-  + 'antha student-oda thaan, adhை ellam onnu sேர்thu kudu.';
+const QUESTION =
+  'Intha document-la Serial number 818 to 872 varaikum ECE Sandwich (SW) students-oda arrear list kudu. ' +
+  'ABSENT nu irundhaalum, RA (Reappear) nu irundhaalum, rendume arrear-ஆ தான் consider pannu. ' +
+  'Oru student multiple semesters-la arrear vechurundha, andha maadhiri ella semesters-layum irukra arrear subjects-um ' +
+  'sேர்த்து ஒரே consolidated entry-ஆ andha student-ku kudu — next student name varaikum irukra ella semester rows-um ' +
+  'antha student-oda thaan, adhை ellam onnu sேர்thu kudu.';
 
 async function main() {
   config.experimentalCatalogueVariant = null; // production default — the ONLY thing different from the earlier run
@@ -30,7 +31,14 @@ async function main() {
 
   const appPool = new Pool({ connectionString: config.databaseUrl });
   const identityContext = {
-    userId: '32b4721e-e58a-4aa1-9c7d-81d5865be9b2', role: 'principal', collegeId: 'demo', departmentIds: [], departmentId: null, classIds: [], scopeLevel: 'college', positionAccountId: null,
+    userId: '32b4721e-e58a-4aa1-9c7d-81d5865be9b2',
+    role: 'principal',
+    collegeId: 'demo',
+    departmentIds: [],
+    departmentId: null,
+    classIds: [],
+    scopeLevel: 'college',
+    positionAccountId: null,
   };
 
   const invocationLog = [];
@@ -43,7 +51,10 @@ async function main() {
       return r;
     } catch (err) {
       invocationLog.push({
-        name, ok: false, ms: Date.now() - start, error: err.message,
+        name,
+        ok: false,
+        ms: Date.now() - start,
+        error: err.message,
       });
       throw err;
     }
@@ -78,4 +89,7 @@ async function main() {
   await appPool.end();
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

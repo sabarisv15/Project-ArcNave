@@ -59,10 +59,7 @@ async function create(client, fields) {
 }
 
 async function findById(client, id) {
-  const result = await client.query(
-    'SELECT * FROM attachment_intelligence WHERE id = $1',
-    [id],
-  );
+  const result = await client.query('SELECT * FROM attachment_intelligence WHERE id = $1', [id]);
   return result.rows[0] || null;
 }
 

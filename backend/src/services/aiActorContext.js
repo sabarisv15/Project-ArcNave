@@ -112,9 +112,7 @@ async function describeIdentityContext(client, identityContext) {
 // shape as a staff member's own self_assigned scope from
 // getVisibleClassIds' point of view (decision 2).
 function buildActorContextForIdentity(identityContext) {
-  const scopeLevel = identityContext.scopeLevel === 'class'
-    ? SCOPE_LEVELS.SELF_ASSIGNED
-    : identityContext.scopeLevel;
+  const scopeLevel = identityContext.scopeLevel === 'class' ? SCOPE_LEVELS.SELF_ASSIGNED : identityContext.scopeLevel;
 
   return {
     actorId: identityContext.userId,
@@ -123,9 +121,8 @@ function buildActorContextForIdentity(identityContext) {
     scopeLevel,
     departmentIds: identityContext.departmentIds || [],
     assignedClassIds: identityContext.classIds || [],
-    campusIds: identityContext.collegeId !== undefined && identityContext.collegeId !== null
-      ? [identityContext.collegeId]
-      : [],
+    campusIds:
+      identityContext.collegeId !== undefined && identityContext.collegeId !== null ? [identityContext.collegeId] : [],
   };
 }
 

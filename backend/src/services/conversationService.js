@@ -25,7 +25,9 @@ const VALID_ROLES = ['user', 'assistant'];
 
 function assertOwnedBy(conversation, actorUserId) {
   if (conversation.user_id !== actorUserId) {
-    throw new ConversationForbiddenError(`user ${JSON.stringify(actorUserId)} does not own conversation ${JSON.stringify(conversation.id)}`);
+    throw new ConversationForbiddenError(
+      `user ${JSON.stringify(actorUserId)} does not own conversation ${JSON.stringify(conversation.id)}`,
+    );
   }
 }
 
@@ -38,11 +40,13 @@ async function resolveOwnConversation(client, id, actorUserId) {
   return conversation;
 }
 
-async function listOwnConversations(client, {
-  userId, projectId, search, archived, limit, offset,
-}) {
+async function listOwnConversations(client, { userId, projectId, search, archived, limit, offset }) {
   return conversationRepository.listByUser(client, userId, {
-    projectId, search, archived, limit, offset,
+    projectId,
+    search,
+    archived,
+    limit,
+    offset,
   });
 }
 
@@ -55,15 +59,16 @@ async function createConversation(client, { title, projectId }, { userId, colleg
   });
 }
 
-async function updateConversation(client, id, {
-  title, projectId, pinned, archived,
-}, { userId }) {
+async function updateConversation(client, id, { title, projectId, pinned, archived }, { userId }) {
   await resolveOwnConversation(client, id, userId);
   if (title !== undefined && !String(title).trim()) {
     throw new ConversationValidationError('title may not be cleared to empty');
   }
   return conversationRepository.update(client, id, {
-    title, projectId, pinned, archived,
+    title,
+    projectId,
+    pinned,
+    archived,
   });
 }
 
@@ -77,9 +82,23 @@ async function listMessages(client, conversationId, { userId, limit, offset }) {
   return messageRepository.listByConversation(client, conversationId, { limit, offset });
 }
 
-async function addMessage(client, conversationId, {
-  role, content, toolUsed, toolParams, presentation, rawData, parentMessageId, attachments, inputTokens, outputTokens,
-}, { userId, collegeId }) {
+async function addMessage(
+  client,
+  conversationId,
+  {
+    role,
+    content,
+    toolUsed,
+    toolParams,
+    presentation,
+    rawData,
+    parentMessageId,
+    attachments,
+    inputTokens,
+    outputTokens,
+  },
+  { userId, collegeId },
+) {
   await resolveOwnConversation(client, conversationId, userId);
 
   if (!VALID_ROLES.includes(role)) {
@@ -134,7 +153,9 @@ async function editMessage(client, conversationId, messageId, { content }, { use
 
   const message = await messageRepository.findById(client, messageId);
   if (!message || message.conversation_id !== conversationId) {
-    throw new ConversationNotFoundError(`message ${JSON.stringify(messageId)} does not exist in conversation ${JSON.stringify(conversationId)}`);
+    throw new ConversationNotFoundError(
+      `message ${JSON.stringify(messageId)} does not exist in conversation ${JSON.stringify(conversationId)}`,
+    );
   }
   if (message.role !== 'user') {
     throw new ConversationValidationError('only a user message can be edited');

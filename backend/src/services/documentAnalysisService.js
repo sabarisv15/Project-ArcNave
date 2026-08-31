@@ -76,9 +76,11 @@ async function reconstructViaPdfplumber(buffer) {
     });
     return result.stdout;
   } catch (err) {
-    if (err instanceof sandboxExecutionService.SandboxNotConfiguredError
-      || err instanceof sandboxExecutionService.SandboxExecutionError
-      || err instanceof sandboxExecutionService.SandboxValidationError) {
+    if (
+      err instanceof sandboxExecutionService.SandboxNotConfiguredError ||
+      err instanceof sandboxExecutionService.SandboxExecutionError ||
+      err instanceof sandboxExecutionService.SandboxValidationError
+    ) {
       return null;
     }
     throw err;
@@ -90,8 +92,9 @@ async function reconstructViaPdfplumber(buffer) {
 // beyond this one call site because it reads directly against the same
 // strategy/coverage values analyzeAttachment already has in scope.
 function pdfFallbackApplies(mimeType, strategy, coverage) {
-  return mimeType === 'application/pdf'
-    && (strategy === 'none' || (coverage && coverage.applicable && !coverage.reliable));
+  return (
+    mimeType === 'application/pdf' && (strategy === 'none' || (coverage && coverage.applicable && !coverage.reliable))
+  );
 }
 
 // Review Finding #6 — the ONE structured, non-sensitive audit trail for
@@ -164,12 +167,15 @@ async function loadOwnedAttachment(client, attachmentId, identityContext) {
   }
   const downloaded = await documentService.downloadDocument(client, attachmentId);
   const document = downloaded && downloaded.document;
-  const isOwnedChatAttachment = document
-    && document.doc_type === documentService.CHAT_ATTACHMENT_DOC_TYPE
-    && document.uploaded_by_user_id === identityContext.userId
-    && typeof document.mime_type === 'string';
+  const isOwnedChatAttachment =
+    document &&
+    document.doc_type === documentService.CHAT_ATTACHMENT_DOC_TYPE &&
+    document.uploaded_by_user_id === identityContext.userId &&
+    typeof document.mime_type === 'string';
   if (!isOwnedChatAttachment) {
-    throw new DocumentAnalysisValidationError(`attachment ${JSON.stringify(attachmentId)} is not a valid attachment for this user`);
+    throw new DocumentAnalysisValidationError(
+      `attachment ${JSON.stringify(attachmentId)} is not a valid attachment for this user`,
+    );
   }
   return downloaded;
 }
@@ -218,8 +224,8 @@ function compileSectionPattern(sectionPattern) {
   } catch {
     const shown = JSON.stringify(sectionPattern);
     const flagNote = INLINE_FLAG_PATTERN.test(sectionPattern)
-      ? ' JavaScript does not support inline flags such as (?i), and sectionPattern is already matched'
-        + ' case-insensitively, so that flag is not needed here.'
+      ? ' JavaScript does not support inline flags such as (?i), and sectionPattern is already matched' +
+        ' case-insensitively, so that flag is not needed here.'
       : '';
     return { reason: `sectionPattern is not valid JavaScript regular expression syntax: ${shown}.${flagNote}` };
   }
@@ -236,7 +242,8 @@ function filterBySection(records, sections, re) {
   return records.filter((record) => {
     let active = null;
     for (const section of sections) {
-      if (section.startLine <= record.startLine) active = section; else break;
+      if (section.startLine <= record.startLine) active = section;
+      else break;
     }
     return active !== null && matchingStartLines.has(active.startLine);
   });
@@ -249,9 +256,11 @@ function filterBySection(records, sections, re) {
 // but never exposed to the LLM in this slice — documentAggregateService
 // only supports the default 'key' grouping (one group per extracted
 // record) today, so there is nothing yet for a caller to usefully choose.
-async function analyzeAttachment(client, {
-  attachmentId, groupBy, filter, operation, serialRange, sectionPattern, comparison, identityPattern,
-} = {}, identityContext) {
+async function analyzeAttachment(
+  client,
+  { attachmentId, groupBy, filter, operation, serialRange, sectionPattern, comparison, identityPattern } = {},
+  identityContext,
+) {
   const downloaded = await loadOwnedAttachment(client, attachmentId, identityContext);
   const { document, buffer } = downloaded;
 
@@ -300,9 +309,7 @@ async function analyzeAttachment(client, {
     return { status: 'extraction_failed', reason: extraction.failureReason };
   }
 
-  let {
-    strategy, records, sections, coverage,
-  } = documentTableExtractionService.extractRecords(extraction.text);
+  let { strategy, records, sections, coverage } = documentTableExtractionService.extractRecords(extraction.text);
 
   // ADL-063 — only reached when flat text already failed reliability on a
   // PDF. Re-extracts via pdfplumber in the sandbox and runs the result back
@@ -339,12 +346,14 @@ async function analyzeAttachment(client, {
     const reconstructed = await reconstructViaPdfplumber(buffer);
     if (!reconstructed) {
       await logPdfFallbackEvent(client, identityContext, attachmentId, {
-        action: 'failed', durationMs: Date.now() - startedAt,
+        action: 'failed',
+        durationMs: Date.now() - startedAt,
       });
     } else {
       const fallback = documentTableExtractionService.extractRecords(reconstructed);
-      const fallbackReliable = fallback.strategy !== 'none'
-        && (!fallback.coverage || !fallback.coverage.applicable || fallback.coverage.reliable);
+      const fallbackReliable =
+        fallback.strategy !== 'none' &&
+        (!fallback.coverage || !fallback.coverage.applicable || fallback.coverage.reliable);
       if (fallbackReliable) {
         strategy = `${fallback.strategy}_pdfplumber`;
         ({ records, sections, coverage } = fallback);
@@ -429,7 +438,9 @@ async function analyzeAttachment(client, {
       return { status: 'identity_required', ...fallbackProvenance(pdfplumberReconstructed) };
     }
     const compared = documentAggregateService.compareRecords(scoped, {
-      filter, comparison, identityPattern: compiledIdentity.regex,
+      filter,
+      comparison,
+      identityPattern: compiledIdentity.regex,
     });
     // No row cleared the threshold. Same fact as an empty scope, same
     // existing status — a valid question whose answer is "none", not a
@@ -438,7 +449,10 @@ async function analyzeAttachment(client, {
       return { status: 'no_matching_records', ...fallbackProvenance(pdfplumberReconstructed) };
     }
     return {
-      status: 'ok', strategy, ...compared, ...fallbackProvenance(pdfplumberReconstructed),
+      status: 'ok',
+      strategy,
+      ...compared,
+      ...fallbackProvenance(pdfplumberReconstructed),
     };
   }
 
@@ -450,7 +464,10 @@ async function analyzeAttachment(client, {
   // this service exists to perform. See
   // ai-chat-document-analysis-payload-bounds-approved-spec.md.
   return {
-    status: 'ok', strategy, ...documentAggregateService.summarize(rows), ...fallbackProvenance(pdfplumberReconstructed),
+    status: 'ok',
+    strategy,
+    ...documentAggregateService.summarize(rows),
+    ...fallbackProvenance(pdfplumberReconstructed),
   };
 }
 

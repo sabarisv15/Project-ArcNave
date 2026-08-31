@@ -159,20 +159,27 @@ function createFinanceRouter() {
   // comment gives for AttendanceForbiddenError.
   // financeService.markFeePayment itself verifies actorUserId is the
   // real, verified tutor of the target student's own class.
-  router.post('/finance/fee-payments', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const payment = await financeService.markFeePayment(
-        req.dbClient,
-        { collegeId: req.collegeId, ...bodyToFields(req.body || {}, FEE_PAYMENT_BODY_FIELDS) },
-        { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole },
-      );
-      res.status(201).json(payment);
-    } catch (err) {
-      if (mapFinanceServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/finance/fee-payments',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const payment = await financeService.markFeePayment(
+          req.dbClient,
+          { collegeId: req.collegeId, ...bodyToFields(req.body || {}, FEE_PAYMENT_BODY_FIELDS) },
+          {
+            actorUserId: identityService.resolveActorUserId(req.capabilities),
+            actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+          },
+        );
+        res.status(201).json(payment);
+      } catch (err) {
+        if (mapFinanceServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // student_id is required — this is specifically the "this student's
   // fee status" lookup, not a general/unscoped list (there is at most
@@ -181,86 +188,111 @@ function createFinanceRouter() {
   // real scope (tutor/faculty-allocated teacher of the student's own
   // class, hod of their department, principal of their college) is
   // financeService/studentService's job.
-  router.get('/finance/fee-payments', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { student_id: studentId } = req.query;
-    if (!studentId) {
-      res.status(400).json({ detail: 'student_id query parameter is required' });
-      return;
-    }
-    try {
-      const payment = await financeService.getEffectiveFeePaymentForStudent(req.dbClient, studentId, {
-        actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
-      });
-      if (payment === null) {
-        res.status(404).json({ detail: `No fee payment found for student ${JSON.stringify(studentId)}` });
+  router.get(
+    '/finance/fee-payments',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { student_id: studentId } = req.query;
+      if (!studentId) {
+        res.status(400).json({ detail: 'student_id query parameter is required' });
         return;
       }
-      res.json(payment);
-    } catch (err) {
-      if (mapFinanceServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+      try {
+        const payment = await financeService.getEffectiveFeePaymentForStudent(req.dbClient, studentId, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+        });
+        if (payment === null) {
+          res.status(404).json({ detail: `No fee payment found for student ${JSON.stringify(studentId)}` });
+          return;
+        }
+        res.json(payment);
+      } catch (err) {
+        if (mapFinanceServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // RS-FIN-003: "any later change to a fee status already marked once
   // is a correction, and L3 approves it." requireAuth, not
   // requirePermission — same reasoning as POST /finance/fee-payments
   // above; financeService.requestFeeCorrection resolves the real
   // approver itself, this route names no actor.
-  router.post('/finance/fee-payments/:id/corrections', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { proposed_status: proposedStatus, reason } = req.body || {};
-    try {
-      const result = await financeService.requestFeeCorrection(
-        req.dbClient,
-        req.params.id,
-        { proposedStatus, reason },
-        { requestedByUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(201).json({
-        workflow_request_id: result.workflowRequest.id,
-        correction_id: result.correction.id,
-        proposed_status: result.correction.proposed_status,
-      });
-    } catch (err) {
-      if (mapFinanceServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/finance/fee-payments/:id/corrections',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { proposed_status: proposedStatus, reason } = req.body || {};
+      try {
+        const result = await financeService.requestFeeCorrection(
+          req.dbClient,
+          req.params.id,
+          { proposedStatus, reason },
+          { requestedByUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.status(201).json({
+          workflow_request_id: result.workflowRequest.id,
+          correction_id: result.correction.id,
+          proposed_status: result.correction.proposed_status,
+        });
+      } catch (err) {
+        if (mapFinanceServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.get('/finance/fee-payments/:id/corrections', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const corrections = await financeService.listFeeCorrectionsForPayment(req.dbClient, req.params.id);
-    res.json(corrections);
-  }));
+  router.get(
+    '/finance/fee-payments/:id/corrections',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const corrections = await financeService.listFeeCorrectionsForPayment(req.dbClient, req.params.id);
+      res.json(corrections);
+    }),
+  );
 
   // requireAuth, not requirePermission: the real gate is
   // workflowService's own step-matching + self-approval checks inside
   // approveFeeCorrection/rejectFeeCorrection, same "the service is the
   // gate" reasoning every other correction-approval route in this
   // codebase uses (attendance.js's POST /attendance/corrections/:id/approve).
-  router.post('/finance/fee-corrections/:correctionId/approve', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const correction = await financeService.approveFeeCorrection(req.dbClient, req.params.correctionId, { actorUserId: identityService.resolveActorUserId(req.capabilities) });
-      res.json(correction);
-    } catch (err) {
-      if (mapFinanceServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/finance/fee-corrections/:correctionId/approve',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const correction = await financeService.approveFeeCorrection(req.dbClient, req.params.correctionId, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.json(correction);
+      } catch (err) {
+        if (mapFinanceServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/finance/fee-corrections/:correctionId/reject', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const correction = await financeService.rejectFeeCorrection(req.dbClient, req.params.correctionId, { actorUserId: identityService.resolveActorUserId(req.capabilities) });
-      res.json(correction);
-    } catch (err) {
-      if (mapFinanceServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/finance/fee-corrections/:correctionId/reject',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const correction = await financeService.rejectFeeCorrection(req.dbClient, req.params.correctionId, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.json(correction);
+      } catch (err) {
+        if (mapFinanceServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // BusinessRules.md Finance: scholarship eligibility from a student's
   // annual_income against this tenant's configured threshold.
@@ -270,45 +302,67 @@ function createFinanceRouter() {
   // not this route. Advisory only — see financeService.
   // checkScholarshipEligibility's own comment. Never the eligibility
   // outcome; recordScholarshipDecision below is.
-  router.get('/finance/students/:id/scholarship-eligibility', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const result = await financeService.checkScholarshipEligibility(req.dbClient, req.collegeId, req.params.id, {
-        actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
-      });
-      res.json(result);
-    } catch (err) {
-      if (mapFinanceServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.get(
+    '/finance/students/:id/scholarship-eligibility',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const result = await financeService.checkScholarshipEligibility(req.dbClient, req.collegeId, req.params.id, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+        });
+        res.json(result);
+      } catch (err) {
+        if (mapFinanceServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // requireAuth, not requirePermission: BusinessRules.md names the
   // Class Tutor as the actor — financeService.recordScholarshipDecision's
   // own tutor_user_id check (ScholarshipDecisionNotTutorError) is the
   // real gate, same "the service is the gate" reasoning every other
   // Tutor-scoped action in this codebase uses.
-  router.post('/finance/students/:id/scholarship-decisions', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const {
-      scheme_name: schemeName, eligible, reason, supporting_document_id: supportingDocumentId,
-    } = req.body || {};
-    try {
-      const decision = await financeService.recordScholarshipDecision(
-        req.dbClient, req.params.id, { schemeName, eligible, reason, supportingDocumentId }, { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole },
-      );
-      res.status(201).json(decision);
-    } catch (err) {
-      if (mapFinanceServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/finance/students/:id/scholarship-decisions',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const {
+        scheme_name: schemeName,
+        eligible,
+        reason,
+        supporting_document_id: supportingDocumentId,
+      } = req.body || {};
+      try {
+        const decision = await financeService.recordScholarshipDecision(
+          req.dbClient,
+          req.params.id,
+          { schemeName, eligible, reason, supportingDocumentId },
+          {
+            actorUserId: identityService.resolveActorUserId(req.capabilities),
+            actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+          },
+        );
+        res.status(201).json(decision);
+      } catch (err) {
+        if (mapFinanceServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.get('/finance/students/:id/scholarship-decisions', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const decisions = await financeService.listScholarshipDecisionsForStudent(req.dbClient, req.params.id);
-    res.json(decisions);
-  }));
+  router.get(
+    '/finance/students/:id/scholarship-decisions',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const decisions = await financeService.listScholarshipDecisionsForStudent(req.dbClient, req.params.id);
+      res.json(decisions);
+    }),
+  );
 
   return router;
 }

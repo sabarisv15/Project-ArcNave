@@ -25,26 +25,31 @@ function requireResolvedTenant(req, res) {
 function createWorkspaceHeroRouter() {
   const router = express.Router();
 
-  router.get('/workspace/hero', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const actorUserId = identityService.resolveActorUserId(req.capabilities);
-    // First name for the hero's "Good evening, Priya" greeting (frontend
-    // redesign, 2026-08-07). A Principal has no `staff` row at all
-    // (staffService.findPrincipal's own comment) — that's not an error
-    // here, the greeting just falls back to no name, same "self only, no
-    // role rule" shape the rest of this route already follows.
-    const [moment, weeklySchedule, staffName] = await Promise.all([
-      academicService.resolveNextTeachingMomentForStaff(req.dbClient, req.collegeId, actorUserId),
-      academicService.resolveWeeklyScheduleForStaff(req.dbClient, req.collegeId, actorUserId),
-      staffService.getOwnProfile(req.dbClient, { userId: actorUserId })
-        .then((profile) => profile.first_name || profile.full_name || null)
-        .catch((err) => {
-          if (err instanceof staffService.StaffNotFoundError) return null;
-          throw err;
-        }),
-    ]);
-    res.json({ nextTeachingMoment: moment, weeklySchedule, staffName });
-  }));
+  router.get(
+    '/workspace/hero',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const actorUserId = identityService.resolveActorUserId(req.capabilities);
+      // First name for the hero's "Good evening, Priya" greeting (frontend
+      // redesign, 2026-08-07). A Principal has no `staff` row at all
+      // (staffService.findPrincipal's own comment) — that's not an error
+      // here, the greeting just falls back to no name, same "self only, no
+      // role rule" shape the rest of this route already follows.
+      const [moment, weeklySchedule, staffName] = await Promise.all([
+        academicService.resolveNextTeachingMomentForStaff(req.dbClient, req.collegeId, actorUserId),
+        academicService.resolveWeeklyScheduleForStaff(req.dbClient, req.collegeId, actorUserId),
+        staffService
+          .getOwnProfile(req.dbClient, { userId: actorUserId })
+          .then((profile) => profile.first_name || profile.full_name || null)
+          .catch((err) => {
+            if (err instanceof staffService.StaffNotFoundError) return null;
+            throw err;
+          }),
+      ]);
+      res.json({ nextTeachingMoment: moment, weeklySchedule, staffName });
+    }),
+  );
 
   return router;
 }

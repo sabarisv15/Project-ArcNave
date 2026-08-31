@@ -115,9 +115,7 @@ describe('No product-visible class is below semester 3', () => {
    * first-year class the version picker can put on screen.
    */
   it('holds for the staff timetable’s own cells, in every version', () => {
-    const cells = TIMETABLE_VERSIONS.flatMap((v) =>
-      DAYS.flatMap((d) => blocksForDay(d.key, v.id).map((b) => b.class))
-    );
+    const cells = TIMETABLE_VERSIONS.flatMap((v) => DAYS.flatMap((d) => blocksForDay(d.key, v.id).map((b) => b.class)));
     expect(cells.length).toBeGreaterThan(0);
     cells.forEach((cls) => {
       if (typeof cls.year === 'number') expect(cls.year).toBeGreaterThanOrEqual(2);
@@ -139,10 +137,7 @@ describe('No product-visible class is below semester 3', () => {
       expect(cls, `department timetable cell for ${cell.classId}`).toBeTruthy();
       expect(cls.semester).toBeGreaterThanOrEqual(3);
     });
-    expectNoEarlyLabel(
-      labelsOf(DEPT_TIMETABLE_VERSIONS, 'label', 'effectiveFrom'),
-      'department timetable versions'
-    );
+    expectNoEarlyLabel(labelsOf(DEPT_TIMETABLE_VERSIONS, 'label', 'effectiveFrom'), 'department timetable versions');
   });
 
   it('holds for substitute requests and history', () => {

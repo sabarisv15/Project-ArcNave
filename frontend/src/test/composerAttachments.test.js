@@ -61,8 +61,13 @@ describe('accepted types', () => {
 
   it('isAcceptedAttachment now accepts audio/video/archive types (File Intelligence Router)', () => {
     for (const type of [
-      'audio/wav', 'audio/mpeg', 'video/mp4', 'video/webm',
-      'application/zip', 'application/gzip', 'application/x-tar',
+      'audio/wav',
+      'audio/mpeg',
+      'video/mp4',
+      'video/webm',
+      'application/zip',
+      'application/gzip',
+      'application/x-tar',
     ]) {
       expect(isAcceptedAttachment(type)).toBe(true);
     }
@@ -136,7 +141,7 @@ describe('imagesFromClipboard', () => {
           imageItem(blob({ size: 20, lastModified: 2 })),
           imageItem(blob({ size: 30, lastModified: 3 })),
         ],
-      })
+      }),
     );
     expect(found).toHaveLength(3);
   });

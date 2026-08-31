@@ -23,10 +23,10 @@ async function seedFixtures(pool) {
      VALUES ($1, 'hod1', 'hod1@example.com', 'x', 'hod', true) RETURNING id`,
     [collegeId],
   );
-  const classResult = await pool.query(
-    'INSERT INTO classes (college_id, class_name) VALUES ($1, $2) RETURNING id',
-    [collegeId, 'ECE 2nd Year CTP'],
-  );
+  const classResult = await pool.query('INSERT INTO classes (college_id, class_name) VALUES ($1, $2) RETURNING id', [
+    collegeId,
+    'ECE 2nd Year CTP',
+  ]);
   return { collegeId, hodUserId: userResult.rows[0].id, classId: classResult.rows[0].id };
 }
 
@@ -50,7 +50,9 @@ test('positionAccountInvitationService.ensureClassTutorPositionForInvite (Phase 
 
   await t.test('provisions a Level 4 position_type=class_tutor position and its class assignment', async () => {
     const position = await positionAccountInvitationService.ensureClassTutorPositionForInvite(pool, {
-      collegeId: fixtures.collegeId, classId: fixtures.classId, createdBy: fixtures.hodUserId,
+      collegeId: fixtures.collegeId,
+      classId: fixtures.classId,
+      createdBy: fixtures.hodUserId,
     });
     assert.equal(position.level, 4);
     assert.equal(position.position_type, 'class_tutor');
@@ -63,19 +65,26 @@ test('positionAccountInvitationService.ensureClassTutorPositionForInvite (Phase 
     assert.equal(assignment.rows[0].position_id, position.id);
   });
 
-  await t.test('is idempotent — a second call for the same class returns the SAME position, no duplicate row', async () => {
-    const first = await positionAccountInvitationService.ensureClassTutorPositionForInvite(pool, {
-      collegeId: fixtures.collegeId, classId: fixtures.classId, createdBy: fixtures.hodUserId,
-    });
-    const second = await positionAccountInvitationService.ensureClassTutorPositionForInvite(pool, {
-      collegeId: fixtures.collegeId, classId: fixtures.classId, createdBy: fixtures.hodUserId,
-    });
-    assert.equal(second.id, first.id);
+  await t.test(
+    'is idempotent — a second call for the same class returns the SAME position, no duplicate row',
+    async () => {
+      const first = await positionAccountInvitationService.ensureClassTutorPositionForInvite(pool, {
+        collegeId: fixtures.collegeId,
+        classId: fixtures.classId,
+        createdBy: fixtures.hodUserId,
+      });
+      const second = await positionAccountInvitationService.ensureClassTutorPositionForInvite(pool, {
+        collegeId: fixtures.collegeId,
+        classId: fixtures.classId,
+        createdBy: fixtures.hodUserId,
+      });
+      assert.equal(second.id, first.id);
 
-    const assignments = await pool.query(
-      'SELECT * FROM position_class_assignments WHERE class_id = $1 AND revoked_at IS NULL',
-      [fixtures.classId],
-    );
-    assert.equal(assignments.rows.length, 1);
-  });
+      const assignments = await pool.query(
+        'SELECT * FROM position_class_assignments WHERE class_id = $1 AND revoked_at IS NULL',
+        [fixtures.classId],
+      );
+      assert.equal(assignments.rows.length, 1);
+    },
+  );
 });

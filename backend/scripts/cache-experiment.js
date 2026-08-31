@@ -50,16 +50,23 @@ const REPS = 3;
 // mid-arm would otherwise read as a cache result.
 const DELAY_MS = 20_000;
 
-const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+const sleep = (ms) =>
+  new Promise((r) => {
+    setTimeout(r, ms);
+  });
 
 // ~22k chars (~5.5k tokens) of stable, filler-free system text — the same
 // order of magnitude as the 6,246-char system prompt production actually
 // sends, so the arms test prefix stability at a realistic size rather than
 // at a size that trips quota. Content is inert prose, never instructions.
-const STABLE_SYSTEM = Array.from({ length: 100 }, (_, i) => `Reference clause ${i + 1}: `
-  + 'this paragraph exists solely to occupy a stable, repeated position in the '
-  + 'system instruction so that a prefix-matching cache has something of '
-  + 'realistic size to match against across consecutive requests.').join('\n');
+const STABLE_SYSTEM = Array.from(
+  { length: 100 },
+  (_, i) =>
+    `Reference clause ${i + 1}: ` +
+    'this paragraph exists solely to occupy a stable, repeated position in the ' +
+    'system instruction so that a prefix-matching cache has something of ' +
+    'realistic size to match against across consecutive requests.',
+).join('\n');
 
 function decl(name) {
   return {
@@ -72,14 +79,23 @@ const TOOLSET_A = ['alpha_one', 'alpha_two', 'alpha_three'].map(decl);
 const TOOLSET_B = ['beta_one', 'beta_two', 'beta_three'].map(decl);
 
 function ctx(question, tools) {
-  return aiContextAssembly.buildContext([
-    aiContextAssembly.segment({
-      source: 'stable-system', stability: aiContextAssembly.STABILITY.STATIC, target: 'system', content: STABLE_SYSTEM,
-    }),
-    aiContextAssembly.segment({
-      source: 'question', stability: aiContextAssembly.STABILITY.TURN, target: 'user', content: question,
-    }),
-  ], tools ? { tools } : undefined);
+  return aiContextAssembly.buildContext(
+    [
+      aiContextAssembly.segment({
+        source: 'stable-system',
+        stability: aiContextAssembly.STABILITY.STATIC,
+        target: 'system',
+        content: STABLE_SYSTEM,
+      }),
+      aiContextAssembly.segment({
+        source: 'question',
+        stability: aiContextAssembly.STABILITY.TURN,
+        target: 'user',
+        content: question,
+      }),
+    ],
+    tools ? { tools } : undefined,
+  );
 }
 
 async function one(label, question, tools) {
@@ -111,8 +127,10 @@ async function main() {
   const plan = [
     ...Array.from({ length: REPS }, () => ['A no-tools', null]),
     ...Array.from({ length: REPS }, () => ['B fixed-tools', TOOLSET_A]),
-    ['C rotating', TOOLSET_A], ['C rotating', TOOLSET_A],
-    ['C rotating', TOOLSET_B], ['C rotating', TOOLSET_A],
+    ['C rotating', TOOLSET_A],
+    ['C rotating', TOOLSET_A],
+    ['C rotating', TOOLSET_B],
+    ['C rotating', TOOLSET_A],
   ];
   for (const [label, tools] of plan) {
     // eslint-disable-next-line no-await-in-loop
@@ -132,4 +150,7 @@ async function main() {
   }
 }
 
-main().catch((e) => { console.error(e.message); process.exitCode = 1; });
+main().catch((e) => {
+  console.error(e.message);
+  process.exitCode = 1;
+});

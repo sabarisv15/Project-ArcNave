@@ -8,9 +8,7 @@
 // once a real caller needs them (same restraint DEFAULT_CHAINS' own
 // header comment applies to retrofits).
 
-async function createInvitation(client, {
-  collegeId, departmentId, email, tokenHash, invitedBy, expiresAt,
-}) {
+async function createInvitation(client, { collegeId, departmentId, email, tokenHash, invitedBy, expiresAt }) {
   const result = await client.query(
     `INSERT INTO staff_invitations (college_id, department_id, email, token_hash, invited_by, expires_at)
      VALUES ($1, $2, $3, $4, $5, $6)

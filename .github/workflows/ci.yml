@@ -1,0 +1,107 @@
+name: CI
+
+# ARCNAVE modernization P0 (ARCNAVE-modernization-english.md, "O1 —
+# No build/test pipeline" / "4.7 — No automated build/test pipeline
+# (CI)") — this repo's first-ever CI pipeline. Runs the exact
+# docker-compose.yml stack every developer already uses locally
+# (db → migrate → test), rather than reinventing role provisioning
+# (docker/postgres/init/*) in workflow YAML — that init script is the
+# real source of truth for the three-role separation (ADR-015), so CI
+# should exercise it too, not a simplified stand-in that could pass
+# while the real bootstrap is broken.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+env:
+  # CI-only values — never real secrets, this stack only ever runs
+  # against a throwaway container DB with no real tenant data.
+  POSTGRES_PASSWORD: ci-postgres-password
+  ARCNAVE_APP_PASSWORD: ci-app-password
+  ARCNAVE_PLATFORM_PASSWORD: ci-platform-password
+  JWT_SECRET_KEY: ci-jwt-secret-not-a-real-credential
+  PLATFORM_JWT_SECRET_KEY: ci-platform-jwt-secret-not-a-real-credential
+  DOCUMENT_STORAGE_ENCRYPTION_KEY: ci-document-storage-key-not-a-real-credential
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start db
+        run: docker compose up -d db
+      - name: Wait for db healthcheck
+        run: |
+          for i in $(seq 1 30); do
+            status=$(docker compose ps db --format json | node -e "process.stdin.on('data',d=>console.log(JSON.parse(d).Health))")
+            [ "$status" = "healthy" ] && exit 0
+            sleep 2
+          done
+          echo "db never became healthy" && docker compose logs db && exit 1
+      - name: Build app image
+        run: docker compose build app
+      - name: Start app (for its own dependency install + as a shell to run commands in)
+        run: docker compose up -d app
+      - name: Lint
+        run: docker compose exec -T app npm run lint
+      - name: Format check
+        run: docker compose exec -T app npm run format:check
+      # Dependency scanning (P0 item 3) — real findings already exist
+      # today (see dependency-scan-baseline.md, 6 vulnerabilities, 4
+      # high) that each need a breaking-change upgrade + its own
+      # regression pass, not a blind `--force` in this CI-setup slice.
+      # Informational for now: every PR sees the current audit output,
+      # but it doesn't fail the build until that baseline is triaged —
+      # see the doc for what's tracked and why each isn't force-fixed
+      # yet.
+      - name: Dependency audit (informational — see dependency-scan-baseline.md)
+        run: docker compose exec -T app npm audit || true
+      - name: Migrate up
+        run: docker compose exec -T app npm run migrate
+      # Reversibility (CLAUDE.md rule 6: "every migration must be
+      # reversible") is asserted here, not just claimed in a comment.
+      - name: Migrate down (reversibility check)
+        run: docker compose exec -T app npm run migrate:down
+      - name: Migrate up again (confirms down didn't corrupt state)
+        run: docker compose exec -T app npm run migrate
+      - name: Test
+        run: docker compose exec -T app npm test
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # --legacy-peer-deps: an existing, pre-P0 peer-dependency
+      # conflict in this project's own dependency tree (react19 vs.
+      # next-themes/@radix-ui's stated peer ranges), not introduced by
+      # this pipeline — tracked as a dependency-scan follow-up.
+      - run: npm ci --legacy-peer-deps
+      - name: Lint
+        run: npm run lint
+      - name: Format check
+        run: npm run format:check
+      - name: Dependency audit (informational — see dependency-scan-baseline.md)
+        run: npm audit || true
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+
+# Branch protection note: this workflow being green is only an actual
+# merge gate if the repo's branch-protection rule for `master` requires
+# both jobs to pass — that's a GitHub repo setting (Settings → Branches),
+# not something this file can turn on by itself; needs a repo admin.

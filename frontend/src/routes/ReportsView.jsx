@@ -9,19 +9,35 @@ import { PANE, TABLE_HEAD, TableEmptyState } from '../components/WorkspaceLayout
 import { formatFullDate, formatTime } from '../lib/attendanceData';
 import { getISTParts } from '../lib/ist';
 import {
-  REPORT_SUBJECTS, REPORT_CLASS_CODES, REPORT_PROGRAMMES, REPORT_SEMESTERS, REPORT_ACADEMIC_YEARS, REPORT_SESSIONS,
+  REPORT_SUBJECTS,
+  REPORT_CLASS_CODES,
+  REPORT_PROGRAMMES,
+  REPORT_SEMESTERS,
+  REPORT_ACADEMIC_YEARS,
+  REPORT_SESSIONS,
 } from '../lib/reportsData';
 import {
-  ATTENDANCE_REPORT_COLUMNS, ATTENDANCE_REPORT_DEFAULT_COLUMNS,
-  CLASS_LOG_REPORT_COLUMNS, CLASS_LOG_REPORT_DEFAULT_COLUMNS,
-  attendanceReportFilename, classLogReportFilename,
-  buildAttendanceReportRows, buildClassLogReportRows,
-  downloadTextFile, filterReportSessions, printReport, resolvePeriodRange, rowsToCsv, subjectHoursSummary,
+  ATTENDANCE_REPORT_COLUMNS,
+  ATTENDANCE_REPORT_DEFAULT_COLUMNS,
+  CLASS_LOG_REPORT_COLUMNS,
+  CLASS_LOG_REPORT_DEFAULT_COLUMNS,
+  attendanceReportFilename,
+  classLogReportFilename,
+  buildAttendanceReportRows,
+  buildClassLogReportRows,
+  downloadTextFile,
+  filterReportSessions,
+  printReport,
+  resolvePeriodRange,
+  rowsToCsv,
+  subjectHoursSummary,
 } from '../lib/reportBuilder';
 
-const CONTROL = 'inline-flex items-center gap-[7px] h-[34px] px-[11px] rounded-[10px] border border-line bg-paper font-sans text-[12.5px] text-ink-soft cursor-pointer whitespace-nowrap transition-colors duration-200 hover:bg-tint2';
+const CONTROL =
+  'inline-flex items-center gap-[7px] h-[34px] px-[11px] rounded-[10px] border border-line bg-paper font-sans text-[12.5px] text-ink-soft cursor-pointer whitespace-nowrap transition-colors duration-200 hover:bg-tint2';
 const CONTROL_ON = 'border-accent-line bg-accent-soft text-accent';
-const ICON_BTN = 'relative w-[34px] h-[34px] grid place-items-center rounded-[9px] cursor-pointer transition-colors duration-200';
+const ICON_BTN =
+  'relative w-[34px] h-[34px] grid place-items-center rounded-[9px] cursor-pointer transition-colors duration-200';
 
 /** Attendance report / Class log report — a compact segmented choice, never two large cards. */
 function ReportTypeSegment({ value, onChange }) {
@@ -40,7 +56,9 @@ function ReportTypeSegment({ value, onChange }) {
           onClick={() => onChange(key)}
           className={cn(
             'flex items-center gap-[6px] h-[30px] px-[12px] border-0 rounded-[9px] font-sans text-[12.5px] cursor-pointer transition-colors duration-200 whitespace-nowrap',
-            value === key ? 'bg-paper text-ink font-[600] shadow-seg' : 'bg-transparent text-ink-muted font-[500] hover:text-ink'
+            value === key
+              ? 'bg-paper text-ink font-[600] shadow-seg'
+              : 'bg-transparent text-ink-muted font-[500] hover:text-ink',
           )}
         >
           <Icon size={13} strokeWidth={1.9} />
@@ -81,10 +99,13 @@ function SubjectDropdown({ value, onChange }) {
             <button
               key={v || 'all'}
               type="button"
-              onClick={() => { onChange(v); close(); }}
+              onClick={() => {
+                onChange(v);
+                close();
+              }}
               className={cn(
                 'flex items-center justify-between w-full h-[30px] px-[9px] border-0 bg-transparent rounded-[8px] font-sans text-[12.5px] cursor-pointer text-left hover:bg-tint2',
-                v === value ? 'text-accent font-[600]' : 'text-ink-soft font-[500]'
+                v === value ? 'text-accent font-[600]' : 'text-ink-soft font-[500]',
               )}
             >
               <span className="truncate">{label}</span>
@@ -112,7 +133,9 @@ function HoursPeriodDropdown({ period, setPeriod }) {
             onClick={() => setPeriod((p) => ({ ...p, mode }))}
             className={cn(
               'h-[28px] px-[12px] rounded-[9px] font-sans text-[11.5px] font-[500] cursor-pointer transition-colors duration-200',
-              period.mode === mode ? 'bg-accent-soft border border-accent-line text-accent' : 'bg-tint2 border border-transparent text-ink-soft hover:bg-hoverline'
+              period.mode === mode
+                ? 'bg-accent-soft border border-accent-line text-accent'
+                : 'bg-tint2 border border-transparent text-ink-soft hover:bg-hoverline',
             )}
           >
             {mode === 'weekly' ? 'Weekly' : 'Monthly'}
@@ -163,10 +186,30 @@ function AdvancedFiltersPopover({ scope, setScope }) {
       onClear={() => setScope((s) => ({ ...s, classCode: '', programme: '', semester: '', academicYear: '' }))}
     >
       <div className="grid grid-cols-1 gap-[12px]">
-        <FilterSelect label="Class" value={scope.classCode} onChange={(v) => setScope((s) => ({ ...s, classCode: v }))} options={opts('All classes', REPORT_CLASS_CODES)} />
-        <FilterSelect label="Programme" value={scope.programme} onChange={(v) => setScope((s) => ({ ...s, programme: v }))} options={opts('All programmes', REPORT_PROGRAMMES)} />
-        <FilterSelect label="Semester" value={scope.semester} onChange={(v) => setScope((s) => ({ ...s, semester: v }))} options={opts('All semesters', REPORT_SEMESTERS)} />
-        <FilterSelect label="Academic year" value={scope.academicYear} onChange={(v) => setScope((s) => ({ ...s, academicYear: v }))} options={opts('All years', REPORT_ACADEMIC_YEARS)} />
+        <FilterSelect
+          label="Class"
+          value={scope.classCode}
+          onChange={(v) => setScope((s) => ({ ...s, classCode: v }))}
+          options={opts('All classes', REPORT_CLASS_CODES)}
+        />
+        <FilterSelect
+          label="Programme"
+          value={scope.programme}
+          onChange={(v) => setScope((s) => ({ ...s, programme: v }))}
+          options={opts('All programmes', REPORT_PROGRAMMES)}
+        />
+        <FilterSelect
+          label="Semester"
+          value={scope.semester}
+          onChange={(v) => setScope((s) => ({ ...s, semester: v }))}
+          options={opts('All semesters', REPORT_SEMESTERS)}
+        />
+        <FilterSelect
+          label="Academic year"
+          value={scope.academicYear}
+          onChange={(v) => setScope((s) => ({ ...s, academicYear: v }))}
+          options={opts('All years', REPORT_ACADEMIC_YEARS)}
+        />
       </div>
     </FilterPopover>
   );
@@ -184,7 +227,11 @@ function useExportColumns(storageKey, allColumns, defaultKeys) {
   });
 
   useEffect(() => {
-    try { localStorage.setItem(storageKey, JSON.stringify(columns)); } catch { /* ignore quota errors */ }
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(columns));
+    } catch {
+      /* ignore quota errors */
+    }
   }, [columns, storageKey]);
 
   const toggle = (key) => setColumns((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
@@ -199,10 +246,24 @@ function ColumnSelector({ allColumns, cols }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-[8px]">
-        <span className="text-[11px] tracking-[.05em] uppercase text-ink-faint">Choose columns · {cols.columns.length} selected</span>
+        <span className="text-[11px] tracking-[.05em] uppercase text-ink-faint">
+          Choose columns · {cols.columns.length} selected
+        </span>
         <div className="flex items-center gap-[10px]">
-          <button type="button" onClick={cols.selectAll} className="text-[11.5px] font-[500] text-accent bg-transparent border-0 cursor-pointer hover:underline">Select all</button>
-          <button type="button" onClick={cols.clearAll} className="text-[11.5px] font-[500] text-ink-muted bg-transparent border-0 cursor-pointer hover:underline">Clear all</button>
+          <button
+            type="button"
+            onClick={cols.selectAll}
+            className="text-[11.5px] font-[500] text-accent bg-transparent border-0 cursor-pointer hover:underline"
+          >
+            Select all
+          </button>
+          <button
+            type="button"
+            onClick={cols.clearAll}
+            className="text-[11.5px] font-[500] text-ink-muted bg-transparent border-0 cursor-pointer hover:underline"
+          >
+            Clear all
+          </button>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-x-[10px] gap-y-[2px]">
@@ -217,7 +278,12 @@ function ColumnSelector({ allColumns, cols }) {
               onClick={() => cols.toggle(key)}
               className="flex items-center gap-[8px] w-full p-[6px] border-0 bg-transparent rounded-[10px] font-sans text-[12.5px] text-ink-soft cursor-pointer text-left hover:bg-tint2"
             >
-              <span className={cn('w-[17px] h-[17px] rounded-[5px] flex-none grid place-items-center border transition-colors duration-200', checked ? 'bg-accent border-accent text-white' : 'bg-paper border-line')}>
+              <span
+                className={cn(
+                  'w-[17px] h-[17px] rounded-[5px] flex-none grid place-items-center border transition-colors duration-200',
+                  checked ? 'bg-accent border-accent text-white' : 'bg-paper border-line',
+                )}
+              >
                 {checked && <Check size={10} strokeWidth={3} />}
               </span>
               <span>{label}</span>
@@ -235,7 +301,12 @@ function ExportDialog({ allColumns, cols, format, setFormat, onGenerate, disable
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>
-        <button type="button" aria-label="Export report" title="Export" className={cn(ICON_BTN, 'text-ink-soft hover:bg-tint2')}>
+        <button
+          type="button"
+          aria-label="Export report"
+          title="Export"
+          className={cn(ICON_BTN, 'text-ink-soft hover:bg-tint2')}
+        >
           <Download size={15} strokeWidth={1.9} />
         </button>
       </Dialog.Trigger>
@@ -245,12 +316,18 @@ function ExportDialog({ allColumns, cols, format, setFormat, onGenerate, disable
           <div className="flex items-center justify-between mb-[14px]">
             <Dialog.Title className="m-0 text-[15px] font-[600] text-ink">Export report</Dialog.Title>
             <Dialog.Close asChild>
-              <button type="button" aria-label="Close" className="w-[28px] h-[28px] grid place-items-center border-0 bg-transparent rounded-[9px] text-ink-faint cursor-pointer hover:bg-tint2 hover:text-ink">
+              <button
+                type="button"
+                aria-label="Close"
+                className="w-[28px] h-[28px] grid place-items-center border-0 bg-transparent rounded-[9px] text-ink-faint cursor-pointer hover:bg-tint2 hover:text-ink"
+              >
                 <X size={16} strokeWidth={1.9} />
               </button>
             </Dialog.Close>
           </div>
-          <Dialog.Description className="sr-only">Choose an export format and, for CSV, which columns to include.</Dialog.Description>
+          <Dialog.Description className="sr-only">
+            Choose an export format and, for CSV, which columns to include.
+          </Dialog.Description>
 
           <div className="flex gap-[8px] mb-[16px]">
             {['csv', 'pdf'].map((f) => (
@@ -260,7 +337,9 @@ function ExportDialog({ allColumns, cols, format, setFormat, onGenerate, disable
                 onClick={() => setFormat(f)}
                 className={cn(
                   'flex-1 h-[34px] border rounded-[11px] font-sans text-[12.5px] font-[500] cursor-pointer transition-colors duration-200',
-                  format === f ? 'border-accent-line bg-accent-soft text-accent' : 'border-line bg-paper text-ink-soft hover:bg-tint2'
+                  format === f
+                    ? 'border-accent-line bg-accent-soft text-accent'
+                    : 'border-line bg-paper text-ink-soft hover:bg-tint2',
                 )}
               >
                 {f.toUpperCase()}
@@ -272,11 +351,16 @@ function ExportDialog({ allColumns, cols, format, setFormat, onGenerate, disable
 
           <button
             type="button"
-            onClick={() => { onGenerate(); setOpen(false); }}
+            onClick={() => {
+              onGenerate();
+              setOpen(false);
+            }}
             disabled={disabled}
             className={cn(
               'mt-[16px] w-full h-[38px] border-0 rounded-[11px] font-sans text-[13px] font-[500] inline-flex items-center justify-center gap-[7px]',
-              disabled ? 'bg-frame text-ink-disabled cursor-not-allowed' : 'bg-accent text-white cursor-pointer hover:bg-accent-hover active:bg-accent-press'
+              disabled
+                ? 'bg-frame text-ink-disabled cursor-not-allowed'
+                : 'bg-accent text-white cursor-pointer hover:bg-accent-hover active:bg-accent-press',
             )}
           >
             <Download size={15} strokeWidth={1.9} />
@@ -295,7 +379,15 @@ function ExportDialog({ allColumns, cols, format, setFormat, onGenerate, disable
  */
 function PreviewTable({ columns, rows, query = '' }) {
   const term = query.trim().toLowerCase();
-  const filtered = term ? rows.filter((row) => columns.some(([key]) => String(row[key] ?? '').toLowerCase().includes(term))) : rows;
+  const filtered = term
+    ? rows.filter((row) =>
+        columns.some(([key]) =>
+          String(row[key] ?? '')
+            .toLowerCase()
+            .includes(term),
+        ),
+      )
+    : rows;
 
   if (columns.length === 0) {
     return <p className="flex-none text-[12px] text-ink-faint">Select at least one column to preview.</p>;
@@ -309,7 +401,10 @@ function PreviewTable({ columns, rows, query = '' }) {
               {columns.map(([key, label]) => (
                 <th
                   key={key}
-                  className={cn('sticky top-0 z-[46] text-left bg-tint border-b border-line py-[9px] px-[12px] whitespace-nowrap', TABLE_HEAD)}
+                  className={cn(
+                    'sticky top-0 z-[46] text-left bg-tint border-b border-line py-[9px] px-[12px] whitespace-nowrap',
+                    TABLE_HEAD,
+                  )}
                 >
                   {label}
                 </th>
@@ -320,7 +415,9 @@ function PreviewTable({ columns, rows, query = '' }) {
             {filtered.map((row, i) => (
               <tr key={i} className="border-t border-line-light">
                 {columns.map(([key]) => (
-                  <td key={key} className="py-[9px] px-[12px] text-ink-soft whitespace-nowrap">{key === 'attendancePercentage' ? `${row[key]}%` : String(row[key] ?? '')}</td>
+                  <td key={key} className="py-[9px] px-[12px] text-ink-soft whitespace-nowrap">
+                    {key === 'attendancePercentage' ? `${row[key]}%` : String(row[key] ?? '')}
+                  </td>
                 ))}
               </tr>
             ))}
@@ -357,16 +454,27 @@ export function ReportsView() {
   const [previewOpen, setPreviewOpen] = useState(true);
   const [previewQuery, setPreviewQuery] = useState('');
 
-  const attendanceCols = useExportColumns('arcnave.report.columns.attendance', ATTENDANCE_REPORT_COLUMNS, ATTENDANCE_REPORT_DEFAULT_COLUMNS);
-  const classLogCols = useExportColumns('arcnave.report.columns.classlog', CLASS_LOG_REPORT_COLUMNS, CLASS_LOG_REPORT_DEFAULT_COLUMNS);
+  const attendanceCols = useExportColumns(
+    'arcnave.report.columns.attendance',
+    ATTENDANCE_REPORT_COLUMNS,
+    ATTENDANCE_REPORT_DEFAULT_COLUMNS,
+  );
+  const classLogCols = useExportColumns(
+    'arcnave.report.columns.classlog',
+    CLASS_LOG_REPORT_COLUMNS,
+    CLASS_LOG_REPORT_DEFAULT_COLUMNS,
+  );
   const cols = reportType === 'attendance' ? attendanceCols : classLogCols;
   const columnDefs = reportType === 'attendance' ? ATTENDANCE_REPORT_COLUMNS : CLASS_LOG_REPORT_COLUMNS;
 
   const range = resolvePeriodRange(period);
-  const scoped = useMemo(() => filterReportSessions(REPORT_SESSIONS, { ...scope, ...range }), [scope, range.dateFrom, range.dateTo]);
+  const scoped = useMemo(
+    () => filterReportSessions(REPORT_SESSIONS, { ...scope, ...range }),
+    [scope, range.dateFrom, range.dateTo],
+  );
   const rows = useMemo(
     () => (reportType === 'attendance' ? buildAttendanceReportRows(scoped) : buildClassLogReportRows(scoped)),
-    [reportType, scoped]
+    [reportType, scoped],
   );
   const summary = useMemo(() => (reportType === 'classlog' ? subjectHoursSummary(scoped) : []), [reportType, scoped]);
   const submittedCount = scoped.filter((s) => s.status === 'submitted').length;
@@ -376,12 +484,18 @@ export function ReportsView() {
     const label = scopeLabel(scope);
     if (reportType === 'attendance') {
       if (format === 'csv') {
-        downloadTextFile(attendanceReportFilename(label, period.mode, 'csv'), rowsToCsv(rows, cols.columns, ATTENDANCE_REPORT_COLUMNS));
+        downloadTextFile(
+          attendanceReportFilename(label, period.mode, 'csv'),
+          rowsToCsv(rows, cols.columns, ATTENDANCE_REPORT_COLUMNS),
+        );
       } else {
         printReport({
           title: 'Attendance report',
           generatedAt: `${formatFullDate(new Date())} · ${formatTime(new Date())} IST`,
-          scopeLines: [`Period: ${period.mode === 'weekly' ? 'Weekly' : 'Monthly'} (${range.dateFrom} to ${range.dateTo})`, 'Only submitted attendance is included in these calculations.'],
+          scopeLines: [
+            `Period: ${period.mode === 'weekly' ? 'Weekly' : 'Monthly'} (${range.dateFrom} to ${range.dateTo})`,
+            'Only submitted attendance is included in these calculations.',
+          ],
           filterLines: [],
           columns: ATTENDANCE_REPORT_COLUMNS.map(([k]) => k),
           columnDefs: ATTENDANCE_REPORT_COLUMNS,
@@ -391,9 +505,23 @@ export function ReportsView() {
       }
     } else {
       if (format === 'csv') {
-        downloadTextFile(classLogReportFilename(label, range.dateFrom, range.dateTo, 'csv'), rowsToCsv(rows, cols.columns, CLASS_LOG_REPORT_COLUMNS));
-        const summaryCsv = rowsToCsv(summary.map((r, i) => ({ sNo: i + 1, subject: r.subject, hours: r.hours })), ['sNo', 'subject', 'hours'], [['sNo', 'S.No'], ['subject', 'Subject'], ['hours', 'Total teaching hours']]);
-        downloadTextFile(classLogReportFilename(`${label}-subject-hours-summary`, range.dateFrom, range.dateTo, 'csv'), summaryCsv);
+        downloadTextFile(
+          classLogReportFilename(label, range.dateFrom, range.dateTo, 'csv'),
+          rowsToCsv(rows, cols.columns, CLASS_LOG_REPORT_COLUMNS),
+        );
+        const summaryCsv = rowsToCsv(
+          summary.map((r, i) => ({ sNo: i + 1, subject: r.subject, hours: r.hours })),
+          ['sNo', 'subject', 'hours'],
+          [
+            ['sNo', 'S.No'],
+            ['subject', 'Subject'],
+            ['hours', 'Total teaching hours'],
+          ],
+        );
+        downloadTextFile(
+          classLogReportFilename(`${label}-subject-hours-summary`, range.dateFrom, range.dateTo, 'csv'),
+          summaryCsv,
+        );
       } else {
         printReport({
           title: 'Class log report',
@@ -404,7 +532,10 @@ export function ReportsView() {
           columnDefs: CLASS_LOG_REPORT_COLUMNS,
           rows,
           landscape: true,
-          summary: { title: 'Total teaching hours by subject', rows: summary.map((r) => [r.subject, `${r.hours} hours`]) },
+          summary: {
+            title: 'Total teaching hours by subject',
+            rows: summary.map((r) => [r.subject, `${r.hours} hours`]),
+          },
         });
       }
     }
@@ -419,7 +550,14 @@ export function ReportsView() {
         <HoursPeriodDropdown period={period} setPeriod={setPeriod} />
         <AdvancedFiltersPopover scope={scope} setScope={setScope} />
         <div className="flex-1" />
-        <ExportDialog allColumns={columnDefs} cols={cols} format={format} setFormat={setFormat} onGenerate={generate} disabled={format === 'csv' && cols.columns.length === 0} />
+        <ExportDialog
+          allColumns={columnDefs}
+          cols={cols}
+          format={format}
+          setFormat={setFormat}
+          onGenerate={generate}
+          disabled={format === 'csv' && cols.columns.length === 0}
+        />
         <button
           type="button"
           onClick={() => setPreviewOpen((v) => !v)}
@@ -435,14 +573,18 @@ export function ReportsView() {
       {reportType === 'attendance' && (
         <p className="flex-none mt-0 mb-[14px] text-[11.5px] text-ink-faint leading-[1.5]">
           Only submitted attendance is included in attendance calculations.
-          {excludedCount > 0 && ` ${excludedCount} locked-but-unsubmitted session${excludedCount === 1 ? '' : 's'} in this scope ${excludedCount === 1 ? 'is' : 'are'} excluded.`}
+          {excludedCount > 0 &&
+            ` ${excludedCount} locked-but-unsubmitted session${excludedCount === 1 ? '' : 's'} in this scope ${excludedCount === 1 ? 'is' : 'are'} excluded.`}
         </p>
       )}
 
       {reportType === 'classlog' && summary.length > 0 && (
         <div className="flex-none flex flex-wrap gap-[8px] mb-[14px]">
           {summary.map((r) => (
-            <span key={r.subject} className="inline-flex items-center gap-[6px] h-[26px] px-[10px] rounded-[9px] bg-tint2 text-[11.5px] font-[500] text-ink-soft">
+            <span
+              key={r.subject}
+              className="inline-flex items-center gap-[6px] h-[26px] px-[10px] rounded-[9px] bg-tint2 text-[11.5px] font-[500] text-ink-soft"
+            >
               {r.subject} <span className="text-accent">— {r.hours}h</span>
             </span>
           ))}
@@ -457,9 +599,18 @@ export function ReportsView() {
               {rows.length} row{rows.length === 1 ? '' : 's'} · {range.dateFrom} to {range.dateTo}
             </span>
             <div className="flex-1" />
-            <SearchPopoverField value={previewQuery} onChange={setPreviewQuery} placeholder="Search preview…" ariaLabel="Search report preview" />
+            <SearchPopoverField
+              value={previewQuery}
+              onChange={setPreviewQuery}
+              placeholder="Search preview…"
+              ariaLabel="Search report preview"
+            />
           </div>
-          <PreviewTable columns={columnDefs.filter(([k]) => cols.columns.includes(k))} rows={rows} query={previewQuery} />
+          <PreviewTable
+            columns={columnDefs.filter(([k]) => cols.columns.includes(k))}
+            rows={rows}
+            query={previewQuery}
+          />
         </>
       )}
     </div>

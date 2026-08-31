@@ -62,7 +62,7 @@ function SubTabsRow({ value, onChange, children }) {
               'relative flex-none h-[27px] px-[10px] border-0 rounded-[8px] bg-transparent font-sans text-[12.5px] whitespace-nowrap cursor-pointer transition-colors duration-200',
               value === key
                 ? 'bg-accent-soft text-accent font-[600]'
-                : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2'
+                : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2',
             )}
           >
             {label}
@@ -94,7 +94,9 @@ function useTodaysSchedule() {
       if (ownership && period.ownership !== ownership) return false;
       if (!term) return true;
       const haystack = [period.subject, period.code, period.programme, period.section, period.batch]
-        .filter(Boolean).join(' ').toLowerCase();
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
       return haystack.includes(term);
     }).map((period) => ({
       period,
@@ -107,11 +109,18 @@ function useTodaysSchedule() {
   /** The period the clock is inside right now — gets the quiet teal edge. */
   const currentPeriodId = useMemo(
     () => TODAYS_SCHEDULE.find((p) => periodTimePhase(p, now) === 'current')?.id ?? null,
-    [now]
+    [now],
   );
 
   return {
-    rows, currentPeriodId, query, setQuery, ownership, setOwnership, filterOpen, setFilterOpen,
+    rows,
+    currentPeriodId,
+    query,
+    setQuery,
+    ownership,
+    setOwnership,
+    filterOpen,
+    setFilterOpen,
     activeFilterCount: ownership ? 1 : 0,
   };
 }
@@ -183,7 +192,9 @@ function HistoryPane({ l }) {
       <LedgerChips chips={l.activeChips} onRemove={l.removeChip} onClearAll={l.clearFilters} />
 
       <div className="flex-none flex items-center mb-[8px]">
-        <span aria-live="polite" className="text-[11.5px] text-ink-faint">{l.resultCountLabel}</span>
+        <span aria-live="polite" className="text-[11.5px] text-ink-faint">
+          {l.resultCountLabel}
+        </span>
       </div>
 
       <StudentLedgerTable
@@ -267,11 +278,7 @@ export function AttendanceHomeView() {
 
       <AttendanceActionDrawer periodId={drawerPeriodId} onClose={closeDrawer} />
 
-      <SubstituteRequestDrawer
-        open={!!coverPrefill}
-        prefill={coverPrefill}
-        onClose={() => setCoverPrefill(null)}
-      />
+      <SubstituteRequestDrawer open={!!coverPrefill} prefill={coverPrefill} onClose={() => setCoverPrefill(null)} />
     </div>
   );
 }

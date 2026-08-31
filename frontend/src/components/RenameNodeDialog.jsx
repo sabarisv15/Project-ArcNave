@@ -20,7 +20,11 @@ const FIELD =
  */
 export function RenameNodeDialog({ open, node, mode = 'rename', folderId, onClose, onSubmit }) {
   const creating = mode === 'create';
-  const key = draftKey(ME.id, creating ? 'new-folder' : 'rename', creating ? folderId ?? 'root' : node?.id ?? 'none');
+  const key = draftKey(
+    ME.id,
+    creating ? 'new-folder' : 'rename',
+    creating ? (folderId ?? 'root') : (node?.id ?? 'none'),
+  );
   const restored = useRestoredDraft(key, open);
 
   const [name, setName] = useState('');
@@ -38,9 +42,12 @@ export function RenameNodeDialog({ open, node, mode = 'rename', folderId, onClos
   });
 
   useEffect(() => {
-    if (!open) { setSeeded(false); return; }
+    if (!open) {
+      setSeeded(false);
+      return;
+    }
     if (seeded) return;
-    const initial = restored?.value ?? (creating ? '' : node?.name ?? '');
+    const initial = restored?.value ?? (creating ? '' : (node?.name ?? ''));
     setName(initial);
     setSeeded(true);
     requestAnimationFrame(() => {
@@ -80,18 +87,33 @@ export function RenameNodeDialog({ open, node, mode = 'rename', folderId, onClos
           <input
             ref={inputRef}
             value={name}
-            onChange={(e) => { setName(e.target.value); autosave.schedule(); }}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } }}
+            onChange={(e) => {
+              setName(e.target.value);
+              autosave.schedule();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                commit();
+              }
+            }}
             placeholder={creating ? 'Folder name' : 'New name'}
             aria-label={creating ? 'Folder name' : 'New name'}
             className={FIELD}
           />
           <div className="flex items-center gap-[10px] mt-[14px]">
             <span className="min-w-0 flex-1">
-              {usedDraft ? <DraftRestoredNote show /> : <AutosaveStatus status={autosave.status} onRetry={autosave.retry} />}
+              {usedDraft ? (
+                <DraftRestoredNote show />
+              ) : (
+                <AutosaveStatus status={autosave.status} onRetry={autosave.retry} />
+              )}
             </span>
             <Dialog.Close asChild>
-              <button type="button" className="h-[32px] px-[14px] border border-line rounded-[10px] bg-paper font-sans text-[12.5px] font-[500] text-ink-muted cursor-pointer hover:bg-tint2">
+              <button
+                type="button"
+                className="h-[32px] px-[14px] border border-line rounded-[10px] bg-paper font-sans text-[12.5px] font-[500] text-ink-muted cursor-pointer hover:bg-tint2"
+              >
                 Cancel
               </button>
             </Dialog.Close>
@@ -101,7 +123,9 @@ export function RenameNodeDialog({ open, node, mode = 'rename', folderId, onClos
               disabled={!valid}
               className={cn(
                 'h-[32px] px-[14px] border-0 rounded-[10px] font-sans text-[12.5px] font-[500]',
-                valid ? 'bg-accent text-white cursor-pointer hover:bg-accent-hover' : 'bg-frame text-ink-disabled cursor-not-allowed'
+                valid
+                  ? 'bg-accent text-white cursor-pointer hover:bg-accent-hover'
+                  : 'bg-frame text-ink-disabled cursor-not-allowed',
               )}
             >
               {creating ? 'Create folder' : 'Rename'}

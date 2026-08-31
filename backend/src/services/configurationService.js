@@ -236,7 +236,9 @@ function applyProviderFallback(provider, adapter) {
   const fallbackAdapter = aiProviders.getAdapter(fallbackProvider);
   const fallbackConfig = GLOBAL_CONFIG_BUILDERS[fallbackProvider]();
   const { state, onFallback } = aiProviderFallbackService.buildFallbackTracker();
-  const resilientAdapter = aiProviderFallbackService.buildResilientAdapter(adapter, fallbackAdapter, fallbackConfig, { onFallback });
+  const resilientAdapter = aiProviderFallbackService.buildResilientAdapter(adapter, fallbackAdapter, fallbackConfig, {
+    onFallback,
+  });
   return { adapter: resilientAdapter, fallbackProvider, fallbackState: state };
 }
 
@@ -248,7 +250,12 @@ async function getAiConfig(client, collegeId) {
     const primaryAdapter = aiProviders.getAdapter(provider);
     const { adapter, fallbackProvider, fallbackState } = applyProviderFallback(provider, primaryAdapter);
     return {
-      provider, config: GLOBAL_CONFIG_BUILDERS[provider](), adapter, configSource: 'platform_default', fallbackProvider, fallbackState,
+      provider,
+      config: GLOBAL_CONFIG_BUILDERS[provider](),
+      adapter,
+      configSource: 'platform_default',
+      fallbackProvider,
+      fallbackState,
     };
   }
 
@@ -269,7 +276,12 @@ async function getAiConfig(client, collegeId) {
   const primaryAdapter = aiProviders.getAdapter(row.provider);
   const { adapter, fallbackProvider, fallbackState } = applyProviderFallback(row.provider, primaryAdapter);
   return {
-    provider: row.provider, config, adapter, configSource: 'college_explicit', fallbackProvider, fallbackState,
+    provider: row.provider,
+    config,
+    adapter,
+    configSource: 'college_explicit',
+    fallbackProvider,
+    fallbackState,
   };
 }
 
@@ -318,7 +330,9 @@ async function resolveAiConfig(client, collegeId, { allowExperimentalFallback = 
     return { ...resolved, experimentalOverrideApplied: false };
   }
   return {
-    ...override, configSource: 'experimental_fallback', experimentalOverrideApplied: true,
+    ...override,
+    configSource: 'experimental_fallback',
+    experimentalOverrideApplied: true,
   };
 }
 
@@ -328,9 +342,12 @@ async function resolveAiConfig(client, collegeId, { allowExperimentalFallback = 
 // argument. The return value never includes api_key or its ciphertext
 // in any form, only hasApiKey (a boolean) — a caller (the route) has
 // no raw key to accidentally leak in a response or a log line.
-async function setAiConfig(client, collegeId, {
-  provider, apiKey, model, embeddingModel, fastModel, baseUrl,
-}, { userId } = {}) {
+async function setAiConfig(
+  client,
+  collegeId,
+  { provider, apiKey, model, embeddingModel, fastModel, baseUrl },
+  { userId } = {},
+) {
   if (!provider) {
     throw new AiConfigValidationError('provider is required');
   }
@@ -359,7 +376,10 @@ async function setAiConfig(client, collegeId, {
     // changed, same "record the fact, not the secret" restraint
     // security.js's own password/token handling already follows.
     metadata: {
-      provider: row.provider, model: row.model, embeddingModel: row.embedding_model, fastModel: row.fast_model,
+      provider: row.provider,
+      model: row.model,
+      embeddingModel: row.embedding_model,
+      fastModel: row.fast_model,
     },
   });
 

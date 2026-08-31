@@ -18,29 +18,53 @@ function fakeClient() {
 }
 
 test('generateImage: empty prompt -> ImageGenerationValidationError, no config lookup', async (t) => {
-  const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => { throw new Error('should not be called'); });
+  const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => {
+    throw new Error('should not be called');
+  });
   t.after(() => getConfigMock.mock.restore());
   await assert.rejects(
-    () => imageGenerationService.generateImage(fakeClient(), { prompt: '  ' }, { collegeId: 'college-a', actorUserId: 'u1' }),
+    () =>
+      imageGenerationService.generateImage(
+        fakeClient(),
+        { prompt: '  ' },
+        { collegeId: 'college-a', actorUserId: 'u1' },
+      ),
     imageGenerationService.ImageGenerationValidationError,
   );
 });
 
 test('generateImage: prompt over the length cap -> ImageGenerationValidationError', async (t) => {
-  const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => { throw new Error('should not be called'); });
+  const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => {
+    throw new Error('should not be called');
+  });
   t.after(() => getConfigMock.mock.restore());
   await assert.rejects(
-    () => imageGenerationService.generateImage(fakeClient(), { prompt: 'x'.repeat(2001) }, { collegeId: 'college-a', actorUserId: 'u1' }),
+    () =>
+      imageGenerationService.generateImage(
+        fakeClient(),
+        { prompt: 'x'.repeat(2001) },
+        { collegeId: 'college-a', actorUserId: 'u1' },
+      ),
     imageGenerationService.ImageGenerationValidationError,
   );
 });
 
 test('generateImage: not enabled for this college -> ImageGenerationNotEnabledError, no AI config resolved', async (t) => {
   const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => null);
-  const getAiConfigMock = t.mock.method(configurationService, 'getAiConfig', async () => { throw new Error('should not be called'); });
-  t.after(() => { getConfigMock.mock.restore(); getAiConfigMock.mock.restore(); });
+  const getAiConfigMock = t.mock.method(configurationService, 'getAiConfig', async () => {
+    throw new Error('should not be called');
+  });
+  t.after(() => {
+    getConfigMock.mock.restore();
+    getAiConfigMock.mock.restore();
+  });
   await assert.rejects(
-    () => imageGenerationService.generateImage(fakeClient(), { prompt: 'a red bicycle' }, { collegeId: 'college-a', actorUserId: 'u1' }),
+    () =>
+      imageGenerationService.generateImage(
+        fakeClient(),
+        { prompt: 'a red bicycle' },
+        { collegeId: 'college-a', actorUserId: 'u1' },
+      ),
     imageGenerationService.ImageGenerationNotEnabledError,
   );
 });
@@ -57,7 +81,9 @@ test('generateImage: enabled -> calls the resolved adapter.generateImage and sav
     },
   };
   const getAiConfigMock = t.mock.method(configurationService, 'getAiConfig', async () => ({
-    provider: 'openai', config: {}, adapter: fakeAdapter,
+    provider: 'openai',
+    config: {},
+    adapter: fakeAdapter,
   }));
   const uploadMock = t.mock.method(documentService, 'uploadPersonalDocument', async (client, fields, opts) => {
     assert.equal(fields.collegeId, 'college-a');
@@ -67,10 +93,16 @@ test('generateImage: enabled -> calls the resolved adapter.generateImage and sav
     assert.equal(opts.actorUserId, 'u1');
     return { id: 'doc-1', file_name: fields.fileName, mime_type: fields.mimeType, title: fields.title };
   });
-  t.after(() => { getConfigMock.mock.restore(); getAiConfigMock.mock.restore(); uploadMock.mock.restore(); });
+  t.after(() => {
+    getConfigMock.mock.restore();
+    getAiConfigMock.mock.restore();
+    uploadMock.mock.restore();
+  });
 
   const result = await imageGenerationService.generateImage(
-    fakeClient(), { prompt: 'a red bicycle' }, { collegeId: 'college-a', actorUserId: 'u1' },
+    fakeClient(),
+    { prompt: 'a red bicycle' },
+    { collegeId: 'college-a', actorUserId: 'u1' },
   );
   assert.equal(result.id, 'doc-1');
   assert.equal(uploadMock.mock.calls.length, 1);
@@ -83,15 +115,27 @@ test('generateImage: a provider with no real image API (e.g. Claude) surfaces it
   class FakeCapabilityError extends Error {}
   const fakeAdapter = {
     name: 'claude',
-    generateImage: async () => { throw new FakeCapabilityError('claude has no image-generation endpoint'); },
+    generateImage: async () => {
+      throw new FakeCapabilityError('claude has no image-generation endpoint');
+    },
   };
   const getAiConfigMock = t.mock.method(configurationService, 'getAiConfig', async () => ({
-    provider: 'claude', config: {}, adapter: fakeAdapter,
+    provider: 'claude',
+    config: {},
+    adapter: fakeAdapter,
   }));
-  t.after(() => { getConfigMock.mock.restore(); getAiConfigMock.mock.restore(); });
+  t.after(() => {
+    getConfigMock.mock.restore();
+    getAiConfigMock.mock.restore();
+  });
 
   await assert.rejects(
-    () => imageGenerationService.generateImage(fakeClient(), { prompt: 'a red bicycle' }, { collegeId: 'college-a', actorUserId: 'u1' }),
+    () =>
+      imageGenerationService.generateImage(
+        fakeClient(),
+        { prompt: 'a red bicycle' },
+        { collegeId: 'college-a', actorUserId: 'u1' },
+      ),
     FakeCapabilityError,
   );
 });

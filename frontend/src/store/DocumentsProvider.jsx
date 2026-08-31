@@ -1,6 +1,4 @@
-import {
-  createContext, useCallback, useContext, useEffect, useMemo, useState,
-} from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from '../hooks/useAuth';
 import { documentsApi } from '../api/documents';
@@ -82,91 +80,102 @@ export function DocumentsProvider({ children }) {
     setLoading(true);
     refresh()
       .catch(() => toast('Could not load your documents — please try again.'))
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [refresh]);
 
   const nodes = useMemo(() => {
     const folderNameToId = new Map(folders.map((f) => [f.name, f.id]));
-    return [
-      ...folders.map(folderToNode),
-      ...documents.map((d) => documentToNode(d, folderNameToId)),
-    ];
+    return [...folders.map(folderToNode), ...documents.map((d) => documentToNode(d, folderNameToId))];
   }, [folders, documents]);
 
   const personal = nodes; // already scoped server-side to the acting user
-  const childrenOf = useCallback(
-    (parentId) => personal.filter((n) => n.parentId === parentId),
-    [personal]
-  );
+  const childrenOf = useCallback((parentId) => personal.filter((n) => n.parentId === parentId), [personal]);
 
   const folderNameOf = useCallback(
-    (folderId) => (folderId === PERSONAL_ROOT ? null : folders.find((f) => f.id === folderId)?.name ?? null),
-    [folders]
+    (folderId) => (folderId === PERSONAL_ROOT ? null : (folders.find((f) => f.id === folderId)?.name ?? null)),
+    [folders],
   );
 
-  const createFolder = useCallback(async (parentId, name) => {
-    const clean = (name || '').trim();
-    if (!clean) return null;
-    try {
-      const created = await documentsApi.createPersonalFolder({
-        name: clean, parentId: parentId === PERSONAL_ROOT ? null : parentId,
-      });
-      await refresh();
-      return folderToNode(created);
-    } catch (err) {
-      toast(err?.detail || 'Could not create that folder — the name may already be taken.');
-      return null;
-    }
-  }, [refresh]);
-
-  const rename = useCallback(async (id, name) => {
-    const clean = (name || '').trim();
-    if (!clean) return false;
-    const node = nodes.find((n) => n.id === id);
-    if (!node) return false;
-    try {
-      if (node.kind === 'folder') {
-        await documentsApi.renamePersonalFolder(id, clean);
-      } else {
-        await documentsApi.renamePersonalDocument(id, clean);
+  const createFolder = useCallback(
+    async (parentId, name) => {
+      const clean = (name || '').trim();
+      if (!clean) return null;
+      try {
+        const created = await documentsApi.createPersonalFolder({
+          name: clean,
+          parentId: parentId === PERSONAL_ROOT ? null : parentId,
+        });
+        await refresh();
+        return folderToNode(created);
+      } catch (err) {
+        toast(err?.detail || 'Could not create that folder — the name may already be taken.');
+        return null;
       }
-      await refresh();
-      return true;
-    } catch (err) {
-      toast(err?.detail || 'Could not rename that — the name may already be taken.');
-      return false;
-    }
-  }, [nodes, refresh]);
+    },
+    [refresh],
+  );
 
-  const move = useCallback(async (id, targetFolderId) => {
-    const node = nodes.find((n) => n.id === id);
-    if (!node || !canMoveInto(personal, id, targetFolderId)) return false;
-    try {
-      if (node.kind === 'folder') {
-        await documentsApi.movePersonalFolder(id, targetFolderId === PERSONAL_ROOT ? null : targetFolderId);
-      } else {
-        await documentsApi.movePersonalDocument(id, folderNameOf(targetFolderId));
+  const rename = useCallback(
+    async (id, name) => {
+      const clean = (name || '').trim();
+      if (!clean) return false;
+      const node = nodes.find((n) => n.id === id);
+      if (!node) return false;
+      try {
+        if (node.kind === 'folder') {
+          await documentsApi.renamePersonalFolder(id, clean);
+        } else {
+          await documentsApi.renamePersonalDocument(id, clean);
+        }
+        await refresh();
+        return true;
+      } catch (err) {
+        toast(err?.detail || 'Could not rename that — the name may already be taken.');
+        return false;
       }
-      await refresh();
-      toast('Moved');
-      return true;
-    } catch (err) {
-      toast(err?.detail || 'Could not move that item.');
-      return false;
-    }
-  }, [nodes, personal, folderNameOf, refresh]);
+    },
+    [nodes, refresh],
+  );
 
-  const duplicate = useCallback(async (id) => {
-    const node = nodes.find((n) => n.id === id);
-    if (!node || node.kind !== 'file') return;
-    try {
-      await documentsApi.duplicatePersonalDocument(id);
-      await refresh();
-    } catch {
-      toast('Could not duplicate that file.');
-    }
-  }, [nodes, refresh]);
+  const move = useCallback(
+    async (id, targetFolderId) => {
+      const node = nodes.find((n) => n.id === id);
+      if (!node || !canMoveInto(personal, id, targetFolderId)) return false;
+      try {
+        if (node.kind === 'folder') {
+          await documentsApi.movePersonalFolder(id, targetFolderId === PERSONAL_ROOT ? null : targetFolderId);
+        } else {
+          await documentsApi.movePersonalDocument(id, folderNameOf(targetFolderId));
+        }
+        await refresh();
+        toast('Moved');
+        return true;
+      } catch (err) {
+        toast(err?.detail || 'Could not move that item.');
+        return false;
+      }
+    },
+    [nodes, personal, folderNameOf, refresh],
+  );
+
+  const duplicate = useCallback(
+    async (id) => {
+      const node = nodes.find((n) => n.id === id);
+      if (!node || node.kind !== 'file') return;
+      try {
+        await documentsApi.duplicatePersonalDocument(id);
+        await refresh();
+      } catch {
+        toast('Could not duplicate that file.');
+      }
+    },
+    [nodes, refresh],
+  );
 
   /**
    * Permanent once confirmed — the backend soft-deletes the row (a
@@ -174,59 +183,96 @@ export function DocumentsProvider({ children }) {
    * endpoint yet, so no Undo is offered here. The confirm dialog
    * (PersonalDocuments.jsx) says exactly this before the call is made.
    */
-  const remove = useCallback(async (ids) => {
-    const list = Array.isArray(ids) ? ids : [ids];
-    const targets = nodes.filter((n) => list.includes(n.id));
-    let count = 0;
-    for (const node of targets) {
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        if (node.kind === 'folder') await documentsApi.removePersonalFolder(node.id);
-        // eslint-disable-next-line no-await-in-loop
-        else await documentsApi.removeDocument(node.id);
-        count += 1;
-      } catch {
-        toast(`Could not delete “${node.name}”.`);
+  const remove = useCallback(
+    async (ids) => {
+      const list = Array.isArray(ids) ? ids : [ids];
+      const targets = nodes.filter((n) => list.includes(n.id));
+      let count = 0;
+      for (const node of targets) {
+        try {
+          if (node.kind === 'folder') await documentsApi.removePersonalFolder(node.id);
+          else await documentsApi.removeDocument(node.id);
+          count += 1;
+        } catch {
+          toast(`Could not delete “${node.name}”.`);
+        }
       }
-    }
-    if (count) {
-      await refresh();
-      toast(`${count} item${count > 1 ? 's' : ''} deleted`);
-    }
-    return count;
-  }, [nodes, refresh]);
+      if (count) {
+        await refresh();
+        toast(`${count} item${count > 1 ? 's' : ''} deleted`);
+      }
+      return count;
+    },
+    [nodes, refresh],
+  );
 
-  const upload = useCallback((parentId, files) => {
-    const list = Array.from(files || []);
-    if (!list.length) return;
-    const folderName = folderNameOf(parentId);
-    list.forEach((file) => {
-      const id = `up-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      setUploads((prev) => [...prev, {
-        id, name: file.name, size: file.size, parentId, progress: 40, status: 'uploading',
-      }]);
-      documentsApi.uploadPersonalDocument({ file, folderName })
-        .then(async () => {
-          await refresh();
-          setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, status: 'done', progress: 100 } : u)));
-          setTimeout(() => setUploads((prev) => prev.filter((u) => u.id !== id)), 1600);
-        })
-        .catch(() => {
-          setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, status: 'failed' } : u)));
-        });
-    });
-  }, [folderNameOf, refresh]);
+  const upload = useCallback(
+    (parentId, files) => {
+      const list = Array.from(files || []);
+      if (!list.length) return;
+      const folderName = folderNameOf(parentId);
+      list.forEach((file) => {
+        const id = `up-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        setUploads((prev) => [
+          ...prev,
+          {
+            id,
+            name: file.name,
+            size: file.size,
+            parentId,
+            progress: 40,
+            status: 'uploading',
+          },
+        ]);
+        documentsApi
+          .uploadPersonalDocument({ file, folderName })
+          .then(async () => {
+            await refresh();
+            setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, status: 'done', progress: 100 } : u)));
+            setTimeout(() => setUploads((prev) => prev.filter((u) => u.id !== id)), 1600);
+          })
+          .catch(() => {
+            setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, status: 'failed' } : u)));
+          });
+      });
+    },
+    [folderNameOf, refresh],
+  );
 
   const dismissUpload = useCallback((id) => setUploads((prev) => prev.filter((u) => u.id !== id)), []);
 
   const value = useMemo(
     () => ({
-      me: user, root: PERSONAL_ROOT, loading,
-      personal, nodes,
-      childrenOf, createFolder, rename, move, duplicate, remove,
-      uploads, upload, dismissUpload,
+      me: user,
+      root: PERSONAL_ROOT,
+      loading,
+      personal,
+      nodes,
+      childrenOf,
+      createFolder,
+      rename,
+      move,
+      duplicate,
+      remove,
+      uploads,
+      upload,
+      dismissUpload,
     }),
-    [user, loading, personal, nodes, childrenOf, createFolder, rename, move, duplicate, remove, uploads, upload, dismissUpload]
+    [
+      user,
+      loading,
+      personal,
+      nodes,
+      childrenOf,
+      createFolder,
+      rename,
+      move,
+      duplicate,
+      remove,
+      uploads,
+      upload,
+      dismissUpload,
+    ],
   );
 
   return <DocumentsContext.Provider value={value}>{children}</DocumentsContext.Provider>;

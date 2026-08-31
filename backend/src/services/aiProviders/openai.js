@@ -21,7 +21,10 @@ const { LlmNotConfiguredError, LlmRequestError } = require('./errors');
 const { withRetry } = require('./retry');
 const { iterateSseLines } = require('./sse');
 const {
-  fetchWithTimeout, parseJsonResponse, extractOpenAiCompatibleUsage, buildOpenAiCompatiblePriorTurnMessages,
+  fetchWithTimeout,
+  parseJsonResponse,
+  extractOpenAiCompatibleUsage,
+  buildOpenAiCompatiblePriorTurnMessages,
 } = require('./openAiCompatibleUtils');
 const { flattenToPrompts } = require('../aiContextAssembly');
 
@@ -49,16 +52,18 @@ function baseUrl(cfg) {
 // selfHosted.js's own postJson; only the URL and (always-required) auth
 // header construction stay local.
 async function postJson(cfg, path, body) {
-  const response = await withRetry(() => fetchWithTimeout({
-    url: `${baseUrl(cfg)}${path}`,
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${cfg.apiKey}`,
-    },
-    body,
-    timeoutMs: REQUEST_TIMEOUT_MS,
-    providerLabel: 'OpenAI',
-  }));
+  const response = await withRetry(() =>
+    fetchWithTimeout({
+      url: `${baseUrl(cfg)}${path}`,
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${cfg.apiKey}`,
+      },
+      body,
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      providerLabel: 'OpenAI',
+    }),
+  );
 
   return parseJsonResponse(response, 'OpenAI');
 }
@@ -207,7 +212,8 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
     } catch {
       continue;
     }
-    const delta = event && event.choices && event.choices[0] && event.choices[0].delta && event.choices[0].delta.content;
+    const delta =
+      event && event.choices && event.choices[0] && event.choices[0].delta && event.choices[0].delta.content;
     if (typeof delta === 'string' && delta.length > 0) {
       full += delta;
       onDelta(delta);
@@ -236,9 +242,7 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
 const buildPriorTurnMessages = buildOpenAiCompatiblePriorTurnMessages;
 
 async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
-  const {
-    systemPrompt, userPrompt, tools, images,
-  } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, tools, images } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -277,7 +281,12 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
     // ADR-030 P0 telemetry — see gemini.js's own equivalent comment.
     const usage = extractOpenAiCompatibleUsage(payload && payload.usage);
     return {
-      type: 'tool_call', toolName: fn.name, arguments: toolArguments, callId: toolCalls[0].id, rawToolCall: toolCalls[0], usage,
+      type: 'tool_call',
+      toolName: fn.name,
+      arguments: toolArguments,
+      callId: toolCalls[0].id,
+      rawToolCall: toolCalls[0],
+      usage,
     };
   }
 

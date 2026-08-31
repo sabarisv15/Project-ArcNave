@@ -9,9 +9,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError,
+  LlmNotConfiguredError,
+  LlmRequestError,
+  AiProviderCapabilityError,
 } = require('../src/services/aiProviders/errors');
-const { buildResilientAdapter, buildFallbackTracker, isFallbackEligible } = require('../src/services/aiProviderFallbackService');
+const {
+  buildResilientAdapter,
+  buildFallbackTracker,
+  isFallbackEligible,
+} = require('../src/services/aiProviderFallbackService');
 
 function fakeAdapter(name, { configured = true, complete } = {}) {
   return {
@@ -33,7 +39,12 @@ test('isFallbackEligible: LlmRequestError and LlmNotConfiguredError are eligible
 test('buildResilientAdapter: primary succeeds -> fallback is never called, onFallback never fires', async () => {
   let fallbackCalled = false;
   const primary = fakeAdapter('primary');
-  const fallback = fakeAdapter('fallback', { complete: async () => { fallbackCalled = true; return 'should not happen'; } });
+  const fallback = fakeAdapter('fallback', {
+    complete: async () => {
+      fallbackCalled = true;
+      return 'should not happen';
+    },
+  });
   const { state, onFallback } = buildFallbackTracker();
 
   const resilient = buildResilientAdapter(primary, fallback, { model: 'fb-model' }, { onFallback });
@@ -45,7 +56,11 @@ test('buildResilientAdapter: primary succeeds -> fallback is never called, onFal
 });
 
 test('buildResilientAdapter: primary throws a transient error, fallback is configured -> falls back and onFallback fires', async () => {
-  const primary = fakeAdapter('primary', { complete: async () => { throw new LlmRequestError('primary is down'); } });
+  const primary = fakeAdapter('primary', {
+    complete: async () => {
+      throw new LlmRequestError('primary is down');
+    },
+  });
   const fallback = fakeAdapter('fallback');
   const { state, onFallback } = buildFallbackTracker();
 
@@ -58,7 +73,11 @@ test('buildResilientAdapter: primary throws a transient error, fallback is confi
 });
 
 test('buildResilientAdapter: primary throws a transient error, fallback is NOT configured -> rethrows the original error, never falls back', async () => {
-  const primary = fakeAdapter('primary', { complete: async () => { throw new LlmRequestError('primary is down'); } });
+  const primary = fakeAdapter('primary', {
+    complete: async () => {
+      throw new LlmRequestError('primary is down');
+    },
+  });
   const fallback = fakeAdapter('fallback', { configured: false });
   const { state, onFallback } = buildFallbackTracker();
 
@@ -68,9 +87,17 @@ test('buildResilientAdapter: primary throws a transient error, fallback is NOT c
 });
 
 test('buildResilientAdapter: primary throws AiProviderCapabilityError -> rethrows immediately, never falls back (a modality mismatch, not an outage)', async () => {
-  const primary = fakeAdapter('primary', { complete: async () => { throw new AiProviderCapabilityError('no audio support'); } });
+  const primary = fakeAdapter('primary', {
+    complete: async () => {
+      throw new AiProviderCapabilityError('no audio support');
+    },
+  });
   let fallbackCalled = false;
-  const fallback = fakeAdapter('fallback', { complete: async () => { fallbackCalled = true; } });
+  const fallback = fakeAdapter('fallback', {
+    complete: async () => {
+      fallbackCalled = true;
+    },
+  });
   const { onFallback } = buildFallbackTracker();
 
   const resilient = buildResilientAdapter(primary, fallback, {}, { onFallback });
@@ -79,13 +106,25 @@ test('buildResilientAdapter: primary throws AiProviderCapabilityError -> rethrow
 });
 
 test('buildResilientAdapter: isConfigured is true if EITHER primary or fallback is configured', () => {
-  const bothConfigured = buildResilientAdapter(fakeAdapter('p', { configured: true }), fakeAdapter('f', { configured: true }), {});
+  const bothConfigured = buildResilientAdapter(
+    fakeAdapter('p', { configured: true }),
+    fakeAdapter('f', { configured: true }),
+    {},
+  );
   assert.equal(bothConfigured.isConfigured({}), true);
 
-  const onlyFallback = buildResilientAdapter(fakeAdapter('p', { configured: false }), fakeAdapter('f', { configured: true }), {});
+  const onlyFallback = buildResilientAdapter(
+    fakeAdapter('p', { configured: false }),
+    fakeAdapter('f', { configured: true }),
+    {},
+  );
   assert.equal(onlyFallback.isConfigured({}), true);
 
-  const neither = buildResilientAdapter(fakeAdapter('p', { configured: false }), fakeAdapter('f', { configured: false }), {});
+  const neither = buildResilientAdapter(
+    fakeAdapter('p', { configured: false }),
+    fakeAdapter('f', { configured: false }),
+    {},
+  );
   assert.equal(neither.isConfigured({}), false);
 });
 

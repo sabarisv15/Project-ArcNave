@@ -1,8 +1,8 @@
 'use strict';
 
-const { appPool } = require('./pool');
 const { getRequestContext, AFTER_COMMIT_CALLBACKS, AFTER_ROLLBACK_CALLBACKS } = require('../logging/context');
 const { logError } = require('../logging/logger');
+const { TenantConnection } = require('./tenantConnection');
 
 // The shared "open a transaction, set_config, wire up commit-on-
 // res.end / rollback-on-error" machinery — extracted out of
@@ -24,7 +24,13 @@ const { logError } = require('../logging/logger');
 // always had, including a deeply-nested log call automatically
 // picking up the right collegeId with no req in scope.
 async function openTenantTransaction(req, res, collegeId) {
-  const client = await appPool.connect();
+  // ARCNAVE modernization P0 (PDF 4.1 / clash C5) — see
+  // db/tenantConnection.js's own module comment for the full rationale.
+  // `client` below is now a TenantConnection wrapper, not a raw pg
+  // client: every `.query()` call site is unaffected (same interface),
+  // and aiService.js's completeMaybeStreaming is the only caller that
+  // ever pauses/resumes the underlying connection mid-request.
+  const client = new TenantConnection(collegeId);
 
   // A client checked out for this request/transaction's whole lifetime —
   // unlike an idle pool client (db/pool.js's own pool-level `error`
@@ -44,7 +50,9 @@ async function openTenantTransaction(req, res, collegeId) {
   // — the existing try/finally release() paths below (commitAndRelease/
   // rollbackAndRelease) and res.end's own commitAndRelease().catch(...)
   // already handle that rejection correctly with no further change.
-  client.on('error', (err) => {
+  // TenantConnection re-attaches this same listener to every connection
+  // it acquires across a pause/resume cycle, not just the first one.
+  client.onClientError((err) => {
     logError('db_client_error_mid_transaction', {
       requestId: req.requestId,
       collegeId,
@@ -52,26 +60,14 @@ async function openTenantTransaction(req, res, collegeId) {
     });
   });
 
-  try {
-    await client.query('BEGIN');
-    if (collegeId !== null) {
-      await client.query("SELECT set_config('app.current_tenant', $1, true)", [collegeId]);
-    }
-  } catch (err) {
-    client.release();
-    throw err;
-  }
+  await client.open();
 
   let settled = false;
 
   const commitAndRelease = async () => {
     if (settled) return;
     settled = true;
-    try {
-      await client.query('COMMIT');
-    } finally {
-      client.release();
-    }
+    await client.commit();
 
     // Only reached once COMMIT has actually succeeded (a throw above
     // exits before this line, same as rollbackAndRelease never running
@@ -111,11 +107,7 @@ async function openTenantTransaction(req, res, collegeId) {
   const rollbackAndRelease = async () => {
     if (settled) return;
     settled = true;
-    try {
-      await client.query('ROLLBACK');
-    } finally {
-      client.release();
-    }
+    await client.rollback();
 
     // Mirrors commitAndRelease's own callback draining, only reached
     // once ROLLBACK has actually completed — see registerAfterRollback's

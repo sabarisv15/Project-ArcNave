@@ -81,9 +81,7 @@ async function resolveAssignedClassIds(client, userId) {
 // departmentResolver.resolveMappedDepartments, injected rather than
 // required directly so this module never calls another resolver module
 // itself (identityService is the only thing allowed to compose them).
-async function resolveVisibilityScope(client, {
-  userId, positions, resolveDepartmentIds,
-}) {
+async function resolveVisibilityScope(client, { userId, positions, resolveDepartmentIds }) {
   const principalPosition = positions.find((p) => p.level === PRINCIPAL_LEVEL);
   if (principalPosition) {
     return { scopeLevel: SCOPE_LEVELS.COLLEGE, departmentIds: [], assignedClassIds: [] };

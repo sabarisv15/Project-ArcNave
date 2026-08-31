@@ -4,7 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { ChatMessage } from '../components/ChatMessage';
 
 const BASE_MESSAGE = {
-  id: 'm1', role: 'ai', generating: false, body: 'There are 5 arrears.', createdAt: new Date().toISOString(),
+  id: 'm1',
+  role: 'ai',
+  generating: false,
+  body: 'There are 5 arrears.',
+  createdAt: new Date().toISOString(),
 };
 
 // Regression: aiService.buildEvidenceTrail/verifyNumericClaims (backend)
@@ -21,7 +25,8 @@ describe('ChatMessage evidence trail', () => {
 
   it('shows a collapsed "Based on N source(s)" toggle, and expands to the real trail lines on click', async () => {
     const user = userEvent.setup();
-    const trail = '- students_roster — 5 record(s) — retrieved 2026-08-22T10:00:00Z\n- attendance_summary — retrieved 2026-08-22T10:00:01Z';
+    const trail =
+      '- students_roster — 5 record(s) — retrieved 2026-08-22T10:00:00Z\n- attendance_summary — retrieved 2026-08-22T10:00:01Z';
     render(<ChatMessage message={{ ...BASE_MESSAGE, evidenceTrail: trail }} />);
 
     const toggle = screen.getByRole('button', { name: /Based on 2 sources/ });
@@ -49,11 +54,15 @@ describe('ChatMessage verification notice', () => {
     expect(screen.queryByText(/doesn't match/)).not.toBeInTheDocument();
   });
 
-  it('warns when the reply\'s own numbers conflict with the retrieved data', () => {
-    render(<ChatMessage message={{
-      ...BASE_MESSAGE, verification: { status: 'CONFLICT', claimedNumbers: [9], knownCounts: [5] },
-    }}
-    />);
+  it("warns when the reply's own numbers conflict with the retrieved data", () => {
+    render(
+      <ChatMessage
+        message={{
+          ...BASE_MESSAGE,
+          verification: { status: 'CONFLICT', claimedNumbers: [9], knownCounts: [5] },
+        }}
+      />,
+    );
     expect(screen.getByText(/doesn't match the data ArcNave actually retrieved/)).toBeInTheDocument();
   });
 });

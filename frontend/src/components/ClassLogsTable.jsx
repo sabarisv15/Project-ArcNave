@@ -3,8 +3,7 @@ import { OwnershipBadge } from './AttendanceStatus';
 import { STICKY_HEAD, TABLE_HEAD, StickyTableShell, TableEmptyState } from './WorkspaceLayout';
 import { cn } from '../lib/utils';
 
-const GRID =
-  'grid grid-cols-[104px_108px_1.2fr_1.3fr_1.8fr_116px] gap-x-[12px] items-center px-[16px]';
+const GRID = 'grid grid-cols-[104px_108px_1.2fr_1.3fr_1.8fr_116px] gap-x-[12px] items-center px-[16px]';
 
 /**
  * Class logs — Date, Time, Subject/course, Class/year/section, Topic taught,
@@ -30,7 +29,7 @@ export function ClassLogsTable({ rows, now, onOpen }) {
           onClick={() => onOpen(period.id)}
           className={cn(
             GRID,
-            'w-full py-[11px] border-0 border-t border-line-light bg-transparent text-left text-ink cursor-pointer transition-colors duration-200 hover:bg-tint2'
+            'w-full py-[11px] border-0 border-t border-line-light bg-transparent text-left text-ink cursor-pointer transition-colors duration-200 hover:bg-tint2',
           )}
         >
           <span>
@@ -51,7 +50,10 @@ export function ClassLogsTable({ rows, now, onOpen }) {
             <span className="block text-[11px] text-ink-faint truncate">{classLine(period)}</span>
           </span>
 
-          <span className="min-w-0 text-[13px] text-ink-soft truncate" title={session.classLog.topicTaught || undefined}>
+          <span
+            className="min-w-0 text-[13px] text-ink-soft truncate"
+            title={session.classLog.topicTaught || undefined}
+          >
             {session.classLog.topicTaught || <span className="text-ink-faint">Not recorded yet</span>}
           </span>
 

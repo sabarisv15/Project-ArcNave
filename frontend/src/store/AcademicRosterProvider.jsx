@@ -60,7 +60,10 @@ export const REJECTION = {
  * admissions.
  */
 export function canonicalKey(reg) {
-  return String(reg ?? '').trim().toUpperCase().replace(/\s+/g, '');
+  return String(reg ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '');
 }
 
 /**
@@ -82,9 +85,7 @@ function nextIdentity(classId, existing) {
     n += 1;
     id = `${classId}-s${n}`;
   }
-  const roll = String(
-    existing.reduce((max, s) => Math.max(max, Number(s.roll) || 0), 0) + 1
-  ).padStart(2, '0');
+  const roll = String(existing.reduce((max, s) => Math.max(max, Number(s.roll) || 0), 0) + 1).padStart(2, '0');
   return { id, roll };
 }
 
@@ -153,7 +154,7 @@ export function AcademicRosterProvider({ children }) {
 
   const rosterOf = useCallback(
     (classId) => [...baselineStudentsOfClass(classId), ...(overlay[classId] ?? [])],
-    [overlay]
+    [overlay],
   );
 
   /**
@@ -167,14 +168,11 @@ export function AcademicRosterProvider({ children }) {
     return added.length === 0 ? ALL_STUDENTS : [...ALL_STUDENTS, ...added];
   }, [overlay]);
 
-  const studentById = useCallback(
-    (id) => allStudents.find((s) => s.id === id) ?? null,
-    [allStudents]
-  );
+  const studentById = useCallback((id) => allStudents.find((s) => s.id === id) ?? null, [allStudents]);
 
   const studentsOfDepartment = useCallback(
     (departmentId) => allStudents.filter((s) => s.departmentId === departmentId),
-    [allStudents]
+    [allStudents],
   );
 
   /** Enrolled against provisioned, and the headroom between them. */
@@ -185,7 +183,7 @@ export function AcademicRosterProvider({ children }) {
       const enrolled = rosterOf(classId).length;
       return { enrolled, capacity: cls.capacity, headroom: Math.max(0, cls.capacity - enrolled) };
     },
-    [rosterOf, activeClassById]
+    [rosterOf, activeClassById],
   );
 
   /**
@@ -212,9 +210,7 @@ export function AcademicRosterProvider({ children }) {
        * importing them again would create a second record for one person.
        */
       const clash =
-        placed.find((s) => canonicalKey(s.reg) === key) ??
-        pending.find((s) => canonicalKey(s.reg) === key) ??
-        null;
+        placed.find((s) => canonicalKey(s.reg) === key) ?? pending.find((s) => canonicalKey(s.reg) === key) ?? null;
       if (clash) {
         return { ok: false, reason: 'duplicate', detail: clash.origin ?? 'placed', clash };
       }
@@ -225,7 +221,7 @@ export function AcademicRosterProvider({ children }) {
 
       return { ok: true };
     },
-    [rosterOf, activeClassById]
+    [rosterOf, activeClassById],
   );
 
   /**
@@ -259,7 +255,7 @@ export function AcademicRosterProvider({ children }) {
       commit({ ...current, [classId]: [...(current[classId] ?? []), student] });
       return { ok: true, student };
     },
-    [commit, activeClassById]
+    [commit, activeClassById],
   );
 
   /**
@@ -310,7 +306,7 @@ export function AcademicRosterProvider({ children }) {
       if (accepted.length > 0) commit({ ...current, [classId]: added });
       return { accepted, rejected };
     },
-    [commit, activeClassById]
+    [commit, activeClassById],
   );
 
   /**
@@ -366,7 +362,7 @@ export function AcademicRosterProvider({ children }) {
       commit({ ...current, [classId]: [...(current[classId] ?? []), placed] });
       return { ok: true, student: placed };
     },
-    [commit, activeClassById]
+    [commit, activeClassById],
   );
 
   /**
@@ -402,7 +398,7 @@ export function AcademicRosterProvider({ children }) {
       placeExisting,
       resetRoster,
       overlay,
-    ]
+    ],
   );
 
   return <AcademicRosterContext.Provider value={value}>{children}</AcademicRosterContext.Provider>;

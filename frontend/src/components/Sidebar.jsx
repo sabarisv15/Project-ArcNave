@@ -39,7 +39,7 @@ export function Sidebar({ floating = false }) {
         // rounded right corners and one restrained lift.
         floating
           ? 'bg-raised rounded-r-[20px] border-r border-line-strong shadow-pop'
-          : 'bg-sidebar rounded-none border-0'
+          : 'bg-sidebar rounded-none border-0',
       )}
     >
       <div className="flex-none">

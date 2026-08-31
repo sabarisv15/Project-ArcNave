@@ -140,9 +140,7 @@ function SourceRow({ source, onPreview }) {
   // Websites name their domain; a file names where it came from, falling back
   // to what kind of thing it is when it has no stated origin.
   const secondary =
-    source.kind === 'web'
-      ? domainOf(source.href)
-      : source.origin || (KIND[source.kind] ?? KIND.record).label;
+    source.kind === 'web' ? domainOf(source.href) : source.origin || (KIND[source.kind] ?? KIND.record).label;
   // The page/section reference, where the reply recorded one.
   const locator = source.kind === 'web' ? null : source.detail;
 
@@ -189,7 +187,7 @@ function SourceRow({ source, onPreview }) {
           aria-hidden="true"
           className={cn(
             'flex-none text-ink-ghost transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100',
-            downloading ? 'opacity-100 animate-pulseSoft' : 'opacity-0'
+            downloading ? 'opacity-100 animate-pulseSoft' : 'opacity-0',
           )}
         />
       )}
@@ -234,7 +232,7 @@ function SourceRow({ source, onPreview }) {
         title={source.title}
         className={cn(
           ROW,
-          'group border-0 bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent disabled:opacity-70 disabled:cursor-wait'
+          'group border-0 bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent disabled:opacity-70 disabled:cursor-wait',
         )}
       >
         {body}
@@ -304,7 +302,15 @@ function SourcesGroups({ sources, onPreview }) {
   return (
     <div className="flex flex-col">
       <Group id="web" label="Web" Icon={Globe} items={web} open={open.web} onToggle={toggle} onPreview={onPreview} />
-      <Group id="files" label="Files" Icon={FileText} items={files} open={open.files} onToggle={toggle} onPreview={onPreview} />
+      <Group
+        id="files"
+        label="Files"
+        Icon={FileText}
+        items={files}
+        open={open.files}
+        onToggle={toggle}
+        onPreview={onPreview}
+      />
     </div>
   );
 }
@@ -342,7 +348,7 @@ function useSourcePreview(onOpenPreview) {
       onOpenPreview?.();
       setSource(s);
     },
-    [onOpenPreview]
+    [onOpenPreview],
   );
   return {
     source,
@@ -463,7 +469,7 @@ export function SourcesTrigger({
               // like every other surface in the app: an exit animation holds
               // the panel mounted until `animationend`, which is a dismissal
               // that can visibly fail to land.
-              'data-[state=open]:animate-sourcesIn motion-reduce:animate-none'
+              'data-[state=open]:animate-sourcesIn motion-reduce:animate-none',
             )}
           >
             <SourcesHeader
@@ -519,14 +525,20 @@ export function SourcesWidget({ sources, onClose, rightClass = 'right-[16px]' })
           'absolute top-[8px] z-[30] w-[300px]',
           rightClass,
           'max-h-[min(58%,440px)] overflow-hidden',
-          'bg-raised border border-line-strong rounded-[16px] shadow-pop'
+          'bg-raised border border-line-strong rounded-[16px] shadow-pop',
         )}
       >
         <SourcesHeader
           total={total}
           className="px-[13px] pt-[11px] pb-[8px] rounded-t-[15px]"
           Close={
-            <button type="button" onClick={onClose} aria-label="Hide sources" title="Hide sources" className={CLOSE_BTN}>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Hide sources"
+              title="Hide sources"
+              className={CLOSE_BTN}
+            >
               <X size={13} strokeWidth={1.9} />
             </button>
           }

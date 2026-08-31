@@ -138,9 +138,7 @@ const DEFAULT_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes — long enough that 
 
 const cache = new Map();
 
-function cacheKey({
-  projectId, location, modelId, modelVersion,
-}) {
+function cacheKey({ projectId, location, modelId, modelVersion }) {
   return [projectId || '', location || '', modelId || '', modelVersion || ''].join('::');
 }
 
@@ -156,7 +154,9 @@ function unknownModelProfile(modelId) {
     capabilities: {},
     inputLimits: {},
     supportedMimeTypes: [],
-    notes: [`No curated capability profile exists for model ${JSON.stringify(modelId)} — every capability check against it returns unsupported until this registry is updated with verified data.`],
+    notes: [
+      `No curated capability profile exists for model ${JSON.stringify(modelId)} — every capability check against it returns unsupported until this registry is updated with verified data.`,
+    ],
   };
 }
 
@@ -165,14 +165,15 @@ function unknownModelProfile(modelId) {
 // Cached (ttlMs) so repeated lookups within one request/turn don't
 // rebuild the object — the cache holds only this static, non-sensitive
 // metadata, never a request's own data (no PII, no credentials).
-function getCapabilityProfile({
-  projectId, location, modelId, modelVersion, ttlMs = DEFAULT_CACHE_TTL_MS,
-} = {}) {
+function getCapabilityProfile({ projectId, location, modelId, modelVersion, ttlMs = DEFAULT_CACHE_TTL_MS } = {}) {
   if (!modelId) {
     throw new TypeError('vertexCapabilityRegistry.getCapabilityProfile requires modelId');
   }
   const key = cacheKey({
-    projectId, location, modelId, modelVersion,
+    projectId,
+    location,
+    modelId,
+    modelVersion,
   });
   const cached = cache.get(key);
   if (cached && cached.expiresAt > Date.now()) {

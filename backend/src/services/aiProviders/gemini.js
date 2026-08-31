@@ -119,12 +119,15 @@ function getCapabilityProfile(cfg = {}) {
 }
 
 function supportsCapability(cfg = {}, capability) {
-  return vertexCapabilityRegistry.hasCapability({
-    projectId: cfg.projectId,
-    location: location(cfg),
-    model: model(cfg),
-    modelVersion: cfg.modelVersion,
-  }, capability);
+  return vertexCapabilityRegistry.hasCapability(
+    {
+      projectId: cfg.projectId,
+      location: location(cfg),
+      model: model(cfg),
+      modelVersion: cfg.modelVersion,
+    },
+    capability,
+  );
 }
 
 // Vertex AI's publisher-model base path — every generateContent/
@@ -164,7 +167,9 @@ async function getAccessToken(cfg) {
   const client = await getAuth().getClient();
   const { token } = await client.getAccessToken();
   if (!token) {
-    throw new LlmRequestError('Google ADC did not return an access token — run `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS');
+    throw new LlmRequestError(
+      'Google ADC did not return an access token — run `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS',
+    );
   }
   return token;
 }
@@ -213,7 +218,9 @@ async function postJson(cfg, url, body, { hasMedia = false } = {}) {
   const response = await withRetry(async () => {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
-      throw new LlmRequestError('Gemini (Vertex AI) request exceeded its overall time budget before a response was received');
+      throw new LlmRequestError(
+        'Gemini (Vertex AI) request exceeded its overall time budget before a response was received',
+      );
     }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), Math.min(REQUEST_TIMEOUT_MS, remaining));
@@ -307,12 +314,14 @@ function generationConfigFor(responseSchema, thinkingLevel, includeThoughts, log
   return {
     ...GENERATION_CONFIG,
     ...(responseSchema ? { responseMimeType: 'application/json', responseSchema } : {}),
-    ...((thinkingLevel || includeThoughts) ? {
-      thinkingConfig: {
-        ...(thinkingLevel ? { thinkingLevel } : GENERATION_CONFIG.thinkingConfig),
-        ...(includeThoughts ? { includeThoughts: true } : {}),
-      },
-    } : {}),
+    ...(thinkingLevel || includeThoughts
+      ? {
+          thinkingConfig: {
+            ...(thinkingLevel ? { thinkingLevel } : GENERATION_CONFIG.thinkingConfig),
+            ...(includeThoughts ? { includeThoughts: true } : {}),
+          },
+        }
+      : {}),
     ...(logprobsTopK ? { responseLogprobs: true, logprobs: logprobsTopK } : {}),
   };
 }
@@ -328,29 +337,46 @@ function generationConfigFor(responseSchema, thinkingLevel, includeThoughts, log
 // suspenders against a Gemini response ever including a thought part
 // this adapter didn't ask for.
 function splitThoughtParts(parts) {
-  const thoughtText = parts.filter((p) => p.thought === true).map((p) => p.text).filter(Boolean).join('');
+  const thoughtText = parts
+    .filter((p) => p.thought === true)
+    .map((p) => p.text)
+    .filter(Boolean)
+    .join('');
   const visibleParts = parts.filter((p) => p.thought !== true);
   return { thoughtText: thoughtText || undefined, visibleParts };
 }
 
 async function completeWithMeta(cfg, arcnaveContext) {
-  const {
-    systemPrompt, userPrompt, images, media, responseSchema, thinkingLevel, includeThoughts, logprobsTopK,
-  } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, images, media, responseSchema, thinkingLevel, includeThoughts, logprobsTopK } =
+    flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
   }
 
-  const payload = await postJson(cfg, modelUrl(cfg, model(cfg), 'generateContent'), {
-    systemInstruction: { parts: [{ text: systemPrompt }] },
-    contents: [{ role: 'user', parts: buildUserParts(userPrompt, images, media) }],
-    generationConfig: generationConfigFor(responseSchema, thinkingLevel, includeThoughts, logprobsTopK),
-  }, { hasMedia: Boolean(media && media.length) });
+  const payload = await postJson(
+    cfg,
+    modelUrl(cfg, model(cfg), 'generateContent'),
+    {
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents: [{ role: 'user', parts: buildUserParts(userPrompt, images, media) }],
+      generationConfig: generationConfigFor(responseSchema, thinkingLevel, includeThoughts, logprobsTopK),
+    },
+    { hasMedia: Boolean(media && media.length) },
+  );
 
-  const rawParts = payload && payload.candidates && payload.candidates[0]
-    && payload.candidates[0].content && payload.candidates[0].content.parts;
+  const rawParts =
+    payload &&
+    payload.candidates &&
+    payload.candidates[0] &&
+    payload.candidates[0].content &&
+    payload.candidates[0].content.parts;
   const { thoughtText, visibleParts } = splitThoughtParts(Array.isArray(rawParts) ? rawParts : []);
-  const text = Array.isArray(rawParts) ? visibleParts.map((p) => p.text).filter(Boolean).join('') : undefined;
+  const text = Array.isArray(rawParts)
+    ? visibleParts
+        .map((p) => p.text)
+        .filter(Boolean)
+        .join('')
+    : undefined;
   if (typeof text !== 'string' || text.length === 0) {
     throw new LlmRequestError('Gemini response did not contain candidates[0].content.parts[].text');
   }
@@ -400,7 +426,9 @@ async function attemptStream(cfg, arcnaveContext, deadline, onDelta) {
   const response = await withRetry(async () => {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
-      throw new LlmRequestError('Gemini (Vertex AI) request exceeded its overall time budget before a response was received');
+      throw new LlmRequestError(
+        'Gemini (Vertex AI) request exceeded its overall time budget before a response was received',
+      );
     }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), Math.min(REQUEST_TIMEOUT_MS, remaining));
@@ -442,9 +470,18 @@ async function attemptStream(cfg, arcnaveContext, deadline, onDelta) {
     } catch {
       continue;
     }
-    const parts = event && event.candidates && event.candidates[0]
-      && event.candidates[0].content && event.candidates[0].content.parts;
-    const text = Array.isArray(parts) ? parts.map((p) => p.text).filter(Boolean).join('') : '';
+    const parts =
+      event &&
+      event.candidates &&
+      event.candidates[0] &&
+      event.candidates[0].content &&
+      event.candidates[0].content.parts;
+    const text = Array.isArray(parts)
+      ? parts
+          .map((p) => p.text)
+          .filter(Boolean)
+          .join('')
+      : '';
     if (text.length > 0) {
       sawAnyText = true;
       full += text;
@@ -515,7 +552,9 @@ async function completeStream(cfg, prompts, onDelta, onUsage) {
       return full;
     }
   }
-  throw new LlmRequestError(`Gemini streamed no visible answer text within ${cfg.maxTotalStreamMs || MAX_TOTAL_STREAM_MS}ms (thinking budget exhausted before any output, or the overall time budget was exceeded)`);
+  throw new LlmRequestError(
+    `Gemini streamed no visible answer text within ${cfg.maxTotalStreamMs || MAX_TOTAL_STREAM_MS}ms (thinking budget exhausted before any output, or the overall time budget was exceeded)`,
+  );
 }
 
 // Gemini's function-calling `parameters` field is a restricted OpenAPI
@@ -560,37 +599,65 @@ function buildPriorTurnContents(priorTurns) {
     // Vertex's real API 400s on a multi-turn request replaying a
     // functionCall part without one, with thinking enabled. See
     // completeWithTools' own comment on functionCallPart above.
-    { role: 'model', parts: [turn.rawToolCall || { functionCall: { name: turn.toolName, args: turn.arguments || {} } }] },
+    {
+      role: 'model',
+      parts: [turn.rawToolCall || { functionCall: { name: turn.toolName, args: turn.arguments || {} } }],
+    },
     { role: 'user', parts: [{ functionResponse: { name: turn.toolName, response: { content: turn.resultText } } }] },
   ]);
 }
 
 async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
-  const {
-    systemPrompt, userPrompt, tools, images, media, thinkingLevel, includeThoughts,
-  } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, tools, images, media, thinkingLevel, includeThoughts } =
+    flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
   }
 
-  const payload = await postJson(cfg, modelUrl(cfg, model(cfg), 'generateContent'), {
-    systemInstruction: { parts: [{ text: systemPrompt }] },
-    contents: [
-      { role: 'user', parts: buildUserParts(userPrompt, images, media) },
-      ...buildPriorTurnContents(priorTurns),
-    ],
-    tools: [{
-      functionDeclarations: tools.map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-        parameters: stripAdditionalProperties(tool.params),
-      })),
-    }],
-    generationConfig: generationConfigFor(undefined, thinkingLevel, includeThoughts),
-  }, { hasMedia: Boolean(media && media.length) });
+  // ADR-030 P3 follow-up (config.experimentalZeroToolFastPath) — Gemini's
+  // real API rejects `tools: [{ functionDeclarations: [] }]` (a non-empty
+  // outer array wrapping an empty declarations list is invalid, unlike
+  // simply omitting `tools`), so a genuinely empty `tools` array must
+  // drop the field entirely rather than send it empty — the same
+  // structural "no tool exists to call" shape askGeneralChat's plain
+  // `complete`/`completeWithMeta` path already gets by never building a
+  // tools param at all. Every existing caller passes at least one tool
+  // (the describe_tools/plan meta-tools alone guarantee that today), so
+  // this is additive for the one new zero-tool caller, zero behavior
+  // change for every other one.
+  const payload = await postJson(
+    cfg,
+    modelUrl(cfg, model(cfg), 'generateContent'),
+    {
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents: [
+        { role: 'user', parts: buildUserParts(userPrompt, images, media) },
+        ...buildPriorTurnContents(priorTurns),
+      ],
+      ...(tools.length > 0
+        ? {
+            tools: [
+              {
+                functionDeclarations: tools.map((tool) => ({
+                  name: tool.name,
+                  description: tool.description,
+                  parameters: stripAdditionalProperties(tool.params),
+                })),
+              },
+            ],
+          }
+        : {}),
+      generationConfig: generationConfigFor(undefined, thinkingLevel, includeThoughts),
+    },
+    { hasMedia: Boolean(media && media.length) },
+  );
 
-  const rawParts = payload && payload.candidates && payload.candidates[0]
-    && payload.candidates[0].content && payload.candidates[0].content.parts;
+  const rawParts =
+    payload &&
+    payload.candidates &&
+    payload.candidates[0] &&
+    payload.candidates[0].content &&
+    payload.candidates[0].content.parts;
   if (!Array.isArray(rawParts)) {
     throw new LlmRequestError('Gemini response did not contain candidates[0].content.parts');
   }
@@ -629,13 +696,20 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
     };
   }
 
-  const text = visibleParts.map((p) => p.text).filter(Boolean).join('');
+  const text = visibleParts
+    .map((p) => p.text)
+    .filter(Boolean)
+    .join('');
   if (!text) {
     throw new LlmRequestError('Gemini response contained neither a function call nor text');
   }
   const usage = extractUsage(payload && payload.usageMetadata);
   return {
-    type: 'answer', text, usage, thoughtSummary: thoughtText, modelVersion: payload && payload.modelVersion,
+    type: 'answer',
+    text,
+    usage,
+    thoughtSummary: thoughtText,
+    modelVersion: payload && payload.modelVersion,
   };
 }
 
@@ -647,7 +721,9 @@ async function embed(cfg, texts, { inputType } = {}) {
     throw new LlmRequestError('embed() requires a non-empty array of texts');
   }
   if (!cfg.embeddingModel) {
-    throw new LlmRequestError('embed() requires cfg.embeddingModel (Vertex AI has no embedding default — e.g. gemini-embedding-001)');
+    throw new LlmRequestError(
+      'embed() requires cfg.embeddingModel (Vertex AI has no embedding default — e.g. gemini-embedding-001)',
+    );
   }
 
   // Vertex AI's embeddings endpoint is a `:predict` call (Vertex's
@@ -680,9 +756,7 @@ async function embed(cfg, texts, { inputType } = {}) {
 // forced to use this; aiService.js's preflight guard (below, this same
 // ADL) is the first caller.
 async function countTokens(cfg, arcnaveContext) {
-  const {
-    systemPrompt, userPrompt, images, media,
-  } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, images, media } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
   }
@@ -750,14 +824,14 @@ function batchJobsUrl(cfg) {
   return `https://${host}/v1/projects/${cfg.projectId}/locations/${loc}/batchPredictionJobs`;
 }
 
-async function submitBatchPredictionJob(cfg, {
-  displayName, gcsInputUri, gcsOutputUriPrefix,
-}) {
+async function submitBatchPredictionJob(cfg, { displayName, gcsInputUri, gcsOutputUriPrefix }) {
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
   }
   if (!gcsInputUri || !gcsOutputUriPrefix) {
-    throw new LlmRequestError('submitBatchPredictionJob requires gcsInputUri and gcsOutputUriPrefix — this codebase has no GCS file routing yet (see this function\'s own comment)');
+    throw new LlmRequestError(
+      "submitBatchPredictionJob requires gcsInputUri and gcsOutputUriPrefix — this codebase has no GCS file routing yet (see this function's own comment)",
+    );
   }
   const payload = await postJson(cfg, batchJobsUrl(cfg), {
     displayName: displayName || `arcnave-batch-${Date.now()}`,

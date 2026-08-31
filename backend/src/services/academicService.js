@@ -78,7 +78,7 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 // own comment documents for date-only parsing elsewhere in this file.
 function timeToMinutes(value) {
   const [h, m] = value.split(':').map(Number);
-  return (h * 60) + m;
+  return h * 60 + m;
 }
 
 function minutesToTime(totalMinutes) {
@@ -119,9 +119,7 @@ async function resolveClassId(client, collegeId, identifier) {
   }
   const cls = await classRepository.findByCollegeAndClassName(client, collegeId, identifier);
   if (cls === null) {
-    throw new IdentifierResolutionError(
-      `no class found named ${JSON.stringify(identifier)} in this college`,
-    );
+    throw new IdentifierResolutionError(`no class found named ${JSON.stringify(identifier)} in this college`);
   }
   return cls.id;
 }
@@ -337,13 +335,7 @@ class ClassSendAlertNotAssignedError extends Error {}
 // Known real timetable_status values, per the migration's own comment
 // and .ai/TASK.md's grounding against TutorClass.jsx/
 // TutorClassMonitor.jsx.
-const VALID_TIMETABLE_STATUSES = [
-  'No Tutor',
-  'Pending HOD',
-  'Pending Principal',
-  'Approved',
-  'Rejected',
-];
+const VALID_TIMETABLE_STATUSES = ['No Tutor', 'Pending HOD', 'Pending Principal', 'Approved', 'Rejected'];
 
 // The fields this service accepts for create/update, deliberately
 // listed here rather than trusting classRepository's own COLUMNS
@@ -392,9 +384,7 @@ function assertNoTutorUserIdInFields(fields) {
 
 function assertValidTimetableStatus(timetableStatus) {
   if (timetableStatus !== undefined && !VALID_TIMETABLE_STATUSES.includes(timetableStatus)) {
-    throw new ClassTimetableStatusError(
-      `timetableStatus ${JSON.stringify(timetableStatus)} is not a known value`,
-    );
+    throw new ClassTimetableStatusError(`timetableStatus ${JSON.stringify(timetableStatus)} is not a known value`);
   }
 }
 
@@ -549,9 +539,11 @@ function sectionLabel(index) {
   return String.fromCharCode(65 + index);
 }
 
-async function generateClassesForDepartment(client, {
-  departmentId, collegeId, name, courseDuration, defaultSections,
-}, { actorUserId } = {}) {
+async function generateClassesForDepartment(
+  client,
+  { departmentId, collegeId, name, courseDuration, defaultSections },
+  { actorUserId } = {},
+) {
   if (!Number.isInteger(courseDuration) || courseDuration < 2) {
     throw new ClassGenerationValidationError(
       `courseDuration must be an integer of at least 2 (year 1 is always out of scope — RS-CLS-001), got ${JSON.stringify(courseDuration)}`,
@@ -570,13 +562,17 @@ async function generateClassesForDepartment(client, {
       for (let sectionIndex = 0; sectionIndex < defaultSections; sectionIndex += 1) {
         const section = sectionLabel(sectionIndex);
         // eslint-disable-next-line no-await-in-loop
-        const cls = await createClass(client, {
-          collegeId,
-          className: `${name} Sem ${semesterNumber} ${section}`,
-          department: name,
-          departmentId,
-          semester: String(semesterNumber),
-        }, { actorUserId });
+        const cls = await createClass(
+          client,
+          {
+            collegeId,
+            className: `${name} Sem ${semesterNumber} ${section}`,
+            department: name,
+            departmentId,
+            semester: String(semesterNumber),
+          },
+          { actorUserId },
+        );
         created.push(cls);
       }
     }
@@ -614,7 +610,9 @@ async function submitTimetableForApproval(client, classId, { requestedByUserId, 
     throw new ClassValidationError(`class ${JSON.stringify(classId)} does not exist`);
   }
   if (!cls.department_id) {
-    throw new ClassValidationError(`class ${JSON.stringify(classId)} has no departmentId set, cannot resolve an hod approver`);
+    throw new ClassValidationError(
+      `class ${JSON.stringify(classId)} has no departmentId set, cannot resolve an hod approver`,
+    );
   }
 
   // BusinessRules.md Configurable approval workflow: reads the
@@ -623,7 +621,10 @@ async function submitTimetableForApproval(client, classId, { requestedByUserId, 
   // default this codebase always used — an institution that hasn't
   // configured anything sees identical behavior to before this slice.
   const approverChain = await workflowChainService.resolveApproverChain(client, {
-    collegeId: cls.college_id, entityType: 'timetable_approval', classId: cls.id, departmentId: cls.department_id,
+    collegeId: cls.college_id,
+    entityType: 'timetable_approval',
+    classId: cls.id,
+    departmentId: cls.department_id,
   });
 
   const request = await workflowService.submitRequest(client, {
@@ -651,7 +652,9 @@ async function loadPendingTimetableApproval(client, classId) {
 
   const pending = await workflowService.findPendingForEntity(client, 'timetable_approval', classId);
   if (pending === null) {
-    throw new ClassTimetableApprovalNotPendingError(`class ${JSON.stringify(classId)} has no pending timetable approval request`);
+    throw new ClassTimetableApprovalNotPendingError(
+      `class ${JSON.stringify(classId)} has no pending timetable approval request`,
+    );
   }
 
   return pending;
@@ -735,9 +738,11 @@ async function listTimetableRevisions(client, classId) {
 //      now additionally requires actorRole === 'class_tutor' (Current
 //      Login Identity), since Position Occupancy alone must not grant
 //      this on a personal Staff login.
-async function requestSubstituteAssignment(client, {
-  classId, timetablePeriodId, assignmentDate, originalStaffUserId, substituteStaffUserId, reason,
-}, { requestedByUserId, requestedByRole, origin = 'human' } = {}) {
+async function requestSubstituteAssignment(
+  client,
+  { classId, timetablePeriodId, assignmentDate, originalStaffUserId, substituteStaffUserId, reason },
+  { requestedByUserId, requestedByRole, origin = 'human' } = {},
+) {
   if (!classId || !timetablePeriodId || !assignmentDate || !substituteStaffUserId) {
     throw new SubstituteAssignmentValidationError(
       'classId, timetablePeriodId, assignmentDate, and substituteStaffUserId are required',
@@ -761,7 +766,10 @@ async function requestSubstituteAssignment(client, {
   // per-class ownership checks.
   const isAbsentStaff = originalStaffUserId && originalStaffUserId === requestedByUserId;
   const hodUserId = cls.department_id
-    ? await identityService.resolvePositionOccupant(client, { collegeId: cls.college_id, departmentId: cls.department_id })
+    ? await identityService.resolvePositionOccupant(client, {
+        collegeId: cls.college_id,
+        departmentId: cls.department_id,
+      })
     : null;
   const tutorUserId = await identityService.resolvePositionOccupant(client, { collegeId: cls.college_id, classId });
   const isHod = hodUserId !== null && hodUserId === requestedByUserId;
@@ -782,7 +790,9 @@ async function requestSubstituteAssignment(client, {
   // actually take it.
   const candidate = await staffService.getStaffByUserId(client, substituteStaffUserId);
   if (candidate === null) {
-    throw new SubstituteAssignmentCandidateNotFoundError(`no staff profile exists for user ${JSON.stringify(substituteStaffUserId)}`);
+    throw new SubstituteAssignmentCandidateNotFoundError(
+      `no staff profile exists for user ${JSON.stringify(substituteStaffUserId)}`,
+    );
   }
   if (cls.department_id && candidate.department_id !== cls.department_id) {
     throw new SubstituteAssignmentCandidateNotInDepartmentError(
@@ -792,7 +802,10 @@ async function requestSubstituteAssignment(client, {
   const candidateOwnAllocations = await facultyAllocationRepository.findByStaffUserId(client, substituteStaffUserId);
   const hasRegularClash = candidateOwnAllocations.some((a) => a.period_id === timetablePeriodId);
   const existingSubstitution = await substituteAssignmentRepository.findByStaffPeriodAndDate(
-    client, substituteStaffUserId, timetablePeriodId, assignmentDate,
+    client,
+    substituteStaffUserId,
+    timetablePeriodId,
+    assignmentDate,
   );
   if (hasRegularClash || existingSubstitution !== null) {
     throw new SubstituteAssignmentCandidateNotFreeError(
@@ -868,12 +881,16 @@ async function requestSubstituteAssignment(client, {
 async function loadPendingSubstituteAssignmentRequest(client, requestId) {
   const request = await substituteAssignmentRequestRepository.findById(client, requestId);
   if (request === null) {
-    throw new SubstituteAssignmentRequestNotFoundError(`substitute assignment request ${JSON.stringify(requestId)} does not exist`);
+    throw new SubstituteAssignmentRequestNotFoundError(
+      `substitute assignment request ${JSON.stringify(requestId)} does not exist`,
+    );
   }
 
   const pending = await workflowService.findPendingForEntity(client, 'substitute_assignment', requestId);
   if (pending === null) {
-    throw new SubstituteAssignmentRequestNotFoundError(`substitute assignment request ${JSON.stringify(requestId)} has no pending approval request`);
+    throw new SubstituteAssignmentRequestNotFoundError(
+      `substitute assignment request ${JSON.stringify(requestId)} has no pending approval request`,
+    );
   }
 
   return { request, pending };
@@ -903,7 +920,9 @@ async function approveSubstituteAssignment(client, requestId, { actorUserId, rem
     });
   } catch (err) {
     if (err.code === '23503' && err.constraint === 'substitute_assignments_timetable_period_id_fkey') {
-      throw new SubstituteAssignmentPeriodNotFoundError(`timetable period ${JSON.stringify(request.timetable_period_id)} does not exist`);
+      throw new SubstituteAssignmentPeriodNotFoundError(
+        `timetable period ${JSON.stringify(request.timetable_period_id)} does not exist`,
+      );
     }
     if (err.code === '23505' && err.constraint === 'substitute_assignments_class_period_date_key') {
       throw new SubstituteAssignmentConflictError(
@@ -1009,12 +1028,17 @@ async function acknowledgeSubstituteAssignment(client, assignmentId, { actorUser
 // the absence of a period, matching how findCurrentByCollegeAndDay
 // already treats any minute with no covering period as "no session."
 async function generateSlotGrid(client, collegeId, config, { actorUserId } = {}) {
-  const {
-    workingDays, startTime, endTime, slotDurationMinutes, breakAfterSlots,
-  } = config || {};
+  const { workingDays, startTime, endTime, slotDurationMinutes, breakAfterSlots } = config || {};
 
-  if (!collegeId || !Array.isArray(workingDays) || workingDays.length === 0
-      || !startTime || !endTime || !slotDurationMinutes || slotDurationMinutes < 1) {
+  if (
+    !collegeId ||
+    !Array.isArray(workingDays) ||
+    workingDays.length === 0 ||
+    !startTime ||
+    !endTime ||
+    !slotDurationMinutes ||
+    slotDurationMinutes < 1
+  ) {
     throw new TimetableConfigValidationError(
       'collegeId, a non-empty workingDays array, startTime, endTime, and a positive slotDurationMinutes are required',
     );
@@ -1073,7 +1097,10 @@ async function generateSlotGrid(client, collegeId, config, { actorUserId } = {})
     entity: 'timetable_periods',
     entityId: collegeId,
     metadata: {
-      created: created.length, skipped: skipped.length, slotsPerDay: daySlots.length, workingDays,
+      created: created.length,
+      skipped: skipped.length,
+      slotsPerDay: daySlots.length,
+      workingDays,
     },
   });
 
@@ -1111,7 +1138,10 @@ async function assertCanGenerateForClass(client, cls, { actorUserId, actorRole }
       `user ${JSON.stringify(actorUserId)}'s current login (role 'staff') is not authorized to generate a timetable — this requires the class's Class Tutor Position Account login`,
     );
   }
-  const tutorUserId = await identityService.resolvePositionOccupant(client, { collegeId: cls.college_id, classId: cls.id });
+  const tutorUserId = await identityService.resolvePositionOccupant(client, {
+    collegeId: cls.college_id,
+    classId: cls.id,
+  });
   if (tutorUserId !== actorUserId) {
     throw new TimetableGenerationForbiddenError(
       `user ${JSON.stringify(actorUserId)} is not the Class Tutor of class ${JSON.stringify(cls.id)}`,
@@ -1126,16 +1156,24 @@ async function assertCanGenerateForClass(client, cls, { actorUserId, actorRole }
 // co-teaching/session-block shape, so both are the same requirement
 // object everywhere else in this function.
 function normalizeRequirement(req) {
-  const staffUserIds = Array.isArray(req.staffUserIds) && req.staffUserIds.length > 0
-    ? req.staffUserIds
-    : (req.staffUserId ? [req.staffUserId] : []);
+  const staffUserIds =
+    Array.isArray(req.staffUserIds) && req.staffUserIds.length > 0
+      ? req.staffUserIds
+      : req.staffUserId
+        ? [req.staffUserId]
+        : [];
   const subjectType = req.subjectType || 'Theory';
   const periodsPerWeek = req.periodsPerWeek;
-  const sessionBlocks = Array.isArray(req.sessionBlocks) && req.sessionBlocks.length > 0
-    ? req.sessionBlocks
-    : Array(periodsPerWeek || 0).fill(1);
+  const sessionBlocks =
+    Array.isArray(req.sessionBlocks) && req.sessionBlocks.length > 0
+      ? req.sessionBlocks
+      : Array(periodsPerWeek || 0).fill(1);
   return {
-    subject: req.subject, subjectType, staffUserIds, periodsPerWeek, sessionBlocks,
+    subject: req.subject,
+    subjectType,
+    staffUserIds,
+    periodsPerWeek,
+    sessionBlocks,
   };
 }
 
@@ -1167,9 +1205,10 @@ function validateRequirement(req) {
 // generateTimetable) since every attempt starts from the same true DB
 // baseline — the previous attempt's own rows are removed before the
 // next attempt runs, restoring exactly that baseline.
-async function runGenerationAttempt(client, {
-  cls, requirements, orderedPeriods, usedPeriodIdsBaseline, dailyHoursBaseline, maxHoursPerDay,
-}) {
+async function runGenerationAttempt(
+  client,
+  { cls, requirements, orderedPeriods, usedPeriodIdsBaseline, dailyHoursBaseline, maxHoursPerDay },
+) {
   const usedPeriodIds = new Set(usedPeriodIdsBaseline);
   // staffId -> day -> hours already committed, cloned per-attempt so a
   // failed/retried attempt never leaks its own partial hours into the
@@ -1230,7 +1269,10 @@ async function runGenerationAttempt(client, {
         const window = dayPeriods.slice(i, i + length);
         let consecutive = true;
         for (let k = 1; k < window.length; k += 1) {
-          if (window[k].hour_index !== window[k - 1].hour_index + 1) { consecutive = false; break; }
+          if (window[k].hour_index !== window[k - 1].hour_index + 1) {
+            consecutive = false;
+            break;
+          }
         }
         if (!consecutive) continue; // eslint-disable-line no-continue
         sawStructural = true;
@@ -1244,12 +1286,19 @@ async function runGenerationAttempt(client, {
         const windowHours = maxHoursPerDay ? window.reduce((sum, p) => sum + periodDurationHours(p), 0) : 0;
         if (maxHoursPerDay) {
           const overCap = req.staffUserIds.some((staffId) => !hoursFits(staffId, day, windowHours));
-          if (overCap) { sawDailyLimit = true; continue; } // eslint-disable-line no-continue
+          if (overCap) {
+            sawDailyLimit = true;
+            continue;
+          } // eslint-disable-line no-continue
         }
 
         // eslint-disable-next-line no-await-in-loop
         const attemptRows = await tryInsertWindow(client, {
-          cls, classId: cls.id, req, window, sessionBlockId: length > 1 ? randomUUID() : null,
+          cls,
+          classId: cls.id,
+          req,
+          window,
+          sessionBlockId: length > 1 ? randomUUID() : null,
         });
         if (attemptRows.ok) {
           window.forEach((p) => usedPeriodIds.add(p.id));
@@ -1257,7 +1306,8 @@ async function runGenerationAttempt(client, {
           return { placed: true, rows: attemptRows.rows };
         }
         usedPeriodIds.add(attemptRows.failedPeriodId);
-        if (req.staffUserIds.length === 2) sawCoTeaching = true; else sawFaculty = true;
+        if (req.staffUserIds.length === 2) sawCoTeaching = true;
+        else sawFaculty = true;
       }
     }
 
@@ -1309,9 +1359,7 @@ async function runGenerationAttempt(client, {
 // whatever this same window already committed and reports failure,
 // same "let Postgres be the real conflict check" reasoning the
 // original single-period generateTimetable always used.
-async function tryInsertWindow(client, {
-  cls, classId, req, window, sessionBlockId,
-}) {
+async function tryInsertWindow(client, { cls, classId, req, window, sessionBlockId }) {
   const rows = [];
   for (const period of window) {
     for (const staffId of req.staffUserIds) {
@@ -1399,7 +1447,7 @@ function computeQualityScore(placements, periodsById) {
     const dayHours = [...byDay.values()];
     const total = dayHours.reduce((sum, h) => sum + h, 0);
     const maxDay = Math.max(...dayHours);
-    if (total > 0 && maxDay > total / 2) penalty += (maxDay / total) - 0.5;
+    if (total > 0 && maxDay > total / 2) penalty += maxDay / total - 0.5;
   }
   if (staffCount === 0) return 100;
   const score = 100 - Math.round((penalty / staffCount) * 100);
@@ -1485,7 +1533,12 @@ async function generateTimetable(client, classId, requirements, { actorUserId, a
     const orderedPeriods = shuffleVariant(sortedPeriods, attempt);
     // eslint-disable-next-line no-await-in-loop
     attemptResult = await runGenerationAttempt(client, {
-      cls, requirements: normalized, orderedPeriods, usedPeriodIdsBaseline, dailyHoursBaseline, maxHoursPerDay: effectiveMaxHoursPerDay,
+      cls,
+      requirements: normalized,
+      orderedPeriods,
+      usedPeriodIdsBaseline,
+      dailyHoursBaseline,
+      maxHoursPerDay: effectiveMaxHoursPerDay,
     });
     if (!bestResult || attemptResult.conflicts.length < bestResult.conflicts.length) {
       bestResult = attemptResult;
@@ -1502,7 +1555,12 @@ async function generateTimetable(client, classId, requirements, { actorUserId, a
     await Promise.all(attemptResult.placements.map((row) => facultyAllocationRepository.remove(client, row.id)));
     const orderedPeriods = shuffleVariant(sortedPeriods, bestAttempt);
     attemptResult = await runGenerationAttempt(client, {
-      cls, requirements: normalized, orderedPeriods, usedPeriodIdsBaseline, dailyHoursBaseline, maxHoursPerDay: effectiveMaxHoursPerDay,
+      cls,
+      requirements: normalized,
+      orderedPeriods,
+      usedPeriodIdsBaseline,
+      dailyHoursBaseline,
+      maxHoursPerDay: effectiveMaxHoursPerDay,
     });
   }
 
@@ -1517,7 +1575,10 @@ async function generateTimetable(client, classId, requirements, { actorUserId, a
   const summary = {
     subjectsScheduled: new Set(normalized.map((r) => r.subject)).size - conflicts.length,
     totalTeachingHoursAllocated,
-    facultyUtilization: allStaffIds.length === 0 ? 0 : Math.round((placements.length / (allStaffIds.length * sortedPeriods.length || 1)) * 100),
+    facultyUtilization:
+      allStaffIds.length === 0
+        ? 0
+        : Math.round((placements.length / (allStaffIds.length * sortedPeriods.length || 1)) * 100),
     remainingFreeSlots: Math.max(0, sortedPeriods.length - usedAfter.size),
     generationTimeMs: Date.now() - startedAt,
     conflictCount: conflicts.length,
@@ -1534,7 +1595,9 @@ async function generateTimetable(client, classId, requirements, { actorUserId, a
   });
 
   return {
-    placements, conflicts, summary,
+    placements,
+    conflicts,
+    summary,
   };
 }
 
@@ -1591,7 +1654,12 @@ async function reviseTimetable(client, classId, changedRequirements, { actorUser
   const dailyHoursBaseline = await loadStaffDailyHours(client, periodsById, allStaffIds, effectiveMaxHoursPerDay);
 
   const result = await runGenerationAttempt(client, {
-    cls, requirements: normalized, orderedPeriods: sortedPeriods, usedPeriodIdsBaseline, dailyHoursBaseline, maxHoursPerDay: effectiveMaxHoursPerDay,
+    cls,
+    requirements: normalized,
+    orderedPeriods: sortedPeriods,
+    usedPeriodIdsBaseline,
+    dailyHoursBaseline,
+    maxHoursPerDay: effectiveMaxHoursPerDay,
   });
 
   const workflowRequest = await submitTimetableForApproval(client, classId, { requestedByUserId: actorUserId });
@@ -1603,7 +1671,9 @@ async function reviseTimetable(client, classId, changedRequirements, { actorUser
     entity: 'classes',
     entityId: classId,
     metadata: {
-      affectedSubjects: normalized.map((r) => r.subject), placedCount: result.placements.length, conflictCount: result.conflicts.length,
+      affectedSubjects: normalized.map((r) => r.subject),
+      placedCount: result.placements.length,
+      conflictCount: result.conflicts.length,
     },
   });
 
@@ -1648,7 +1718,10 @@ async function resolveCurrentSessionForStaff(client, collegeId, staffUserId, { n
   const ownAllocation = ownAllocations.find((a) => a.period_id === period.id);
   if (ownAllocation !== null && ownAllocation !== undefined) {
     return {
-      classId: ownAllocation.class_id, periodId: period.id, hourIndex: period.hour_index, sessionDate,
+      classId: ownAllocation.class_id,
+      periodId: period.id,
+      hourIndex: period.hour_index,
+      sessionDate,
     };
   }
 
@@ -1661,10 +1734,18 @@ async function resolveCurrentSessionForStaff(client, collegeId, staffUserId, { n
   // has to search across classes, not call
   // getSubstituteAssignment(classId, ...) the way assertCanMark does
   // once it already has a specific class in hand.
-  const substitution = await substituteAssignmentRepository.findByStaffPeriodAndDate(client, staffUserId, period.id, sessionDate);
+  const substitution = await substituteAssignmentRepository.findByStaffPeriodAndDate(
+    client,
+    staffUserId,
+    period.id,
+    sessionDate,
+  );
   if (substitution !== null) {
     return {
-      classId: substitution.class_id, periodId: period.id, hourIndex: period.hour_index, sessionDate,
+      classId: substitution.class_id,
+      periodId: period.id,
+      hourIndex: period.hour_index,
+      sessionDate,
     };
   }
 
@@ -1709,13 +1790,20 @@ async function resolveNextTeachingMomentForStaff(client, collegeId, staffUserId,
   );
   const periodsById = new Map(periods.map((period) => [period.id, period]));
   const withPeriods = allocations.map((allocation) => ({
-    allocation, period: periodsById.get(allocation.period_id) || null,
+    allocation,
+    period: periodsById.get(allocation.period_id) || null,
   }));
 
   const todaysRemaining = withPeriods
-    .filter(({ period }) => period && period.college_id === collegeId
-      && period.day_of_week === dayName && period.start_time && period.end_time
-      && timeToMinutes(period.end_time) > currentMinutes)
+    .filter(
+      ({ period }) =>
+        period &&
+        period.college_id === collegeId &&
+        period.day_of_week === dayName &&
+        period.start_time &&
+        period.end_time &&
+        timeToMinutes(period.end_time) > currentMinutes,
+    )
     .sort((a, b) => timeToMinutes(a.period.start_time) - timeToMinutes(b.period.start_time));
 
   const next = todaysRemaining[0];
@@ -1758,7 +1846,8 @@ async function resolveWeeklyScheduleForStaff(client, collegeId, staffUserId) {
   );
   const weeklyPeriodsById = new Map(weeklyPeriods.map((period) => [period.id, period]));
   const withPeriods = allocations.map((allocation) => ({
-    allocation, period: weeklyPeriodsById.get(allocation.period_id) || null,
+    allocation,
+    period: weeklyPeriodsById.get(allocation.period_id) || null,
   }));
 
   const relevant = withPeriods.filter(({ period }) => period && period.college_id === collegeId);
@@ -1808,7 +1897,11 @@ async function rejectTimetableApproval(client, classId, { actorUserId, remarks }
 // in-place edit, even though facultyAllocationRepository.update exists
 // and classRepository's own precedent has a full update path. Nothing
 // asked for reassignment-in-place, so it isn't built.
-async function assignFacultyAllocation(client, { collegeId, classId, periodId, subject, staffUserId }, { actorUserId } = {}) {
+async function assignFacultyAllocation(
+  client,
+  { collegeId, classId, periodId, subject, staffUserId },
+  { actorUserId } = {},
+) {
   if (!classId || !periodId || !subject || !staffUserId) {
     throw new FacultyAllocationValidationError('classId, periodId, subject, and staffUserId are required');
   }
@@ -1903,7 +1996,11 @@ async function getFacultyAllocationForClassAndPeriod(client, classId, periodId) 
 // authorization check: same reasoning as assignFacultyAllocation —
 // BusinessRules.md names no specific actor for "who may define
 // periods," left to the route/RBAC layer once an API exists.
-async function createTimetablePeriod(client, { collegeId, dayOfWeek, hourIndex, startTime, endTime }, { actorUserId } = {}) {
+async function createTimetablePeriod(
+  client,
+  { collegeId, dayOfWeek, hourIndex, startTime, endTime },
+  { actorUserId } = {},
+) {
   if (!dayOfWeek || hourIndex === undefined || hourIndex === null || !startTime || !endTime) {
     throw new TimetablePeriodValidationError('dayOfWeek, hourIndex, startTime, and endTime are required');
   }
@@ -1944,7 +2041,11 @@ async function createTimetablePeriod(client, { collegeId, dayOfWeek, hourIndex, 
 // genuinely timetable-specific: which columns are required, the
 // optional-allocation-columns rule, and the per-row commit/savepoint
 // logic below, unchanged.
-async function importTimetablePeriodsCsv(client, { collegeId, fileName = 'timetable.csv', fileBuffer }, { actorUserId } = {}) {
+async function importTimetablePeriodsCsv(
+  client,
+  { collegeId, fileName = 'timetable.csv', fileBuffer },
+  { actorUserId } = {},
+) {
   if (!fileBuffer || !actorUserId) {
     throw new TimetableImportError('fileBuffer and actorUserId are required');
   }
@@ -1987,22 +2088,30 @@ async function importTimetablePeriodsCsv(client, { collegeId, fileName = 'timeta
       // eslint-disable-next-line no-await-in-loop
       await client.query(`SAVEPOINT ${savepoint}`);
       // eslint-disable-next-line no-await-in-loop
-      const period = await createTimetablePeriod(client, {
-        collegeId,
-        dayOfWeek: row.day_of_week,
-        hourIndex: Number(row.hour_index),
-        startTime: row.start_time,
-        endTime: row.end_time,
-      }, { actorUserId });
+      const period = await createTimetablePeriod(
+        client,
+        {
+          collegeId,
+          dayOfWeek: row.day_of_week,
+          hourIndex: Number(row.hour_index),
+          startTime: row.start_time,
+          endTime: row.end_time,
+        },
+        { actorUserId },
+      );
       if (hasAllocationColumns && row.class_id && row.subject && row.staff_user_id) {
         // eslint-disable-next-line no-await-in-loop
-        await assignFacultyAllocation(client, {
-          collegeId,
-          classId: row.class_id,
-          periodId: period.id,
-          subject: row.subject,
-          staffUserId: row.staff_user_id,
-        }, { actorUserId });
+        await assignFacultyAllocation(
+          client,
+          {
+            collegeId,
+            classId: row.class_id,
+            periodId: period.id,
+            subject: row.subject,
+            staffUserId: row.staff_user_id,
+          },
+          { actorUserId },
+        );
         if (!timetableDataByClassId.has(row.class_id)) timetableDataByClassId.set(row.class_id, []);
         timetableDataByClassId.get(row.class_id).push({
           periodId: period.id,
@@ -2019,9 +2128,9 @@ async function importTimetablePeriodsCsv(client, { collegeId, fileName = 'timeta
       imported.push({ row: rowNumber, dayOfWeek: row.day_of_week, hourIndex: Number(row.hour_index) });
     } catch (err) {
       if (
-        err instanceof TimetablePeriodSlotTakenError
-        || err instanceof FacultyAllocationPeriodTakenError
-        || err instanceof FacultyAllocationStaffConflictError
+        err instanceof TimetablePeriodSlotTakenError ||
+        err instanceof FacultyAllocationPeriodTakenError ||
+        err instanceof FacultyAllocationStaffConflictError
       ) {
         // eslint-disable-next-line no-await-in-loop
         await client.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
@@ -2204,7 +2313,9 @@ async function sendClassAlert(client, classId, body, { actorUserId, actorRole } 
     const allocations = await listFacultyAllocationsForClass(client, classId);
     const isAssignedFaculty = allocations.some((allocation) => allocation.staff_user_id === actorUserId);
     if (!isAssignedFaculty) {
-      throw new ClassSendAlertNotAssignedError(`user ${JSON.stringify(actorUserId)} is not the tutor or assigned faculty of class ${JSON.stringify(classId)}`);
+      throw new ClassSendAlertNotAssignedError(
+        `user ${JSON.stringify(actorUserId)} is not the tutor or assigned faculty of class ${JSON.stringify(classId)}`,
+      );
     }
   }
 
@@ -2285,9 +2396,7 @@ async function getClassTimetableForActor(client, actorInput) {
     classesById = new Map(classes.map((cls) => [cls.id, cls]));
   } else {
     targetClassIds = classIds;
-    classesById = new Map(
-      (await classRepository.findByIds(client, targetClassIds)).map((cls) => [cls.id, cls]),
-    );
+    classesById = new Map((await classRepository.findByIds(client, targetClassIds)).map((cls) => [cls.id, cls]));
   }
   if (targetClassIds.length === 0) {
     return [];

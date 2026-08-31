@@ -46,7 +46,7 @@ function requestJson(baseUrl, path, method, { headers = {}, body } = {}) {
         } catch {
           parsed = text;
         }
-        resolve({ status: res.statusCode, body: parsed });
+        resolve({ status: res.statusCode, body: parsed, headers: res.headers });
       });
     });
     req.on('error', reject);
@@ -61,6 +61,21 @@ function get(baseUrl, path, headers) {
 
 function post(baseUrl, path, headers, body) {
   return requestJson(baseUrl, path, 'POST', { headers, body });
+}
+
+// ARCNAVE modernization P0 (PDF 5.1 / clash C6): the refresh token now
+// travels as an httpOnly Set-Cookie, not a JSON body field — these
+// tests hit a real HTTP server with no browser cookie jar, so the
+// refresh-token cookie has to be extracted and threaded through by
+// hand, same idea as position-account-routes.test.js/
+// session-revocation-e2e.test.js/request-logging.test.js's own copies
+// of this helper.
+function refreshCookieFrom(resp) {
+  const setCookie = resp.headers['set-cookie'];
+  if (!setCookie) return null;
+  const raw = Array.isArray(setCookie) ? setCookie : [setCookie];
+  const match = raw.find((c) => c.startsWith(`${config.refreshCookie.name}=`));
+  return match ? match.split(';')[0] : null;
 }
 
 function startServer(app) {
@@ -80,21 +95,20 @@ function hostFor(subdomain) {
 }
 
 function bearerFor({ userId, collegeId, role }) {
-  const token = jwt.sign(
-    { sub: userId, college_id: collegeId, role, type: 'access' },
-    config.jwtSecretKey,
-    { algorithm: config.jwtAlgorithm, expiresIn: '15m' },
-  );
+  const token = jwt.sign({ sub: userId, college_id: collegeId, role, type: 'access' }, config.jwtSecretKey, {
+    algorithm: config.jwtAlgorithm,
+    expiresIn: '15m',
+  });
   return `Bearer ${token}`;
 }
 
 async function seedTenantWithUser(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const college = { collegeId: `auth${suffix}`, subdomain: `authtenant${suffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [college.collegeId, college.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    college.collegeId,
+    college.subdomain,
+  ]);
   const passwordHash = await argon2.hash(VALID_PASSWORD);
   const result = await adminPool.query(
     `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
@@ -146,7 +160,8 @@ test('auth', async (t) => {
     const resp = await login();
     assert.equal(resp.status, 200);
     assert.ok(resp.body.access_token);
-    assert.ok(resp.body.refresh_token);
+    assert.equal(resp.body.refresh_token, undefined, 'refresh token must never appear in the JSON body');
+    assert.ok(refreshCookieFrom(resp), 'refresh token must be set as an httpOnly cookie');
     assert.equal(resp.body.token_type, 'bearer');
 
     const claims = jwt.verify(resp.body.access_token, config.jwtSecretKey, {
@@ -179,22 +194,22 @@ test('auth', async (t) => {
 
   await t.test('refresh rotates and the old token stops working', async () => {
     const loginResp = await login();
-    const oldRefresh = loginResp.body.refresh_token;
+    const oldCookie = refreshCookieFrom(loginResp);
 
-    const refreshResp = await post(baseUrl, '/api/v1/auth/refresh', tenantHeaders, { refresh_token: oldRefresh });
+    const refreshResp = await post(baseUrl, '/api/v1/auth/refresh', { ...tenantHeaders, cookie: oldCookie });
     assert.equal(refreshResp.status, 200);
-    assert.notEqual(refreshResp.body.refresh_token, oldRefresh);
+    assert.notEqual(refreshCookieFrom(refreshResp), oldCookie);
     assert.ok(refreshResp.body.access_token);
 
-    const reuseResp = await post(baseUrl, '/api/v1/auth/refresh', tenantHeaders, { refresh_token: oldRefresh });
+    const reuseResp = await post(baseUrl, '/api/v1/auth/refresh', { ...tenantHeaders, cookie: oldCookie });
     assert.equal(reuseResp.status, 401);
   });
 
   await t.test('refresh reuse of a revoked token is logged', async () => {
     const loginResp = await login();
-    const refreshToken = loginResp.body.refresh_token;
+    const cookie = refreshCookieFrom(loginResp);
 
-    const first = await post(baseUrl, '/api/v1/auth/refresh', tenantHeaders, { refresh_token: refreshToken });
+    const first = await post(baseUrl, '/api/v1/auth/refresh', { ...tenantHeaders, cookie });
     assert.equal(first.status, 200);
 
     // authService.refresh's reuse-detection log goes through
@@ -209,7 +224,7 @@ test('auth', async (t) => {
     };
     let second;
     try {
-      second = await post(baseUrl, '/api/v1/auth/refresh', tenantHeaders, { refresh_token: refreshToken });
+      second = await post(baseUrl, '/api/v1/auth/refresh', { ...tenantHeaders, cookie });
     } finally {
       console.warn = originalWarn;
     }
@@ -222,17 +237,20 @@ test('auth', async (t) => {
 
   await t.test('logout revokes a refresh token', async () => {
     const loginResp = await login();
-    const refreshToken = loginResp.body.refresh_token;
+    const cookie = refreshCookieFrom(loginResp);
 
-    const logoutResp = await post(baseUrl, '/api/v1/auth/logout', tenantHeaders, { refresh_token: refreshToken });
+    const logoutResp = await post(baseUrl, '/api/v1/auth/logout', { ...tenantHeaders, cookie });
     assert.equal(logoutResp.status, 204);
 
-    const reuseResp = await post(baseUrl, '/api/v1/auth/refresh', tenantHeaders, { refresh_token: refreshToken });
+    const reuseResp = await post(baseUrl, '/api/v1/auth/refresh', { ...tenantHeaders, cookie });
     assert.equal(reuseResp.status, 401);
   });
 
   await t.test('logout is idempotent for an unknown token', async () => {
-    const resp = await post(baseUrl, '/api/v1/auth/logout', tenantHeaders, { refresh_token: 'not-a-real-token' });
+    const resp = await post(baseUrl, '/api/v1/auth/logout', {
+      ...tenantHeaders,
+      cookie: `${config.refreshCookie.name}=not-a-real-token`,
+    });
     assert.equal(resp.status, 204);
   });
 
@@ -249,40 +267,48 @@ test('auth', async (t) => {
     assert.equal(resp.status, 204);
   });
 
-  await t.test('password reset end to end: request emails a token (never returned in the response), confirm changes the password, the token cannot be reused, and the old password stops working', async () => {
-    const notificationService = require('../src/services/notificationService');
-    let capturedToken = null;
-    const emailMock = t.mock.method(notificationService, 'sendPasswordResetEmail', async (client, { to, token }) => {
-      capturedToken = token;
-      return { status: 'stubbed', to };
-    });
-    t.after(() => emailMock.mock.restore());
+  await t.test(
+    'password reset end to end: request emails a token (never returned in the response), confirm changes the password, the token cannot be reused, and the old password stops working',
+    async () => {
+      const notificationService = require('../src/services/notificationService');
+      let capturedToken = null;
+      const emailMock = t.mock.method(notificationService, 'sendPasswordResetEmail', async (client, { to, token }) => {
+        capturedToken = token;
+        return { status: 'stubbed', to };
+      });
+      t.after(() => emailMock.mock.restore());
 
-    const requestResp = await post(baseUrl, '/api/v1/auth/password-reset', tenantHeaders, { email: 'authuser@example.com' });
-    assert.equal(requestResp.status, 204);
-    assert.equal(requestResp.body, null);
-    assert.ok(capturedToken, 'expected sendPasswordResetEmail to have been called with a real token');
+      const requestResp = await post(baseUrl, '/api/v1/auth/password-reset', tenantHeaders, {
+        email: 'authuser@example.com',
+      });
+      assert.equal(requestResp.status, 204);
+      assert.equal(requestResp.body, null);
+      assert.ok(capturedToken, 'expected sendPasswordResetEmail to have been called with a real token');
 
-    const confirmResp = await post(baseUrl, '/api/v1/auth/password-reset/confirm', tenantHeaders, {
-      token: capturedToken, new_password: 'ABrandNewPassword-456',
-    });
-    assert.equal(confirmResp.status, 204);
+      const confirmResp = await post(baseUrl, '/api/v1/auth/password-reset/confirm', tenantHeaders, {
+        token: capturedToken,
+        new_password: 'ABrandNewPassword-456',
+      });
+      assert.equal(confirmResp.status, 204);
 
-    const oldPasswordLogin = await login(VALID_PASSWORD);
-    assert.equal(oldPasswordLogin.status, 401);
+      const oldPasswordLogin = await login(VALID_PASSWORD);
+      assert.equal(oldPasswordLogin.status, 401);
 
-    const newPasswordLogin = await login('ABrandNewPassword-456');
-    assert.equal(newPasswordLogin.status, 200);
+      const newPasswordLogin = await login('ABrandNewPassword-456');
+      assert.equal(newPasswordLogin.status, 200);
 
-    const reuseResp = await post(baseUrl, '/api/v1/auth/password-reset/confirm', tenantHeaders, {
-      token: capturedToken, new_password: 'YetAnotherPassword-789',
-    });
-    assert.equal(reuseResp.status, 401);
-  });
+      const reuseResp = await post(baseUrl, '/api/v1/auth/password-reset/confirm', tenantHeaders, {
+        token: capturedToken,
+        new_password: 'YetAnotherPassword-789',
+      });
+      assert.equal(reuseResp.status, 401);
+    },
+  );
 
   await t.test('password reset confirm rejects an unknown token and a missing new_password', async () => {
     const unknown = await post(baseUrl, '/api/v1/auth/password-reset/confirm', tenantHeaders, {
-      token: 'not-a-real-token', new_password: 'some-password-123',
+      token: 'not-a-real-token',
+      new_password: 'some-password-123',
     });
     assert.equal(unknown.status, 401);
 
@@ -316,10 +342,10 @@ test('auth', async (t) => {
     const otherSuffix = crypto.randomUUID().slice(0, 8);
     const otherCollegeId = `authother${otherSuffix}`;
     const otherSubdomain = `authothertenant${otherSuffix}`;
-    await adminPool.query(
-      'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-      [otherCollegeId, otherSubdomain],
-    );
+    await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+      otherCollegeId,
+      otherSubdomain,
+    ]);
     try {
       const resp = await get(baseUrl, '/api/v1/whoami', {
         host: hostFor(otherSubdomain),

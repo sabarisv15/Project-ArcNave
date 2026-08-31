@@ -37,7 +37,7 @@ function requestJson(baseUrl, path, method, { headers = {}, body } = {}) {
         } catch {
           parsed = text;
         }
-        resolve({ status: res.statusCode, body: parsed });
+        resolve({ status: res.statusCode, body: parsed, headers: res.headers });
       });
     });
     req.on('error', reject);
@@ -52,6 +52,16 @@ function get(baseUrl, path, headers) {
 
 function post(baseUrl, path, headers, body) {
   return requestJson(baseUrl, path, 'POST', { headers, body });
+}
+
+// ARCNAVE modernization P0 (PDF 5.1 / clash C6): the refresh token now
+// travels as an httpOnly Set-Cookie, not a JSON body field.
+function refreshCookieFrom(resp) {
+  const setCookie = resp.headers['set-cookie'];
+  if (!setCookie) return null;
+  const raw = Array.isArray(setCookie) ? setCookie : [setCookie];
+  const match = raw.find((c) => c.startsWith('arcnave_refresh_token='));
+  return match ? match.split(';')[0] : null;
 }
 
 function startServer(app) {
@@ -69,10 +79,10 @@ function stopServer(server) {
 async function seedTenantWithUser(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const college = { collegeId: `sesrev${suffix}`, subdomain: `sesrevtenant${suffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [college.collegeId, college.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    college.collegeId,
+    college.subdomain,
+  ]);
   const passwordHash = await argon2.hash(VALID_PASSWORD);
   const result = await adminPool.query(
     `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
@@ -144,12 +154,15 @@ test('session revocation', async (t) => {
     });
     t.after(() => emailMock.mock.restore());
 
-    const requestResp = await post(baseUrl, '/api/v1/auth/password-reset', tenantHeaders, { email: 'sesrevuser@example.com' });
+    const requestResp = await post(baseUrl, '/api/v1/auth/password-reset', tenantHeaders, {
+      email: 'sesrevuser@example.com',
+    });
     assert.equal(requestResp.status, 204);
     assert.ok(capturedToken);
 
     const confirmResp = await post(baseUrl, '/api/v1/auth/password-reset/confirm', tenantHeaders, {
-      token: capturedToken, new_password: 'ABrandNewPassword-456',
+      token: capturedToken,
+      new_password: 'ABrandNewPassword-456',
     });
     assert.equal(confirmResp.status, 204);
 
@@ -177,7 +190,7 @@ test('session revocation', async (t) => {
   await t.test('the reset also revokes every outstanding refresh token for the account, in bulk', async () => {
     const loginResp = await login('ABrandNewPassword-456');
     assert.equal(loginResp.status, 200);
-    const oldRefreshToken = loginResp.body.refresh_token;
+    const oldRefreshCookie = refreshCookieFrom(loginResp);
 
     const notificationService = require('../src/services/notificationService');
     let capturedToken = null;
@@ -187,15 +200,22 @@ test('session revocation', async (t) => {
     });
     t.after(() => emailMock.mock.restore());
 
-    const requestResp = await post(baseUrl, '/api/v1/auth/password-reset', tenantHeaders, { email: 'sesrevuser@example.com' });
+    const requestResp = await post(baseUrl, '/api/v1/auth/password-reset', tenantHeaders, {
+      email: 'sesrevuser@example.com',
+    });
     assert.equal(requestResp.status, 204);
 
     const confirmResp = await post(baseUrl, '/api/v1/auth/password-reset/confirm', tenantHeaders, {
-      token: capturedToken, new_password: 'YetAnotherPassword-789',
+      token: capturedToken,
+      new_password: 'YetAnotherPassword-789',
     });
     assert.equal(confirmResp.status, 204);
 
-    const refreshResp = await post(baseUrl, '/api/v1/auth/refresh', tenantHeaders, { refresh_token: oldRefreshToken });
-    assert.equal(refreshResp.status, 401, 'the pre-reset refresh token must already be revoked, not just about to expire');
+    const refreshResp = await post(baseUrl, '/api/v1/auth/refresh', { ...tenantHeaders, cookie: oldRefreshCookie });
+    assert.equal(
+      refreshResp.status,
+      401,
+      'the pre-reset refresh token must already be revoked, not just about to expire',
+    );
   });
 });

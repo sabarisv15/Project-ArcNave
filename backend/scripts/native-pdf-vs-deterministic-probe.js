@@ -72,13 +72,12 @@ async function askGemini(token, base64) {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
     body: JSON.stringify({
-      contents: [{
-        role: 'user',
-        parts: [
-          { inline_data: { mime_type: 'application/pdf', data: base64 } },
-          { text: PROMPT },
-        ],
-      }],
+      contents: [
+        {
+          role: 'user',
+          parts: [{ inline_data: { mime_type: 'application/pdf', data: base64 } }, { text: PROMPT }],
+        },
+      ],
       // Temperature 1, deliberately. An earlier version of this probe ran
       // at temperature 0 and reported "fully self-consistent" — which
       // proves almost nothing, because temperature 0 makes the model
@@ -94,7 +93,10 @@ async function askGemini(token, base64) {
     .flatMap((c) => (c.content && c.content.parts) || [])
     .map((p) => p.text || '')
     .join('');
-  const cleaned = text.replace(/^```(?:json)?/m, '').replace(/```\s*$/m, '').trim();
+  const cleaned = text
+    .replace(/^```(?:json)?/m, '')
+    .replace(/```\s*$/m, '')
+    .trim();
   try {
     return { rows: JSON.parse(cleaned), raw: text };
   } catch {
@@ -117,10 +119,19 @@ async function deterministicIdentities(buffer) {
     const buckets = [];
     items.forEach((it) => {
       const b = buckets.find((k) => Math.abs(k.y - it.y) <= Y_TOLERANCE);
-      if (b) b.items.push(it); else buckets.push({ y: it.y, items: [it] });
+      if (b) b.items.push(it);
+      else buckets.push({ y: it.y, items: [it] });
     });
-    buckets.sort((a, b) => b.y - a.y)
-      .forEach((b) => lines.push(b.items.sort((p1, q) => p1.x - q.x).map((it) => it.str).join(' ')));
+    buckets
+      .sort((a, b) => b.y - a.y)
+      .forEach((b) =>
+        lines.push(
+          b.items
+            .sort((p1, q) => p1.x - q.x)
+            .map((it) => it.str)
+            .join(' '),
+        ),
+      );
   }
   const parsed = documentTableExtractionService.extractRecords(lines.join('\n'));
   return { records: parsed.records, coverage: parsed.coverage };
@@ -153,7 +164,10 @@ function compareRuns(runs) {
 }
 
 async function main() {
-  if (!fs.existsSync(PDF)) { console.error(`Missing ${PDF}`); process.exit(2); }
+  if (!fs.existsSync(PDF)) {
+    console.error(`Missing ${PDF}`);
+    process.exit(2);
+  }
   const buffer = fs.readFileSync(PDF);
   const base64 = buffer.toString('base64');
 
@@ -175,7 +189,10 @@ async function main() {
     runs.push(rows);
     console.log(`run ${i + 1}: ${rows.length} rows`);
   }
-  if (runs.length < 2) { console.log('\nToo few parseable runs to compare.'); return; }
+  if (runs.length < 2) {
+    console.log('\nToo few parseable runs to compare.');
+    return;
+  }
 
   console.log('\n=== 1. Does Gemini agree with ITSELF across runs? ===');
   const { agreements, disagreements } = compareRuns(runs);
@@ -203,4 +220,7 @@ async function main() {
   runs[0].slice(0, 6).forEach((r) => console.log(`  ${JSON.stringify(r)}`));
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

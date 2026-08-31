@@ -1,13 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { cn } from '../lib/utils';
-import {
-  academicLabel,
-  academicToneClass,
-  attendanceTone,
-  feeTone,
-  semesterSummary,
-} from '../lib/studentsData';
+import { academicLabel, academicToneClass, attendanceTone, feeTone, semesterSummary } from '../lib/studentsData';
 
 function Stat({ label, value, tone }) {
   return (
@@ -33,7 +27,10 @@ function TeachingContextBlock({ student, classes, scope }) {
           return (
             <div
               key={id}
-              className={cn('bg-paper rounded-[11px] py-[9px] px-[11px] border', current ? 'border-accent-line' : 'border-line')}
+              className={cn(
+                'bg-paper rounded-[11px] py-[9px] px-[11px] border',
+                current ? 'border-accent-line' : 'border-line',
+              )}
             >
               <div className="text-[12.5px] font-[500] text-ink">{c.code}</div>
               <div className="mt-[2px] text-[11.5px] text-ink-muted">
@@ -91,8 +88,16 @@ export function StudentDetailDrawer({ s }) {
                 <div className="grid grid-cols-2 gap-[10px] mt-[16px]">
                   <Stat label="Academic status" value={academicLabel(st)} tone={academicToneClass(st)} />
                   <Stat label="Attendance" value={`${st.attendance}%`} tone={attendanceTone(st.attendance).text} />
-                  <Stat label="Fee status" value={feeTone(st.feeTier).label} tone={feeTone(st.feeTier).className.split(' ')[0]} />
-                  <Stat label="Overall status" value={st.status} tone={st.status === 'Suspended' ? 'text-danger' : 'text-ink'} />
+                  <Stat
+                    label="Fee status"
+                    value={feeTone(st.feeTier).label}
+                    tone={feeTone(st.feeTier).className.split(' ')[0]}
+                  />
+                  <Stat
+                    label="Overall status"
+                    value={st.status}
+                    tone={st.status === 'Suspended' ? 'text-danger' : 'text-ink'}
+                  />
                 </div>
 
                 <div className="grid grid-cols-3 gap-[10px] mt-[16px] bg-surface border border-line rounded-[14px] py-[12px] px-[14px]">
@@ -111,7 +116,9 @@ export function StudentDetailDrawer({ s }) {
                 </div>
 
                 <div className="mt-[16px] bg-surface border border-line rounded-[14px] py-[12px] px-[14px]">
-                  <div className="text-[9.5px] tracking-[.06em] uppercase text-ink-faint mb-[8px]">Semester breakdown</div>
+                  <div className="text-[9.5px] tracking-[.06em] uppercase text-ink-faint mb-[8px]">
+                    Semester breakdown
+                  </div>
                   {st.semesters.map((sem) => {
                     const summary = semesterSummary(sem);
                     return (

@@ -91,18 +91,13 @@ export function SidebarRevealHint({ onDismiss }) {
     >
       {/* The edge strip, drawn at the size it actually is — a label alone
           doesn't tell you what to look for. */}
-      <span
-        aria-hidden="true"
-        className="flex-none flex items-center gap-[5px] mt-[1px] text-ink-ghost"
-      >
+      <span aria-hidden="true" className="flex-none flex items-center gap-[5px] mt-[1px] text-ink-ghost">
         <span className="block w-[3px] h-[22px] rounded-full bg-accent-line" />
         <PanelLeftOpen size={15} strokeWidth={1.8} />
       </span>
 
       <div className="min-w-0 flex-1">
-        <p className="m-0 text-[12.5px] leading-[1.45] text-ink-soft">
-          Move to the left edge to open the sidebar.
-        </p>
+        <p className="m-0 text-[12.5px] leading-[1.45] text-ink-soft">Move to the left edge to open the sidebar.</p>
         <button
           type="button"
           onClick={dismiss}

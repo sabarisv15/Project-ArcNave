@@ -51,7 +51,10 @@ async function getWebRetrievalConfig(client, collegeId) {
   const stored = row ? row.configuration : {};
   return {
     enabled: Boolean(stored.enabled),
-    allowedDomains: [...DEFAULT_ALLOWED_DOMAINS, ...(Array.isArray(stored.allowedDomains) ? stored.allowedDomains : [])],
+    allowedDomains: [
+      ...DEFAULT_ALLOWED_DOMAINS,
+      ...(Array.isArray(stored.allowedDomains) ? stored.allowedDomains : []),
+    ],
   };
 }
 
@@ -112,7 +115,9 @@ function stripHtml(html) {
 async function fetchTrustedPage(client, collegeId, url) {
   const config = await getWebRetrievalConfig(client, collegeId);
   if (!config.enabled) {
-    throw new WebRetrievalNotEnabledError('trusted web retrieval is not enabled for this college — opt in via configuration first');
+    throw new WebRetrievalNotEnabledError(
+      'trusted web retrieval is not enabled for this college — opt in via configuration first',
+    );
   }
 
   const parsed = assertSafeUrl(url);

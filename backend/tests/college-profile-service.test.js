@@ -29,9 +29,16 @@ test('CollegeProfileService.createDepartment (no DB)', async (t) => {
 
   await t.test('rejects a courseDuration below 2', async () => {
     await assert.rejects(
-      () => collegeProfileService.createDepartment({}, {
-        collegeId: 'c1', name: 'ECE', courseDuration: 1, defaultSections: 2,
-      }),
+      () =>
+        collegeProfileService.createDepartment(
+          {},
+          {
+            collegeId: 'c1',
+            name: 'ECE',
+            courseDuration: 1,
+            defaultSections: 2,
+          },
+        ),
       collegeProfileService.DepartmentValidationError,
     );
   });
@@ -44,24 +51,32 @@ test('CollegeProfileService.createDepartment (no DB)', async (t) => {
   });
 
   await t.test('creates the department, audit-logs it, and generates its classes', async () => {
-    const createMock = t.mock.method(
-      departmentRepository, 'create',
-      async (client, fields) => ({ id: 'dept-1', college_id: fields.collegeId, name: fields.name }),
-    );
+    const createMock = t.mock.method(departmentRepository, 'create', async (client, fields) => ({
+      id: 'dept-1',
+      college_id: fields.collegeId,
+      name: fields.name,
+    }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
-    const generateMock = t.mock.method(
-      academicService, 'generateClassesForDepartment',
-      async () => [{ id: 'cls-1' }, { id: 'cls-2' }],
-    );
+    const generateMock = t.mock.method(academicService, 'generateClassesForDepartment', async () => [
+      { id: 'cls-1' },
+      { id: 'cls-2' },
+    ]);
     t.after(() => {
       createMock.mock.restore();
       auditMock.mock.restore();
       generateMock.mock.restore();
     });
 
-    const result = await collegeProfileService.createDepartment({}, {
-      collegeId: 'c1', name: 'ECE', courseDuration: 4, defaultSections: 2,
-    }, { actorUserId: 'principal-1' });
+    const result = await collegeProfileService.createDepartment(
+      {},
+      {
+        collegeId: 'c1',
+        name: 'ECE',
+        courseDuration: 4,
+        defaultSections: 2,
+      },
+      { actorUserId: 'principal-1' },
+    );
 
     assert.equal(result.id, 'dept-1');
     assert.equal(result.generatedClasses.length, 2);
@@ -73,13 +88,22 @@ test('CollegeProfileService.createDepartment (no DB)', async (t) => {
 
   await t.test('maps a duplicate department name to DepartmentNameConflictError', async () => {
     const err = Object.assign(new Error('dup'), { code: '23505', constraint: 'departments_college_id_name_key' });
-    const createMock = t.mock.method(departmentRepository, 'create', async () => { throw err; });
+    const createMock = t.mock.method(departmentRepository, 'create', async () => {
+      throw err;
+    });
     t.after(() => createMock.mock.restore());
 
     await assert.rejects(
-      () => collegeProfileService.createDepartment({}, {
-        collegeId: 'c1', name: 'ECE', courseDuration: 4, defaultSections: 2,
-      }),
+      () =>
+        collegeProfileService.createDepartment(
+          {},
+          {
+            collegeId: 'c1',
+            name: 'ECE',
+            courseDuration: 4,
+            defaultSections: 2,
+          },
+        ),
       collegeProfileService.DepartmentNameConflictError,
     );
   });

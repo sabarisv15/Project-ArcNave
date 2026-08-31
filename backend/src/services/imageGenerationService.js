@@ -52,7 +52,9 @@ async function generateImage(client, { prompt }, { collegeId, actorUserId }) {
 
   const config = await getImageGenerationConfig(client, collegeId);
   if (!config.enabled) {
-    throw new ImageGenerationNotEnabledError('image generation is not enabled for this college — opt in via configuration first');
+    throw new ImageGenerationNotEnabledError(
+      'image generation is not enabled for this college — opt in via configuration first',
+    );
   }
 
   const { adapter, config: aiConfig } = await configurationService.getAiConfig(client, collegeId);

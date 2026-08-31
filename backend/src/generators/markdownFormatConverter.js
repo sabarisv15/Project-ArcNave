@@ -80,5 +80,8 @@ async function convert({ title, markdown }, format) {
 }
 
 module.exports = {
-  convert, isSupportedFormat, MarkdownConversionError, FORMATS,
+  convert,
+  isSupportedFormat,
+  MarkdownConversionError,
+  FORMATS,
 };

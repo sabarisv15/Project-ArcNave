@@ -88,9 +88,15 @@ export function ChatView({ chatId, title, meta, messages, placeholder, onSend, b
                 onSelect={setSelectedId}
                 onEdit={
                   chatId
-                    ? (id, text) => editMessage({
-                      scope: 'chat', convId: chatId, messageId: id, text, mode: composer.mode, thinkingLevel: composer.thinkingLevel,
-                    })
+                    ? (id, text) =>
+                        editMessage({
+                          scope: 'chat',
+                          convId: chatId,
+                          messageId: id,
+                          text,
+                          mode: composer.mode,
+                          thinkingLevel: composer.thinkingLevel,
+                        })
                     : undefined
                 }
               />
@@ -103,7 +109,8 @@ export function ChatView({ chatId, title, meta, messages, placeholder, onSend, b
               value={composer.text}
               onChange={composer.setText}
               onSend={() => {
-                if (onSend(composer.text, composer.attachments, composer.mode, composer.thinkingLevel) !== false) composer.reset();
+                if (onSend(composer.text, composer.attachments, composer.mode, composer.thinkingLevel) !== false)
+                  composer.reset();
               }}
               mode={composer.mode}
               onMode={composer.setMode}
@@ -113,9 +120,7 @@ export function ChatView({ chatId, title, meta, messages, placeholder, onSend, b
             />
           </ChatComposerDock>
         </div>
-        {fullScreen && !pinnedHidden && (
-          <SourcesWidget sources={sources} onClose={() => setPinnedHidden(true)} />
-        )}
+        {fullScreen && !pinnedHidden && <SourcesWidget sources={sources} onClose={() => setPinnedHidden(true)} />}
       </div>
     </ChatWorkspace>
   );

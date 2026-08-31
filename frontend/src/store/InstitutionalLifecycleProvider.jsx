@@ -17,12 +17,7 @@ import {
   targetClassIdFor,
   targetSectionsFor,
 } from '../lib/promotionData';
-import {
-  canFinalApprove,
-  finalApprovalBlockReason,
-  finalApprovedState,
-  returnedState,
-} from '../lib/endorsementChain';
+import { canFinalApprove, finalApprovalBlockReason, finalApprovedState, returnedState } from '../lib/endorsementChain';
 import {
   canDelegatedReview,
   delegatedBlockReason,
@@ -123,13 +118,7 @@ function scoped(ref, generation) {
 
 export function InstitutionalLifecycleProvider({ children }) {
   const { placeExisting, classFill } = useAcademicRoster();
-  const {
-    generation,
-    seatBaseline,
-    reviewQueue,
-    priorClasses,
-    activeClassById,
-  } = useAcademicTerm();
+  const { generation, seatBaseline, reviewQueue, priorClasses, activeClassById } = useAcademicTerm();
 
   /*
    * Every overlay is held in a ref *and* in state, and written together — the
@@ -168,7 +157,7 @@ export function InstitutionalLifecycleProvider({ children }) {
       seatRef.current = next;
       setSeatOverlay(next);
     },
-    [generation]
+    [generation],
   );
 
   const commitHod = useCallback((next) => {
@@ -182,7 +171,7 @@ export function InstitutionalLifecycleProvider({ children }) {
       reviewRef.current = next;
       setReviews(next);
     },
-    [generation]
+    [generation],
   );
 
   const commitDecisions = useCallback(
@@ -191,7 +180,7 @@ export function InstitutionalLifecycleProvider({ children }) {
       decisionRef.current = next;
       setDecisions(next);
     },
-    [generation]
+    [generation],
   );
 
   const commitL2Reviews = useCallback(
@@ -200,7 +189,7 @@ export function InstitutionalLifecycleProvider({ children }) {
       l2Ref.current = next;
       setL2Reviews(next);
     },
-    [generation]
+    [generation],
   );
 
   const seatMap = seatOverlay.generation === generation ? seatOverlay.map : {};
@@ -212,14 +201,11 @@ export function InstitutionalLifecycleProvider({ children }) {
 
   const seats = useMemo(() => composeSeats(seatMap, seatBaseline), [seatMap, seatBaseline]);
 
-  const seatOf = useCallback(
-    (classId) => seats.find((s) => s.classId === classId) ?? null,
-    [seats]
-  );
+  const seatOf = useCallback((classId) => seats.find((s) => s.classId === classId) ?? null, [seats]);
 
   const seatsOfDepartment = useCallback(
     (departmentId) => seats.filter((s) => s.departmentId === departmentId),
-    [seats]
+    [seats],
   );
 
   const coverage = useCallback((departmentId = null) => coverageOf(seats, departmentId), [seats]);
@@ -254,7 +240,7 @@ export function InstitutionalLifecycleProvider({ children }) {
       commitSeats({ ...current, [classId]: next });
       return { ok: true, seat: next };
     },
-    [commitSeats, generation, seats]
+    [commitSeats, generation, seats],
   );
 
   /**
@@ -269,19 +255,18 @@ export function InstitutionalLifecycleProvider({ children }) {
   const assignTutor = useCallback(
     (classId, facultyId, { reason = '', scopeDepartmentId = null } = {}) =>
       changeSeat(classId, { kind: 'assign', holderId: facultyId, reason }, { scopeDepartmentId }),
-    [changeSeat]
+    [changeSeat],
   );
 
   const inviteTutor = useCallback(
     (classId, invitedEmail, { scopeDepartmentId = null } = {}) =>
       changeSeat(classId, { kind: 'invite', invitedEmail }, { scopeDepartmentId }),
-    [changeSeat]
+    [changeSeat],
   );
 
   const vacateSeat = useCallback(
-    (classId, { scopeDepartmentId = null } = {}) =>
-      changeSeat(classId, { kind: 'vacate' }, { scopeDepartmentId }),
-    [changeSeat]
+    (classId, { scopeDepartmentId = null } = {}) => changeSeat(classId, { kind: 'vacate' }, { scopeDepartmentId }),
+    [changeSeat],
   );
 
   // ------------------------------------------ head of department seats (L1)
@@ -302,7 +287,7 @@ export function InstitutionalLifecycleProvider({ children }) {
 
   const hodSeatOf = useCallback(
     (departmentId) => hodSeats.find((s) => s.departmentId === departmentId) ?? null,
-    [hodSeats]
+    [hodSeats],
   );
 
   const hodCoverage = useCallback(() => hodCoverageOf(hodSeats), [hodSeats]);
@@ -310,8 +295,7 @@ export function InstitutionalLifecycleProvider({ children }) {
   const changeHodSeat = useCallback(
     (departmentId, change) => {
       const current = hodRef.current;
-      const baseline =
-        current[departmentId] ?? HOD_SEATS.find((s) => s.departmentId === departmentId) ?? null;
+      const baseline = current[departmentId] ?? HOD_SEATS.find((s) => s.departmentId === departmentId) ?? null;
       if (!baseline) return { ok: false, reason: 'unknown_department' };
 
       const next = applyHodSeatChange(baseline, {
@@ -321,13 +305,13 @@ export function InstitutionalLifecycleProvider({ children }) {
       commitHod({ ...current, [departmentId]: next });
       return { ok: true, seat: next };
     },
-    [commitHod]
+    [commitHod],
   );
 
   const assignHod = useCallback(
     (departmentId, facultyId, { reason = '' } = {}) =>
       changeHodSeat(departmentId, { kind: 'assign', holderId: facultyId, reason }),
-    [changeHodSeat]
+    [changeHodSeat],
   );
 
   const inviteHod = useCallback(
@@ -335,12 +319,12 @@ export function InstitutionalLifecycleProvider({ children }) {
       if (!String(invitedEmail ?? '').trim()) return { ok: false, reason: 'reason_required' };
       return changeHodSeat(departmentId, { kind: 'invite', invitedEmail: invitedEmail.trim() });
     },
-    [changeHodSeat]
+    [changeHodSeat],
   );
 
   const vacateHod = useCallback(
     (departmentId, { reason = '' } = {}) => changeHodSeat(departmentId, { kind: 'vacate', reason }),
-    [changeHodSeat]
+    [changeHodSeat],
   );
 
   // ------------------------------------------------------------- promotion
@@ -354,10 +338,7 @@ export function InstitutionalLifecycleProvider({ children }) {
    */
   const candidatesById = useMemo(() => candidateIndex(reviewQueue), [reviewQueue]);
   const priorClassById = useMemo(() => priorClassIndex(priorClasses), [priorClasses]);
-  const resolvers = useMemo(
-    () => ({ priorClassById, activeClassById }),
-    [priorClassById, activeClassById]
-  );
+  const resolvers = useMemo(() => ({ priorClassById, activeClassById }), [priorClassById, activeClassById]);
 
   const reviewOf = useCallback((candidateId) => reviewMap[candidateId] ?? null, [reviewMap]);
 
@@ -396,7 +377,7 @@ export function InstitutionalLifecycleProvider({ children }) {
 
       return { ok: true, targetClassId, target, fill };
     },
-    [candidatesById, classFill, generation, resolvers, activeClassById]
+    [candidatesById, classFill, generation, resolvers, activeClassById],
   );
 
   /**
@@ -470,7 +451,7 @@ export function InstitutionalLifecycleProvider({ children }) {
       commitReviews({ ...current, [candidate.id]: review });
       return { ok: true, review };
     },
-    [candidatesById, commitReviews, generation, placeExisting, resolvers, activeClassById]
+    [candidatesById, commitReviews, generation, placeExisting, resolvers, activeClassById],
   );
 
   /**
@@ -487,7 +468,7 @@ export function InstitutionalLifecycleProvider({ children }) {
         Object.keys(PROMOTION_OUTCOMES).map((key) => [
           key,
           decided.filter((c) => reviewMap[c.id].outcome === key).length,
-        ])
+        ]),
       );
       return {
         total: scopedQueue.length,
@@ -496,7 +477,7 @@ export function InstitutionalLifecycleProvider({ children }) {
         byOutcome,
       };
     },
-    [reviewMap, reviewQueue]
+    [reviewMap, reviewQueue],
   );
 
   /**
@@ -513,10 +494,7 @@ export function InstitutionalLifecycleProvider({ children }) {
     return departmentIds.map((id) => ({ departmentId: id, ...reviewProgress(id) }));
   }, [reviewProgress, reviewQueue]);
 
-  const placementsFromReview = useMemo(
-    () => Object.values(reviewMap).filter((r) => r.placedStudentId),
-    [reviewMap]
-  );
+  const placementsFromReview = useMemo(() => Object.values(reviewMap).filter((r) => r.placedStudentId), [reviewMap]);
 
   // ----------------------------------------------- final timetable decision
 
@@ -543,19 +521,19 @@ export function InstitutionalLifecycleProvider({ children }) {
 
       return TIMETABLE_STATE_BY_DEPT[departmentId]?.endorsementState ?? 'not_submitted';
     },
-    [decisionMap, l2Map]
+    [decisionMap, l2Map],
   );
 
   const decisionOf = useCallback((departmentId) => decisionMap[departmentId] ?? null, [decisionMap]);
 
   const canDecide = useCallback(
     (departmentId) => canFinalApprove(endorsementStateOf(departmentId)),
-    [endorsementStateOf]
+    [endorsementStateOf],
   );
 
   const blockReasonFor = useCallback(
     (departmentId) => finalApprovalBlockReason(endorsementStateOf(departmentId)),
-    [endorsementStateOf]
+    [endorsementStateOf],
   );
 
   /**
@@ -586,7 +564,7 @@ export function InstitutionalLifecycleProvider({ children }) {
       commitDecisions({ ...scoped(decisionRef, generation), [departmentId]: decision });
       return { ok: true, decision, state: finalApprovedState() };
     },
-    [commitDecisions, decisionMap, endorsementStateOf, generation]
+    [commitDecisions, decisionMap, endorsementStateOf, generation],
   );
 
   /**
@@ -610,7 +588,7 @@ export function InstitutionalLifecycleProvider({ children }) {
       commitDecisions({ ...scoped(decisionRef, generation), [departmentId]: decision });
       return { ok: true, decision, state: returnedState() };
     },
-    [commitDecisions, decisionMap, endorsementStateOf, generation]
+    [commitDecisions, decisionMap, endorsementStateOf, generation],
   );
 
   // ------------------------------------------------ delegated (L2) review
@@ -618,10 +596,7 @@ export function InstitutionalLifecycleProvider({ children }) {
   /**
    * What the delegated seat has done with a department's revision, if anything.
    */
-  const delegatedReviewOf = useCallback(
-    (departmentId) => l2Map[departmentId] ?? null,
-    [l2Map]
-  );
+  const delegatedReviewOf = useCallback((departmentId) => l2Map[departmentId] ?? null, [l2Map]);
 
   /**
    * Whether the delegated seat may act on this department's revision.
@@ -637,13 +612,12 @@ export function InstitutionalLifecycleProvider({ children }) {
       if (!TIMETABLE_STATE_BY_DEPT[departmentId]) return false;
       return canDelegatedReview(endorsementStateOf(departmentId), delegatedScope(), { departmentId });
     },
-    [endorsementStateOf]
+    [endorsementStateOf],
   );
 
   const delegatedBlockReasonFor = useCallback(
-    (departmentId) =>
-      delegatedBlockReason(endorsementStateOf(departmentId), delegatedScope(), { departmentId }),
-    [endorsementStateOf]
+    (departmentId) => delegatedBlockReason(endorsementStateOf(departmentId), delegatedScope(), { departmentId }),
+    [endorsementStateOf],
   );
 
   /**
@@ -675,7 +649,7 @@ export function InstitutionalLifecycleProvider({ children }) {
       commitL2Reviews({ ...scoped(l2Ref, generation), [departmentId]: review });
       return { ok: true, review, state: delegatedReviewedState() };
     },
-    [commitL2Reviews, decisionMap, endorsementStateOf, generation, l2Map]
+    [commitL2Reviews, decisionMap, endorsementStateOf, generation, l2Map],
   );
 
   /**
@@ -706,7 +680,7 @@ export function InstitutionalLifecycleProvider({ children }) {
       commitL2Reviews({ ...scoped(l2Ref, generation), [departmentId]: review });
       return { ok: true, review, state: returnedState() };
     },
-    [commitL2Reviews, decisionMap, endorsementStateOf, generation, l2Map]
+    [commitL2Reviews, decisionMap, endorsementStateOf, generation, l2Map],
   );
 
   const resetLifecycle = useCallback(() => {
@@ -795,14 +769,10 @@ export function InstitutionalLifecycleProvider({ children }) {
       reviewDelegated,
       returnFromDelegated,
       resetLifecycle,
-    ]
+    ],
   );
 
-  return (
-    <InstitutionalLifecycleContext.Provider value={value}>
-      {children}
-    </InstitutionalLifecycleContext.Provider>
-  );
+  return <InstitutionalLifecycleContext.Provider value={value}>{children}</InstitutionalLifecycleContext.Provider>;
 }
 
 export function useInstitutionalLifecycle() {

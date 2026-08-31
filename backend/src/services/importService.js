@@ -48,7 +48,9 @@ async function parseImportFile(fileBuffer, mimeType) {
   if (EXCEL_MIME_TYPES.includes(mimeType)) {
     return excelImporter.parse(fileBuffer);
   }
-  throw new ImportUnsupportedFormatError(`mimeType ${JSON.stringify(mimeType)} is not supported — only CSV and Excel are`);
+  throw new ImportUnsupportedFormatError(
+    `mimeType ${JSON.stringify(mimeType)} is not supported — only CSV and Excel are`,
+  );
 }
 
 // requiredFields: every row missing any of these becomes an error, not
@@ -70,9 +72,10 @@ function validateRows(rows, { requiredFields = [], allowedFields } = {}) {
       return;
     }
 
-    const fields = allowedFields === undefined
-      ? { ...row }
-      : Object.fromEntries(Object.entries(row).filter(([key]) => allowedFields.includes(key)));
+    const fields =
+      allowedFields === undefined
+        ? { ...row }
+        : Object.fromEntries(Object.entries(row).filter(([key]) => allowedFields.includes(key)));
 
     validRows.push({ rowNumber, fields });
   });

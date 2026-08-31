@@ -7,9 +7,7 @@
 // error code 23505), same pattern documentCategoryRepository's own
 // create() already establishes for its own name uniqueness.
 
-async function create(client, {
-  collegeId, ownerUserId, name, parentId,
-}) {
+async function create(client, { collegeId, ownerUserId, name, parentId }) {
   const result = await client.query(
     `INSERT INTO personal_document_folders (college_id, owner_user_id, name, parent_id)
      VALUES ($1, $2, $3, $4)
@@ -20,10 +18,9 @@ async function create(client, {
 }
 
 async function listByOwner(client, ownerUserId) {
-  const result = await client.query(
-    'SELECT * FROM personal_document_folders WHERE owner_user_id = $1 ORDER BY name',
-    [ownerUserId],
-  );
+  const result = await client.query('SELECT * FROM personal_document_folders WHERE owner_user_id = $1 ORDER BY name', [
+    ownerUserId,
+  ]);
   return result.rows;
 }
 
@@ -66,5 +63,9 @@ async function remove(client, id) {
 }
 
 module.exports = {
-  create, listByOwner, findById, update, remove,
+  create,
+  listByOwner,
+  findById,
+  update,
+  remove,
 };

@@ -33,7 +33,7 @@ describe('clipboard HTML → Markdown', () => {
   it('keeps inline code and code blocks', () => {
     expect(htmlToMarkdown('<p>run <code>npm test</code></p>')).toBe('run `npm test`');
     expect(htmlToMarkdown('<pre><code>const a = 1;\nconst b = 2;</code></pre>')).toBe(
-      '```\nconst a = 1;\nconst b = 2;\n```'
+      '```\nconst a = 1;\nconst b = 2;\n```',
     );
   });
 
@@ -55,7 +55,7 @@ describe('clipboard HTML → Markdown', () => {
   it('drops scripts, iframes, styles and every attribute', () => {
     const md = htmlToMarkdown(
       '<div style="color:red" onclick="steal()"><script>steal()</script>' +
-        '<iframe src="https://evil.test"></iframe><p class="x">Safe text</p></div>'
+        '<iframe src="https://evil.test"></iframe><p class="x">Safe text</p></div>',
     );
     expect(md).toBe('Safe text');
     expect(md).not.toMatch(/script|iframe|onclick|style/i);

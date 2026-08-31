@@ -11,10 +11,9 @@ async function create(client, { collegeId, documentId, extractedText, status, cr
 }
 
 async function findByDocumentId(client, documentId) {
-  const result = await client.query(
-    'SELECT * FROM ocr_results WHERE document_id = $1 ORDER BY created_at DESC',
-    [documentId],
-  );
+  const result = await client.query('SELECT * FROM ocr_results WHERE document_id = $1 ORDER BY created_at DESC', [
+    documentId,
+  ]);
   return result.rows;
 }
 

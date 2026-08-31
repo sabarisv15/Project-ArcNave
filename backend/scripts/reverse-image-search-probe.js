@@ -59,7 +59,7 @@ async function main() {
   if (first && first.error) throw new Error(`per-image: ${first.error.message}`);
 
   const wd = (first && first.webDetection) || {};
-  console.log(`image: ${source}  (${Math.round(content.length * 0.75 / 1024)}KB)`);
+  console.log(`image: ${source}  (${Math.round((content.length * 0.75) / 1024)}KB)`);
   console.log(`visuallySimilarImages:  ${(wd.visuallySimilarImages || []).length}`);
   console.log(`fullMatchingImages:     ${(wd.fullMatchingImages || []).length}`);
   console.log(`pagesWithMatchingImages:${(wd.pagesWithMatchingImages || []).length}`);
@@ -70,7 +70,17 @@ async function main() {
   // health nurse practitioner" and "Nascar" — nonsense. So treat entity
   // labels as a hint whose confidence varies with the subject, never as
   // a claim about the image.
-  console.log('webEntities:', (wd.webEntities || []).slice(0, 5).map((e) => e.description).filter(Boolean).join(', ') || '(none)');
+  console.log(
+    'webEntities:',
+    (wd.webEntities || [])
+      .slice(0, 5)
+      .map((e) => e.description)
+      .filter(Boolean)
+      .join(', ') || '(none)',
+  );
 }
 
-main().catch((err) => { console.error('FAILED:', err.message); process.exitCode = 1; });
+main().catch((err) => {
+  console.error('FAILED:', err.message);
+  process.exitCode = 1;
+});

@@ -38,11 +38,30 @@ export const DESIGNATIONS = [
 ];
 
 export const UG_QUALIFICATIONS = [
-  'B.A.', 'B.Sc.', 'B.Com.', 'B.B.A.', 'B.C.A.', 'B.E.', 'B.Tech.', 'B.Ed.', 'B.Pharm.', 'B.Arch.', 'Other',
+  'B.A.',
+  'B.Sc.',
+  'B.Com.',
+  'B.B.A.',
+  'B.C.A.',
+  'B.E.',
+  'B.Tech.',
+  'B.Ed.',
+  'B.Pharm.',
+  'B.Arch.',
+  'Other',
 ];
 
 export const PG_QUALIFICATIONS = [
-  'M.A.', 'M.Sc.', 'M.Com.', 'M.B.A.', 'M.C.A.', 'M.E.', 'M.Tech.', 'M.Ed.', 'M.Pharm.', 'Other',
+  'M.A.',
+  'M.Sc.',
+  'M.Com.',
+  'M.B.A.',
+  'M.C.A.',
+  'M.E.',
+  'M.Tech.',
+  'M.Ed.',
+  'M.Pharm.',
+  'Other',
 ];
 
 /** India-first, but the dial code is data rather than a hardcoded prefix. */
@@ -272,7 +291,11 @@ export function institutionSummary(entry) {
  */
 export function profileCompletion(p) {
   const required = [
-    p.firstName, p.lastName, p.email, p.dateOfBirth, p.gender,
+    p.firstName,
+    p.lastName,
+    p.email,
+    p.dateOfBirth,
+    p.gender,
     p.designation === 'Other' ? p.designationOther : p.designation,
     p.appointmentType,
     p.mobileNumber && p.mobileVerifiedAt ? 'verified' : '',

@@ -1,10 +1,224 @@
 # Current State
 
-_Last updated: 2026-08-30._
+_Last updated: 2026-08-31._
 
 ---
 
-# ⛔ READ FIRST — CEO Vertex/Gemini audit FULLY CLOSED, 2026-08-30. #18/#19 and #24/#25 comparison passes resolved (decision-only, no build) — see [ADL-069](../30-decisions/ledger.md#adl-069). Nothing queued from this audit thread. Read this banner before the "third pass" one below it — it supersedes that one's "Exact next action."
+# ⛔ NEW BANNER — ARCNAVE modernization P0 shipped, 2026-08-31. Standing
+mandate + full P0-P5 plan: see the memory file
+`arcnave-p0-p5-rewrite-mandate.md` (this session's own persistent
+memory — the owner's explicit, standing bypass of any `bka/` "don't
+go/deferred/decided" banner for this specific rewrite effort, limited
+to two stop conditions: business-rule conflict or new investment
+needed). Source plan: `ARCNAVE-modernization-english.md` (repo root).
+
+**P0 shipped and verified, 2026-08-31 — all 5 items:**
+1. **CI pipeline** — `.github/workflows/ci.yml` (new): backend job runs
+   the real `docker-compose.yml` stack (lint → format:check → audit →
+   migrate up → migrate down → migrate up → test); frontend job runs
+   lint → format:check → audit → test → build. Branch protection to
+   actually enforce it as a merge gate is a separate GitHub repo-admin
+   setting, not turned on by this file alone (noted inline in the
+   workflow).
+2. **Lint/format/accessibility** — first-ever `eslint.config.js` +
+   `.prettierrc.json` for both `backend/` and `frontend/` (flat
+   config, ESLint 10 backend / ESLint 9 frontend — `eslint-plugin-jsx-a11y`
+   doesn't support 10 yet). Whole codebase reformatted with Prettier
+   (mechanical, non-semantic). Backend: 0 lint errors, 117 warnings.
+   Frontend: 0 lint errors, 86 warnings — jsx-a11y rules are on but
+   scoped to `warn` (real findings against ~10 already-shipped
+   components — full remediation is explicitly P4 per the plan
+   itself, "P0 (lint), P4 (full)"); `eslint-plugin-react-hooks` v7's
+   new React-Compiler ruleset scoped down to just
+   `rules-of-hooks`/`exhaustive-deps` for the same reason (~130
+   findings from the full `recommended` set, too large a blast radius
+   for a first pass — full React Compiler readiness is its own future
+   phase).
+3. **Dependency scanning** — `npm audit` wired into CI (informational
+   for now, not blocking — see `dependency-scan-baseline.md` for the
+   full baseline: backend 4 high/2 moderate, frontend 1 critical/1
+   high/5 moderate, every fix available today is a breaking
+   major-version bump of a package backing a real feature (PPTX/XLSX
+   export, client routing) or dev tooling (Vite/Vitest) — none
+   force-fixed blind). `.github/dependabot.yml` (new) for ongoing
+   scanning.
+4. **AI database-lock fix** (PDF 4.1 / clash C5) — the real one.
+   `db/tenantConnection.js` (new): a `TenantConnection` wrapper
+   presenting the same `.query()` interface every one of the ~336
+   existing `req.dbClient` call sites already uses, so none of them
+   changed. `aiService.js`'s `completeMaybeStreaming` — the single
+   choke point every LLM provider call in the file funnels through —
+   now calls `pauseForExternalCall()`/`resume()` around the actual
+   network await, releasing the connection back to `appPool` instead
+   of holding it idle-in-transaction for the LLM's full latency.
+   **Owner-approved trade-off** (asked via AskUserQuestion before
+   building): a request that pauses is no longer one atomic
+   all-or-nothing transaction — each segment between a pause/resume
+   commits independently. New `tests/tenant-connection.test.js` (6
+   tests, real Postgres, proves pause really releases the connection
+   and resume reacquires). `tenant-transaction-client-error.test.js`
+   (pre-existing) updated for the wrapper's `processID` getter.
+5. **Login-token security fix** (PDF 5.1 / clash C6) — refresh tokens
+   (both `routes/auth.js`'s personal login AND `routes/positionAccounts.js`'s
+   mirrored flow) now travel as httpOnly, SameSite=Strict,
+   path-scoped cookies (`middleware/refreshCookie.js`, new — a small
+   factory so both routers share one implementation), never in the
+   JSON body and never in frontend-readable storage. CORS
+   `credentials: true` (was `false`) on `tenantApp.js` only —
+   `platformApp.js`/platform login untouched, no refresh-token flow
+   there. Frontend (`authStorage.js`/`api/client.js`/`api/auth.js`/
+   `useAuth.jsx`): refresh token removed from `sessionStorage`
+   entirely, `fetch(..., {credentials:'include'})` everywhere. 4
+   existing integration test files updated to extract the cookie from
+   `Set-Cookie` instead of reading `resp.body.refresh_token`.
+
+**Verification:** full backend suite in Docker, **2696/2697** — the 1
+failure (`department-class-generation.test.js`'s teardown hook, FK
+violation against `platform_college_stats`) is pre-existing
+cross-file test-isolation flakiness, confirmed by re-running that file
+alone: **4/4 clean**. Frontend `vitest run`: **410 passed/106 failed,
+byte-identical to the documented pre-existing baseline** (same
+`useAuth must be used within AuthProvider` harness issue this file
+already recorded before this session). Frontend `npm run build`:
+clean.
+
+**Exact next action:** P1 (measurement base — AI test set, AI/backend
+tracing, DB monitoring, backup/migration rails), per the plan's own
+dependency order ("each stage depends on the one before it"). Give it
+its own scoping pass before code, same one-slice-at-a-time pattern
+this project already follows — do not build P1 straight off this
+banner without reviewing `ARCNAVE-modernization-english.md`'s P1
+section first.
+
+---
+
+# ⛔ READ FIRST — AI chat token-overhead thread (tool_select/catalogue cost). CLOSED 2026-08-31: owner confirmed "caching doesn't work" and chose option (a) — the `hasFileTool` comment's wrong caching claim is now corrected (aiService.js ~line 2845, reframed as a correctness-only fix, ADL-055 Finding 1 cited). `experimentalZeroToolFastPath` stays shipped-but-off; `SIMILARITY_DISTANCE_THRESHOLD` NOT tightened; Tool Search NO-GO NOT revisited. Do not re-open without new controlled evidence. Rest of banner kept as history.
+
+**Process note, so the next session doesn't repeat it.** This thread was
+started WITHOUT first reading this file or [ADL-054](../30-decisions/ledger.md#adl-054)/[ADL-055](../30-decisions/ledger.md#adl-055) —
+a direct violation of `CLAUDE.md`'s own mandatory session-start sequence.
+The result: real effort was spent re-discovering (via a live "hi"/"how
+are you" chat screenshot, then `cache-hit-analysis.js`) a question ADL-054/
+055 already answered with a controlled experiment, on the same day. **Read
+ADL-054 and ADL-055 in full before continuing this thread** — do not
+re-derive their findings from scratch again.
+
+**What ADL-054/055 already established (do not re-litigate without new
+evidence):**
+- ADL-054: implicit Vertex caching is automatic, real, and was observed
+  live (1 hit of 3,393 cached tokens across 10 `tool_select` calls
+  averaging 5,697 input tokens). Owner explicitly decided: **do not build
+  explicit caching unless cost/latency becomes a real, demonstrated
+  problem** — not preemptively.
+- ADL-055, Finding 1: a controlled experiment (`backend/scripts/cache-experiment.js`,
+  arms A=no-tools/B=fixed-tools/C=rotating-tools) got **0 cache hits across
+  all 10 calls in every arm, including arm A (no tools at all)**. Tool
+  declaration variance is **exonerated** as a cache-miss cause. Tool
+  retrieval / tool-set pinning "for caching reasons" is **closed, not
+  deferred** — do not revive without new controlled evidence.
+- ADL-055, Finding 4: the actual largest cost centre found that day was
+  `analyze_document_table`'s unbounded tool result (up to 125,927 tokens
+  on one call) — already fixed across ADL-055's six shipped slices, and
+  the tool itself later retired entirely (ADL-065).
+
+**What THIS session found that ADL-054/055 did not cover:** a *different*
+symptom — trivial, tool-irrelevant Curriculum-mode messages ("hi", "google
+epa kandupudichanga?") costing 3,600–6,600+ input tokens for a 1-line
+reply (569×–813× input/output ratio, `cache-hit-analysis.js` section 3,
+"Worst offenders" — new this session). This is not the ADL-055 cost
+centre (that tool is gone) and not explained by ADL-055's Finding 1
+(tool variance isn't the cause) — root cause is the **always-on tool
+catalogue** (`aiService.js`'s `buildToolCatalogueForExperiment`, ~2,176
+tok/turn, sent even when zero tools are relevant) plus
+`aiToolRetrievalService.js`'s `SIMILARITY_DISTANCE_THRESHOLD = 0.8`
+(line 44) being too permissive to ever actually return zero tools.
+
+**Shipped this session (real code, tests passing, needs its own ledger
+entry if this thread continues — none written yet):**
+1. `backend/src/services/aiService.js`, `askAgent` — `hasFileTool` (search
+   for `roleTools.some((t) => FILE_TOOL_NAMES.has(t.name))`) changed from
+   gating on the per-turn RETRIEVED tool subset to the role's full
+   permitted set. **Correctness fix only** (FILE guidance no longer
+   depends on retrieval luck) — its own code comment currently ALSO
+   claims a caching benefit; **that claim is wrong per ADL-055 Finding 1
+   and must be corrected/removed**, not re-justified, before this thread
+   is considered clean.
+2. `backend/src/services/aiProviders/gemini.js`, `completeWithTools` —
+   real bug fix: an empty `tools` array was being sent as `tools: [{
+   functionDeclarations: [] }]`, which the real Gemini API rejects (only
+   omitting `tools` entirely is valid). Now conditional on
+   `tools.length > 0`. Caught before it could ship a live incident (would
+   have broken the instant item 3 below was flag-enabled).
+3. `backend/src/config.js` — new `experimentalZeroToolFastPath`
+   (`EXPERIMENTAL_ZERO_TOOL_FAST_PATH` env var, off by default): when
+   retrieval returns zero tools, drops the catalogue +
+   `describe_tools`/plan meta-tools structurally (same posture as
+   Research mode's no-tool path).
+4. New tests: `backend/tests/ai-providers.test.js` (gemini empty-tools
+   regression), `backend/tests/ai-service.test.js` (4 new: FILE-module
+   role-stability, fast-path off/on/real-tools-unaffected). Full backend
+   suite in Docker: **2690/2691** (`docker compose exec app node --test
+   tests/`) — the 1 failure is `documents.test.js`'s `ENOTEMPTY` on
+   `storage-backups/.../ai_chat_attachment`, pre-existing test-isolation
+   flakiness, confirmed unrelated (passes 20/20 run in isolation).
+
+**Measured live (real Vertex calls, 'demo' college, this session) — the
+one finding that actually matters for what to do next:** with
+`EXPERIMENTAL_ZERO_TOOL_FAST_PATH=true`, 7 real `askAgent` calls (3
+trivial: "hi"/"thanks"/"what is the capital of France?"; 4 real-data:
+attendance/fees/timetable/staff-leave) all showed `tool_select`
+`toolCount: 8` — **every single one, including all 3 trivial ones**. The
+fast path never fired because the 0.8 threshold essentially never returns
+a genuinely empty set. **`experimentalZeroToolFastPath` as built today has
+~0% real-world impact** until `SIMILARITY_DISTANCE_THRESHOLD`
+(`aiToolRetrievalService.js:44`) is separately tightened — and tightening
+it carries a real, previously-measured risk (a past incident where a
+wrongly-excluded tool caused a wrong answer; see `ai-tool-catalogue-approved-spec.md`
+and the `describe_tools` catalogue's own reason for existing).
+
+**Quota housekeeping — confirmed reverted.** `demo` college's `ai_quota`
+configuration (`monthlyTokenQuota`) was temporarily raised to 50,000,000
+twice during live measurement and reverted both times. Verify before
+trusting any new quota-related error:
+```
+docker compose exec app node -e "const {Pool}=require('pg');const p=new Pool({connectionString:process.env.MIGRATION_DATABASE_URL||process.env.DATABASE_URL});(async()=>{const c=await p.connect();console.log(await require('./src/services/configurationService').getConfiguration(c,{collegeId:'demo',category:'ai_quota'}));c.release();await p.end();})();"
+```
+Expected: `monthlyTokenQuota: 2000000` (platform default).
+
+**Still unresolved from this session — do not re-investigate, just
+locate:** Tool Search (`config.toolSearch.enabled`, off by default,
+`aiToolSearchService.js`) is disabled per an earlier benchmark's NO-GO
+verdict (`backend/scripts/tool-search-benchmark.js` exists and is
+runnable), but the exact NO-GO numbers/reasoning were not located in the
+ledger this session — search `bka/30-decisions/ledger.md` for ADL entries
+between ADL-050 and ADL-055 not yet read in full, before deciding whether
+to revisit Tool Search.
+
+**Exact next action — RESOLVED 2026-08-31.** Owner picked (a): comment
+corrected, thread closed. Original options kept below for the record:
+(a) just correct the `hasFileTool` code comment's wrong caching claim
+    (safe, no discussion needed, do it regardless of (b)/(c));
+(b) treat this session's "worst offenders" measurement (569×–813× ratio)
+    as satisfying ADL-054's own re-open condition ("cost/latency becomes
+    a real, demonstrated problem"), then either tighten
+    `SIMILARITY_DISTANCE_THRESHOLD` or find+review the Tool Search NO-GO
+    benchmark before deciding whether to revisit it — each needs its own
+    scoped pass, not an in-place edit;
+(c) stop this thread here — leave `experimentalZeroToolFastPath`
+    shipped-but-off and `hasFileTool` fixed-but-reframed, since ADL-054/
+    055 already settled the caching question and this session's new
+    finding (catalogue-always-on for trivial messages) is a distinct,
+    not-yet-approved-for-work item.
+**Ask the user which, before writing more code.** Do not re-run
+`cache-experiment.js` (billable) to re-verify ADL-055 — it is already a
+controlled, disproved result.
+
+**Must not be disturbed by this thread:** "Decision 2 — image search"
+further down this file is still open and unrelated — untouched.
+
+---
+
+# ⛔ Previous banner — CEO Vertex/Gemini audit FULLY CLOSED, 2026-08-30. #18/#19 and #24/#25 comparison passes resolved (decision-only, no build) — see [ADL-069](../30-decisions/ledger.md#adl-069). Nothing queued from this audit thread. Read this banner before the "third pass" one below it — it supersedes that one's "Exact next action."
 
 **#18/#19 (RAG) and #24/#25 (code execution) — RESOLVED, 2026-08-30, no
 code.** Owner reviewed both comparisons in chat (non-technical) and

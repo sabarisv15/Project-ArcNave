@@ -39,9 +39,7 @@
 // class, not a computed rate: division-by-zero (a class with zero
 // total_students recorded) and rounding are business-logic judgment
 // calls that belong in AnalyticsService, not baked into the query.
-async function attendanceRateByClass(client, {
-  classId, classIds, startDate, endDate,
-} = {}) {
+async function attendanceRateByClass(client, { classId, classIds, startDate, endDate } = {}) {
   const conditions = ['a.deleted_at IS NULL'];
   const values = [];
   if (classId !== undefined) {

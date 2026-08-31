@@ -27,7 +27,11 @@ function Checkbox({ checked, indeterminate, onClick, label }) {
       onClick={onClick}
       className={cn(
         'w-[18px] h-[18px] p-0 rounded-[6px] grid place-items-center border cursor-pointer transition-colors duration-200',
-        checked ? 'bg-accent border-accent text-white' : indeterminate ? 'bg-accent-soft border-line' : 'bg-paper border-line'
+        checked
+          ? 'bg-accent border-accent text-white'
+          : indeterminate
+            ? 'bg-accent-soft border-line'
+            : 'bg-paper border-line',
       )}
     >
       {checked && <Check size={11} strokeWidth={3} />}
@@ -100,7 +104,7 @@ export function ScopedStudentTable({ s }) {
               </div>
             );
           },
-        })
+        }),
       );
     }
 
@@ -134,7 +138,7 @@ export function ScopedStudentTable({ s }) {
                 className={cn(
                   'h-[26px] px-[8px] rounded-[9px] font-sans text-[12px] font-[500] cursor-pointer border transition-colors duration-200 hover:bg-tint2',
                   academicToneClass(st),
-                  open ? 'bg-accent-soft border-accent-line' : 'bg-transparent border-transparent'
+                  open ? 'bg-accent-soft border-accent-line' : 'bg-transparent border-transparent',
                 )}
               >
                 {academicLabel(st)}
@@ -182,13 +186,18 @@ export function ScopedStudentTable({ s }) {
                   style={{ width: `${st.attendance}%` }}
                 />
               </div>
-              <div className={cn('flex items-baseline gap-[4px] whitespace-nowrap text-[12.5px] font-[500] tabular-nums', tone.text)}>
+              <div
+                className={cn(
+                  'flex items-baseline gap-[4px] whitespace-nowrap text-[12.5px] font-[500] tabular-nums',
+                  tone.text,
+                )}
+              >
                 <span>{st.attendance}%</span>
                 <span
                   title={TREND_TITLES[st.trend]}
                   className={cn(
                     'text-[11px]',
-                    st.trend === 'up' ? 'text-success' : st.trend === 'down' ? 'text-danger' : 'text-ink-faint'
+                    st.trend === 'up' ? 'text-success' : st.trend === 'down' ? 'text-danger' : 'text-ink-faint',
                   )}
                 >
                   {TREND_GLYPHS[st.trend]}
@@ -203,7 +212,12 @@ export function ScopedStudentTable({ s }) {
         cell: ({ row }) => {
           const fee = feeTone(row.original.feeTier);
           return (
-            <span className={cn('inline-block text-[11px] font-[500] py-[3px] px-[9px] rounded-[9px] whitespace-nowrap', fee.className)}>
+            <span
+              className={cn(
+                'inline-block text-[11px] font-[500] py-[3px] px-[9px] rounded-[9px] whitespace-nowrap',
+                fee.className,
+              )}
+            >
               {fee.label}
             </span>
           );
@@ -217,7 +231,7 @@ export function ScopedStudentTable({ s }) {
             <span
               className={cn(
                 'inline-block text-[11px] font-[500] py-[3px] px-[9px] rounded-[9px] whitespace-nowrap',
-                suspended ? 'text-danger bg-danger-soft' : 'text-ink-muted bg-tint2'
+                suspended ? 'text-danger bg-danger-soft' : 'text-ink-muted bg-tint2',
               )}
             >
               {row.original.status}
@@ -240,7 +254,7 @@ export function ScopedStudentTable({ s }) {
                 onClick={() => s.setRowMenuId(open ? null : st.id)}
                 className={cn(
                   'w-[26px] h-[26px] grid place-items-center border-0 rounded-[9px] cursor-pointer transition-colors duration-200 hover:bg-accent-soft hover:text-accent',
-                  open ? 'bg-accent-soft text-accent' : 'bg-transparent text-ink-faint'
+                  open ? 'bg-accent-soft text-accent' : 'bg-transparent text-ink-faint',
                 )}
               >
                 <MoreHorizontal size={15} strokeWidth={2} />
@@ -255,7 +269,7 @@ export function ScopedStudentTable({ s }) {
             </div>
           );
         },
-      })
+      }),
     );
 
     return cols;
@@ -265,11 +279,18 @@ export function ScopedStudentTable({ s }) {
     // every column def, including their popover/menu renderers, to rebuild).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    s.allSelected, s.someSelected, s.toggleSelectAll,
-    s.selected, s.toggleRow, s.openDetail,
-    s.scopeIsAll, s.classes,
-    s.statusPopoverId, s.setStatusPopoverId,
-    s.rowMenuId, s.setRowMenuId,
+    s.allSelected,
+    s.someSelected,
+    s.toggleSelectAll,
+    s.selected,
+    s.toggleRow,
+    s.openDetail,
+    s.scopeIsAll,
+    s.classes,
+    s.statusPopoverId,
+    s.setStatusPopoverId,
+    s.rowMenuId,
+    s.setRowMenuId,
   ]);
 
   const table = useReactTable({ data: s.rows, columns, getCoreRowModel: getCoreRowModel() });
@@ -297,7 +318,7 @@ export function ScopedStudentTable({ s }) {
             key={hg.id}
             className={cn(
               'grid gap-x-[14px] items-center sticky top-0 z-[45] py-[12px] px-[16px] bg-tint border-b border-line rounded-t-[15px] text-[10.5px] font-[500] tracking-[.07em] uppercase text-ink-muted',
-              grid
+              grid,
             )}
           >
             {hg.headers.map((header) => (
@@ -316,7 +337,7 @@ export function ScopedStudentTable({ s }) {
                 'grid gap-x-[14px] items-center py-[12px] px-[16px] border-t border-line-light transition-[background-color,box-shadow] duration-200 hover:bg-tint2',
                 grid,
                 isSelected ? 'bg-accent-soft shadow-[inset_3px_0_0_rgb(var(--c-accent))]' : 'bg-transparent',
-                s.settling && 'animate-rowIn'
+                s.settling && 'animate-rowIn',
               )}
             >
               {row.getVisibleCells().map((cell) => (

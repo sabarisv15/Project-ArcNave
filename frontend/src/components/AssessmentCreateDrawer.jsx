@@ -42,7 +42,7 @@ function ScopePicker({ scopes, value, onChange }) {
             aria-pressed={on}
             className={cn(
               'w-full flex items-center gap-[9px] px-[11px] py-[8px] border rounded-[10px] text-left cursor-pointer transition-colors duration-200',
-              on ? 'border-accent-line bg-accent-soft' : 'border-line bg-paper hover:bg-tint2'
+              on ? 'border-accent-line bg-accent-soft' : 'border-line bg-paper hover:bg-tint2',
             )}
           >
             <span className="min-w-0 flex-1">
@@ -118,7 +118,11 @@ export function AssessmentCreateDrawer({ open, onClose, onCreated }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, restored]);
 
-  const edit = (setter) => (value) => { setter(value); setUsedDraft(false); autosave.schedule(); };
+  const edit = (setter) => (value) => {
+    setter(value);
+    setUsedDraft(false);
+    autosave.schedule();
+  };
 
   const marksNumber = Number(maxMarks);
   const marksValid = Number.isFinite(marksNumber) && marksNumber > 0;
@@ -149,7 +153,12 @@ export function AssessmentCreateDrawer({ open, onClose, onCreated }) {
   return (
     <DrawerShell
       open={open}
-      onOpenChange={(v) => { if (!v) { autosave.flush(); onClose(); } }}
+      onOpenChange={(v) => {
+        if (!v) {
+          autosave.flush();
+          onClose();
+        }
+      }}
       title="Create assessment"
       contextLine={selected ? scopeLabel(selected) : 'Choose one of your timetable allocations'}
       description="Create an assessment for a subject and class you teach."
@@ -184,10 +193,17 @@ export function AssessmentCreateDrawer({ open, onClose, onCreated }) {
                 className={cn(FIELD, 'appearance-none pr-[26px] cursor-pointer')}
               >
                 {ASSESSMENT_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>{t.label}</option>
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
                 ))}
               </select>
-              <ChevronDown size={13} strokeWidth={2} aria-hidden="true" className="absolute right-[9px] top-1/2 -translate-y-1/2 text-ink-ghost pointer-events-none" />
+              <ChevronDown
+                size={13}
+                strokeWidth={2}
+                aria-hidden="true"
+                className="absolute right-[9px] top-1/2 -translate-y-1/2 text-ink-ghost pointer-events-none"
+              />
             </div>
           </div>
           <div>
@@ -221,7 +237,12 @@ export function AssessmentCreateDrawer({ open, onClose, onCreated }) {
           aria-expanded={showInstructions}
           className="inline-flex items-center gap-[5px] h-[26px] border-0 bg-transparent font-sans text-[11.5px] font-[500] text-ink-muted cursor-pointer hover:text-accent"
         >
-          <ChevronDown size={13} strokeWidth={2.2} className={cn('transition-transform duration-200', showInstructions && 'rotate-180')} aria-hidden="true" />
+          <ChevronDown
+            size={13}
+            strokeWidth={2.2}
+            className={cn('transition-transform duration-200', showInstructions && 'rotate-180')}
+            aria-hidden="true"
+          />
           {showInstructions ? 'Hide instructions' : 'Add instructions'}
         </button>
         {showInstructions && (
@@ -240,22 +261,36 @@ export function AssessmentCreateDrawer({ open, onClose, onCreated }) {
         meta={
           <span className="flex items-center gap-[7px] text-[11px] text-ink-faint">
             <span>
-              {!scopeId ? 'Select a subject and class' : !nameValid ? 'Name is required' : !marksValid ? 'Maximum marks must be above 0' : 'Ready'}
+              {!scopeId
+                ? 'Select a subject and class'
+                : !nameValid
+                  ? 'Name is required'
+                  : !marksValid
+                    ? 'Maximum marks must be above 0'
+                    : 'Ready'}
             </span>
             {/* An incomplete form still keeps its draft — validation gates the
                 explicit Create action, never the autosave. */}
-            {usedDraft
-              ? <DraftRestoredNote show />
-              : <AutosaveStatus status={autosave.status} onRetry={autosave.retry} />}
+            {usedDraft ? (
+              <DraftRestoredNote show />
+            ) : (
+              <AutosaveStatus status={autosave.status} onRetry={autosave.retry} />
+            )}
           </span>
         }
       >
-        <button type="button" className={GHOST_BTN} onClick={() => submit(true)}>Save draft</button>
+        <button type="button" className={GHOST_BTN} onClick={() => submit(true)}>
+          Save draft
+        </button>
         <button
           type="button"
           onClick={() => submit(false)}
           disabled={!canSubmit}
-          className={cn(canSubmit ? PRIMARY_BTN : 'flex-none h-[34px] px-[15px] border-0 rounded-[10px] bg-frame text-ink-disabled font-sans text-[12.5px] font-[500] cursor-not-allowed')}
+          className={cn(
+            canSubmit
+              ? PRIMARY_BTN
+              : 'flex-none h-[34px] px-[15px] border-0 rounded-[10px] bg-frame text-ink-disabled font-sans text-[12.5px] font-[500] cursor-not-allowed',
+          )}
         >
           Create assessment
         </button>

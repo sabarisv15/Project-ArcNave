@@ -52,9 +52,10 @@ function ambientPosition() {
   return { positionAccountId: primary.positionAccountId, positionId: primary.positionId };
 }
 
-async function createAuditLogEntry(client, {
-  collegeId, userId, action, entity, entityId, metadata, positionAccountId, positionId,
-}) {
+async function createAuditLogEntry(
+  client,
+  { collegeId, userId, action, entity, entityId, metadata, positionAccountId, positionId },
+) {
   const needsDefault = positionAccountId === undefined || positionId === undefined;
   const ambient = needsDefault ? ambientPosition() : null;
   const resolvedPositionAccountId = positionAccountId !== undefined ? positionAccountId : ambient.positionAccountId;
@@ -63,7 +64,16 @@ async function createAuditLogEntry(client, {
   await client.query(
     `INSERT INTO audit_log (college_id, user_id, action, entity, entity_id, metadata, position_account_id, position_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [collegeId, userId, action, entity, entityId, JSON.stringify(metadata), resolvedPositionAccountId, resolvedPositionId],
+    [
+      collegeId,
+      userId,
+      action,
+      entity,
+      entityId,
+      JSON.stringify(metadata),
+      resolvedPositionAccountId,
+      resolvedPositionId,
+    ],
   );
 }
 
@@ -135,5 +145,8 @@ async function getAiUsageWindow(client, collegeId, { periodStart, windowStart })
 }
 
 module.exports = {
-  createAuditLogEntry, findByEntity, findByUser, getAiUsageWindow,
+  createAuditLogEntry,
+  findByEntity,
+  findByUser,
+  getAiUsageWindow,
 };

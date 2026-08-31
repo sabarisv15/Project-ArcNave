@@ -9,10 +9,7 @@ import { WorkspaceProvider } from '../store/WorkspaceProvider';
 import { ComposerProvider } from '../store/ComposerProvider';
 import { AcademicTermProvider, useAcademicTerm } from '../store/AcademicTermProvider';
 import { AcademicRosterProvider, useAcademicRoster } from '../store/AcademicRosterProvider';
-import {
-  InstitutionalLifecycleProvider,
-  useInstitutionalLifecycle,
-} from '../store/InstitutionalLifecycleProvider';
+import { InstitutionalLifecycleProvider, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
 import { ACTIVE_CLASSES, BAND_SEMESTERS } from '../lib/academicCalendar';
 import { CLASS_TUTOR_SEATS } from '../lib/seatState';
 import { REVIEW_CANDIDATES } from '../lib/promotionData';
@@ -38,7 +35,7 @@ function mount() {
       roster: useAcademicRoster(),
       life: useInstitutionalLifecycle(),
     }),
-    { wrapper }
+    { wrapper },
   );
 }
 
@@ -124,9 +121,7 @@ describe('A commencement resets L4 seats through the canonical seat overlay', ()
 
     // Fill a seat in the closing term, the ordinary way a head of department
     // would, then close the term.
-    const target = result.current.life
-      .seatsOfDepartment(DEPARTMENT_ID)
-      .find((s) => s.state !== 'active');
+    const target = result.current.life.seatsOfDepartment(DEPARTMENT_ID).find((s) => s.state !== 'active');
 
     act(() => {
       result.current.life.assignTutor(target.classId, 'fac-05', {
@@ -204,9 +199,7 @@ describe('Promotion stays explicit head-of-department work after a commencement'
       result.current.term.commenceNextSemester({ confirmed: true });
     });
 
-    const candidate = result.current.life.reviewQueue.find(
-      (c) => c.departmentId === DEPARTMENT_ID
-    );
+    const candidate = result.current.life.reviewQueue.find((c) => c.departmentId === DEPARTMENT_ID);
     expect(candidate).toBeTruthy();
 
     const preview = result.current.life.previewOutcome(candidate, 'promote');
@@ -285,7 +278,7 @@ describe('The scope line states the term the screen is showing', () => {
             </WorkspaceProvider>
           </Tooltip.Provider>
         </MemoryRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
 
     await user.click(screen.getByRole('button', { name: /open profile/i }));

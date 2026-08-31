@@ -38,9 +38,7 @@ export function WorkflowTimeline({ steps }) {
         return (
           <li key={step.label} className="relative flex gap-[10px] pb-[12px] last:pb-0">
             {/* The connector stops at the last step rather than trailing into nothing. */}
-            {!last && (
-              <span aria-hidden="true" className="absolute left-[4px] top-[13px] bottom-[1px] w-px bg-line" />
-            )}
+            {!last && <span aria-hidden="true" className="absolute left-[4px] top-[13px] bottom-[1px] w-px bg-line" />}
             <span
               aria-hidden="true"
               className={cn('relative z-[1] flex-none w-[9px] h-[9px] mt-[4px] rounded-full border', DOT[step.state])}
@@ -50,7 +48,7 @@ export function WorkflowTimeline({ steps }) {
                 className={cn(
                   'block text-[12.5px]',
                   step.state === 'pending' ? 'text-ink-faint' : 'text-ink',
-                  step.state === 'current' && 'font-[600]'
+                  step.state === 'current' && 'font-[600]',
                 )}
               >
                 {step.label}

@@ -123,9 +123,7 @@ function assertValidApproverChain(approverChain) {
   }
   approverChain.forEach((entry, index) => {
     if (!entry || typeof entry !== 'object' || !entry.user_id || !entry.role || entry.step !== index + 1) {
-      throw new WorkflowRequestValidationError(
-        `approverChain[${index}] must be {step: ${index + 1}, role, user_id}`,
-      );
+      throw new WorkflowRequestValidationError(`approverChain[${index}] must be {step: ${index + 1}, role, user_id}`);
     }
   });
 }
@@ -139,9 +137,10 @@ function assertValidApproverChain(approverChain) {
 // submitRequest call (staffService/financeService/notificationService's
 // human path) simply omits it, leaving the column null — not backfilled,
 // not required.
-async function submitRequest(client, {
-  collegeId, entityType, entityId, requestedByUserId, origin, approverChain, actionManifest,
-}) {
+async function submitRequest(
+  client,
+  { collegeId, entityType, entityId, requestedByUserId, origin, approverChain, actionManifest },
+) {
   if (!collegeId || !entityType || !entityId || !requestedByUserId || !origin) {
     throw new WorkflowRequestValidationError(
       'collegeId, entityType, entityId, requestedByUserId, and origin are required',
@@ -168,7 +167,9 @@ async function submitRequest(client, {
       );
     }
     if (err.code === '23503' && err.constraint === 'workflow_requests_requested_by_user_id_fkey') {
-      throw new WorkflowRequestUserNotFoundError(`requestedByUserId ${JSON.stringify(requestedByUserId)} does not exist`);
+      throw new WorkflowRequestUserNotFoundError(
+        `requestedByUserId ${JSON.stringify(requestedByUserId)} does not exist`,
+      );
     }
     throw err;
   }
@@ -292,9 +293,7 @@ async function approveRequest(client, id, { actorUserId, remarks } = {}) {
 // multi-step chain) escalating would otherwise silently skip its own
 // remaining, already-configured steps by jumping straight to the
 // appended one. Rejected outright instead.
-async function escalateRequest(client, id, {
-  actorUserId, escalateToRole, escalateToUserId, remarks,
-} = {}) {
+async function escalateRequest(client, id, { actorUserId, escalateToRole, escalateToUserId, remarks } = {}) {
   if (!actorUserId) {
     throw new WorkflowRequestValidationError('actorUserId is required');
   }
@@ -310,7 +309,10 @@ async function escalateRequest(client, id, {
   }
 
   const nextStep = request.approver_chain.length + 1;
-  const approverChain = [...request.approver_chain, { step: nextStep, role: escalateToRole, user_id: escalateToUserId }];
+  const approverChain = [
+    ...request.approver_chain,
+    { step: nextStep, role: escalateToRole, user_id: escalateToUserId },
+  ];
 
   // Guarded update first — same reasoning as approveRequest's own
   // comment: a race loser gets no approval_history/audit_log row.

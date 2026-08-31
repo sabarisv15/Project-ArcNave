@@ -45,7 +45,13 @@ export function SessionTypeChip({ type, className }) {
   if (!meta) return null;
   const { Icon, label, chip } = meta;
   return (
-    <span className={cn('inline-flex items-center gap-[4px] h-[19px] px-[6px] rounded-[6px] text-[10.5px] font-[500]', chip, className)}>
+    <span
+      className={cn(
+        'inline-flex items-center gap-[4px] h-[19px] px-[6px] rounded-[6px] text-[10.5px] font-[500]',
+        chip,
+        className,
+      )}
+    >
       <Icon size={10.5} strokeWidth={2.1} aria-hidden="true" />
       {label}
     </span>
@@ -57,15 +63,7 @@ export function SessionTypeIcon({ type, className }) {
   const meta = SESSION_TYPES[type];
   if (!meta) return null;
   const { Icon, label, icon } = meta;
-  return (
-    <Icon
-      size={11}
-      strokeWidth={2}
-      role="img"
-      aria-label={label}
-      className={cn('flex-none', icon, className)}
-    />
-  );
+  return <Icon size={11} strokeWidth={2} role="img" aria-label={label} className={cn('flex-none', icon, className)} />;
 }
 
 /** The quiet legend that sits with the timetable's controls — never a card. */
@@ -74,7 +72,9 @@ export function SessionTypeLegend({ className }) {
     <div className={cn('flex items-center gap-[10px]', className)}>
       {Object.entries(SESSION_TYPES).map(([key, { Icon, label, cell, icon }]) => (
         <span key={key} className="inline-flex items-center gap-[5px] text-[11px] text-ink-muted">
-          <span className={cn('flex-none w-[14px] h-[14px] grid place-items-center rounded-[4px] border border-line', cell)}>
+          <span
+            className={cn('flex-none w-[14px] h-[14px] grid place-items-center rounded-[4px] border border-line', cell)}
+          >
             <Icon size={9} strokeWidth={2.2} className={icon} aria-hidden="true" />
           </span>
           {label}

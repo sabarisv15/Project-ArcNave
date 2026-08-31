@@ -47,13 +47,18 @@ test('updateStudentLifecycleStatus (direct, low-severity path)', async (t) => {
   // high-severity states.
   await t.test('rejects Suspended outright — RS-STU-007 (D6) now gates it, not a direct write', async () => {
     await assert.rejects(
-      () => studentService.updateStudentLifecycleStatus({}, 's1', { newStatus: 'Suspended', reason: 'pending inquiry' }),
+      () =>
+        studentService.updateStudentLifecycleStatus({}, 's1', { newStatus: 'Suspended', reason: 'pending inquiry' }),
       studentService.StudentLifecycleApprovalRequiredError,
     );
   });
 
   await t.test('records a lifecycle event and updates the status directly', async () => {
-    const findMock = t.mock.method(studentRepository, 'findById', async () => ({ id: 's1', college_id: 'c1', lifecycle_status: 'Applied' }));
+    const findMock = t.mock.method(studentRepository, 'findById', async () => ({
+      id: 's1',
+      college_id: 'c1',
+      lifecycle_status: 'Applied',
+    }));
     const createEventMock = t.mock.method(studentLifecycleEventRepository, 'create', async (client, fields) => fields);
     const updateMock = t.mock.method(studentRepository, 'update', async (client, id, fields) => ({ id, ...fields }));
     t.after(() => {
@@ -62,7 +67,12 @@ test('updateStudentLifecycleStatus (direct, low-severity path)', async (t) => {
       updateMock.mock.restore();
     });
 
-    const result = await studentService.updateStudentLifecycleStatus({}, 's1', { newStatus: 'Admitted', reason: 'application approved' }, { actorUserId: 'tutor-1' });
+    const result = await studentService.updateStudentLifecycleStatus(
+      {},
+      's1',
+      { newStatus: 'Admitted', reason: 'application approved' },
+      { actorUserId: 'tutor-1' },
+    );
     assert.equal(createEventMock.mock.calls[0].arguments[1].previousStatus, 'Applied');
     assert.equal(createEventMock.mock.calls[0].arguments[1].newStatus, 'Admitted');
     assert.equal(result.lifecycleStatus, 'Admitted');
@@ -72,7 +82,13 @@ test('updateStudentLifecycleStatus (direct, low-severity path)', async (t) => {
 test('requestLifecycleStatusChange / approve / reject (high-severity path)', async (t) => {
   await t.test('rejects a low-severity status (must use the direct path instead)', async () => {
     await assert.rejects(
-      () => studentService.requestLifecycleStatusChange({}, 's1', { newStatus: 'Active', reason: 'x' }, { requestedByUserId: 'u1' }),
+      () =>
+        studentService.requestLifecycleStatusChange(
+          {},
+          's1',
+          { newStatus: 'Active', reason: 'x' },
+          { requestedByUserId: 'u1' },
+        ),
       studentService.StudentLifecycleValidationError,
     );
   });
@@ -84,13 +100,26 @@ test('requestLifecycleStatusChange / approve / reject (high-severity path)', asy
   // actually guarantees the L3 floor, unit-tested separately in
   // workflow-chain-service.test.js.
   await t.test('submits a workflow request via workflowChainService and sets pending fields', async () => {
-    const findMock = t.mock.method(studentRepository, 'findById', async () => ({ id: 's1', college_id: 'c1', lifecycle_status: 'Active', class_id: null }));
-    const resolveChainMock = t.mock.method(workflowChainService, 'resolveApproverChain', async () => [{ step: 1, role: 'principal', user_id: 'principal-1' }]);
-    const submitMock = t.mock.method(workflowService, 'submitRequest', async (client, fields) => ({ id: 'wf-1', ...fields }));
+    const findMock = t.mock.method(studentRepository, 'findById', async () => ({
+      id: 's1',
+      college_id: 'c1',
+      lifecycle_status: 'Active',
+      class_id: null,
+    }));
+    const resolveChainMock = t.mock.method(workflowChainService, 'resolveApproverChain', async () => [
+      { step: 1, role: 'principal', user_id: 'principal-1' },
+    ]);
+    const submitMock = t.mock.method(workflowService, 'submitRequest', async (client, fields) => ({
+      id: 'wf-1',
+      ...fields,
+    }));
     const updateMock = t.mock.method(studentRepository, 'update', async (client, id, fields) => ({ id, ...fields }));
     // RS-STU-007 / RS-NTF-005: submitting also notifies the chain's
     // first approver — stub out the two calls that reach for a real DB.
-    const getUserMock = t.mock.method(authRepository, 'getUserById', async () => ({ id: 'principal-1', email: 'principal@example.com' }));
+    const getUserMock = t.mock.method(authRepository, 'getUserById', async () => ({
+      id: 'principal-1',
+      email: 'principal@example.com',
+    }));
     const sendMock = t.mock.method(notificationService, 'sendViaChannel', async () => ({ status: 'sent' }));
     t.after(() => {
       findMock.mock.restore();
@@ -101,10 +130,17 @@ test('requestLifecycleStatusChange / approve / reject (high-severity path)', asy
       sendMock.mock.restore();
     });
 
-    const result = await studentService.requestLifecycleStatusChange({}, 's1', { newStatus: 'Dismissed', reason: 'misconduct' }, { requestedByUserId: 'tutor-1' });
+    const result = await studentService.requestLifecycleStatusChange(
+      {},
+      's1',
+      { newStatus: 'Dismissed', reason: 'misconduct' },
+      { requestedByUserId: 'tutor-1' },
+    );
     assert.equal(result.workflowRequest.id, 'wf-1');
     assert.equal(resolveChainMock.mock.calls[0].arguments[1].entityType, 'student_lifecycle_change');
-    assert.deepEqual(submitMock.mock.calls[0].arguments[1].approverChain, [{ step: 1, role: 'principal', user_id: 'principal-1' }]);
+    assert.deepEqual(submitMock.mock.calls[0].arguments[1].approverChain, [
+      { step: 1, role: 'principal', user_id: 'principal-1' },
+    ]);
     assert.equal(updateMock.mock.calls[0].arguments[2].pendingLifecycleStatus, 'Dismissed');
   });
 
@@ -112,11 +148,24 @@ test('requestLifecycleStatusChange / approve / reject (high-severity path)', asy
   // exact D6 fix, unit-tested directly rather than just implied by the
   // updateStudentLifecycleStatus-side rejection test above.
   await t.test('accepts Suspended as an approval-required status', async () => {
-    const findMock = t.mock.method(studentRepository, 'findById', async () => ({ id: 's1', college_id: 'c1', lifecycle_status: 'Active', class_id: null }));
-    const resolveChainMock = t.mock.method(workflowChainService, 'resolveApproverChain', async () => [{ step: 1, role: 'principal', user_id: 'principal-1' }]);
-    const submitMock = t.mock.method(workflowService, 'submitRequest', async (client, fields) => ({ id: 'wf-2', ...fields }));
+    const findMock = t.mock.method(studentRepository, 'findById', async () => ({
+      id: 's1',
+      college_id: 'c1',
+      lifecycle_status: 'Active',
+      class_id: null,
+    }));
+    const resolveChainMock = t.mock.method(workflowChainService, 'resolveApproverChain', async () => [
+      { step: 1, role: 'principal', user_id: 'principal-1' },
+    ]);
+    const submitMock = t.mock.method(workflowService, 'submitRequest', async (client, fields) => ({
+      id: 'wf-2',
+      ...fields,
+    }));
     const updateMock = t.mock.method(studentRepository, 'update', async (client, id, fields) => ({ id, ...fields }));
-    const getUserMock = t.mock.method(authRepository, 'getUserById', async () => ({ id: 'principal-1', email: 'principal@example.com' }));
+    const getUserMock = t.mock.method(authRepository, 'getUserById', async () => ({
+      id: 'principal-1',
+      email: 'principal@example.com',
+    }));
     const sendMock = t.mock.method(notificationService, 'sendViaChannel', async () => ({ status: 'sent' }));
     t.after(() => {
       findMock.mock.restore();
@@ -127,7 +176,12 @@ test('requestLifecycleStatusChange / approve / reject (high-severity path)', asy
       sendMock.mock.restore();
     });
 
-    const result = await studentService.requestLifecycleStatusChange({}, 's1', { newStatus: 'Suspended', reason: 'pending inquiry' }, { requestedByUserId: 'tutor-1' });
+    const result = await studentService.requestLifecycleStatusChange(
+      {},
+      's1',
+      { newStatus: 'Suspended', reason: 'pending inquiry' },
+      { requestedByUserId: 'tutor-1' },
+    );
     assert.equal(result.workflowRequest.id, 'wf-2');
   });
 
@@ -139,7 +193,11 @@ test('requestLifecycleStatusChange / approve / reject (high-severity path)', asy
 
   await t.test('approving a Dismissed request writes one lifecycle event and sets the final status', async () => {
     const { findMock, findPendingMock } = mockPending(t, {
-      id: 's1', college_id: 'c1', lifecycle_status: 'Active', pending_lifecycle_status: 'Dismissed', pending_lifecycle_reason: 'misconduct',
+      id: 's1',
+      college_id: 'c1',
+      lifecycle_status: 'Active',
+      pending_lifecycle_status: 'Dismissed',
+      pending_lifecycle_reason: 'misconduct',
     });
     const approveMock = t.mock.method(workflowService, 'approveRequest', async () => ({}));
     const createEventMock = t.mock.method(studentLifecycleEventRepository, 'create', async (client, fields) => fields);
@@ -160,7 +218,11 @@ test('requestLifecycleStatusChange / approve / reject (high-severity path)', asy
 
   await t.test('approving a Graduated request cascades to Alumni with two lifecycle events', async () => {
     const { findMock, findPendingMock } = mockPending(t, {
-      id: 's1', college_id: 'c1', lifecycle_status: 'Active', pending_lifecycle_status: 'Graduated', pending_lifecycle_reason: 'completed programme',
+      id: 's1',
+      college_id: 'c1',
+      lifecycle_status: 'Active',
+      pending_lifecycle_status: 'Graduated',
+      pending_lifecycle_reason: 'completed programme',
     });
     const approveMock = t.mock.method(workflowService, 'approveRequest', async () => ({}));
     const createEventMock = t.mock.method(studentLifecycleEventRepository, 'create', async (client, fields) => fields);
@@ -181,7 +243,10 @@ test('requestLifecycleStatusChange / approve / reject (high-severity path)', asy
 
   await t.test('rejecting clears pending fields without writing a lifecycle event', async () => {
     const { findMock, findPendingMock } = mockPending(t, {
-      id: 's1', college_id: 'c1', lifecycle_status: 'Active', pending_lifecycle_status: 'Dismissed',
+      id: 's1',
+      college_id: 'c1',
+      lifecycle_status: 'Active',
+      pending_lifecycle_status: 'Dismissed',
     });
     const rejectMock = t.mock.method(workflowService, 'rejectRequest', async () => ({}));
     const createEventMock = t.mock.method(studentLifecycleEventRepository, 'create');
@@ -253,7 +318,9 @@ test('promoteSemesterForClass', async (t) => {
     const findRosterMock = t.mock.method(studentRepository, 'findByClassId', async () => [
       { id: 's1', college_id: 'c1', lifecycle_status: 'Suspended', current_semester: 1 },
     ]);
-    const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => ({ configuration: { promoteSuspendedStudents: true } }));
+    const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => ({
+      configuration: { promoteSuspendedStudents: true },
+    }));
     const updateMock = t.mock.method(studentRepository, 'update', async (client, id, fields) => ({ id, ...fields }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {

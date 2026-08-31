@@ -88,10 +88,10 @@ function hostFor(subdomain) {
 async function seedTenant(adminPool, label) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const college = { collegeId: `rpt${label}${suffix}`, subdomain: `rpttenant${label}${suffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [college.collegeId, college.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    college.collegeId,
+    college.subdomain,
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userIds = {};
   for (const [username, role] of [
@@ -107,10 +107,9 @@ async function seedTenant(adminPool, label) {
     userIds[username] = result.rows[0].id;
   }
   await seedPrincipalPosition(adminPool, { collegeId: college.collegeId, userId: userIds.principaluser, passwordHash });
-  await adminPool.query(
-    `INSERT INTO students (college_id, roll_no, full_name) VALUES ($1, 'R001', 'Alice')`,
-    [college.collegeId],
-  );
+  await adminPool.query(`INSERT INTO students (college_id, roll_no, full_name) VALUES ($1, 'R001', 'Alice')`, [
+    college.collegeId,
+  ]);
   return { ...college, userIds };
 }
 
@@ -143,19 +142,16 @@ test('reports', async (t) => {
     // path is now a Docker volume mount point (this session's own
     // task), not rmdir-able from inside the container.
     const entries = await fs.readdir(config.documentStorageRoot).catch(() => []);
-    await Promise.all(entries.map((entry) => fs.rm(
-      nodePath.join(config.documentStorageRoot, entry),
-      { recursive: true, force: true },
-    )));
+    await Promise.all(
+      entries.map((entry) => fs.rm(nodePath.join(config.documentStorageRoot, entry), { recursive: true, force: true })),
+    );
   });
 
   async function login(username) {
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/auth/login',
-      'POST',
-      { headers: { host: hostFor(college.subdomain) }, body: { username, password: PASSWORD } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/auth/login', 'POST', {
+      headers: { host: hostFor(college.subdomain) },
+      body: { username, password: PASSWORD },
+    });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -175,7 +171,11 @@ test('reports', async (t) => {
     assert.equal(resp.body.format, 'csv');
     assert.ok(resp.body.document_id);
 
-    const download = await requestRaw(baseUrl, `/api/v1/documents/${resp.body.document_id}/download`, headersFor(token));
+    const download = await requestRaw(
+      baseUrl,
+      `/api/v1/documents/${resp.body.document_id}/download`,
+      headersFor(token),
+    );
     assert.equal(download.status, 200);
     // Express appends '; charset=utf-8' to text-ish Content-Types set
     // via res.set() automatically — real behavior, not asserted away.
@@ -216,7 +216,11 @@ test('reports', async (t) => {
       assert.equal(resp.body.status, 'completed');
       assert.equal(resp.body.format, format);
 
-      const download = await requestRaw(baseUrl, `/api/v1/documents/${resp.body.document_id}/download`, headersFor(token));
+      const download = await requestRaw(
+        baseUrl,
+        `/api/v1/documents/${resp.body.document_id}/download`,
+        headersFor(token),
+      );
       assert.equal(download.status, 200);
       const magic = MAGIC_BYTES[format];
       assert.equal(download.buffer.subarray(0, magic.length).toString('latin1'), magic);

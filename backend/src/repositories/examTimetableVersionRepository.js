@@ -6,9 +6,7 @@
 // comment); update() here exists only to flip is_current_official,
 // never to edit a version's own document_id/version_number.
 
-async function create(client, {
-  collegeId, classId, documentId, versionNumber, publishedByUserId,
-}) {
+async function create(client, { collegeId, classId, documentId, versionNumber, publishedByUserId }) {
   const result = await client.query(
     `INSERT INTO exam_timetable_versions
        (college_id, class_id, document_id, version_number, is_current_official, published_by_user_id)
@@ -36,10 +34,9 @@ async function listForClass(client, classId) {
 }
 
 async function countForClass(client, classId) {
-  const result = await client.query(
-    'SELECT COUNT(*)::int AS count FROM exam_timetable_versions WHERE class_id = $1',
-    [classId],
-  );
+  const result = await client.query('SELECT COUNT(*)::int AS count FROM exam_timetable_versions WHERE class_id = $1', [
+    classId,
+  ]);
   return result.rows[0].count;
 }
 
@@ -57,5 +54,9 @@ async function clearCurrentOfficialForClass(client, classId) {
 }
 
 module.exports = {
-  create, findCurrentOfficialForClass, listForClass, countForClass, clearCurrentOfficialForClass,
+  create,
+  findCurrentOfficialForClass,
+  listForClass,
+  countForClass,
+  clearCurrentOfficialForClass,
 };

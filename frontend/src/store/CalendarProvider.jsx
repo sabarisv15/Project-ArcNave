@@ -29,7 +29,7 @@ export function CalendarProvider({ children }) {
       const note = notes[dateKey];
       return note && note.ownerId === ME.id ? note : null;
     },
-    [notes]
+    [notes],
   );
 
   /**
@@ -77,12 +77,12 @@ export function CalendarProvider({ children }) {
       Object.values(notes)
         .filter((n) => n.ownerId === ME.id)
         .sort((a, b) => (b.dateKey < a.dateKey ? -1 : b.dateKey > a.dateKey ? 1 : 0)),
-    [notes]
+    [notes],
   );
 
   const value = useMemo(
     () => ({ events, eventsFor, notes, noteFor, saveNote, deleteNote, allNotes }),
-    [events, eventsFor, notes, noteFor, saveNote, deleteNote, allNotes]
+    [events, eventsFor, notes, noteFor, saveNote, deleteNote, allNotes],
   );
 
   return <CalendarContext.Provider value={value}>{children}</CalendarContext.Provider>;

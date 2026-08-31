@@ -12,9 +12,7 @@ export function ChatWorkspace({ children, className }) {
   // `chat-workspace` is the hook `index.css` uses to run the island's bottom
   // edge out to the app area on chat routes only — see the rule there. Every
   // other workspace keeps the rounded island untouched.
-  return (
-    <div className={cn('chat-workspace flex-1 min-h-0 flex flex-col animate-viewIn', className)}>{children}</div>
-  );
+  return <div className={cn('chat-workspace flex-1 min-h-0 flex flex-col animate-viewIn', className)}>{children}</div>;
 }
 
 /**
@@ -37,7 +35,8 @@ export function ChatWorkspace({ children, className }) {
  * `CHAT_GUTTER` is that scale, shared by the transcript and the composer dock
  * so the two can never drift apart.
  */
-export const CHAT_GUTTER = 'pl-[14px] pr-[16px] sm:pl-[24px] sm:pr-[24px] lg:pl-[40px] lg:pr-[32px] 2xl:pl-[56px] 2xl:pr-[40px]';
+export const CHAT_GUTTER =
+  'pl-[14px] pr-[16px] sm:pl-[24px] sm:pr-[24px] lg:pl-[40px] lg:pr-[32px] 2xl:pl-[56px] 2xl:pr-[40px]';
 
 export function ChatTranscriptScrollArea({ scrollRef, onScroll, columnClass = 'max-w-[780px]', children }) {
   return (

@@ -59,7 +59,7 @@ export function ClassApprovalsView() {
           ],
         };
       }),
-    [decided]
+    [decided],
   );
 
   const visible = useMemo(
@@ -71,7 +71,7 @@ export function ClassApprovalsView() {
         if (kind && r.kind !== kind) return false;
         return true;
       }),
-    [requests, view, kind]
+    [requests, view, kind],
   );
 
   const pendingCount = requests.filter((r) => r.status === 'pending').length;
@@ -113,7 +113,7 @@ export function ClassApprovalsView() {
                 'flex-none h-[27px] px-[10px] border-0 rounded-[8px] bg-transparent font-sans text-[12.5px] cursor-pointer transition-colors duration-200',
                 view === v.key
                   ? 'bg-accent-soft text-accent font-[600]'
-                  : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2'
+                  : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2',
               )}
             >
               {v.label}
@@ -137,7 +137,7 @@ export function ClassApprovalsView() {
                 'flex-none h-[26px] px-[9px] border rounded-[8px] font-sans text-[12px] cursor-pointer transition-colors duration-200',
                 kind === k.key
                   ? 'border-accent-line bg-accent-soft text-accent font-[600]'
-                  : 'border-line bg-paper text-ink-muted font-[500] hover:bg-tint2 hover:text-ink'
+                  : 'border-line bg-paper text-ink-muted font-[500] hover:bg-tint2 hover:text-ink',
               )}
             >
               {k.label}

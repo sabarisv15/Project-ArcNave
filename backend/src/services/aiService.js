@@ -18,6 +18,7 @@
 const crypto = require('crypto');
 const aiToolRegistry = require('./aiToolRegistry');
 const aiToolSearchService = require('./aiToolSearchService');
+const aiGreetingClassifier = require('./aiGreetingClassifier');
 const aiContextBuilder = require('./aiContextBuilder');
 const aiPromptSafetyLayer = require('./aiPromptSafetyLayer');
 const aiActorContext = require('./aiActorContext');
@@ -3196,6 +3197,24 @@ async function askAgent(
   // later `await` still throws.
   identityBlockPromise.catch(() => {});
   aiConfigPromise.catch(() => {});
+  // ARCNAVE modernization P2 (PDF 1.3 / 1.10 / clash C1) — greeting /
+  // small-talk fast path. A deterministic whitelist match (no model
+  // call), and only when this turn carries nothing that could need a
+  // tool: no attachment, no focused entity, no project context. When it
+  // fires, the per-turn embedding tool-shortlist call below is skipped
+  // entirely (PDF 1.10) and the turn takes the same structural no-tool
+  // path experimentalZeroToolFastPath already builds. Clash C1: this
+  // decides TOOLS ONLY — decisionPolicy/buildPolicy below is untouched,
+  // so rule/instruction-chunk selection is byte-identical to any other
+  // turn.
+  const conversationalTurn =
+    config.aiGreetingFastPath &&
+    !images.length &&
+    !documents.length &&
+    !media.length &&
+    !(focusContext && focusContext.entityType) &&
+    !projectContext &&
+    aiGreetingClassifier.classify(question).isConversational;
   const {
     tools: retrievedTools,
     viaToolSearch,
@@ -3206,7 +3225,19 @@ async function askAgent(
     uncoveredRequirements: toolUncoveredRequirements,
     attempted: toolSearchAttempted,
     completed: toolSearchCompleted,
-  } = await aiToolSearchService.discoverRelevantTools(client, { roleTools, question });
+  } = conversationalTurn
+    ? {
+        tools: [],
+        viaToolSearch: false,
+        usage: null,
+        provider: null,
+        model: null,
+        coverageStatus: 'skipped_conversational',
+        uncoveredRequirements: [],
+        attempted: false,
+        completed: false,
+      }
+    : await aiToolSearchService.discoverRelevantTools(client, { roleTools, question });
   // ADR-030 P0/P1 telemetry, same convention every other LLM call in
   // this turn already gets (see logLlmCall's own comment) — a no-op
   // when toolSearchAttempted is false (Tool Search disabled, or no call
@@ -3239,7 +3270,12 @@ async function askAgent(
   // path: that branch already has its own honest-note handling and this
   // flag's "genuinely nothing scored close" reasoning doesn't apply to a
   // dedicated retrieval model's own empty result the same way.
-  const zeroToolFastPathActive = config.experimentalZeroToolFastPath && !viaToolSearch && tools.length === 0;
+  // conversationalTurn (PDF 1.3) reaches the exact same structural no-tool
+  // state experimentalZeroToolFastPath produces — folded in here so the
+  // catalogue-omitted segment and the empty offeredTools list below both
+  // follow from one flag, never disagree.
+  const zeroToolFastPathActive =
+    (config.experimentalZeroToolFastPath || conversationalTurn) && !viaToolSearch && tools.length === 0;
   // The bounded-plan meta-tool (P0.3) is never subject to relevance
   // filtering — it's a structural capability ("you may chain the tools
   // above"), not a domain-specific tool a keyword match could reasonably

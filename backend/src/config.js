@@ -5,6 +5,12 @@
 // required value fails loudly at startup, not silently at first use.
 
 const path = require('path');
+// ARCNAVE modernization P2 (PDF 1.14) — the six EXPERIMENTAL_* behaviour
+// trials that used to be declared inline here now live in one validated,
+// introspectable registry. resolveFlags() returns them as plain writable
+// data properties (spread below), preserving the runtime-mutation
+// contract tests/scripts rely on.
+const { resolveFlags } = require('./featureFlags');
 
 function required(name) {
   const value = process.env[name];
@@ -310,105 +316,30 @@ module.exports = {
     model: process.env.TOOL_SEARCH_MODEL || null,
   },
 
-  // Gemini-native catalogue routing experiment (Priority 1 follow-up to
-  // the Tool Search NO-GO) — ADL-064 (2026-08-30): resolved down to two
-  // finalists after live comparison against the original full-description
-  // default and 3 other mechanically-derived/hand-authored variants (all
-  // now retired — this app can no longer select any of them). Unset
-  // (null) or any unrecognized value now means 'keywords' — the new
-  // shipped default, role-filtered same as the retired default was.
-  // 'hybrid' (see scripts/experimental-catalogue-hybrid.md) is the one
-  // remaining opt-in, kept for the still-open keywords-vs-hybrid
-  // comparison; aiService.js's buildToolCatalogueForExperiment() is the
-  // one place that reads this value.
-  experimentalCatalogueVariant: process.env.EXPERIMENTAL_CATALOGUE_VARIANT || null,
+  // ARCNAVE modernization P2 (PDF 1.3 / 1.10 / clash C1) — the greeting /
+  // small-talk fast path. When aiGreetingClassifier deterministically
+  // recognises a turn as pure chit-chat ("hi", "thanks", "vanakkam"),
+  // askAgent skips the per-turn embedding tool-shortlist call and offers
+  // zero tools + no catalogue + no describe_tools — the same structural
+  // no-tool posture experimentalZeroToolFastPath / Research mode use.
+  // Rule/instruction-chunk selection is UNCHANGED (clash C1: this picks
+  // tools, never rules). Unlike toolSearch this ships ON — it is a
+  // deterministic whitelist, not a model call, and its only failure mode
+  // (a task misread as chit-chat) is bounded by a strict whitelist. Set
+  // AI_GREETING_FAST_PATH=false to disable without a code change.
+  aiGreetingFastPath: process.env.AI_GREETING_FAST_PATH !== 'false',
 
-  // Priority 2 — reasoning-model benchmark (GLM-5.2 / Kimi K2 Thinking
-  // vs current Gemini). Unset (null) reproduces today's exact
-  // configurationService.getAiConfig() resolution — the only value this
-  // app ships with. When set, aiService.js's resolveReasoningConfig()
-  // overrides askAgent's {adapter, aiConfig} to the vertex_maas adapter
-  // (already built for Priority 1) + this exact MaaS model string —
-  // e.g. 'zai-org/glm-5.2-maas' or 'moonshotai/kimi-k2-thinking-maas'.
-  // No default model — never invented, same "no hardcoded model"
-  // convention config.toolSearch.model already follows.
-  experimentalReasoningModel: process.env.EXPERIMENTAL_REASONING_MODEL || null,
-
-  // Priority 3 follow-up — live session trial only, per explicit user
-  // instruction not to touch the production default until they've
-  // verified it themselves in the real running app. Reinforces a small,
-  // condensed subset of the user-supplied AI_OPERATING_INSTRUCTIONS_1.md
-  // reference document's Section 3.5 ("analyze a file") discipline —
-  // confirm scope/section before computing, extract via the real tool
-  // rather than estimating, cross-verify before answering — as an
-  // ADDITIONAL system-prompt segment, only when the turn has attachments.
-  // Does not replace or rewrite any existing tool, service, or ownership
-  // rule (DocumentService/ArtifactService are unchanged); it only adds
-  // prompt guidance. Off by default (false) —
-  // the only value this app ships with.
-  experimentalAttachmentDiscipline: process.env.EXPERIMENTAL_ATTACHMENT_DISCIPLINE === 'true',
-
-  // Testing-phase only, per explicit user instruction, after being told
-  // the real cost/content tradeoffs (the full user-supplied document is
-  // ~13,000 tokens and includes generic Claude-API tool/skill/safety
-  // content that names nothing ARCNAVE actually has — user chose to wire
-  // it verbatim anyway to observe real live behavior). When true, this
-  // REPLACES experimentalAttachmentDiscipline's condensed segment with
-  // the full raw document text, on every turn, not just ones with an
-  // attachment, and resends it on every LLM call in the turn (decision,
-  // schema-fetch retries, post-tool continuation) — not just once. Off
-  // by default (false) — the only value this app ships with, and the
-  // only value any checked-in file in this repo sets. `=== 'true'` is
-  // deliberate, not `Boolean(process.env...)`: a non-empty string like
-  // `'false'` or `'0'` must not accidentally enable this.
-  //
-  // Review Finding #5 (2026-08-29): this must NEVER be set in a checked-in
-  // docker-compose.yml, .env.example, or deployment manifest — only in a
-  // gitignored/untracked local override (e.g. docker-compose.override.yml)
-  // for a deliberate, time-boxed live trial, turned back off afterward. If
-  // you are reading this because config.experimentalFullInstructionsDocument
-  // is unexpectedly true, check for exactly that kind of untracked local
-  // override before assuming the code default changed.
-  experimentalFullInstructionsDocument: process.env.EXPERIMENTAL_FULL_INSTRUCTIONS_DOCUMENT === 'true',
-
-  // CEO Vertex/Gemini audit #27 (2026-08-30) — "Enable it let us 1st test
-  // in real time then if it is exposing we will then decide to stop."
-  // A global, process-level flag (not a per-college `configuration` DB
-  // row like audio_video_attachments) precisely because this is a
-  // developer/ops real-time trial, same category as
-  // experimentalAttachmentDiscipline/experimentalFullInstructionsDocument
-  // above — a DB-backed per-college toggle would cost every single
-  // askAgent call an extra query just to read `false` for every college
-  // that will never use it, which a real regression in this exact ADL's
-  // own second pass caught (3 exact-query-count tests broke the moment
-  // this was wired as a DB read instead). Off by default (false) — the
-  // only value this app ships with. When true, aiService.js requests
-  // Gemini's thought-summary parts on the Curriculum decision call and
-  // logs them (audit-only, never returned to any API response —
-  // RS-AIG-027 still bars user-facing exposure).
-  experimentalThinkingTraceVisibility: process.env.EXPERIMENTAL_THINKING_TRACE_VISIBILITY === 'true',
-
-  // ADR-030 P3 follow-up (2026-08-30, cache-hit-analysis.js's own "worst
-  // offenders" section — real turns like "google epa kandupudichanga"
-  // paying 4,600+ input tokens for a 1-line answer). When
-  // aiToolRetrievalService's semantic shortlist genuinely finds ZERO
-  // relevant tools for a Curriculum-mode question (not a role/permission
-  // decision — every role-permitted tool was considered and none scored
-  // close), this additionally drops the always-on tool catalogue
-  // (buildToolCatalogueForExperiment, ~2,176 tok) and the describe_tools
-  // recovery meta-tool from that turn's offered set, structurally rather
-  // than by prompt instruction — same "no tool exists to call" posture
-  // Research mode's own askGeneralChat already uses. Off by default:
-  // this trades away the catalogue's own documented purpose (ai-tool-
-  // catalogue-approved-spec.md — "makes a retrieval miss non-fatal") for
-  // exactly the turns this flag fires on, so a genuine retrieval false-
-  // negative on a real data question would lose its only recovery path.
-  // Opt in only after measuring how often SIMILARITY_DISTANCE_THRESHOLD
-  // (0.8, deliberately recall-biased) actually returns zero for real
-  // in-scope questions vs. genuine small-talk/general-knowledge ones —
-  // same "verify before defaulting on" posture every other experimental
-  // flag in this file already follows.
-  experimentalZeroToolFastPath: process.env.EXPERIMENTAL_ZERO_TOOL_FAST_PATH === 'true',
+  // ARCNAVE modernization P2 (PDF 1.14) — the six EXPERIMENTAL_* AI
+  // behaviour trials (experimentalCatalogueVariant, experimentalReasoningModel,
+  // experimentalAttachmentDiscipline, experimentalFullInstructionsDocument,
+  // experimentalThinkingTraceVisibility, experimentalZeroToolFastPath).
+  // Their definitions, env-var names, parsers, defaults, owners and full
+  // rationale now live in one validated, introspectable table in
+  // src/featureFlags.js (surfaced read-only at GET /ai-config/feature-flags).
+  // Spread here as plain writable data properties so `config.experimentalX`
+  // resolves byte-identically to before and tests/scripts can still
+  // assign-then-restore it around a case.
+  ...resolveFlags(),
 
   // Which provider a college with no college_ai_config row of its own
   // falls back to (configurationService.getAiConfig). Defaults to

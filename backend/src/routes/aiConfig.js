@@ -16,6 +16,8 @@ const identityService = require('../services/identityService');
 const vertexCapabilityRegistry = require('../services/vertexCapabilityRegistry');
 const aiCostControlService = require('../services/aiCostControlService');
 const aiModelVersionService = require('../services/aiModelVersionService');
+const config = require('../config');
+const { describeFeatureFlags } = require('../featureFlags');
 
 function requireResolvedTenant(req, res) {
   if (req.collegeId === null) {
@@ -120,6 +122,21 @@ function createAiConfigRouter() {
         },
         ...usage,
       });
+    }),
+  );
+
+  // ARCNAVE modernization P2 (PDF 1.14) — read-only view of the
+  // process-level AI behaviour-trial registry (src/featureFlags.js).
+  // Platform-wide, not per-college: it reports env-driven trials, not a
+  // tenant's own config, so it does NOT resolve a tenant. Reuses
+  // ai_config.read — same "principal-only, no per-category rule yet"
+  // posture as the rest of this file. No secret is exposed; every entry
+  // is a non-sensitive behaviour toggle.
+  router.get(
+    '/ai-config/feature-flags',
+    requirePermission('ai_config.read'),
+    asyncHandler(async (_req, res) => {
+      res.json({ flags: describeFeatureFlags(config) });
     }),
   );
 

@@ -5511,7 +5511,10 @@ function systemTextOf(body) {
 }
 const toolNames = (body) => body.tools.map((t) => t.function.name);
 
-async function captureCatalogueTurn(t, { retrieval, responses, role = 'principal' }) {
+async function captureCatalogueTurn(
+  t,
+  { retrieval, responses, role = 'principal', question = 'How many periods are scheduled?' },
+) {
   t.mock.method(aiToolRegistry, 'filterToolsByRelevance', retrieval);
   const client = fakeClient();
   const identityContext = { userId: 'u1', role, collegeId: 'college-a' };
@@ -5525,7 +5528,7 @@ async function captureCatalogueTurn(t, { retrieval, responses, role = 'principal
         return queue.shift()();
       },
       async () => {
-        result = await aiService.askAgent(client, 'How many periods are scheduled?', { identityContext });
+        result = await aiService.askAgent(client, question, { identityContext });
       },
     );
   });
@@ -5677,6 +5680,66 @@ test('askAgent: experimentalZeroToolFastPath on, retrieval returns real tools ->
     assert.ok(toolNames(bodies[0]).includes('describe_tools'), 'and still get describe_tools recovery');
   } finally {
     config.experimentalZeroToolFastPath = original;
+  }
+});
+
+// ARCNAVE modernization P2 (PDF 1.3 / 1.10 / clash C1) — greeting fast path.
+test('askAgent: a whitelisted greeting takes the no-tool path (no catalogue, no describe_tools, no tools field) even with the zero-tool flag off', async (t) => {
+  assert.equal(config.experimentalZeroToolFastPath, false, 'precondition: the experimental flag is off');
+  const { bodies, result } = await captureCatalogueTurn(t, {
+    retrieval: (tools) => tools.slice(0, 5),
+    responses: [() => mockAnswerResponse('Hello! How can I help?')],
+    question: 'hi there',
+  });
+  const system = systemTextOf(bodies[0]);
+  assert.ok(!system.includes('Tool routing keywords'), 'greeting: catalogue segment must be omitted');
+  assert.equal(bodies[0].tools.length, 0, 'greeting: no tools (including describe_tools) offered at all');
+  assert.ok(result.answer.includes('Hello'), 'greeting still gets a real answer from the decision call');
+});
+
+test('askAgent: a whitelisted greeting skips the per-turn tool-retrieval call entirely (PDF 1.10)', async (t) => {
+  const discover = t.mock.method(aiToolSearchService, 'discoverRelevantTools', async () => ({ tools: [] }));
+  await captureCatalogueTurn(t, {
+    retrieval: (tools) => tools.slice(0, 5),
+    responses: [() => mockAnswerResponse('Thanks noted')],
+    question: 'thank you so much',
+  });
+  assert.equal(discover.mock.callCount(), 0, 'greeting turn must not run tool discovery/embedding at all');
+});
+
+test('askAgent: a real task that merely opens with a greeting word is NOT treated as small talk', async (t) => {
+  const discover = t.mock.method(aiToolSearchService, 'discoverRelevantTools', async () => ({
+    tools: [],
+    viaToolSearch: false,
+    attempted: false,
+  }));
+  const { bodies } = await captureCatalogueTurn(t, {
+    retrieval: (tools) => tools.slice(0, 5),
+    responses: [() => mockAnswerResponse('...')],
+    question: 'hi, how many students are in class 10?',
+  });
+  assert.equal(discover.mock.callCount(), 1, 'a turn with a real question still runs tool discovery');
+  const system = systemTextOf(bodies[0]);
+  assert.ok(system.includes('Tool routing keywords'), 'and still gets the catalogue');
+});
+
+test('askAgent: greeting fast path is disabled when config.aiGreetingFastPath is false', async (t) => {
+  const original = config.aiGreetingFastPath;
+  config.aiGreetingFastPath = false;
+  const discover = t.mock.method(aiToolSearchService, 'discoverRelevantTools', async () => ({
+    tools: [],
+    viaToolSearch: false,
+    attempted: false,
+  }));
+  try {
+    await captureCatalogueTurn(t, {
+      retrieval: (tools) => tools.slice(0, 5),
+      responses: [() => mockAnswerResponse('Hello!')],
+      question: 'hello',
+    });
+    assert.equal(discover.mock.callCount(), 1, 'with the switch off, even "hello" runs the normal pipeline');
+  } finally {
+    config.aiGreetingFastPath = original;
   }
 });
 

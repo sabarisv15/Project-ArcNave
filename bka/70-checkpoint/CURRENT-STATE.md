@@ -11,7 +11,16 @@ P2 section + clashes C1/C2/C3/C4/C8/C9.
 
 **P2 is being built slice-by-slice on branch
 `p0-modernization-foundation` (not merged, no PR). Full backend suite
-in Docker after slices 1–2: 2718/2718, clean.**
+in Docker after the C2/C3 slice: 2725/2725, clean.**
+
+**GCP is now wired (owner provided access 2026-08-31):** `.env`
+(gitignored) carries `GEMINI_PROJECT_ID` + `GEMINI_ADC_PATH` (real ADC
+file present) and now also `GEMINI_LOCATION=global` + `GEMINI_MODEL=gemini-3.7-flash`
+— the ONLY working combo (`gemini-3.7-flash` 404s in every regional
+endpoint; `global` is its home). `qwen/qwen3-next-80b-a3b-thinking-maas`
+confirmed enabled for Tool Search. Billable Vertex calls now run from the
+app container. `backend/scripts/set-college-ai-quota.js` (new) widens/
+restores a college's `ai_quota` for a measurement window.
 
 **Shipped + Docker-verified this session:**
 1. **1.14 — feature-flag registry.** `backend/src/featureFlags.js`
@@ -38,7 +47,27 @@ in Docker after slices 1–2: 2718/2718, clean.**
    (`config.aiGreetingFastPath`, `AI_GREETING_FAST_PATH=false` to
    disable). `tests/ai-greeting-classifier.test.js` + 4 `askAgent` cases.
 
-Both committed: `4f2f186`.
+Slices 1–2 committed `4f2f186`. C2/C3 committed `47ff693`.
+
+3. **C3 — tool-search benchmark: NO-GO ([ADL-070](../30-decisions/ledger.md#adl-070)).**
+   Ran `scripts/tool-search-benchmark.js` with real paid Vertex calls.
+   On the one test where Tool Search engaged it added +25% tokens and a
+   call per turn for zero accuracy gain (both paths already 100%), and
+   fell back 2/3 times. `TOOL_SEARCH_ENABLED` stays unset. Re-open only
+   on a measured retrieval-miss on the normal path against a larger tool
+   set.
+4. **C2 — explicit prompt caching: mechanism built, shipped OFF
+   ([ADL-071](../30-decisions/ledger.md#adl-071)).** Measured: Vertex
+   `cachedContents` cuts billed input 99.7% on a >4k-token prefix, BUT
+   Vertex enforces a **4,096-token minimum** and ARCNAVE's real
+   decision-call prefix is **~2,578 tokens** for a mid-size role — below
+   the floor, so it does not apply to real traffic today. Built anyway
+   (`src/services/aiExplicitCache.js`, `config.aiExplicitCache` off;
+   `gemini.js`/`aiService.js`/`aiContextAssembly.js` wired; degrades to
+   inline on any failure, verified live). Kept because it is the
+   prerequisite for **1.6** — folding history into the cached front block
+   crosses the 4k floor and it starts paying. Enable + re-probe once 1.6
+   lands.
 
 **Found already-satisfied (no code needed, same as P1's 1.17):**
 - **1.7 — stream normal replies.** `POST /api/v1/ai/ask/stream` already
@@ -52,34 +81,25 @@ Both committed: `4f2f186`.
 
 **Remaining P2 items — each needs its own scoped pass; do NOT build
 straight off this banner:**
-- **C3 — tool-search benchmark GO/NO-GO.** `backend/scripts/tool-search-benchmark.js`
-  exists but running it needs **real paid Vertex calls + a reachable
-  GCP endpoint** (this dev env can't — same wall P1 hit). Owner said
-  (2026-08-31) they will provide GCP access/budget; until then this is
-  blocked on that. When unblocked: run it against `demo`, record the
-  numbers as a ledger entry, flip `TOOL_SEARCH_ENABLED` only on GO.
-- **C2 — explicit prompt caching (1.4).** Vertex context caching bills
-  per cached-token-hour; needs the same GCP access. Build the mechanism
-  in `gemini.js` + wiring OFF by default, verify live once GCP is
-  reachable, record a new ledger entry re-opening ADL-054/055's "only
-  build caching when cost is a demonstrated problem" (the PDF's
-  "hi = 4,500 words" is the re-open trigger). Couples with 1.6 below —
-  the "reusable front block" only pays off with explicit caching.
 - **1.6 — history as an add-only front block.** Today `buildHistoryHint`
   flattens the whole history into one text blob prepended to the user
   segment every turn. Target: pass history as real prior conversation
   turns to the adapters (extend the `priorTurns` param, map to each
   provider's message array). Deep, multi-adapter, and interacts with
   clash C10 ("identical prompt within a turn") — its own focused
-  session, ideally alongside C2.
+  session. **Do this next among the remaining** — it also unlocks C2
+  (once history joins the stable prefix it crosses Vertex's 4,096-token
+  cache floor; then flip `AI_EXPLICIT_CACHE=true` and re-run
+  `scripts/explicit-cache-live-turn-probe.js` to confirm `cachedTokens > 0`).
 - **1.2 / C4 — margin-based tool-search cutoff.** `aiToolRetrievalService.js`:
   drop the `roleTools.length <= TOP_K` bypass (this IS the PDF's "role
   with ≤8 tools sends all" bug) and replace the fixed
   `SIMILARITY_DISTANCE_THRESHOLD = 0.8` with a relative drop-off margin.
-  Plan says "tuned by the test set" — needs the billable AI
-  retrieval-accuracy measurement, so also gated on GCP access. Keep the
-  `describe_tools` recovery path (C4); put the "wrongly-excluded tool"
-  incident in the test set.
+  Plan says "tuned by the test set" — GCP is now available, so run the
+  retrieval-accuracy measurement (widen `demo` quota via
+  `set-college-ai-quota.js`, restore after). Keep the `describe_tools`
+  recovery path (C4); put the "wrongly-excluded tool" incident in the
+  test set.
 - **4.5 / clash C8 — DB-backed job queue.** `migrations/1754000000000_background-jobs.js`
   + `1758300000000_background-jobs-progress-fields.js` tables already
   exist; needs the worker loop + moving file-extraction / media work
@@ -96,10 +116,11 @@ straight off this banner:**
   scenarios to `scripts/ai-behavioral-suite.js`. No GCP to write; a run
   is billable.
 
-**Exact next action:** build **4.5/C8 (job queue worker)** and **D4
-(usage counter)** next — the two remaining P2 items that need no GCP
-access — each its own scoped pass, then Docker full-suite. The GCP-gated
-items (C3, C2, 1.2/C4) wait on the owner's promised Vertex access.
+**Exact next action:** **1.6** (history as add-only front block) — it is
+the highest-leverage remaining item and unblocks C2's real payoff. Then
+**1.2/C4**, **4.5/C8** (job queue worker), **D4** (usage counter), **3.3**
+(skills in the AI test set). Each its own scoped pass; Docker full-suite
+at the end of P2. GCP is wired now — no external blockers remain.
 
 ---
 

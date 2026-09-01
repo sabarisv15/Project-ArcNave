@@ -4,6 +4,107 @@ _Last updated: 2026-09-01._
 
 ---
 
+# ⛔ NEW BANNER — ARCNAVE modernization P3 STARTED, 2026-09-01, same session as this banner. P2 is being finished in a SEPARATE, CONCURRENT session — do not touch `backend/src/aiService.js`, `auditLogRepository.js`, `aiCostControlService.js`, `backend/src/index.js`, `backgroundJobRepository.js`, `backgroundJobService.js` (that session's uncommitted files) from this thread.
+
+**Owner instruction, this session:** attempt all of P3's 13 items
+(`ARCNAVE-modernization-english.md` §"P3 — Structural cleanup"), one
+slice at a time, asking only when a genuine product/architecture
+decision is needed (not for routine execution). Two commits shipped so
+far on `p0-modernization-foundation` (not merged, no PR):
+
+1. **3.2 — dead skill scripts removed.** Commit `4e8b38f`. 149 files
+   across docx/pptx/xlsx/pdf skills (`office/validate.py` +
+   `office/validators/` + their only-consumer `office/schemas/` XSD
+   trees, `merge_runs.py`, `comment.py`, `clean.py`, `thumbnail.py`,
+   `create_validation_image.py`) — all imported `defusedxml`/`Pillow`,
+   neither installed in the sandbox, so every one raised
+   `ModuleNotFoundError` if invoked; already documented as
+   non-functional in the SKILL.md files, now actually gone. Verified no
+   live script imports any removed module before deleting. Scope
+   isolated to `backend/src/skills/` only.
+2. **4.3/5.2, clash C7 — typed-code migration started.** Commit
+   `5c8047e`. **Asked the owner first** (clash C7 explicitly requires a
+   fresh decision before starting — this reverses ADR-016's "TypeScript
+   for now, rejected"); owner said yes. Recorded as
+   [ADL-072](../30-decisions/ledger.md#adl-072), ADR-016 gained
+   "Amendment 1." Shipped: `backend/tsconfig.json` +
+   `frontend/tsconfig.json` (both `noEmit`/`allowJs`/`checkJs:false`/
+   `strict` — type-check only, zero existing `.js` file touched or
+   typechecked), `typescript`/`tsx`/`@types/node` (backend) and
+   `typescript`/`@types/react`/`@types/react-dom` (frontend, via
+   `--legacy-peer-deps` for the pre-existing React 19 peer conflict)
+   added as devDependencies, `npm run typecheck` in both `package.json`s
+   and wired **blocking** into both CI jobs (safe — today's baseline is
+   trivially clean, no `.ts` files exist yet). Verified live (both
+   removed after, not committed): `npx tsx` executes a real `.ts` file
+   end-to-end (backend); a real `.tsx` component builds clean via
+   `npx vite build` with zero Vite config change (frontend). **NOT
+   verified inside the actual Docker `app` container** (no Docker on
+   this host this session) — flag if the CI `typecheck` step is the
+   first thing that breaks on next Docker build. **Nothing existing
+   was migrated to TypeScript** — this is scaffolding only; which
+   files/modules move first is still undecided.
+
+**Remaining P3 items — genuinely unstarted, each needs its own scoped
+pass, several conflict with the concurrent P2 session's files and must
+wait or be built avoiding them:**
+- **1.16 / clash C10 — rewrite the agent as a step-by-step machine**
+  (route/fetch-tools/decide/act/verify/write-up; lock "identical prompt
+  within a turn" in acceptance tests). **HIGH CONFLICT** — this is
+  `aiService.js`'s own core loop, the exact file the concurrent P2
+  session is mid-editing. Wait for that session to commit/merge first.
+- **4.6 — split the huge files.** Needs a target-file survey first (line
+  counts, `aiService.js` is both the biggest and P2-session-owned right
+  now — pick non-conflicting files first, e.g. skill/route files, defer
+  `aiService.js` itself).
+- **5.8/5.9 — reorganise the frontend by feature + a small state
+  library.** No backend conflict — safe to start any time. Needs its own
+  scoping pass (current structure survey, target shape, which state
+  library) — respect the locked visual design
+  (`bka/50-frontend/FRONTEND-REDESIGN-HANDOFF.md`), do not restyle.
+- **D1 — connection pooler.** `docker-compose.yml`/DB config — no
+  aiService.js conflict, safe to start. Needs its own pass (pgbouncer vs.
+  built-in `pg` pool sizing decision).
+- **4.9 — contract tests on the noisiest routes.** Safe to start (new
+  test files). Needs a "noisiest routes" definition first (by request
+  volume? by route count? — pick a concrete metric before starting).
+- **1.5 / D3 — blend keyword + meaning search + re-ranking.**
+  `aiToolRetrievalService.js` — not currently touched by the P2 session,
+  lower conflict risk, but touches the SAME retrieval logic 1.2/C4 (a
+  remaining P2 item) is scoped to touch — coordinate/sequence with that
+  P2 item rather than both editing `aiToolRetrievalService.js` blind in
+  parallel.
+- **1.18 — guardrail layer.** Needs a product-level decision (what a
+  guardrail actually checks/blocks) before code — likely a
+  `NEEDS PRODUCT DECISION` per this project's own workflow, not a silent
+  build.
+- **1.13 — Tamil / mixed-language number checks.** Can be built as a
+  standalone deterministic validator (no aiService.js dependency for the
+  function itself); wiring it into the verification path is deferred
+  until P2 session's aiService.js changes land.
+- **1.11 — adjust AI thinking depth to difficulty.** **CONFLICT** — touches
+  `gemini.js` GENERATION_CONFIG + `aiService.js`'s per-turn decision
+  point. Defer until P2 session's aiService.js changes land.
+- **1.12 — native forced-format for every provider.** **CONFLICT** — same
+  reason as 1.11.
+- **2.3 — cache extracted file text.** **CONFLICT** — the re-extraction
+  happens inside `aiService.js`'s `resolveChatAttachments`. Defer.
+- **2.4/2.5 — vision model for scans; complex-PDF fallback tightened.**
+  Depends on 2.1's already-landed native-PDF-reading path
+  (`aiService.js`) — likely also touches the same file. Check exact scope
+  before deciding if it's blocked.
+
+**Exact next action:** continue with the non-conflicting items in
+roughly this order — **D1** (connection pooler, mechanical, no
+decisions needed) or **5.8/5.9** (frontend reorg, needs its own scoping
+pass but zero backend conflict) next, then **4.9** (contract tests,
+needs a "noisiest routes" metric decided first), then **1.13** (Tamil
+number checks, standalone validator). Re-check whether the P2 session
+has committed before attempting anything flagged CONFLICT above — do
+not build blind against files it may still be mid-editing.
+
+---
+
 # ⛔ NEW BANNER — ARCNAVE modernization P2, 1.6 shipped, 2026-09-01.
 Same standing mandate as the banner below. Committed `00f1057` on
 `p0-modernization-foundation` (not merged, no PR).

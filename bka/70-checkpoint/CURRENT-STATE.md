@@ -4,7 +4,67 @@ _Last updated: 2026-09-01._
 
 ---
 
-# ⛔ NEWEST BANNER — P3 D3 (hybrid tool search) shipped, 2026-09-01. Commit `c0ea640` on `p0-modernization-foundation` (not merged, no PR), on top of the 7 items the banner below already records.
+# ⛔ NEWEST BANNER — P4 (5.4) BOTH HALVES SHIPPED, 2026-09-01, plus two real cross-cutting bugs caught and fixed. Concurrent P3 session (banner below) unaffected — no shared files touched.
+
+**5.4 — "notifications / job progress are polled today, should be one
+live-events stream" — fully shipped, both halves.** Job-progress half:
+commit `0fc6cda`. Notification half + two bug fixes: commit `899c738`.
+`GET /api/v1/background-jobs/:id/stream` and `GET
+/api/v1/notifications/stream`, both SSE, same `writeEvent` convention
+`routes/ai.js`'s `/ai/ask/stream` already established.
+
+**Two real, live-verified bugs caught while building this — both matter
+for ANY future long-lived-connection/poll-loop route, not just these
+two:**
+1. **Pool starvation.** `req.dbClient` (TenantConnection) holds a real
+   pool connection open, idle-in-transaction, for a request's WHOLE
+   lifetime by design — fine for a normal ~10ms request, fatal for an
+   SSE stream that can run up to 10 minutes. Exactly the P0 aiService.js
+   DB-lock bug (clash C5), just triggered by a long-lived stream instead
+   of a slow LLM call. Fixed: `req.dbClient.pauseForExternalCall()`
+   before entering the poll loop in both routes (never resumed — neither
+   route touches `req.dbClient` again, and the outer request middleware's
+   commit-on-`res.end` already no-ops on an already-paused connection).
+2. **RLS silently hides every row.** `backgroundJobService.findFresh` and
+   `notificationService.listUpdatedSinceFresh` (both new, this slice)
+   called `SELECT set_config('app.current_tenant', $1, true)` (LOCAL,
+   transaction-scoped) WITHOUT an explicit `BEGIN` — each bare `.query()`
+   is its own separate implicit transaction, so the tenant setting was
+   already gone by the time the actual SELECT ran, and RLS hid every row.
+   `findFresh` "worked" in its own first test only because that job
+   completed synchronously before the poll loop ever needed a delta —
+   the notifications stream test genuinely hung, and a raw psql session
+   proved a committed row's own `updated_at` really was `> since` while
+   the app-side query still returned 0. Fixed to match
+   `backgroundJobService.reportProgress`'s own already-correct
+   BEGIN/set_config/query/COMMIT shape — that pattern existed one
+   function away in the SAME file and wasn't copied into the new one.
+   **If any future slice adds another `appPool.connect()` + `set_config(...,
+   true)` short-lived-read helper, copy reportProgress's/these two
+   fixed functions' shape exactly — do not repeat this.**
+
+Full backend suite in Docker: **2815/2815, clean.** Lint: 0 errors, 0 new
+warnings. New test: `notifications.test.js`'s SSE case (opens stream
+first, drafts after, asserts the draft arrives as a live event — not a
+second poll).
+
+**Still open in P4 (unchanged from the previous P4 banner, now archived
+below it):** O2/O3 (staging + gradual rollout — new-investment stop
+condition, needs an owner answer), 3.4 (turns out to be the Documents
+Institutional/Personal tab-merge — needs a `/product-reasoning` pass,
+not a silent build), O8, 5.11/5.12, 5.5/5.6, 5.3, 5.10, "internal-use
+loop," "score a sample of live traffic."
+
+**Exact next action:** ask the owner about O2/O3 and 3.4 when next
+resuming. Until then, next safe P4 item: "score a sample of live
+traffic + watch for scorer drift" (buildable now, no new infra, reuses
+`ai-behavioral-suite.js`'s LLM-judge pattern) — backend-only, doesn't
+touch files the concurrent P3 session is likely mid-editing
+(`aiService.js`, `aiToolRetrievalService.js`, `aiToolRegistry.js`).
+
+---
+
+# ⛔ Previous banner — P3 D3 (hybrid tool search) shipped, 2026-09-01. Commit `c0ea640` on `p0-modernization-foundation` (not merged, no PR), on top of the 7 items the banner below already records.
 
 **D3 — hybrid keyword + meaning tool search, mechanism built, shipped
 OFF.** `config.aiHybridToolRetrieval` (`AI_HYBRID_TOOL_RETRIEVAL=true`)

@@ -51,13 +51,14 @@ genuinely usable here (pure Python + stdlib, no missing dependency):
 - `scripts/accept_changes.py` — accepts every tracked change in a
   `.docx` via LibreOffice and writes a clean copy.
 
-The rest of this skill's bundled `scripts/` (`merge_runs.py`,
-`comment.py`, `office/validate.py` and everything under
-`office/validators/`) import `defusedxml`, which is **not installed**
-in this sandbox — running any of them raises `ModuleNotFoundError`.
-Don't invoke them. Where this file used to lean on one of them, it
-now gives you the direct `python-docx` (or raw-XML-via-`lxml`, which
-IS installed as `python-docx`'s own dependency) equivalent instead.
+This skill used to also bundle `merge_runs.py`, `comment.py`,
+`office/validate.py`, and everything under `office/validators/` —
+all removed (P3 3.2, 2026-09-01) because they import `defusedxml`,
+which is **not installed** in this sandbox, so every one of them
+raised `ModuleNotFoundError` if invoked. Where this file used to lean
+on one of them, it now gives you the direct `python-docx` (or
+raw-XML-via-`lxml`, which IS installed as `python-docx`'s own
+dependency) equivalent instead.
 
 # DOCX creation, editing, and analysis
 
@@ -237,17 +238,19 @@ and no bundled helper in this sandbox — it requires hand-building
 `<w:ins>`/`<w:del>` XML via each paragraph's underlying `lxml` element
 (`paragraph._p`), with `w:id`/`w:author`/`w:date` attributes on every
 inserted/deleted run. This project has no schema-validation script
-that can check a redline is well-formed here (the bundled
-`office/validate.py` needs `defusedxml`, which isn't installed) — say
-so plainly if a user asks for real Word-native redlining, rather than
-emitting unverified raw XML with no way to confirm it opens correctly.
+that can check a redline is well-formed here (`office/validate.py`
+needed `defusedxml`, which isn't installed, and was removed — see
+above) — say so plainly if a user asks for real Word-native
+redlining, rather than emitting unverified raw XML with no way to
+confirm it opens correctly.
 
 ## Comments
 
 Adding a native Word comment is **not currently supported** in this
-sandbox — the bundled `scripts/comment.py` needs `defusedxml`, which
-isn't installed here, and comments require six cross-linked XML parts
-with no `python-docx` API to generate them. Don't attempt an ad hoc
+sandbox — `scripts/comment.py` needed `defusedxml`, which isn't
+installed here, and was removed (see above); comments require six
+cross-linked XML parts with no `python-docx` API to generate them.
+Don't attempt an ad hoc
 version — say so, and offer a plain-text alternative (e.g. a bracketed
 inline note in the document body, clearly marked as an annotation)
 when the user needs feedback embedded in the file itself.

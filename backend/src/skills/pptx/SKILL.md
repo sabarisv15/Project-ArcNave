@@ -52,13 +52,14 @@ Of this skill's bundled `scripts/`, only two are genuinely usable here
   API has no slide-duplication entry point at all (see Limitations
   below), so this is the only way to do it.
 
-`scripts/clean.py`, `scripts/thumbnail.py`, and `office/validate.py`
-(plus everything under `office/validators/`) import `defusedxml`,
-which is **not installed** in this sandbox — running any of them
-raises `ModuleNotFoundError`. `thumbnail.py` additionally imports
-`PIL` (Pillow), also not installed. Don't invoke any of the three.
-Where this file used to lean on one of them, it now gives you the
-direct `python-pptx` (or plain-rendering) equivalent instead.
+This skill used to also bundle `scripts/clean.py`, `scripts/thumbnail.py`,
+and `office/validate.py` (plus everything under `office/validators/`) —
+all removed (P3 3.2, 2026-09-01) because they import `defusedxml`,
+which is **not installed** in this sandbox, so every one of them
+raised `ModuleNotFoundError` if invoked. `thumbnail.py` additionally
+imported `PIL` (Pillow), also not installed. Where this file used to
+lean on one of them, it now gives you the direct `python-pptx` (or
+plain-rendering) equivalent instead.
 
 # PPTX creation, editing, and analysis
 
@@ -81,11 +82,11 @@ Paths are relative to this skill's directory.
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
 | `scripts/office/soffice.py`                                      | LibreOffice wrapper (auto-generates a writable profile dir)                                                                    | Yes                                                                 |
 | `scripts/add_slide.py unpacked/ slide2.xml [--after slideN.xml]` | Duplicate a slide (or a `slideLayoutN.xml`) with all the package bookkeeping. Also takes a `.pptx` directly with `-o out.pptx` | Yes                                                                 |
-| `scripts/clean.py`                                               | Delete orphaned slides/media/rels                                                                                              | **No** — imports `defusedxml`, not installed                        |
-| `scripts/office/validate.py`                                     | Schema/relationship/content-type/chart checks                                                                                  | **No** — imports `defusedxml`, not installed                        |
-| `scripts/thumbnail.py`                                           | Labeled grid of every slide                                                                                                    | **No** — imports `defusedxml` AND `PIL` (Pillow), neither installed |
+| `scripts/clean.py`                                               | Delete orphaned slides/media/rels                                                                                              | **Removed** — imported `defusedxml`, not installed                        |
+| `scripts/office/validate.py`                                     | Schema/relationship/content-type/chart checks                                                                                  | **Removed** — imported `defusedxml`, not installed                        |
+| `scripts/thumbnail.py`                                           | Labeled grid of every slide                                                                                                    | **Removed** — imported `defusedxml` AND `PIL` (Pillow), neither installed |
 
-For the three that don't run here:
+For the three that were removed:
 
 - **Instead of `clean.py`** (orphaned parts after deleting slides): this
   sandbox has no automated cleanup. An orphaned media/rels part makes

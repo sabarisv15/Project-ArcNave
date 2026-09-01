@@ -343,6 +343,23 @@ module.exports = {
   // failure). `=== 'true'` — a stray truthy string never enables it.
   aiExplicitCache: process.env.AI_EXPLICIT_CACHE === 'true',
 
+  // ARCNAVE modernization P3 (D3 — "meaning-search only -> blend with
+  // keyword search + re-ranking") — aiToolRetrievalService.js's hybrid
+  // tool-retrieval mode, blending semantic (embedding) and lexical
+  // (keyword-overlap) rankings via Reciprocal Rank Fusion instead of
+  // today's either/or choice (semantic when embeddings are available,
+  // lexical only as a total fallback). Same posture as config.toolSearch
+  // above: the mechanism ships, OFF by default — 1.2/C4's margin-based
+  // semantic-only cutoff (this same session, ADL-072's sibling P2
+  // banner) was JUST live-measured against real Gemini embeddings;
+  // hybrid fusion has NOT been, so it must not silently become the
+  // default path for every real AI turn's tool selection without its
+  // own probe run first (same discipline
+  // scripts/tool-retrieval-margin-probe.js already set for the cutoff
+  // itself — see scripts/tool-retrieval-hybrid-probe.js). `=== 'true'`
+  // — a stray truthy string never enables it.
+  aiHybridToolRetrieval: process.env.AI_HYBRID_TOOL_RETRIEVAL === 'true',
+
   // ARCNAVE modernization P2 (PDF 1.14) — the six EXPERIMENTAL_* AI
   // behaviour trials (experimentalCatalogueVariant, experimentalReasoningModel,
   // experimentalAttachmentDiscipline, experimentalFullInstructionsDocument,

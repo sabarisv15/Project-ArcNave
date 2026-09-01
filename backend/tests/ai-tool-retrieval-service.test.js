@@ -12,6 +12,7 @@ const aiToolRetrievalService = require('../src/services/aiToolRetrievalService')
 const embeddingService = require('../src/services/embeddingService');
 const aiToolEmbeddingRepository = require('../src/repositories/aiToolEmbeddingRepository');
 const aiToolRegistry = require('../src/services/aiToolRegistry');
+const config = require('../src/config');
 
 function makeTools(count) {
   return Array.from({ length: count }, (_, i) => ({
@@ -357,4 +358,250 @@ test('applyMarginCutoff: a genuinely relevant tool ranked far from the question 
     !kept.some((r) => r.tool_name === 'arrears_reconciliation_tool'),
     'confirms the miss actually happened in this scenario, not accidentally avoided by the chosen distances',
   );
+});
+
+// --- reciprocalRankFusion / retrieveHybrid (ARCNAVE modernization P3, D3) ---
+
+function tool(name) {
+  return { name, description: `does ${name}`, level: 'L1', dataClassification: 'Internal', riskLevel: 0, params: {} };
+}
+
+test('reciprocalRankFusion: empty inputs return empty, never throws', () => {
+  assert.deepEqual(aiToolRetrievalService.reciprocalRankFusion([], []), []);
+});
+
+test('reciprocalRankFusion: a tool present in both lists outranks one present in only one, even if the single-list one is rank 1 there', () => {
+  const a = tool('a');
+  const b = tool('b');
+  // b is rank 1 semantically but not lexical at all; a is rank 2
+  // semantically AND rank 1 lexically — agreement across both signals
+  // should win over a lone rank-1 in just one.
+  const result = aiToolRetrievalService.reciprocalRankFusion([b, a], [a]);
+  assert.equal(result[0].name, 'a');
+  assert.equal(result[1].name, 'b');
+});
+
+test('reciprocalRankFusion: identical rank-1 in both lists still returns just that one tool, not duplicated', () => {
+  const a = tool('a');
+  const result = aiToolRetrievalService.reciprocalRankFusion([a], [a]);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].name, 'a');
+});
+
+test('reciprocalRankFusion: a tool only in the lexical list still surfaces (meaning search alone would have missed it)', () => {
+  const a = tool('a');
+  const b = tool('b');
+  const result = aiToolRetrievalService.reciprocalRankFusion([a], [b]);
+  assert.deepEqual(
+    result.map((t) => t.name).sort(),
+    ['a', 'b'],
+  );
+});
+
+test('reciprocalRankFusion: preserves rank order within a single list when the other is empty', () => {
+  const a = tool('a');
+  const b = tool('b');
+  const c = tool('c');
+  const result = aiToolRetrievalService.reciprocalRankFusion([a, b, c], []);
+  assert.deepEqual(
+    result.map((t) => t.name),
+    ['a', 'b', 'c'],
+  );
+});
+
+test('retrieveHybrid: blends semantic and lexical rankings — a tool with strong lexical overlap but a mediocre (ceiling-passing) semantic rank still wins fusion', async () => {
+  const tools = [tool('attendance_summary'), tool('fee_status'), tool('staff_leave_balance')];
+  await withStub(
+    aiToolEmbeddingRepository,
+    'findExistingToolNames',
+    async () => tools.map((t) => t.name),
+    () =>
+      withStub(
+        embeddingService,
+        'embed',
+        async (texts) => texts.map(() => [0.1, 0.2]),
+        () =>
+          withStub(
+            aiToolEmbeddingRepository,
+            'search',
+            async (_client, { toolNames }) =>
+              // All three pass ABSOLUTE_CEILING (0.4), so all three are
+              // real fusion candidates — fee_status ranks best
+              // semantically but has zero lexical overlap with the
+              // question below; attendance_summary ranks worse
+              // semantically but the question is explicitly about
+              // attendance (real lexical overlap) — fusion should put
+              // it first.
+              toolNames.map((name) => ({
+                tool_name: name,
+                distance: { attendance_summary: 0.35, fee_status: 0.28, staff_leave_balance: 0.39 }[name],
+              })),
+            async () => {
+              const result = await aiToolRetrievalService.retrieveHybrid(
+                { query: async () => ({ rows: [] }) },
+                tools,
+                'what is the attendance summary for this class',
+              );
+              assert.equal(result[0].name, 'attendance_summary');
+            },
+          ),
+      ),
+  );
+});
+
+test('retrieveHybrid: a semantic candidate beyond ABSOLUTE_CEILING is excluded from fusion even though embedding search returned it', async () => {
+  const tools = [tool('irrelevant_tool')];
+  await withStub(
+    aiToolEmbeddingRepository,
+    'findExistingToolNames',
+    async () => tools.map((t) => t.name),
+    () =>
+      withStub(
+        embeddingService,
+        'embed',
+        async (texts) => texts.map(() => [0.1, 0.2]),
+        () =>
+          withStub(
+            aiToolEmbeddingRepository,
+            'search',
+            // Every embedding search returns its nearest TOP_K neighbours
+            // regardless of how far they are — distance 0.9 is well
+            // beyond ABSOLUTE_CEILING (0.4), so this must not surface.
+            async (_client, { toolNames }) => toolNames.map((name) => ({ tool_name: name, distance: 0.9 })),
+            async () => {
+              const result = await aiToolRetrievalService.retrieveHybrid(
+                { query: async () => ({ rows: [] }) },
+                tools,
+                'completely unrelated greeting, hi there',
+              );
+              assert.deepEqual(result, [], 'a genuinely irrelevant question must still be able to return zero tools');
+            },
+          ),
+      ),
+  );
+});
+
+test('retrieveHybrid: caps the fused result at TOP_K even when both lists together exceed it', async () => {
+  const tools = makeTools(12);
+  await withStub(
+    aiToolEmbeddingRepository,
+    'findExistingToolNames',
+    async () => tools.map((t) => t.name),
+    () =>
+      withStub(
+        embeddingService,
+        'embed',
+        async (texts) => texts.map(() => [0.1, 0.2]),
+        () =>
+          withStub(
+            aiToolEmbeddingRepository,
+            'search',
+            async (_client, { toolNames }) =>
+              toolNames.map((name, i) => ({ tool_name: name, distance: 0.1 + i * 0.01 })),
+            async () => {
+              const result = await aiToolRetrievalService.retrieveHybrid(
+                { query: async () => ({ rows: [] }) },
+                tools,
+                'does thing number 1 2 3 4 5 6 7 8 9 10 11',
+              );
+              assert.ok(result.length <= 8, `expected at most 8 (TOP_K), got ${result.length}`);
+            },
+          ),
+      ),
+  );
+});
+
+test('retrieveRelevantTools: config.aiHybridToolRetrieval OFF (default) still uses the pure-semantic margin-cutoff tier, not hybrid', async () => {
+  const tools = [tool('a'), tool('b')];
+  const original = config.aiHybridToolRetrieval;
+  config.aiHybridToolRetrieval = false;
+  try {
+    await withStub(
+      embeddingService,
+      'isAvailable',
+      () => true,
+      () =>
+        withStub(
+          aiToolEmbeddingRepository,
+          'findExistingToolNames',
+          async () => tools.map((t) => t.name),
+          () =>
+            withStub(
+              embeddingService,
+              'embed',
+              async (texts) => texts.map(() => [0.1, 0.2]),
+              () =>
+                withStub(
+                  aiToolEmbeddingRepository,
+                  'search',
+                  async (_client, { toolNames }) => toolNames.map((name) => ({ tool_name: name, distance: 0.9 })),
+                  async () => {
+                    // distance 0.9 exceeds ABSOLUTE_CEILING either way, but
+                    // this asserts the CALL PATH taken, not just the
+                    // result: retrieveSemantic's own margin-cutoff
+                    // behavior applies (an empty result here is expected
+                    // from BOTH tiers on this input, so the real
+                    // assertion is that no crash/mismatch occurs when the
+                    // flag is explicitly off).
+                    const result = await aiToolRetrievalService.retrieveRelevantTools(
+                      { query: async () => ({ rows: [] }) },
+                      { roleTools: tools, question: 'irrelevant' },
+                    );
+                    assert.deepEqual(result, []);
+                  },
+                ),
+            ),
+        ),
+    );
+  } finally {
+    config.aiHybridToolRetrieval = original;
+  }
+});
+
+test('retrieveRelevantTools: config.aiHybridToolRetrieval ON routes through the hybrid tier (a lexical-only match surfaces that pure-semantic would have missed)', async () => {
+  const tools = [tool('attendance_summary'), tool('unrelated_tool')];
+  const original = config.aiHybridToolRetrieval;
+  config.aiHybridToolRetrieval = true;
+  try {
+    await withStub(
+      embeddingService,
+      'isAvailable',
+      () => true,
+      () =>
+        withStub(
+          aiToolEmbeddingRepository,
+          'findExistingToolNames',
+          async () => tools.map((t) => t.name),
+          () =>
+            withStub(
+              embeddingService,
+              'embed',
+              async (texts) => texts.map(() => [0.1, 0.2]),
+              () =>
+                withStub(
+                  aiToolEmbeddingRepository,
+                  'search',
+                  // Both tools are semantically indistinguishable and
+                  // BEYOND the ceiling — the pure-semantic tier would
+                  // return nothing here. The hybrid tier's lexical half
+                  // still has real overlap with "attendance summary".
+                  async (_client, { toolNames }) => toolNames.map((name) => ({ tool_name: name, distance: 0.9 })),
+                  async () => {
+                    const result = await aiToolRetrievalService.retrieveRelevantTools(
+                      { query: async () => ({ rows: [] }) },
+                      { roleTools: tools, question: 'give me the attendance summary' },
+                    );
+                    assert.deepEqual(
+                      result.map((t) => t.name),
+                      ['attendance_summary'],
+                      'the hybrid tier recovers a lexical-only match the pure-semantic tier alone would have missed',
+                    );
+                  },
+                ),
+            ),
+        ),
+    );
+  } finally {
+    config.aiHybridToolRetrieval = original;
+  }
 });

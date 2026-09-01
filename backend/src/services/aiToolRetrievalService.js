@@ -30,10 +30,20 @@
 // against live usage) — same "deliberately conservative, no eval set
 // yet" honesty aiToolRegistry.js's own RANK_CAP comment already
 // carries for the lexical tier.
+//
+// ARCNAVE modernization P3 (D3) — config.aiHybridToolRetrieval (OFF by
+// default) adds a THIRD tier between the two above: when embeddings are
+// available, blend the semantic ranking with a lexical (keyword-
+// overlap) ranking via Reciprocal Rank Fusion (retrieveHybrid, below)
+// instead of only ever trusting semantic distance alone. Ships behind a
+// flag, same posture as config.toolSearch — see config.js's own
+// comment and scripts/tool-retrieval-hybrid-probe.js for the live
+// measurement needed before flipping it on.
 
 const embeddingService = require('./embeddingService');
 const aiToolEmbeddingRepository = require('../repositories/aiToolEmbeddingRepository');
 const aiToolRegistry = require('./aiToolRegistry');
+const config = require('../config');
 
 // ARCNAVE modernization P2 (1.2 / clash C4) — replaces the fixed
 // SIMILARITY_DISTANCE_THRESHOLD = 0.8 absolute cutoff (kept below,
@@ -154,6 +164,72 @@ async function retrieveSemantic(client, roleTools, question) {
     .filter(Boolean);
 }
 
+// ARCNAVE modernization P3 (D3) — Reciprocal Rank Fusion, a standard,
+// deterministic, training-free way to combine two rankings whose raw
+// scores are not comparable numbers (cosine distance vs. a keyword-
+// overlap count) — but whose RANK POSITIONS are. For a tool appearing
+// at 1-indexed rank `r` in a list, its contribution from that list is
+// 1/(RRF_K + r); a tool present in both lists sums both contributions,
+// naturally rewarding agreement between the two signals without either
+// one dominating on its own scale. RRF_K = 60 is the standard constant
+// from the technique's original paper (Cormack, Clarke & Buettcher
+// 2009) — a deliberate, well-established default, not tuned against
+// this project's own data (same "first real value, not a permanent
+// one" honesty applyMarginCutoff's own constants carry — re-tune only
+// once scripts/tool-retrieval-hybrid-probe.js has real measurements to
+// re-tune it against).
+const RRF_K = 60;
+
+function reciprocalRankFusion(semanticRankedTools, lexicalRankedTools) {
+  const scoreByToolName = new Map(); // toolName -> { tool, score }
+  const addContributions = (rankedTools) => {
+    rankedTools.forEach((tool, index) => {
+      const rank = index + 1;
+      const contribution = 1 / (RRF_K + rank);
+      const existing = scoreByToolName.get(tool.name);
+      scoreByToolName.set(tool.name, { tool, score: (existing ? existing.score : 0) + contribution });
+    });
+  };
+  addContributions(semanticRankedTools);
+  addContributions(lexicalRankedTools);
+  return [...scoreByToolName.values()].sort((a, b) => b.score - a.score).map((entry) => entry.tool);
+}
+
+// The hybrid path itself — semantic candidates come from the SAME
+// aiToolEmbeddingRepository.search call retrieveSemantic already makes
+// (raw ranked-by-distance order), still gated by ABSOLUTE_CEILING alone
+// — NOT the relative MARGIN cutoff, which is the part fusion exists to
+// relax (a margin-excluded-but-ceiling-passing tool can still win a
+// fused rank if the lexical signal also supports it). Keeping the
+// ceiling matters: without SOME distance gate, embedding search always
+// returns its nearest TOP_K neighbours regardless of how far they
+// actually are, so a genuinely irrelevant question ("hi") would always
+// get TOP_K tools back — exactly the bug 1.2/C4 (this same session)
+// just fixed for the pure-semantic tier. Lexical candidates come from
+// aiToolRegistry.rankToolsByKeywordOverlap (zero-overlap tools already
+// excluded there). The fused, re-ranked list is capped at TOP_K, same
+// "3-8 tools, high end of range" bias every other tier in this file
+// already uses.
+async function retrieveHybrid(client, roleTools, question) {
+  await ensureEmbeddings(client, roleTools);
+  const [questionEmbedding] = await embeddingService.embed([question], { inputType: 'query' });
+  const semanticRanked = await aiToolEmbeddingRepository.search(client, {
+    toolNames: roleTools.map((t) => t.name),
+    embedding: questionEmbedding,
+    limit: TOP_K,
+  });
+  const byName = new Map(roleTools.map((t) => [t.name, t]));
+  const semanticRankedTools = semanticRanked
+    .filter((row) => row.distance <= ABSOLUTE_CEILING)
+    .map((row) => byName.get(row.tool_name))
+    .filter(Boolean);
+
+  const lexicalRanked = aiToolRegistry.rankToolsByKeywordOverlap(roleTools, question);
+  const lexicalRankedTools = lexicalRanked.map((r) => r.tool);
+
+  return reciprocalRankFusion(semanticRankedTools, lexicalRankedTools).slice(0, TOP_K);
+}
+
 // `roleTools` is already role/permission-filtered by the caller
 // (aiService.askAgent) — this never decides which tools a role may
 // see, only which of that already-permitted set are worth sending
@@ -167,10 +243,20 @@ async function retrieveSemantic(client, roleTools, question) {
 // does — the ONLY thing TOP_K still bounds is how many candidates
 // aiToolEmbeddingRepository.search fetches to rank in the first place,
 // never a shortcut around ranking them at all.
+//
+// ARCNAVE modernization P3 (D3) — config.aiHybridToolRetrieval (OFF by
+// default, see config.js's own comment) switches the semantic-available
+// branch between the pure-semantic margin-cutoff tier (1.2/C4, already
+// live-measured) and the new fused hybrid tier — never both attempted
+// per call, and the flag is read once per call so a request never
+// straddles two different mechanisms. Both still share the exact same
+// "embedding call failed -> degrade to lexical" catch below.
 async function retrieveRelevantTools(client, { roleTools, question }) {
   if (embeddingService.isAvailable()) {
     try {
-      return await retrieveSemantic(client, roleTools, question);
+      return config.aiHybridToolRetrieval
+        ? await retrieveHybrid(client, roleTools, question)
+        : await retrieveSemantic(client, roleTools, question);
     } catch {
       // A transient embedding-call failure (network/quota) must never
       // break an entire chat turn — degrade to the lexical tier below,
@@ -188,4 +274,6 @@ module.exports = {
   // for a narrow internal this file needs covered on its own, not just
   // indirectly through retrieveRelevantTools' end-to-end path.
   applyMarginCutoff,
+  reciprocalRankFusion,
+  retrieveHybrid,
 };

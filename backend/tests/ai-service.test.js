@@ -2101,6 +2101,49 @@ test('filterToolsByRelevance: result never exceeds the rank cap when the role-fi
   );
 });
 
+// --- aiToolRegistry.rankToolsByKeywordOverlap (ARCNAVE modernization P3, D3 — extracted for aiToolRetrievalService's hybrid blend) ---
+
+test('rankToolsByKeywordOverlap: no significant words in the question returns an empty ranking, never the full list', () => {
+  const allTools = aiToolRegistry.listTools({ excludeHumanOnly: true, role: 'principal' });
+  assert.deepEqual(aiToolRegistry.rankToolsByKeywordOverlap(allTools, 'the a is'), []);
+});
+
+test('rankToolsByKeywordOverlap: excludes zero-overlap tools entirely — unlike filterToolsByRelevance, it never pads them back in', () => {
+  const allTools = aiToolRegistry.listTools({ excludeHumanOnly: true, role: 'principal' });
+  const ranked = aiToolRegistry.rankToolsByKeywordOverlap(allTools, 'xyzzy qux wombat');
+  assert.deepEqual(ranked, [], 'no tool overlaps this question at all, so the ranking must be empty, not capped-full');
+});
+
+test('rankToolsByKeywordOverlap: a tool whose name/description overlaps the question ranks first, in descending overlap order', () => {
+  const allTools = aiToolRegistry.listTools({ excludeHumanOnly: true, role: 'principal' });
+  const ranked = aiToolRegistry.rankToolsByKeywordOverlap(allTools, 'What is our finance status summary this month?');
+  assert.ok(ranked.length > 0);
+  assert.equal(ranked[0].tool.name, 'finance_status_summary');
+  for (let i = 1; i < ranked.length; i += 1) {
+    assert.ok(ranked[i - 1].overlap >= ranked[i].overlap, 'ranking must be non-increasing by overlap');
+  }
+});
+
+test('filterToolsByRelevance still fills zero-overlap tools to reach RANK_CAP even though rankToolsByKeywordOverlap itself excludes them (refactor did not change the caller-facing fallback behavior)', () => {
+  const allTools = aiToolRegistry.listTools({ excludeHumanOnly: true, role: 'principal' });
+  const question = 'finance status summary';
+  const ranked = aiToolRegistry.rankToolsByKeywordOverlap(allTools, question);
+  const filtered = aiToolRegistry.filterToolsByRelevance(allTools, question);
+  assert.ok(ranked.length < 25, 'sanity: only a handful of tools genuinely overlap this narrow question');
+  assert.equal(filtered.length, 25, 'filterToolsByRelevance still pads to the full RANK_CAP, unlike the raw ranking');
+  const rankedNames = new Set(ranked.map((r) => r.tool.name));
+  for (const r of ranked) {
+    assert.ok(
+      filtered.some((t) => t.name === r.tool.name),
+      `every overlapping tool (${r.tool.name}) must still appear in filterToolsByRelevance's result`,
+    );
+  }
+  assert.ok(
+    filtered.some((t) => !rankedNames.has(t.name)),
+    'the remainder must be zero-overlap fill, proving the fallback still pads rather than returning only the raw ranking',
+  );
+});
+
 test('aiService.askAgent: filterToolsByRelevance is applied before the tool-select call — a narrow question sends a smaller tool list than the full role-filtered one', async () => {
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };

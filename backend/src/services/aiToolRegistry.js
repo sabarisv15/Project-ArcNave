@@ -349,6 +349,30 @@ function toolKeywordOverlap(tool, questionWords) {
   return overlap;
 }
 
+// ARCNAVE modernization P3 (D3 — "meaning-search only -> blend with
+// keyword search + re-ranking"; the plan's own bullet list tags this
+// "1.5", but 1.5's own table row is about prompt-caching reuse order,
+// unrelated to search — D3's row is the unambiguous match, so this
+// slice is built against D3's description). Extracted out of
+// filterToolsByRelevance (below) unchanged in scoring logic, so
+// aiToolRetrievalService.js's new hybrid blend can rank by keyword
+// overlap WITHOUT filterToolsByRelevance's own RANK_CAP/zero-overlap-
+// fill policy, which exists for a different purpose (a hard ceiling on
+// a fallback-tier RESULT, not a ranking signal to feed into fusion with
+// another ranking). Zero-overlap tools are deliberately EXCLUDED here
+// (unlike filterToolsByRelevance's own fallback, which pads them back
+// in) — a tool contributing no lexical signal at all must not receive
+// undeserved rank credit just to pad out a list a fusion algorithm will
+// combine with a real semantic ranking.
+function rankToolsByKeywordOverlap(tools, question) {
+  const questionWords = new Set(significantWords(question));
+  if (questionWords.size === 0) return [];
+  return tools
+    .map((tool) => ({ tool, overlap: toolKeywordOverlap(tool, questionWords) }))
+    .filter((r) => r.overlap > 0)
+    .sort((a, b) => b.overlap - a.overlap);
+}
+
 // Ranks `tools` (already role-filtered) by keyword overlap with
 // `question` and keeps at most RANK_CAP. Round 32: this is now only
 // ever the LEXICAL FALLBACK tier of aiToolRetrievalService.js, used
@@ -365,25 +389,25 @@ function toolKeywordOverlap(tool, questionWords) {
 // question actually needed) is accepted here as this tier's known
 // limitation, not this function's problem to solve alone — a capable
 // college never reaches this path at all.
+//
+// Rewritten (P3 D3) to build on rankToolsByKeywordOverlap above instead
+// of duplicating the same scoring inline — behavior byte-identical to
+// before (same tests pass unchanged): `ranked` here already excludes
+// zero-overlap tools, so `ranked.length === 0` now covers BOTH the old
+// "no question words" and "no tool overlapped" early-returns in one
+// branch, and the zero-overlap fill re-derives its candidates from the
+// ORIGINAL `tools` array (not a re-sorted copy), preserving the exact
+// same relative order Array.prototype.sort's stability gave those
+// zero-overlap entries before.
 function filterToolsByRelevance(tools, question) {
   if (tools.length <= RANK_CAP) return tools;
-  const questionWords = new Set(significantWords(question));
-  if (questionWords.size === 0) return tools.slice(0, RANK_CAP);
+  const ranked = rankToolsByKeywordOverlap(tools, question);
+  if (ranked.length === 0) return tools.slice(0, RANK_CAP);
+  if (ranked.length >= RANK_CAP) return ranked.slice(0, RANK_CAP).map((r) => r.tool);
 
-  const ranked = tools
-    .map((tool) => ({ tool, overlap: toolKeywordOverlap(tool, questionWords) }))
-    .sort((a, b) => b.overlap - a.overlap);
-
-  const overlapping = ranked.filter((r) => r.overlap > 0);
-  // No tool's own name/description shares a single word with the
-  // question — that's not evidence any tool is irrelevant, it just
-  // means this heuristic found nothing to rank on. Same capped
-  // fallback as the qWords.size === 0 case above.
-  if (overlapping.length === 0) return tools.slice(0, RANK_CAP);
-  if (overlapping.length >= RANK_CAP) return overlapping.slice(0, RANK_CAP).map((r) => r.tool);
-
-  const zeroOverlapFill = ranked.filter((r) => r.overlap === 0).slice(0, RANK_CAP - overlapping.length);
-  return [...overlapping, ...zeroOverlapFill].map((r) => r.tool);
+  const rankedNames = new Set(ranked.map((r) => r.tool.name));
+  const zeroOverlapFill = tools.filter((t) => !rankedNames.has(t.name)).slice(0, RANK_CAP - ranked.length);
+  return [...ranked.map((r) => r.tool), ...zeroOverlapFill];
 }
 
 // The Policy Gate. Four independent checks, each its own error class —
@@ -4903,6 +4927,7 @@ module.exports = {
   getTool,
   listTools,
   filterToolsByRelevance,
+  rankToolsByKeywordOverlap,
   invokeTool,
   checkToolPreconditions,
   computeRiskLevel,

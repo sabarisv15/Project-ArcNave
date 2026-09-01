@@ -6140,3 +6140,91 @@ by design (this slice ships tooling, not a first real TypeScript
 file). Full backend suite NOT re-run in Docker for this slice
 specifically (devDependency-only change, no runtime `.js` file
 touched) — due before the next Docker-verified P3 checkpoint regardless.
+
+## ADL-073
+
+### D3 (modernization P3) — hybrid keyword + meaning tool search: mechanism built, shipped OFF, needs its own live probe before enabling
+
+**What prompted this.** Plan bullet "Blend keyword + meaning search +
+re-ranking (1.5 / D3)" — the "1.5" tag is a plan inconsistency (1.5's
+own table row is about prompt-caching reuse order, unrelated to
+search); D3's own row ("meaning-search only -> blend with keyword
+search + re-ranking") is the unambiguous match this was built against.
+
+**What shipped, real code, all in `aiToolRetrievalService.js`/
+`aiToolRegistry.js`:**
+- `aiToolRegistry.rankToolsByKeywordOverlap(tools, question)` (new,
+  exported) — the SAME scoring `filterToolsByRelevance` already used,
+  extracted out unchanged so a caller can rank by keyword overlap
+  WITHOUT that function's own `RANK_CAP`/zero-overlap-fill policy
+  (which exists for a fallback-tier ceiling, not a ranking signal to
+  feed a fusion algorithm). `filterToolsByRelevance` itself now calls
+  the extracted function — behavior-preserving refactor, confirmed by
+  its own pre-existing test suite passing byte-unchanged (236/236 in
+  `ai-service.test.js`, including the 4 tests that already covered it).
+- `reciprocalRankFusion(semanticRankedTools, lexicalRankedTools)` (new,
+  exported) — standard Reciprocal Rank Fusion (Cormack, Clarke &
+  Buettcher 2009), `RRF_K = 60` (the technique's own standard constant,
+  not tuned against this project's data). Combines two rankings whose
+  raw scores aren't comparable (cosine distance vs. keyword-overlap
+  count) via rank POSITION instead.
+- `retrieveHybrid(client, roleTools, question)` (new) — semantic
+  candidates from the same `aiToolEmbeddingRepository.search` call
+  `retrieveSemantic` already makes, still gated by `ABSOLUTE_CEILING`
+  alone (NOT the relative `MARGIN` — margin is what fusion exists to
+  relax) so a genuinely irrelevant question can still return zero tools
+  (embedding search always returns its nearest TOP_K neighbours
+  regardless of actual distance — dropping the ceiling entirely would
+  have resurrected the exact "never returns empty" bug 1.2/C4, this
+  same session, just fixed). Lexical candidates from
+  `rankToolsByKeywordOverlap`. Fused result capped at `TOP_K` (8).
+- `config.aiHybridToolRetrieval` (new, `AI_HYBRID_TOOL_RETRIEVAL=true`
+  to enable) — **OFF by default.** `retrieveRelevantTools` reads it
+  once per call to choose `retrieveHybrid` vs. the existing
+  `retrieveSemantic` when embeddings are available; the "embedding call
+  failed -> lexical fallback" degrade path is shared unchanged by both.
+- `scripts/tool-retrieval-hybrid-probe.js` (new) — same `PROBES` set as
+  `tool-retrieval-margin-probe.js` (1.2/C4's own probe), shows the
+  pure-semantic/pure-lexical/hybrid ranking side by side per question
+  plus a RECOVERED/DROPPED diff against today's live default, so a
+  future run can judge concretely whether fusion helps before flipping
+  the flag.
+
+**Decision: build the mechanism, ship it OFF, do not enable now.** Same
+posture `config.toolSearch`/`config.aiExplicitCache` already
+established in this modernization effort. Reasoning: 1.2/C4's
+margin-based semantic-only cutoff was JUST live-measured against real
+Gemini embeddings this same day (ADL entry for that commit,
+`5f6d4a1`); this hybrid fusion tier has NOT been — RRF's constants
+(`RRF_K = 60`) are the technique's standard default, not something this
+project measured, and this touches the tool-selection path for every
+single real AI turn. Shipping it live without a probe run first would
+repeat exactly the mistake ADL-054/055/070 already corrected course on
+elsewhere in this same effort (build first, measure never).
+
+**Re-open / enable condition.** Run
+`scripts/tool-retrieval-hybrid-probe.js` against real Gemini
+embeddings, review every RECOVERED/DROPPED line against what the
+actually-correct tool set for that question should be — then set
+`AI_HYBRID_TOOL_RETRIEVAL=true` only if the fused ranking is a real,
+demonstrated improvement over today's margin-cutoff tier, not just a
+plausible-sounding mechanism.
+
+**Affected artefacts.** New: `aiToolRegistry.rankToolsByKeywordOverlap`,
+`aiToolRetrievalService.reciprocalRankFusion`/`retrieveHybrid`,
+`config.aiHybridToolRetrieval`,
+`scripts/tool-retrieval-hybrid-probe.js`. Modified:
+`aiToolRegistry.filterToolsByRelevance` (refactored, behavior-preserving),
+`aiToolRetrievalService.retrieveRelevantTools` (flag-gated branch
+added). No migration.
+
+**Verification.** 22 tests in `ai-tool-retrieval-service.test.js`
+(10 new: `reciprocalRankFusion` x5, `retrieveHybrid` x3, flag-gated
+`retrieveRelevantTools` x2), 4 new tests in `ai-service.test.js`
+(`rankToolsByKeywordOverlap` x3, a refactor-safety test confirming
+`filterToolsByRelevance` still pads zero-overlap fill) — all passing,
+run standalone (dummy env vars, no Docker on this host) —
+236/236 in `ai-service.test.js`, 22/22 in
+`ai-tool-retrieval-service.test.js`. `node --check` + eslint clean (0
+errors) on every touched file. NOT re-run through the full Docker suite
+this pass — due at the next Docker checkpoint.

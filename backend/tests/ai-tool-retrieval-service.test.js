@@ -32,21 +32,55 @@ function withStub(obj, key, impl, fn) {
   });
 }
 
-test('retrieveRelevantTools: a role-tool count at or under TOP_K is returned unchanged, no embedding/DB call at all', async () => {
+// ARCNAVE modernization P2 (1.2 / clash C4) — the `roleTools.length <=
+// TOP_K` bypass this test used to assert is GONE: it was the PDF's own
+// named bug ("if a role has 8 or fewer tools, all get sent" regardless
+// of the question). A small role-tool set now goes through the exact
+// same real retrieval + margin cutoff every other role does.
+test('retrieveRelevantTools: a role-tool count at or under TOP_K still goes through real retrieval, never bypassed', async () => {
   const tools = makeTools(5);
   let embedCalled = false;
   await withStub(
     embeddingService,
-    'embed',
-    async () => {
-      embedCalled = true;
-      return [];
-    },
-    async () => {
-      const result = await aiToolRetrievalService.retrieveRelevantTools({}, { roleTools: tools, question: 'anything' });
-      assert.deepEqual(result, tools);
-      assert.equal(embedCalled, false, 'a small role-tool set never needs retrieval at all');
-    },
+    'isAvailable',
+    () => true,
+    () =>
+      withStub(
+        aiToolEmbeddingRepository,
+        'findExistingToolNames',
+        async () => tools.map((t) => t.name),
+        () =>
+          withStub(
+            embeddingService,
+            'embed',
+            async (texts) => {
+              embedCalled = true;
+              return texts.map(() => [0.1, 0.2]);
+            },
+            () =>
+              withStub(
+                aiToolEmbeddingRepository,
+                'search',
+                async (_client, { toolNames }) =>
+                  // Only tool_0 is genuinely relevant to this question — the
+                  // exact shape the old bypass could never express, since it
+                  // returned every one of these 5 tools unconditionally.
+                  toolNames.map((name, i) => ({ tool_name: name, distance: i === 0 ? 0.2 : 0.6 })),
+                async () => {
+                  const result = await aiToolRetrievalService.retrieveRelevantTools(
+                    { query: async () => ({ rows: [] }) },
+                    { roleTools: tools, question: 'something only tool_0 is about' },
+                  );
+                  assert.equal(embedCalled, true, 'a small role-tool set must still go through real retrieval');
+                  assert.deepEqual(
+                    result.map((t) => t.name),
+                    ['tool_0'],
+                    'only the genuinely relevant tool survives, not all 5',
+                  );
+                },
+              ),
+          ),
+      ),
   );
 });
 
@@ -94,7 +128,7 @@ test('retrieveRelevantTools: a failed embed() call degrades to the lexical fallb
   );
 });
 
-test('retrieveRelevantTools: semantic path only backfills tools missing an embedding, then ranks by distance and applies the threshold', async () => {
+test('retrieveRelevantTools: semantic path only backfills tools missing an embedding, then ranks by distance and applies the margin cutoff', async () => {
   const tools = makeTools(30);
   const upserted = [];
   const client = { query: async () => ({ rows: [] }) };
@@ -125,7 +159,14 @@ test('retrieveRelevantTools: semantic path only backfills tools missing an embed
                     aiToolEmbeddingRepository,
                     'search',
                     async (_client, { toolNames }) =>
-                      toolNames.slice(0, 3).map((name, i) => ({ tool_name: name, distance: [0, 0.3, 0.9][i] })),
+                      // 0.1 (best), 0.18 (within MARGIN=0.1 of best -> kept),
+                      // 0.35 (0.25 from best -> excluded by the MARGIN, even
+                      // though it is still well under ABSOLUTE_CEILING=0.4 on
+                      // its own — proving the cutoff is relative-to-best, not
+                      // just an absolute ceiling), 0.6 (excluded by the
+                      // ceiling too, moot since the margin already stopped
+                      // the scan before reaching it).
+                      toolNames.slice(0, 4).map((name, i) => ({ tool_name: name, distance: [0.1, 0.18, 0.35, 0.6][i] })),
                     async () => {
                       const result = await aiToolRetrievalService.retrieveRelevantTools(client, {
                         roleTools: tools,
@@ -136,7 +177,7 @@ test('retrieveRelevantTools: semantic path only backfills tools missing an embed
                         10,
                         'only the 10 tools missing a row should ever be embedded/upserted, not all 30',
                       );
-                      assert.equal(result.length, 2, 'distances 0 and 0.3 clear the threshold; 0.9 does not');
+                      assert.equal(result.length, 2, 'only distances within MARGIN of the best match survive');
                       assert.deepEqual(
                         result.map((t) => t.name),
                         ['tool_0', 'tool_1'],
@@ -224,4 +265,96 @@ test('filterToolsByRelevance (lexical fallback tier) still exists and is what re
   // Guards against the two functions silently drifting apart — the
   // fallback tier IS this function, not a reimplementation of it.
   assert.equal(typeof aiToolRegistry.filterToolsByRelevance, 'function');
+});
+
+// --- applyMarginCutoff (ARCNAVE modernization P2, 1.2 / clash C4) ------
+
+test('applyMarginCutoff: an empty candidate list returns empty, never throws', () => {
+  assert.deepEqual(aiToolRetrievalService.applyMarginCutoff([]), []);
+});
+
+test("applyMarginCutoff: even the single best candidate exceeding ABSOLUTE_CEILING returns genuinely empty — this is what makes 'zero tools' possible again", () => {
+  const ranked = [{ tool_name: 'a', distance: 0.5 }];
+  assert.deepEqual(aiToolRetrievalService.applyMarginCutoff(ranked), []);
+});
+
+test('applyMarginCutoff: candidates within MARGIN of the best match are kept, in order', () => {
+  const ranked = [
+    { tool_name: 'a', distance: 0.2 },
+    { tool_name: 'b', distance: 0.25 },
+    { tool_name: 'c', distance: 0.29 },
+  ];
+  assert.deepEqual(
+    aiToolRetrievalService.applyMarginCutoff(ranked).map((r) => r.tool_name),
+    ['a', 'b', 'c'],
+  );
+});
+
+test('applyMarginCutoff: the cutoff is relative to the BEST match, not each neighbour — small consecutive gaps must never accumulate past MARGIN unnoticed', () => {
+  // Each step from its own neighbour is only 0.04-0.05 — a naive
+  // "gap from previous" cutoff would keep accumulating and never stop.
+  // Cumulative distance from the actual best match (0.2) crosses MARGIN
+  // (0.1) at the 4th entry (0.32 - 0.2 = 0.12 > 0.1).
+  const ranked = [
+    { tool_name: 'a', distance: 0.2 },
+    { tool_name: 'b', distance: 0.24 },
+    { tool_name: 'c', distance: 0.28 },
+    { tool_name: 'd', distance: 0.32 },
+  ];
+  assert.deepEqual(
+    aiToolRetrievalService.applyMarginCutoff(ranked).map((r) => r.tool_name),
+    ['a', 'b', 'c'],
+  );
+});
+
+test('applyMarginCutoff: a single genuinely confident match with no close runner-up returns just that one tool', () => {
+  const ranked = [
+    { tool_name: 'a', distance: 0.2 },
+    { tool_name: 'b', distance: 0.39 },
+  ];
+  assert.deepEqual(
+    aiToolRetrievalService.applyMarginCutoff(ranked).map((r) => r.tool_name),
+    ['a'],
+  );
+});
+
+// --- ADL-055 / ai-tool-catalogue-approved-spec.md's own "wrongly-
+// excluded tool" incident, put in the test set per PDF 1.2 / clash C4's
+// own explicit instruction ---
+//
+// The ORIGINAL incident (analyze_document_table never retrieved for
+// "how many arrears are there in the ECE Sandwich section?", because
+// "arrears" embeds closer to this domain's finance vocabulary than to a
+// tool description that never uses the word) can no longer be replayed
+// verbatim — that tool was retired (ADL-065). The STRUCTURAL shape of
+// the finding is still live and worth locking in: a genuinely relevant
+// tool can rank far enough from the question's own embedding to be
+// legitimately excluded, and this function must degrade sanely when
+// that happens — never crash, never silently fall back to sending
+// every tool (that would just reintroduce the cost problem retrieval
+// exists to solve), and never claim a false positive either. Recovery
+// from exactly this case is describe_tools' job (aiService.js's own
+// SCHEMA_TOOL_NAME), not this function's — this test only proves the
+// function itself stays well-behaved at the moment of the miss.
+test('applyMarginCutoff: a genuinely relevant tool ranked far from the question is excluded cleanly, not crashed on or silently over-included', () => {
+  // finance_submit_fee_correction embeds close to "arrears" (finance
+  // vocabulary); a hypothetical arrears-reconciliation tool whose own
+  // description never uses financial wording embeds far from it — the
+  // exact mismatch ADL-055 measured.
+  const ranked = [
+    { tool_name: 'finance_submit_fee_correction', distance: 0.22 },
+    { tool_name: 'finance_status_summary', distance: 0.27 },
+    { tool_name: 'arrears_reconciliation_tool', distance: 0.71 }, // the genuinely needed tool, ranked far
+  ];
+  const kept = aiToolRetrievalService.applyMarginCutoff(ranked);
+  assert.deepEqual(
+    kept.map((r) => r.tool_name),
+    ['finance_submit_fee_correction', 'finance_status_summary'],
+    'the two finance tools clear the cutoff; the genuinely needed tool legitimately does not — this is the miss the ' +
+      'catalogue + describe_tools recovery path (built in aiService.js, not here) exists to catch, not this function',
+  );
+  assert.ok(
+    !kept.some((r) => r.tool_name === 'arrears_reconciliation_tool'),
+    'confirms the miss actually happened in this scenario, not accidentally avoided by the chosen distances',
+  );
 });

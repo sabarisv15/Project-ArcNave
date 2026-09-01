@@ -35,13 +35,50 @@ const embeddingService = require('./embeddingService');
 const aiToolEmbeddingRepository = require('../repositories/aiToolEmbeddingRepository');
 const aiToolRegistry = require('./aiToolRegistry');
 
-// pgvector cosine distance (`<=>`) is 0 for identical, 1 for
-// orthogonal, 2 for opposite. 0.8 is a deliberately permissive first
-// value — biased toward "include it" the same way the lexical tier's
-// own RANK_CAP comment already accepts extra tokens over a hard
-// exclusion — and is expected to be re-tuned once real query/tool-
-// match pairs exist to measure recall against, not left here forever.
-const SIMILARITY_DISTANCE_THRESHOLD = 0.8;
+// ARCNAVE modernization P2 (1.2 / clash C4) — replaces the fixed
+// SIMILARITY_DISTANCE_THRESHOLD = 0.8 absolute cutoff (kept below,
+// commented out, for the record) with two real, MEASURED constants —
+// scripts/tool-retrieval-margin-probe.js, run live against real Gemini
+// embeddings for a principal role's real 100 tools across 5
+// representative questions (2 confident single-tool matches, 1
+// multi-tool chain, 2 genuinely off-topic). What that run actually
+// showed, and why each constant is set where it is:
+//
+// - On-topic best-match distances clustered 0.26-0.35; off-topic
+//   best-match distances clustered 0.41-0.51 — a real, measured
+//   separation in the TOP-1 distance itself, not a guess.
+//   ABSOLUTE_CEILING = 0.4 sits between those two clusters: nothing
+//   passes at all once even the single best candidate is this far out,
+//   which is what makes a genuinely empty result possible again (the
+//   old 0.8 threshold's own documented problem: "essentially never
+//   returns a genuinely empty set").
+// - Within the tools that DO pass the ceiling, the old absolute
+//   threshold was "too loose" (PDF 1.2's own words) — it could not
+//   tell a tightly-clustered, confident match (attendance_summary at
+//   0.26, five genuinely attendance-related tools all within 0.09 of
+//   it) from a same-magnitude but unrelated one just because both
+//   cleared 0.8. MARGIN = 0.10, measured against the SAME probe run,
+//   is the actual gap size that cleanly separated "the 4-5 tools
+//   genuinely about this question" from "everything else that merely
+//   also cleared the ceiling" in both single-tool scenarios (position
+//   6 in each — finance_status_summary intruding on an attendance
+//   question, list_institutional_documents intruding on a finance one —
+//   sat right at or past a 0.10-0.11 gap from the best match; the
+//   genuinely relevant tools before it sat well under it).
+//
+// Both are still a first real-measured value, not a permanent one —
+// re-run the probe script against a broader query set (ideally the
+// behavioral suite's own categories) once more live usage data exists,
+// same "deliberately conservative, re-tune later" honesty the original
+// threshold's own comment already carried. describe_tools (C4's other
+// half, aiService.js's own SCHEMA_TOOL_NAME) is the deliberate safety
+// net for whatever this margin still gets wrong — a wrongly-excluded
+// tool is recoverable mid-turn, not a silent dead end, which is what
+// makes a real cutoff (rather than the old "essentially never exclude
+// anything" posture) an acceptable trade at all.
+// const SIMILARITY_DISTANCE_THRESHOLD = 0.8; // superseded, see above
+const ABSOLUTE_CEILING = 0.4;
+const MARGIN = 0.1;
 // "3-8 tools" per this round's own design brief — the high end of
 // that range, not the low end, for the same bias-toward-recall reason
 // the threshold above uses. Adaptive K (varying this by query
@@ -82,6 +119,27 @@ async function ensureEmbeddings(client, tools) {
   );
 }
 
+// ARCNAVE modernization P2 (1.2 / clash C4) — the margin-based cutoff
+// itself. `ranked` is already ascending by distance (nearest first,
+// aiToolEmbeddingRepository.search's own ORDER BY) so this is a single
+// forward pass: the absolute ceiling first (nothing survives at all if
+// even the best candidate is too far out — this is what makes a
+// genuinely empty result possible), then the relative margin from the
+// BEST match, not from each neighbour — a slow accumulation of small
+// consecutive gaps must not smuggle in a tool that is, in total,
+// nowhere near the actual best match.
+function applyMarginCutoff(ranked) {
+  if (ranked.length === 0 || ranked[0].distance > ABSOLUTE_CEILING) return [];
+  const bestDistance = ranked[0].distance;
+  const kept = [];
+  for (const row of ranked) {
+    if (row.distance > ABSOLUTE_CEILING) break; // ascending order — nothing after this clears it either
+    if (row.distance - bestDistance > MARGIN) break; // same reason, relative to the best match
+    kept.push(row);
+  }
+  return kept;
+}
+
 async function retrieveSemantic(client, roleTools, question) {
   await ensureEmbeddings(client, roleTools);
   const [questionEmbedding] = await embeddingService.embed([question], { inputType: 'query' });
@@ -91,8 +149,7 @@ async function retrieveSemantic(client, roleTools, question) {
     limit: TOP_K,
   });
   const byName = new Map(roleTools.map((t) => [t.name, t]));
-  return ranked
-    .filter((row) => row.distance <= SIMILARITY_DISTANCE_THRESHOLD)
+  return applyMarginCutoff(ranked)
     .map((row) => byName.get(row.tool_name))
     .filter(Boolean);
 }
@@ -101,9 +158,16 @@ async function retrieveSemantic(client, roleTools, question) {
 // (aiService.askAgent) — this never decides which tools a role may
 // see, only which of that already-permitted set are worth sending
 // full schemas for on this turn.
+//
+// ARCNAVE modernization P2 (1.2 / clash C4) — the `roleTools.length <=
+// TOP_K` bypass that used to sit here is gone: this IS the PDF's own
+// named bug ("if a role has 8 or fewer tools, all get sent" regardless
+// of what the question actually asks). A role with a small tool set now
+// gets the exact same real retrieval + margin cutoff every other role
+// does — the ONLY thing TOP_K still bounds is how many candidates
+// aiToolEmbeddingRepository.search fetches to rank in the first place,
+// never a shortcut around ranking them at all.
 async function retrieveRelevantTools(client, { roleTools, question }) {
-  if (roleTools.length <= TOP_K) return roleTools;
-
   if (embeddingService.isAvailable()) {
     try {
       return await retrieveSemantic(client, roleTools, question);
@@ -117,4 +181,11 @@ async function retrieveRelevantTools(client, { roleTools, question }) {
   return aiToolRegistry.filterToolsByRelevance(roleTools, question);
 }
 
-module.exports = { retrieveRelevantTools };
+module.exports = {
+  retrieveRelevantTools,
+  // Exported for direct unit testing only, same precedent aiService.js's
+  // own buildHistoryHint/buildAttachmentHint exports already establish
+  // for a narrow internal this file needs covered on its own, not just
+  // indirectly through retrieveRelevantTools' end-to-end path.
+  applyMarginCutoff,
+};

@@ -152,4 +152,53 @@ test('background jobs', async (t) => {
     });
     assert.equal(resp.status, 403);
   });
+
+  // P4 (5.4) — live-events stream for job progress, replacing polling.
+  await t.test('principal streams a background job to completion via SSE', async () => {
+    const token = await login('principaluser');
+    const created = await requestJson(baseUrl, '/api/v1/background-jobs', 'POST', {
+      headers: headersFor(token),
+      body: { name: 'stream_test_job' },
+    });
+    assert.equal(created.status, 202);
+
+    const events = await new Promise((resolve, reject) => {
+      const url = new URL(`/api/v1/background-jobs/${created.body.id}/stream`, baseUrl);
+      const req = http.request(url, { method: 'GET', headers: headersFor(token) }, (res) => {
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.headers['content-type'], 'text/event-stream');
+        let buffer = '';
+        const collected = [];
+        res.on('data', (chunk) => {
+          buffer += chunk.toString('utf8');
+          const parts = buffer.split('\n\n');
+          buffer = parts.pop();
+          for (const part of parts) {
+            const eventLine = part.split('\n').find((l) => l.startsWith('event: '));
+            const dataLine = part.split('\n').find((l) => l.startsWith('data: '));
+            if (eventLine && dataLine) {
+              collected.push({
+                event: eventLine.slice('event: '.length),
+                data: JSON.parse(dataLine.slice('data: '.length)),
+              });
+            }
+          }
+        });
+        res.on('end', () => resolve(collected));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+
+    assert.ok(events.length > 0, 'expected at least one SSE event');
+    const doneEvent = events.find((e) => e.event === 'done');
+    assert.ok(doneEvent, 'expected a done event once the job reached a terminal status');
+    assert.equal(doneEvent.data.status, 'completed');
+    assert.equal(doneEvent.data.id, created.body.id);
+    // Every emitted 'job' event should be the real, current job shape —
+    // same fields the plain GET /background-jobs/:id route returns.
+    for (const e of events.filter((ev) => ev.event === 'job')) {
+      assert.equal(e.data.id, created.body.id);
+    }
+  });
 });

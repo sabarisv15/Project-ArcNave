@@ -55,6 +55,79 @@ function createBackgroundJobsRouter() {
     }),
   );
 
+  // P4 (5.4) — "notifications / job progress are polled today, should be
+  // one live-events stream." Same SSE shape routes/ai.js's /ai/ask/stream
+  // already established (writeEvent helper, text/event-stream headers) so
+  // the frontend gets one familiar consumption pattern for both. No new
+  // infra: this is a poll loop inside the request handler, same
+  // single-app-instance posture every other "do not build early" item in
+  // this codebase already carries (D1, C8's own feature-switch half) — an
+  // actual pub/sub push mechanism is only worth it once there is more than
+  // one app instance to fan a write out to.
+  router.get(
+    '/background-jobs/:id/stream',
+    requirePermission('background_jobs.read'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const first = await backgroundJobService.find(req.dbClient, req.params.id);
+      if (!first) {
+        res.status(404).json({ detail: 'Background job not found' });
+        return;
+      }
+
+      res.writeHead(200, {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      });
+      const writeEvent = (event, data) => {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
+
+      const POLL_INTERVAL_MS = 500;
+      // Safety net only — a real job is expected to reach a terminal
+      // status well before this; this just stops an orphaned poll loop
+      // (e.g. a job stuck at 'running' forever) from running indefinitely.
+      const MAX_STREAM_MS = 10 * 60 * 1000;
+      const collegeId = req.collegeId;
+      const jobId = req.params.id;
+      const startedAt = Date.now();
+      let lastSent = null;
+      let stopped = false;
+      req.on('close', () => {
+        stopped = true;
+      });
+
+      const isTerminal = (job) => job.status === 'completed' || job.status === 'failed';
+      const changed = (job) =>
+        !lastSent || lastSent.status !== job.status || lastSent.progress !== job.progress;
+
+      const sendIfChanged = (job) => {
+        if (changed(job)) {
+          lastSent = job;
+          writeEvent('job', job);
+        }
+      };
+
+      try {
+        sendIfChanged(first);
+        while (!stopped && !isTerminal(lastSent) && Date.now() - startedAt < MAX_STREAM_MS) {
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+          if (stopped) break;
+          // eslint-disable-next-line no-await-in-loop
+          const job = await backgroundJobService.findFresh(collegeId, jobId);
+          if (job) sendIfChanged(job);
+        }
+        if (!stopped) writeEvent('done', lastSent);
+      } catch (err) {
+        if (!stopped) writeEvent('error', { detail: err.message });
+      } finally {
+        res.end();
+      }
+    }),
+  );
+
   return router;
 }
 

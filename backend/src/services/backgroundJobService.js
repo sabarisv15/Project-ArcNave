@@ -141,4 +141,23 @@ async function find(client, id) {
   return job ? publicJob(job) : null;
 }
 
-module.exports = { enqueue, list, find, runClaimedJob };
+// 5.4 — live updates for job progress. A poll loop (routes/backgroundJobs.js's
+// SSE stream) calls this once per tick for the lifetime of the stream, which
+// can run for minutes on a slow job. It deliberately does NOT reuse the
+// request's own req.dbClient for that whole span — same reasoning P0's
+// TenantConnection.pauseForExternalCall fix gave for AI calls: holding one
+// connection idle across a long-lived operation starves the pool. Instead,
+// same short-lived-connection-per-call shape reportProgress above already
+// established (open, set tenant context, query, release).
+async function findFresh(collegeId, id) {
+  const client = await appPool.connect();
+  try {
+    await client.query("SELECT set_config('app.current_tenant', $1, true)", [collegeId]);
+    const job = await backgroundJobRepository.findById(client, id);
+    return job ? publicJob(job) : null;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { enqueue, list, find, findFresh, runClaimedJob };

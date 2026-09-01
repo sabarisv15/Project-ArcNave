@@ -4,6 +4,74 @@ _Last updated: 2026-09-01._
 
 ---
 
+# ⛔ NEWEST BANNER — P3 session paused after 7 items shipped, 2026-09-01. Commits `c9f955f`/`03d826c`/`731440a`/`896adfc` on `p0-modernization-foundation` (not merged, no PR), on top of everything the two banners below already record.
+
+**1.12 — native forced-format for every provider, just shipped.**
+`openAiCompatibleUtils.js`'s `responseFormatFor` (moved from openai.js,
+unchanged) now shared by `selfHosted.js`/`vertexMaas.js` (same
+OpenAI-compatible `response_format` field). `claude.js` — no native
+field on Anthropic's API — now forces a single synthetic
+`structured_output` tool call via `tool_choice`, re-serializing the
+already-parsed `tool_use.input` back to a JSON string to keep the same
+"caller gets a string back" contract every other adapter already has.
+NOT live-verified against a real Anthropic key (flagged in the commit,
+same caveat that file's own header already carries elsewhere). 8
+tests replace the one that asserted the old gap; 72/72 in
+`ai-providers.test.js` standalone (dummy env vars, no Docker on this
+host).
+
+**7 of 13 P3 items now shipped this thread: 3.2, 4.3/5.2, 1.13 (+
+wiring), 2.3, 1.11, 1.12.** Full detail for each in the two banners
+directly below this one — read those before continuing, don't
+re-derive.
+
+**Remaining P3 items, by size/risk — read before picking one:**
+- **1.16 / clash C10 — rewrite the agent as a step-by-step machine.**
+  The single biggest, most invasive item in the whole plan — touches
+  `aiService.js`'s entire core loop, needs its own multi-day scoping
+  pass (route/fetch-tools/decide/act/verify/write-up architecture,
+  locking "identical prompt within a turn" in acceptance tests). Do
+  NOT attempt this in the same pass as smaller items.
+- **4.6 — split the huge files.** `aiService.js` is both the biggest
+  file and now unblocked — but splitting it structurally overlaps
+  with whatever 1.16 will eventually do to the same file. Consider
+  sequencing 4.6 (or at least its `aiService.js` portion) AFTER 1.16,
+  or scope 4.6 to other large files first (a real line-count survey
+  hasn't been run yet this thread).
+- **2.4/2.5 — vision model for scans; complex-PDF fallback.** Needs a
+  live measurement against real Vertex (billable, and this host has no
+  Docker/GCP access this session) before deciding scope — don't guess
+  at a vision-model integration blind.
+- **1.5/D3 — hybrid keyword + meaning search + re-ranking.** Builds on
+  P2's own 1.2/C4 change to `aiToolRetrievalService.js`
+  (`ABSOLUTE_CEILING`/`MARGIN` constants, margin-based cutoff) — read
+  that diff first, build on top of it, don't reintroduce the old fixed
+  threshold it replaced.
+- **1.18 — guardrail layer.** Still needs a product-level decision
+  (what a guardrail actually checks/blocks) before code — likely a
+  `NEEDS PRODUCT DECISION` per this project's own workflow.
+- **4.9 — status still unclear.** The plan's bullet list ("contract
+  tests on the noisiest routes") and its own table row (line 268,
+  "real database test containers + circuit breakers/timeouts/graceful
+  fallback") describe different scopes — still parked, not guessed at.
+- **5.8/5.9 — frontend reorg + state library.** No backend conflict,
+  safe to start any time, but needs its own scoping pass (current
+  structure survey, target shape, state-library choice) — hasn't been
+  started this thread.
+
+**Exact next action:** given 1.16/4.6 need real multi-day scoping and
+2.4/2.5 need a live/billable measurement this environment can't run
+right now, the next reasonably-scoped-without-more-input item is
+**5.8/5.9** (frontend reorg — start with a structure survey) or
+**1.5/D3** (hybrid search — read P2's 1.2/C4 diff first). Give
+whichever is picked its own scoping pass, same one-slice-at-a-time
+discipline every item in this thread has used. Docker full-suite
+verification is owed across ALL of this session's P3 commits
+(c9f955f/03d826c/731440a/896adfc plus the three before them) at the
+next checkpoint with Docker access.
+
+---
+
 # ⛔ NEWEST BANNER — ARCNAVE modernization P4 STARTED, 2026-09-01, CONCURRENT with the P3 session below (same working tree, confirmed by the owner — not a different worktree). The banner below flagged `backend/src/routes/backgroundJobs.js`/`backgroundJobService.js`/`background-jobs.test.js` as "another session's uncommitted files" — that WAS this P4 session; it has since committed (`0fc6cda`), so those three files are safe again. This banner's own new files are listed below — if a THIRD session reads this next, treat those as this session's in-progress markers instead.
 
 **Owner instruction, this session:** start P4 (`ARCNAVE-modernization-english.md`

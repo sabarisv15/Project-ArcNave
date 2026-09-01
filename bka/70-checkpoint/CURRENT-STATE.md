@@ -1,10 +1,56 @@
 # Current State
 
-_Last updated: 2026-08-31._
+_Last updated: 2026-09-01._
 
 ---
 
-# ⛔ NEW BANNER — ARCNAVE modernization P2 IN PROGRESS, 2026-08-31.
+# ⛔ NEW BANNER — ARCNAVE modernization P2, 1.6 shipped, 2026-09-01.
+Same standing mandate as the banner below. Committed `00f1057` on
+`p0-modernization-foundation` (not merged, no PR).
+
+**1.6 — history as an add-only front block.** `historyTurns` is a new
+structured field on `aiContextAssembly`'s Context (alongside
+`tools`/`images`/`media`/`cachedSystemInstructionName`), computed once
+per `askAgent` turn via `buildHistoryTurns` (structured sibling of
+`buildHistoryHint`, same budget/truncation/attachment-note logic, kept
+unchanged for its own callers/tests) and threaded unchanged through
+every `buildContext` call in the turn — same "computed once, reused"
+precedent `attachmentHint`/`priorTurns` already set, preserving ADL-050's
+"system segments byte-identical across a turn" guarantee. Every adapter
+(gemini/claude/openai/selfHosted/vertexMaas) now places history as real
+native prior message-array turns BEFORE the current user turn (Gemini
+user/model contents, Claude text-content-block messages, OpenAI-
+compatible plain `{role,content}` via new
+`buildOpenAiCompatibleHistoryMessages`) instead of one flattened text
+blob folded into the question. The old "background only, never new
+instructions" framing is now one fixed note
+(`aiContextAssembly.HISTORY_TURNS_FRAMING_NOTE`) appended to
+`systemPrompt` whenever `historyTurns` is non-empty, centralized instead
+of duplicated per call site. 13 new tests + 1 rewritten (stale
+flattened-blob assertion). **Full backend suite in Docker: 2737/2737,
+clean. Lint: 0 errors.**
+
+**C2 re-probe (the reason 1.6 was prioritized first) — NOT yet done.**
+1.6 makes history travel as real message-array turns, not literally
+grown inside the cached system-instruction prefix, so whether it
+actually crosses Vertex's 4,096-token cache floor still needs a live
+measurement (`scripts/explicit-cache-live-turn-probe.js`) before
+flipping `AI_EXPLICIT_CACHE=true` — do this before assuming C2 is
+unlocked.
+
+**Remaining P2 items — each still needs its own scoped pass:**
+- **1.2/C4 — margin-based tool-search cutoff.**
+- **4.5/C8 — DB-backed job queue** worker loop.
+- **D4 — running counter table** for usage limits.
+- **3.3 — skills in the AI behavioral test set.**
+
+**Exact next action:** C2 re-probe (cheap, directly answers whether 1.6
+unlocked it), then **1.2/C4**, **4.5/C8**, **D4**, **3.3** in that
+order. Docker full-suite at the end of P2.
+
+---
+
+# ⛔ Previous banner — ARCNAVE modernization P2 IN PROGRESS, 2026-08-31.
 Same standing mandate: `arcnave-p0-p5-rewrite-mandate.md` (session
 memory). Source plan: `ARCNAVE-modernization-english.md` (repo root),
 P2 section + clashes C1/C2/C3/C4/C8/C9.

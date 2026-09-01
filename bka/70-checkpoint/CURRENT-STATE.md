@@ -4,7 +4,43 @@ _Last updated: 2026-09-01._
 
 ---
 
-# ⛔ NEW BANNER — ARCNAVE modernization P3 STARTED, 2026-09-01, same session as this banner. P2 is being finished in a SEPARATE, CONCURRENT session — do not touch `backend/src/aiService.js`, `auditLogRepository.js`, `aiCostControlService.js`, `backend/src/index.js`, `backgroundJobRepository.js`, `backgroundJobService.js` (that session's uncommitted files) from this thread.
+# ⛔ NEWEST BANNER — the CONCURRENT P2 session the banner below refers to is now DONE, 2026-09-01. Every file it flagged as off-limits (`aiService.js`, `auditLogRepository.js`, `aiCostControlService.js`, `index.js`, `backgroundJobRepository.js`, `backgroundJobService.js`) is committed and safe to touch again.
+
+**P2 is fully shipped — all 5 remaining items (1.6, D4, 3.3, 4.5/C8,
+1.2/C4) built, tested, committed.** Full detail in the "P2 FULLY
+SHIPPED" banner further down this file (kept in place, not
+duplicated here). Commits: `00f1057`, `ed59f6a`, `fa1ca4e`, `a4196ac`,
+`5f6d4a1`, interleaved on `p0-modernization-foundation` with the P3
+session's own `4e8b38f`/`5c8047e`/`e731464` — both sessions' commits
+landed cleanly, no actual file conflict occurred (the P3 session
+correctly avoided every file this one was mid-editing). Working tree
+clean; full backend suite in Docker re-verified AFTER every commit from
+both sessions: **2772/2772, clean.**
+
+**This unblocks every P3 item the banner below marked CONFLICT or
+"defer until P2 lands":** 1.16 (agent rewrite), 4.6's `aiService.js`
+portion, 1.11/1.12 (thinking depth / forced-format), 2.3/2.4/2.5
+(attachment-text caching / vision fallback), and — concretely actionable
+right now, a small one — **wiring 1.13's already-built
+`aiNumericClaimLocaleSupport.js` into `aiService.js`'s
+`verifyNumericClaims`** (that PR's own "NOT wired... a one-line follow-up
+once the P2 session's changes land" note). `1.5/D3` (hybrid keyword +
+meaning search + re-ranking) also unblocks — it touches the SAME
+`aiToolRetrievalService.js` this session's own 1.2/C4 just changed
+(margin-based cutoff, `ABSOLUTE_CEILING`/`MARGIN` constants) — read that
+change first, build on top of it, don't reintroduute the old fixed
+threshold.
+
+**Exact next action, resuming either thread:** whichever of P2/P3 is
+resumed next, re-read ITS OWN "exact next action" (P2's is below: C2
+re-probe, MARGIN re-tuning, 3.3's l1 finding, C8's registry-migration
+follow-up, then P3 proper; P3's is further down: the newly-unblocked
+CONFLICT items, or continuing the safe list). Do not re-run either
+session's own already-shipped items.
+
+---
+
+# ⛔ Previous banner — ARCNAVE modernization P3 STARTED, 2026-09-01, same session as this banner. P2 is being finished in a SEPARATE, CONCURRENT session — do not touch `backend/src/aiService.js`, `auditLogRepository.js`, `aiCostControlService.js`, `backend/src/index.js`, `backgroundJobRepository.js`, `backgroundJobService.js` (that session's uncommitted files) from this thread. **RESOLVED — see the newest banner above: that concurrent P2 session is done, every flagged file is safe again.**
 
 **Owner instruction, this session:** attempt all of P3's 13 items
 (`ARCNAVE-modernization-english.md` §"P3 — Structural cleanup"), one
@@ -149,49 +185,115 @@ resolved first.
 
 ---
 
-# ⛔ NEW BANNER — ARCNAVE modernization P2, 1.6 shipped, 2026-09-01.
-Same standing mandate as the banner below. Committed `00f1057` on
-`p0-modernization-foundation` (not merged, no PR).
+# ⛔ NEW BANNER — ARCNAVE modernization P2 FULLY SHIPPED, 2026-09-01.
+Same standing mandate as the banner below. All 5 remaining items from
+that banner shipped this session, each its own commit on
+`p0-modernization-foundation` (not merged, no PR): `00f1057` (1.6),
+`ed59f6a` (D4), `fa1ca4e` (3.3), `a4196ac` (C8), `5f6d4a1` (1.2/C4) —
+interleaved with a concurrent P3 session's own commits
+(`4e8b38f`/`5c8047e`/`e731464`), no actual file conflict (see the
+newest banner at the top of this file). **Full backend suite in
+Docker, re-verified after every commit from both sessions:
+2772/2772, clean. Lint: 0 errors.**
 
-**1.6 — history as an add-only front block.** `historyTurns` is a new
-structured field on `aiContextAssembly`'s Context (alongside
-`tools`/`images`/`media`/`cachedSystemInstructionName`), computed once
-per `askAgent` turn via `buildHistoryTurns` (structured sibling of
-`buildHistoryHint`, same budget/truncation/attachment-note logic, kept
-unchanged for its own callers/tests) and threaded unchanged through
-every `buildContext` call in the turn — same "computed once, reused"
-precedent `attachmentHint`/`priorTurns` already set, preserving ADL-050's
-"system segments byte-identical across a turn" guarantee. Every adapter
-(gemini/claude/openai/selfHosted/vertexMaas) now places history as real
-native prior message-array turns BEFORE the current user turn (Gemini
-user/model contents, Claude text-content-block messages, OpenAI-
-compatible plain `{role,content}` via new
-`buildOpenAiCompatibleHistoryMessages`) instead of one flattened text
-blob folded into the question. The old "background only, never new
-instructions" framing is now one fixed note
-(`aiContextAssembly.HISTORY_TURNS_FRAMING_NOTE`) appended to
-`systemPrompt` whenever `historyTurns` is non-empty, centralized instead
-of duplicated per call site. 13 new tests + 1 rewritten (stale
-flattened-blob assertion). **Full backend suite in Docker: 2737/2737,
-clean. Lint: 0 errors.**
+1. **1.6 — history as an add-only front block.** `historyTurns` is a
+   new structured field on `aiContextAssembly`'s Context (alongside
+   `tools`/`images`/`media`/`cachedSystemInstructionName`), computed
+   once per `askAgent` turn via `buildHistoryTurns` (structured sibling
+   of `buildHistoryHint`, same budget/truncation/attachment-note logic,
+   kept unchanged for its own callers/tests) and threaded unchanged
+   through every `buildContext` call in the turn — same "computed once,
+   reused" precedent `attachmentHint`/`priorTurns` already set,
+   preserving ADL-050's "system segments byte-identical across a turn"
+   guarantee. Every adapter (gemini/claude/openai/selfHosted/vertexMaas)
+   now places history as real native prior message-array turns BEFORE
+   the current user turn instead of one flattened text blob folded into
+   the question. The old "background only, never new instructions"
+   framing is now one fixed note
+   (`aiContextAssembly.HISTORY_TURNS_FRAMING_NOTE`) appended to
+   `systemPrompt` whenever `historyTurns` is non-empty. 13 new tests + 1
+   rewritten (stale flattened-blob assertion).
+2. **D4 — running counter table for usage limits.** New
+   `ai_usage_counters` table (PK `college_id, period_month`, reversible
+   migration, RLS `tenant_isolation` like every other tenant table).
+   `aiCostControlService.getUsageStatus`'s monthly-quota read is now an
+   O(1) PK lookup (`aiUsageCounterRepository.getUsage`) instead of a
+   `SUM()` scan over `audit_log`; the 60-second rate-limit window
+   deliberately stays on `audit_log`
+   (`auditLogRepository.getRateLimitWindowCount`, narrowed from the old
+   combined `getAiUsageWindow`) — it needs real per-row timestamps a
+   monthly-grain counter can't answer. `aiService.js`'s `logLlmCall`
+   writes a second fire-and-forget increment alongside its existing
+   audit row; `aiCostControlService.startOfCurrentMonth` exported so
+   both the write and read side compute the identical period boundary.
+   Fixed the same FK-cleanup-order bug this surfaced in 2 test files'
+   own `cleanupTenant` (`ai.test.js`, `ai-behavioral-suite.js`).
+3. **3.3 — skills in the AI behavioral test set.** New category L (3
+   scenarios: F15-regression guard, restraint, describe_skill-resolves-
+   a-real-name) in `scripts/ai-behavioral-suite.js`. **Live-verified,
+   3/3.** The FIRST live run of `l1` caught a genuine, DIFFERENT
+   regression than it was written to check for: asked to build an Excel
+   workbook, the model skipped `list_skills`/`describe_skill`/
+   `execute_code` entirely and falsely claimed it "cannot generate or
+   export a downloadable Excel file" — the xlsx skill + `execute_code`
+   exist for exactly this. `FALSE_INCAPABILITY_PHRASES` (category E's
+   own list, previously PDF/document-generic) extended with
+   spreadsheet-specific phrasing, `l1` now checks against it too — left
+   as a real, sometimes-failing assertion (a second live run used
+   slightly different phrasing that slipped past the new phrases too —
+   fuzzy LLM output, expected, per this whole suite's own "never hard-
+   assert" philosophy), not silently loosened. **The underlying model-
+   prompting gap is NOT fixed** — its own separate, scoped item.
+4. **4.5/C8 — DB-backed job queue worker loop.** New
+   `backgroundJobHandlers.js` (job_type → handler registry; a handler
+   must be resumable from `job.payload` alone, never a closure captured
+   at enqueue time) + `backgroundJobRepository.claimQueuedJobs` (atomic
+   `queued→running`, `FOR UPDATE SKIP LOCKED`) +
+   `jobs/backgroundJobWorker.js` (poll loop, same shape as the existing
+   `jobs/platformStatsSync.js` — cross-tenant college enumeration,
+   tolerant of a missed tick, `unref()`'d interval), wired into
+   `index.js`'s boot. Purely additive safety net — the existing
+   `setImmediate` fast path (`backgroundJobService.enqueue`) is
+   unchanged; the loop only ever finds a job genuinely stuck at
+   `queued`. **Deliberately NOT done:** converting
+   `studentAdmissionDraftService`'s own `admission_extraction` closure-
+   based handler, or the file-extraction/media-transcode request-path
+   work the plan names, onto the new registry — an API-contract-
+   touching change to a live feature, its own separate scoped pass.
+5. **1.2/C4 — margin-based tool-search cutoff.** Dropped the
+   `roleTools.length <= TOP_K` bypass in `aiToolRetrievalService.js`
+   (the PDF's own named bug: "role with ≤8 tools sends all"). Replaced
+   the fixed `SIMILARITY_DISTANCE_THRESHOLD = 0.8` with
+   `ABSOLUTE_CEILING = 0.4` + `MARGIN = 0.1` (relative to the best
+   match) — grounded in a real live measurement
+   (`scripts/tool-retrieval-margin-probe.js` against real Gemini
+   embeddings, kept in the repo for future re-tuning), not guessed.
+   `describe_tools` recovery path untouched. New regression test for
+   ADL-055's own "wrongly-excluded tool" incident (the original tool
+   was retired — ADL-065 — so replayed structurally, not verbatim).
+   **Live-verified**: category A (12/12) and category K (3/3, including
+   the exact 2-tool "check profile then draft email" chain) both still
+   pass after the retrieval mechanism change.
 
-**C2 re-probe (the reason 1.6 was prioritized first) — NOT yet done.**
-1.6 makes history travel as real message-array turns, not literally
-grown inside the cached system-instruction prefix, so whether it
-actually crosses Vertex's 4,096-token cache floor still needs a live
-measurement (`scripts/explicit-cache-live-turn-probe.js`) before
-flipping `AI_EXPLICIT_CACHE=true` — do this before assuming C2 is
-unlocked.
+**Genuinely still open, project-wide:**
+- **C2 re-probe** — 1.6 changed how history travels, but whether it
+  actually crosses Vertex's 4,096-token cache floor still needs a live
+  measurement (`scripts/explicit-cache-live-turn-probe.js`) before
+  flipping `AI_EXPLICIT_CACHE=true`.
+- **1.2/C4's own `MARGIN`/`ABSOLUTE_CEILING`** were measured against 5
+  probes for one role (principal) — re-run
+  `scripts/tool-retrieval-margin-probe.js` against a broader query set
+  once more live usage data exists.
+- **3.3's `l1` finding** (false incapability claim for Excel
+  generation) — a real, observed model-prompting gap, not investigated.
+- **4.5/C8's own follow-up** — migrating a real feature onto the new
+  registry-resolvable handler shape.
 
-**Remaining P2 items — each still needs its own scoped pass:**
-- **1.2/C4 — margin-based tool-search cutoff.**
-- **4.5/C8 — DB-backed job queue** worker loop.
-- **D4 — running counter table** for usage limits.
-- **3.3 — skills in the AI behavioral test set.**
-
-**Exact next action:** C2 re-probe (cheap, directly answers whether 1.6
-unlocked it), then **1.2/C4**, **4.5/C8**, **D4**, **3.3** in that
-order. Docker full-suite at the end of P2.
+**Exact next action:** P3 (structural cleanup) is next per the plan's
+own P0-P5 order — a concurrent session already started it (3.2, 4.3/5.2,
+1.13 shipped; see the newest banner at the top of this file for what
+just unblocked). Resume that thread's own "exact next action," not a
+fresh P3 scoping pass.
 
 ---
 

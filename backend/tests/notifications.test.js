@@ -257,4 +257,64 @@ test('notifications API', async (t) => {
     assert.equal(approveResp.status, 200);
     assert.equal(approveResp.body.notification.status, 'Dispatched');
   });
+
+  // P4 (5.4) — live-events stream, deltas only (a client already has the
+  // page from GET /notifications; this only ever pushes what changed
+  // AFTER it connected). Opens the stream first, then drafts a fresh
+  // notification, and asserts the draft shows up as a real SSE
+  // `notification` event — not a second call to GET /notifications.
+  await t.test('a draft created after the stream connects arrives as a live event', async () => {
+    const token = await login('hoduser');
+    const url = new URL('/api/v1/notifications/stream', baseUrl);
+
+    const firstEvent = await new Promise((resolve, reject) => {
+      const req = http.request(url, { method: 'GET', headers: headersFor(token) }, (res) => {
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.headers['content-type'], 'text/event-stream');
+        let buffer = '';
+        res.on('data', (chunk) => {
+          buffer += chunk.toString('utf8');
+          const parts = buffer.split('\n\n');
+          buffer = parts.pop();
+          for (const part of parts) {
+            const eventLine = part.split('\n').find((l) => l.startsWith('event: '));
+            const dataLine = part.split('\n').find((l) => l.startsWith('data: '));
+            if (eventLine && dataLine && eventLine.slice('event: '.length) === 'notification') {
+              req.destroy();
+              resolve(JSON.parse(dataLine.slice('data: '.length)));
+              return;
+            }
+          }
+        });
+        res.on('error', () => {
+          // Expected once req.destroy() above tears down the socket mid-stream.
+        });
+      });
+      req.on('error', (err) => {
+        if (err.code !== 'ECONNRESET') reject(err);
+      });
+      req.end();
+
+      // Give the stream a moment to actually connect before creating the
+      // row it's meant to observe — otherwise the draft could land before
+      // the SSE handler's own `since = new Date()` is set.
+      setTimeout(async () => {
+        try {
+          await post(baseUrl, '/api/v1/notifications', headersFor(await login('hoduser')), {
+            channel: 'email',
+            to_address: 'stream-test@example.com',
+            subject: 'Live stream test',
+            body: 'This draft should arrive over SSE.',
+          });
+        } catch (err) {
+          reject(err);
+        }
+      }, 200);
+    });
+
+    assert.equal(firstEvent.channel, 'email');
+    assert.equal(firstEvent.to_address, 'stream-test@example.com');
+    assert.equal(firstEvent.status, 'Draft');
+    assert.equal(firstEvent.college_id, college.collegeId);
+  });
 });

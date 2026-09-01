@@ -101,6 +101,21 @@ async function list(client, { limit = 50, offset = 0 } = {}) {
   return result.rows;
 }
 
+// P4 (5.4) — backs the live-events stream (routes/notifications.js's
+// /notifications/stream): a poll tick asks for only what changed since
+// its last tick, rather than re-fetching and re-diffing the whole list()
+// page every time. `updated_at` (not `created_at`) so a status change on
+// an existing row — draft -> submitted -> approved -> dispatched — is
+// caught too, not just brand-new rows; `update()` above always bumps it.
+// Ascending order so the caller can advance its own `since` cursor to the
+// last row's own updated_at for the next tick.
+async function listUpdatedSince(client, { since }) {
+  const result = await client.query('SELECT * FROM notifications WHERE updated_at > $1 ORDER BY updated_at ASC', [
+    since,
+  ]);
+  return result.rows;
+}
+
 module.exports = {
   create,
   findById,
@@ -108,4 +123,5 @@ module.exports = {
   recordDeliveryAttempt,
   findDeliveryAttempts,
   list,
+  listUpdatedSince,
 };

@@ -148,13 +148,26 @@ async function find(client, id) {
 // TenantConnection.pauseForExternalCall fix gave for AI calls: holding one
 // connection idle across a long-lived operation starves the pool. Instead,
 // same short-lived-connection-per-call shape reportProgress above already
-// established (open, set tenant context, query, release).
+// established (open, set tenant context, query, release) — including the
+// explicit BEGIN/COMMIT: `set_config(..., true)`'s third argument means
+// LOCAL (transaction-scoped). Without an explicit transaction each
+// `.query()` call is its own separate implicit transaction, so the tenant
+// setting would already be gone by the time the SELECT below ran, and RLS
+// would silently hide every row — a real bug this had, caught live via
+// backend/debug-sse7.js (a raw INSERT's own `updated_at` verified > since
+// via a direct psql session, yet this function still returned 0 rows,
+// until BEGIN/COMMIT were added).
 async function findFresh(collegeId, id) {
   const client = await appPool.connect();
   try {
+    await client.query('BEGIN');
     await client.query("SELECT set_config('app.current_tenant', $1, true)", [collegeId]);
     const job = await backgroundJobRepository.findById(client, id);
+    await client.query('COMMIT');
     return job ? publicJob(job) : null;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
   } finally {
     client.release();
   }

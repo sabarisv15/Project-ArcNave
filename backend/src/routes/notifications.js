@@ -139,6 +139,84 @@ function createNotificationsRouter() {
     }),
   );
 
+  // P4 (5.4) — "notifications / job progress are polled today, should be
+  // one live-events stream." Same SSE convention
+  // routes/backgroundJobs.js's /background-jobs/:id/stream already
+  // established (writeEvent helper, text/event-stream headers, a
+  // short-lived-connection-per-tick poll — no new infra, single-app-
+  // instance posture, same as D1/C8 elsewhere in this codebase).
+  //
+  // Unlike a single job, a college's notification feed has no terminal
+  // state to stop the stream at — this only sends what changed SINCE the
+  // client connected (an initial GET /notifications is still how a
+  // client gets the existing page; this stream is deltas going forward
+  // only, not a replacement for that first fetch). A `stream_end` event
+  // plus a safety-net max duration tells the client to reconnect
+  // (browser EventSource does this itself on a dropped connection) rather
+  // than holding one poll loop open forever per connected client.
+  router.get(
+    '/notifications/stream',
+    requirePermission('notifications.read'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+
+      res.writeHead(200, {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      });
+      const writeEvent = (event, data) => {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
+
+      const POLL_INTERVAL_MS = 1000;
+      const MAX_STREAM_MS = 10 * 60 * 1000;
+      const collegeId = req.collegeId;
+      const startedAt = Date.now();
+      let since = new Date();
+      let stopped = false;
+      req.on('close', () => {
+        stopped = true;
+      });
+
+      // req.dbClient (TenantConnection) holds a real pool connection
+      // checked out and inside an open transaction for this whole
+      // request. Every poll tick below already uses its own short-lived
+      // connection (listUpdatedSinceFresh), so req.dbClient itself is
+      // never touched again after this point — but left un-paused it
+      // would still sit there, idle-in-transaction, for up to
+      // MAX_STREAM_MS. Same fix P0's aiService.js applies around a
+      // long-latency LLM call: pause releases it back to the pool for
+      // the stream's duration; commit()/rollback() in the outer request
+      // middleware treats an still-paused connection as "nothing to
+      // commit," so resume() isn't required before res.end() the way
+      // aiService.js's own paired call needs it (that path still has
+      // more req.dbClient work to do afterward; this route doesn't).
+      await req.dbClient.pauseForExternalCall();
+
+      try {
+        while (!stopped && Date.now() - startedAt < MAX_STREAM_MS) {
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+          if (stopped) break;
+          // eslint-disable-next-line no-await-in-loop
+          const changed = await notificationService.listUpdatedSinceFresh(collegeId, since);
+          for (const notification of changed) {
+            writeEvent('notification', notification);
+          }
+          if (changed.length > 0) {
+            since = changed[changed.length - 1].updated_at;
+          }
+        }
+        if (!stopped) writeEvent('stream_end', { reconnect: true });
+      } catch (err) {
+        if (!stopped) writeEvent('error', { detail: err.message });
+      } finally {
+        res.end();
+      }
+    }),
+  );
+
   return router;
 }
 

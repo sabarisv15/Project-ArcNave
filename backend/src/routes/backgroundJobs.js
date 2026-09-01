@@ -98,6 +98,18 @@ function createBackgroundJobsRouter() {
         stopped = true;
       });
 
+      // req.dbClient (TenantConnection) holds a real pool connection
+      // checked out and inside an open transaction for this whole
+      // request — every poll tick below already uses its own
+      // short-lived connection (findFresh), so req.dbClient is never
+      // touched again after this point. Left un-paused it would still
+      // sit idle-in-transaction for up to MAX_STREAM_MS, the exact P0
+      // aiService.js DB-lock bug (clash C5), just triggered by an SSE
+      // stream instead of a slow LLM call. Not resumed before res.end():
+      // commit()/rollback() in the outer request middleware treats an
+      // already-paused connection as "nothing to commit."
+      await req.dbClient.pauseForExternalCall();
+
       const isTerminal = (job) => job.status === 'completed' || job.status === 'failed';
       const changed = (job) =>
         !lastSent || lastSent.status !== job.status || lastSent.progress !== job.progress;

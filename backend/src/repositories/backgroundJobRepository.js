@@ -59,6 +59,31 @@ async function markFailed(client, id, error) {
   return result.rows[0] || null;
 }
 
+// ARCNAVE modernization P2 (4.5 / clash C8) — atomic claim for the
+// worker loop (jobs/backgroundJobWorker.js): flips status queued ->
+// running for up to `limit` rows in one statement, so two overlapping
+// poll ticks (or, if this deployment ever moves to multiple worker
+// processes) can never both pick up the same row. FOR UPDATE SKIP
+// LOCKED is the real guarantee, not just ordering — a row another
+// claim already has locked is silently skipped, not waited on.
+async function claimQueuedJobs(client, jobTypes, limit) {
+  if (!Array.isArray(jobTypes) || jobTypes.length === 0) return [];
+  const result = await client.query(
+    `UPDATE background_jobs
+     SET status = 'running', started_at = now()
+     WHERE id IN (
+       SELECT id FROM background_jobs
+       WHERE status = 'queued' AND job_type = ANY($1)
+       ORDER BY created_at ASC
+       LIMIT $2
+       FOR UPDATE SKIP LOCKED
+     )
+     RETURNING *`,
+    [jobTypes, limit],
+  );
+  return result.rows;
+}
+
 async function findById(client, id) {
   const result = await client.query('SELECT * FROM background_jobs WHERE id = $1', [id]);
   return result.rows[0] || null;
@@ -79,6 +104,7 @@ module.exports = {
   markCompleted,
   markFailed,
   updateProgress,
+  claimQueuedJobs,
   findById,
   list,
 };

@@ -3,6 +3,7 @@
 const createApp = require('./app');
 const config = require('./config');
 const { startPlatformStatsSync } = require('./jobs/platformStatsSync');
+const { startBackgroundJobWorker } = require('./jobs/backgroundJobWorker');
 
 const app = createApp();
 const port = process.env.PORT || 8000;
@@ -24,3 +25,4 @@ app.listen(port, () => {
 });
 
 startPlatformStatsSync();
+startBackgroundJobWorker();

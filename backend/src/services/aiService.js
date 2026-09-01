@@ -39,6 +39,7 @@ const aiMemoryService = require('./aiMemoryService');
 const artifactService = require('./artifactService');
 const aiCostControlService = require('./aiCostControlService');
 const aiModelVersionService = require('./aiModelVersionService');
+const aiNumericClaimLocaleSupport = require('./aiNumericClaimLocaleSupport');
 const { logWarn, logError } = require('../logging/logger');
 // AI Experience Layer (AIX) — presentation only, added after the real
 // pipeline above has already produced its final, authorized result.
@@ -1717,6 +1718,17 @@ function buildEvidenceTrail(evidence) {
 const COUNT_CLAIM_PATTERN =
   /\b(\d+)\s+(records?|students?|staff|results?|entries|entry|items?|rows?|classes?|periods?|sessions?|departments?|notifications?|documents?|teachers?|faculty|marks?|fees?|payments?|approvals?|requests?|absentees?|messages?|alerts?|arrears?)\b/gi;
 
+// P3 1.13 (aiNumericClaimLocaleSupport.js) — every call site below that
+// used to do `[...answerText.matchAll(COUNT_CLAIM_PATTERN)]` now goes
+// through `extractCountClaims` instead, which ALSO catches the same
+// claim phrased with Tamil digit glyphs (e.g. "௧௦") or a Tamil
+// count-noun (e.g. "10 மாணவர்கள்") — COUNT_CLAIM_PATTERN itself is
+// unchanged and still passed in, so a plain English claim matches
+// exactly as before; this only adds coverage, never narrows it.
+function extractCountClaims(answerText) {
+  return aiNumericClaimLocaleSupport.extractCountClaims(answerText, COUNT_CLAIM_PATTERN);
+}
+
 function verifyNumericClaims(answerText, evidence) {
   const knownCounts = evidence.flatMap((e) => [
     ...(e.recordCount !== undefined ? [e.recordCount] : []),
@@ -1725,7 +1737,7 @@ function verifyNumericClaims(answerText, evidence) {
   if (knownCounts.length === 0) return { status: 'INSUFFICIENT_EVIDENCE' };
   if (typeof answerText !== 'string') return { status: 'INSUFFICIENT_EVIDENCE' };
 
-  const claimed = [...answerText.matchAll(COUNT_CLAIM_PATTERN)].map((m) => Number(m[1]));
+  const claimed = extractCountClaims(answerText);
   if (claimed.length === 0) return { status: 'PASS' };
 
   const knownSet = new Set(knownCounts);
@@ -1798,7 +1810,7 @@ function extractPercentClaims(answerText) {
 // never "refuse research assistance because nothing is verifiable."
 function researchAnswerMakesNumericClaim(answerText) {
   if (typeof answerText !== 'string') return false;
-  if ([...answerText.matchAll(COUNT_CLAIM_PATTERN)].length > 0) return true;
+  if (extractCountClaims(answerText).length > 0) return true;
   return extractPercentClaims(answerText).length > 0;
 }
 
@@ -1874,7 +1886,7 @@ function verifyResearchNumericClaims(answerText, evidence = []) {
   // Count-noun claims — delegated verbatim to the existing Curriculum
   // verifier (never re-implemented), fed the same trusted facts wrapped
   // in ITS existing evidence shape ({fieldValues}).
-  const countClaims = [...answerText.matchAll(COUNT_CLAIM_PATTERN)];
+  const countClaims = extractCountClaims(answerText);
   if (countClaims.length > 0) {
     const countResult = verifyNumericClaims(
       answerText,

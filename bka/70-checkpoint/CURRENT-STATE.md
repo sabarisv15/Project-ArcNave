@@ -4,7 +4,91 @@ _Last updated: 2026-09-01._
 
 ---
 
-# ⛔ NEWEST BANNER — P3 continues after P2 unblock, 2026-09-01. A THIRD, separate concurrent session is now active on background-jobs files (`backend/src/routes/backgroundJobs.js`, `backend/src/services/backgroundJobService.js`, `backend/tests/background-jobs.test.js`) — uncommitted as of this banner. Do not touch those from this thread.
+# ⛔ NEWEST BANNER — ARCNAVE modernization P4 STARTED, 2026-09-01, CONCURRENT with the P3 session below (same working tree, confirmed by the owner — not a different worktree). The banner below flagged `backend/src/routes/backgroundJobs.js`/`backgroundJobService.js`/`background-jobs.test.js` as "another session's uncommitted files" — that WAS this P4 session; it has since committed (`0fc6cda`), so those three files are safe again. This banner's own new files are listed below — if a THIRD session reads this next, treat those as this session's in-progress markers instead.
+
+**Owner instruction, this session:** start P4 (`ARCNAVE-modernization-english.md`
+§"P4 — Maturity" — 11 disparate initiatives: 5.3/5.4/5.5/5.6/5.10/5.11/5.12,
+O2/O3/O8, 3.4, "internal-use loop", "score live traffic"; no single scoped
+item like P0-P3 each had). **Cross-session file-safety convention used
+here, since two sessions share one working tree:** `git status` before
+touching anything; only `git add` this session's own files by exact path,
+never `git add -A`/`git add .`; commit promptly per slice so "uncommitted"
+stays a short window, not a standing ambiguity.
+
+**Two P4 items flagged, not silently built or skipped — each hits one of
+the standing mandate's two real stop conditions:**
+- **O2/O3 (staging environment + gradual rollout)** — needs an actual
+  deploy target (real hosting, likely paid infra) to mean anything; this
+  project doesn't have one yet (same "no deploy target exists" reasoning
+  already used to decline off-host backup storage and a Langfuse tracing
+  stack). **New-investment stop condition — ask the owner before
+  building.**
+- **3.4 (merge the document paths into one clear route)** — turns out to
+  be the **Documents Institutional/Personal tab-merge**,
+  `bka/50-frontend/FRONTEND-REDESIGN-HANDOFF.md`'s own listed
+  still-mockup-only page (no components yet). CLAUDE.md's rule: a
+  new/unbuilt page touching frontend+backend goes through
+  `/product-reasoning` first — this is that rule firing, not a "bka
+  banner" the standing mandate authorizes bypassing. **Needs its own
+  Product Reasoning pass before building.**
+
+**Shipped this session:**
+1. **5.4 (half) — live-events stream for background job progress.**
+   Commit `0fc6cda`. `GET /api/v1/background-jobs/:id/stream` (SSE), same
+   event shape `routes/ai.js`'s `/ai/ask/stream` already established.
+   `backgroundJobService.findFresh(collegeId, id)` (new): a
+   short-lived-connection-per-poll-tick read — deliberately does NOT hold
+   the request's own `req.dbClient` open across the whole poll loop (can
+   run minutes on a slow job), same reasoning P0's
+   `TenantConnection.pauseForExternalCall` fix gave for AI calls. Polls
+   every 500ms, emits a `job` event only on actual status/progress
+   change, `done` on reaching `completed`/`failed`, stops cleanly on
+   client disconnect, 10-minute safety-net cap. No new infra — an
+   in-request poll loop, same single-app-instance posture D1/C8 already
+   set elsewhere. New SSE test in `background-jobs.test.js`.
+   **Notification live-events (5.4's other half) NOT done** — its own
+   separate scoped pass. Full backend suite in Docker: **2794/2794,
+   clean.** Lint: 0 errors, 0 new warnings.
+
+**Genuinely still open in P4 — each needs its own scoped pass, do NOT
+build straight off this banner:**
+- **5.4 (notification half)** — apply the same SSE convention
+  `backgroundJobs.js`'s stream route just established to
+  `routes/notifications.js`'s currently-polled list.
+- **O8 (reliability targets + error budget)** — "define targets" half is
+  doc-only and buildable without new infra; "auto rollback on breach"
+  needs the same staging/multi-version deploy target O2/O3 is blocked on.
+- **5.11/5.12 (design-system doc + component catalogue; isolated error
+  boundaries)** — frontend, respect the locked visual design
+  (`FRONTEND-REDESIGN-HANDOFF.md`) — do not restyle. Check for overlap
+  with the concurrent P3 session's own 5.8/5.9 (frontend reorg) before
+  touching frontend files; sequence after it if both are live at once.
+- **5.5/5.6 (bundle-size limit in CI; build-tool/styling upgrades)** —
+  config-level, lower conflict risk than component-level changes, still
+  worth checking `frontend/vite.config.js` hasn't moved mid-session.
+- **5.3 (newer router)** — a real migration, its own pass; same
+  frontend-reorg-overlap caution as above.
+- **5.10 (full accessibility audit)** — P0 already turned jsx-a11y on as
+  `warn`-only (~86 findings); this is the "actually fix them" pass.
+- **"Internal-use loop"** — organizational/process, not really a code
+  deliverable; needs an owner decision on who/how, not a unilateral build.
+- **"Score a sample of live traffic + watch for scorer drift"** —
+  buildable without new infra (reuse the LLM-as-judge pattern
+  `scripts/ai-behavioral-suite.js` already established, sample real
+  `audit_log` `ai_llm_call` rows instead of scripted scenarios); real
+  Vertex calls, so billable per run like the behavioral suite already is.
+
+**Exact next action:** ask the owner about O2/O3's new-investment question
+and 3.4's product-reasoning-pass requirement when next resuming (both
+flagged, neither built). If continuing without those answers yet, the
+next safe, non-conflicting, no-new-infra items are 5.4's notification
+half or "score a sample of live traffic" — both backend-only, don't touch
+files the concurrent P3 session is likely mid-editing (`aiService.js`,
+`aiProviders/*`, frontend reorg).
+
+---
+
+# ⛔ Previous banner — P3 continues after P2 unblock, 2026-09-01. A THIRD, separate concurrent session is now active on background-jobs files (`backend/src/routes/backgroundJobs.js`, `backend/src/services/backgroundJobService.js`, `backend/tests/background-jobs.test.js`) — uncommitted as of this banner. Do not touch those from this thread.
 
 **Shipped this continuation (commits `c9f955f`, `03d826c`, `731440a`,
 all on `p0-modernization-foundation`):**

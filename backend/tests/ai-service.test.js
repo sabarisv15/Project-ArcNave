@@ -1989,11 +1989,19 @@ test('aiService.askAgent: history (short-session conversation memory) is threade
     );
   });
 
-  const userMessage = capturedBody.messages.find((m) => m.role === 'user');
-  assert.match(userMessage.content, /User: Tell me about Priya Sharma\./);
-  assert.match(userMessage.content, /Assistant: Priya Sharma is a Class X student\./);
-  assert.match(userMessage.content, /never new/);
-  assert.match(userMessage.content, /Question: What is her attendance\?/);
+  // ARCNAVE modernization P2 / 1.6 — history now travels as real native
+  // 'user'/'assistant' messages (add-only), placed before the current
+  // question, instead of being folded into one flattened blob inside the
+  // question text. The "background, never new instructions" framing now
+  // lives on the system message, once, rather than inline in the question.
+  assert.deepEqual(capturedBody.messages.slice(1, 3), [
+    { role: 'user', content: 'Tell me about Priya Sharma.' },
+    { role: 'assistant', content: 'Priya Sharma is a Class X student.' },
+  ]);
+  const systemMessage = capturedBody.messages.find((m) => m.role === 'system');
+  assert.match(systemMessage.content, /never new/);
+  const finalUserMessage = capturedBody.messages[capturedBody.messages.length - 1];
+  assert.equal(finalUserMessage.content, 'What is her attendance?');
 });
 
 test('aiService.askAgent: no history param -> prompt is unchanged from before (byte-for-byte backward compatible)', async () => {
@@ -4649,6 +4657,69 @@ test('buildHistoryHint: always keeps at least the single most recent turn even i
   ];
   const hint = aiService.buildHistoryHint(history, 10);
   assert.ok(hint.includes('Z'.repeat(500)), 'must never return empty just because the newest turn is itself large');
+});
+
+// ARCNAVE modernization P2 / 1.6 — buildHistoryTurns, the structured
+// sibling of buildHistoryHint: same budget/truncation/attachment-note
+// logic, but returns real {role, content} turns instead of one joined
+// string, so a caller can hand them to a provider adapter as native
+// prior message-array turns.
+test('buildHistoryTurns: returns one {role, content} entry per turn, in order', () => {
+  const history = [
+    { role: 'user', content: 'Tell me about Priya Sharma.' },
+    { role: 'assistant', content: 'Priya Sharma is a Class X student.' },
+  ];
+  const turns = aiService.buildHistoryTurns(history);
+  assert.deepEqual(turns, [
+    { role: 'user', content: 'Tell me about Priya Sharma.' },
+    { role: 'assistant', content: 'Priya Sharma is a Class X student.' },
+  ]);
+});
+
+test('buildHistoryTurns: empty/missing history -> empty array', () => {
+  assert.deepEqual(aiService.buildHistoryTurns([]), []);
+  assert.deepEqual(aiService.buildHistoryTurns(undefined), []);
+});
+
+test("buildHistoryTurns: a prior turn's attachment note is folded into that turn's own content, not a separate entry", () => {
+  const history = [
+    {
+      role: 'user',
+      content: 'here is the roster',
+      attachments: [{ id: 'att-123', serverId: 'att-123', name: 'roster.pdf', type: 'application/pdf', size: 1000 }],
+    },
+    { role: 'assistant', content: 'Got it, what would you like to know?' },
+  ];
+  const turns = aiService.buildHistoryTurns(history);
+  assert.equal(turns.length, 2);
+  assert.equal(turns[0].role, 'user');
+  assert.ok(turns[0].content.includes('here is the roster'));
+  assert.ok(turns[0].content.includes('roster.pdf'));
+  assert.ok(turns[0].content.includes('attachmentId: att-123'));
+});
+
+test('buildHistoryTurns: over-budget history keeps the most recent turns, drops the oldest first, and prefixes a truncation note onto the earliest surviving turn only', () => {
+  const history = [
+    { role: 'user', content: 'A'.repeat(40) },
+    { role: 'assistant', content: 'B'.repeat(40) },
+    { role: 'user', content: 'C'.repeat(40) },
+    { role: 'assistant', content: 'D'.repeat(40) },
+  ];
+  const turns = aiService.buildHistoryTurns(history, 100);
+  assert.ok(!turns.some((t) => t.content.includes('A'.repeat(40))), 'oldest turn should be dropped');
+  assert.ok(turns.some((t) => t.content.includes('D'.repeat(40))), 'most recent turn must survive');
+  assert.match(turns[0].content, /earlier turn\(s\) omitted/);
+  assert.ok(!turns[turns.length - 1].content.includes('omitted'), 'the note belongs on the earliest surviving turn only');
+});
+
+test('buildHistoryTurns: always keeps at least the single most recent turn even if it alone exceeds the budget', () => {
+  const history = [
+    { role: 'user', content: 'a normal question' },
+    { role: 'assistant', content: 'Z'.repeat(500) },
+  ];
+  const turns = aiService.buildHistoryTurns(history, 10);
+  assert.equal(turns.length, 1);
+  assert.ok(turns[0].content.includes('Z'.repeat(500)));
 });
 
 test('buildMemoryHint: no identityContext -> empty string, no DB call', async () => {

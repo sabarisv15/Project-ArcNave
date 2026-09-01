@@ -26,6 +26,7 @@ const {
   parseJsonResponse,
   extractOpenAiCompatibleUsage,
   buildOpenAiCompatiblePriorTurnMessages,
+  buildOpenAiCompatibleHistoryMessages,
 } = require('./openAiCompatibleUtils');
 const { flattenToPrompts } = require('../aiContextAssembly');
 
@@ -73,7 +74,7 @@ async function postJson(cfg, path, body) {
 // Token/cost telemetry (P1.1) — see openai.js's own comment; same
 // shape, same OpenAI-compatible `usage` block.
 async function completeWithMeta(cfg, arcnaveContext) {
-  const { systemPrompt, userPrompt } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no self-hosted LLM provider is configured for this college (missing baseUrl)');
   }
@@ -82,6 +83,7 @@ async function completeWithMeta(cfg, arcnaveContext) {
     model: cfg.model,
     messages: [
       { role: 'system', content: systemPrompt },
+      ...buildOpenAiCompatibleHistoryMessages(historyTurns),
       { role: 'user', content: userPrompt },
     ],
     max_tokens: MAX_TOKENS,
@@ -115,7 +117,7 @@ async function complete(cfg, prompts) {
 // ignores the unrecognized `stream_options` field simply never calls
 // onUsage, degrading to "no usage known" rather than an error.
 async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
-  const { systemPrompt, userPrompt } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no self-hosted LLM provider is configured for this college (missing baseUrl)');
   }
@@ -134,6 +136,7 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
           model: cfg.model,
           messages: [
             { role: 'system', content: systemPrompt },
+            ...buildOpenAiCompatibleHistoryMessages(historyTurns),
             { role: 'user', content: userPrompt },
           ],
           max_tokens: MAX_TOKENS,
@@ -190,7 +193,7 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
 const buildPriorTurnMessages = buildOpenAiCompatiblePriorTurnMessages;
 
 async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
-  const { systemPrompt, userPrompt, tools } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, tools, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no self-hosted LLM provider is configured for this college (missing baseUrl)');
   }
@@ -199,6 +202,7 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
     model: cfg.model,
     messages: [
       { role: 'system', content: systemPrompt },
+      ...buildOpenAiCompatibleHistoryMessages(historyTurns),
       { role: 'user', content: userPrompt },
       ...buildPriorTurnMessages(priorTurns),
     ],

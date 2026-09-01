@@ -101,9 +101,21 @@ function buildOpenAiCompatiblePriorTurnMessages(priorTurns) {
   ]);
 }
 
+// ARCNAVE modernization P2 / 1.6 — historyTurns -> real prior 'user'/
+// 'assistant' messages, placed BEFORE the current user turn — see
+// gemini.js's own buildHistoryContents comment for the shared reasoning.
+// The OpenAI-compatible convention already uses plain {role, content}
+// message objects for both roles, so no shape translation is needed
+// beyond passing the fields through.
+function buildOpenAiCompatibleHistoryMessages(historyTurns) {
+  if (!Array.isArray(historyTurns)) return [];
+  return historyTurns.map((turn) => ({ role: turn.role, content: turn.content }));
+}
+
 module.exports = {
   fetchWithTimeout,
   parseJsonResponse,
   extractOpenAiCompatibleUsage,
   buildOpenAiCompatiblePriorTurnMessages,
+  buildOpenAiCompatibleHistoryMessages,
 };

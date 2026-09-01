@@ -347,9 +347,34 @@ function splitThoughtParts(parts) {
   return { thoughtText: thoughtText || undefined, visibleParts };
 }
 
+// ARCNAVE modernization P2 / 1.6 — historyTurns -> real prior 'user'/
+// 'model' content turns, placed BEFORE the current user turn (never
+// after — priorTurns' own functionCall/functionResponse pairs above are
+// what belongs after it, a same-turn tool round trip, not earlier
+// conversation). Plain {text} parts only: a historical turn is replayed
+// text, not a live functionCall/functionResponse exchange, so it needs
+// no thoughtSignature/rawToolCall handling the way buildPriorTurnContents
+// does.
+function buildHistoryContents(historyTurns) {
+  if (!Array.isArray(historyTurns)) return [];
+  return historyTurns.map((turn) => ({
+    role: turn.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: turn.content }],
+  }));
+}
+
 async function completeWithMeta(cfg, arcnaveContext) {
-  const { systemPrompt, userPrompt, images, media, responseSchema, thinkingLevel, includeThoughts, logprobsTopK } =
-    flattenToPrompts(arcnaveContext);
+  const {
+    systemPrompt,
+    userPrompt,
+    images,
+    media,
+    responseSchema,
+    thinkingLevel,
+    includeThoughts,
+    logprobsTopK,
+    historyTurns,
+  } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
   }
@@ -359,7 +384,7 @@ async function completeWithMeta(cfg, arcnaveContext) {
     modelUrl(cfg, model(cfg), 'generateContent'),
     {
       systemInstruction: { parts: [{ text: systemPrompt }] },
-      contents: [{ role: 'user', parts: buildUserParts(userPrompt, images, media) }],
+      contents: [...buildHistoryContents(historyTurns), { role: 'user', parts: buildUserParts(userPrompt, images, media) }],
       generationConfig: generationConfigFor(responseSchema, thinkingLevel, includeThoughts, logprobsTopK),
     },
     { hasMedia: Boolean(media && media.length) },
@@ -421,7 +446,7 @@ async function complete(cfg, prompts) {
 // the caller; an attempt is only ever retried before its first real
 // chunk, never after.
 async function attemptStream(cfg, arcnaveContext, deadline, onDelta) {
-  const { systemPrompt, userPrompt, images, media } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, images, media, historyTurns } = flattenToPrompts(arcnaveContext);
   const hasMedia = Boolean(media && media.length);
   const token = await getAccessToken(cfg);
   const response = await withRetry(async () => {
@@ -439,7 +464,10 @@ async function attemptStream(cfg, arcnaveContext, deadline, onDelta) {
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: systemPrompt }] },
-          contents: [{ role: 'user', parts: buildUserParts(userPrompt, images, media) }],
+          contents: [
+            ...buildHistoryContents(historyTurns),
+            { role: 'user', parts: buildUserParts(userPrompt, images, media) },
+          ],
           generationConfig: GENERATION_CONFIG,
         }),
         signal: controller.signal,
@@ -618,6 +646,7 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
     thinkingLevel,
     includeThoughts,
     cachedSystemInstructionName,
+    historyTurns,
   } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing projectId)');
@@ -649,6 +678,7 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
       ? { cachedContent: cachedSystemInstructionName }
       : { systemInstruction: { parts: [{ text: systemPrompt }] } }),
     contents: [
+      ...buildHistoryContents(historyTurns),
       { role: 'user', parts: buildUserParts(userPrompt, images, media) },
       ...buildPriorTurnContents(priorTurns),
     ],

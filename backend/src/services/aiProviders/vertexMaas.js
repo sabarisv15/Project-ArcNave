@@ -39,6 +39,7 @@ const {
   parseJsonResponse,
   extractOpenAiCompatibleUsage,
   buildOpenAiCompatiblePriorTurnMessages,
+  buildOpenAiCompatibleHistoryMessages,
 } = require('./openAiCompatibleUtils');
 const { flattenToPrompts } = require('../aiContextAssembly');
 const vertexCapabilityRegistry = require('../vertexCapabilityRegistry');
@@ -318,7 +319,7 @@ function truncationError(rawFinishReason) {
 }
 
 async function completeWithMeta(cfg, arcnaveContext) {
-  const { systemPrompt, userPrompt } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError(
       'no Vertex AI MaaS provider is configured for this college (missing projectId or model)',
@@ -329,6 +330,7 @@ async function completeWithMeta(cfg, arcnaveContext) {
     model: cfg.model,
     messages: [
       { role: 'system', content: systemPrompt },
+      ...buildOpenAiCompatibleHistoryMessages(historyTurns),
       { role: 'user', content: userPrompt },
     ],
     max_tokens: MAX_TOKENS,
@@ -448,7 +450,7 @@ function extractToolCallFromContent(content) {
 }
 
 async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
-  const { systemPrompt, userPrompt, tools } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, tools, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError(
       'no Vertex AI MaaS provider is configured for this college (missing projectId or model)',
@@ -459,6 +461,7 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
     model: cfg.model,
     messages: [
       { role: 'system', content: systemPrompt },
+      ...buildOpenAiCompatibleHistoryMessages(historyTurns),
       { role: 'user', content: userPrompt },
       ...buildPriorTurnMessages(priorTurns),
     ],

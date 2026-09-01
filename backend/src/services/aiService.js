@@ -414,6 +414,49 @@ function buildHistoryHint(history, charBudget = DEFAULT_HISTORY_CHAR_BUDGET) {
   );
 }
 
+// ARCNAVE modernization P2 / 1.6 — "history as a reusable front block".
+// Sibling to buildHistoryHint above, same budget/truncation algorithm and
+// same attachment-annotation text, but returns real turns
+// ({role: 'user'|'assistant', content}) instead of one joined string —
+// aiContextAssembly.buildContext's historyTurns option threads these
+// through to each adapter as native prior message-array turns (see
+// gemini.js's own buildHistoryContents comment) rather than folding them
+// into the 'question' user segment's text. buildHistoryHint itself is
+// kept, unchanged, for its own existing callers/tests — this is an
+// additive sibling, not a replacement.
+function buildHistoryTurns(history, charBudget = DEFAULT_HISTORY_CHAR_BUDGET) {
+  if (!Array.isArray(history) || history.length === 0) return [];
+  const entries = history
+    .filter((m) => m && typeof m.content === 'string' && (m.role === 'user' || m.role === 'assistant'))
+    .map((m) => {
+      if (!Array.isArray(m.attachments) || m.attachments.length === 0) {
+        return { role: m.role, content: m.content };
+      }
+      const attachmentNote = ` [attached: ${m.attachments.map((a) => `${a.name} (attachmentId: ${a.serverId || a.id})`).join(', ')}]`;
+      return { role: m.role, content: `${m.content}${attachmentNote}` };
+    });
+  if (entries.length === 0) return [];
+  // Same "keep the most recent, drop the oldest first" algorithm as
+  // buildHistoryHint above — see that function's own comment for the
+  // full rationale.
+  const kept = [];
+  let used = 0;
+  for (let i = entries.length - 1; i >= 0; i -= 1) {
+    const next = used + entries[i].content.length + 1;
+    if (kept.length > 0 && next > charBudget) break;
+    kept.unshift(entries[i]);
+    used = next;
+  }
+  if (kept.length < entries.length) {
+    const omitted = entries.length - kept.length;
+    kept[0] = {
+      ...kept[0],
+      content: `(${omitted} earlier turn(s) omitted — too old to fit this context budget) ${kept[0].content}`,
+    };
+  }
+  return kept;
+}
+
 function buildProjectContextHint(projectContext) {
   if (!projectContext || typeof projectContext !== 'object') return '';
   const { id, instructions } = projectContext;
@@ -2019,6 +2062,7 @@ async function executeWorkflowPlan(
     adapter: precomputedAdapter,
     aiConfig: precomputedAiConfig,
     hasHistory,
+    historyTurns = [],
   },
   onDelta,
   onStep = () => {},
@@ -2144,7 +2188,7 @@ async function executeWorkflowPlan(
       target: 'user',
       content: TOOL_RESULT_ANSWER_SYSTEM_PROMPT,
     }),
-  ]);
+  ], { historyTurns });
 
   // Model routing (P1.3) — routed on the HIGHEST riskLevel across every
   // step, never an average or the first step's alone: a plan combining
@@ -2603,6 +2647,7 @@ async function summarizeToolResult(
   aiConfig,
   identityBlock,
   hasHistory,
+  historyTurns,
   onDelta,
   blockedActionNote,
 ) {
@@ -2682,7 +2727,7 @@ async function summarizeToolResult(
       content: TOOL_RESULT_ANSWER_SYSTEM_PROMPT,
     }),
   );
-  const arcnaveContext = aiContextAssembly.buildContext(segments);
+  const arcnaveContext = aiContextAssembly.buildContext(segments, { historyTurns });
   // Model routing (P1.3), mirroring executeWorkflowPlan's own maxRiskLevel
   // reduce — routed on the HIGHEST riskLevel across every tool that ran,
   // never an average or the first tool's alone.
@@ -2809,7 +2854,18 @@ async function askGeneralChat(
   client,
   question,
   promptQuestion,
-  { identityContext, identityBlock, adapter, aiConfig, images, media, hasHistory, hasAttachedDocuments, thinkingLevel },
+  {
+    identityContext,
+    identityBlock,
+    adapter,
+    aiConfig,
+    images,
+    media,
+    hasHistory,
+    historyTurns = [],
+    hasAttachedDocuments,
+    thinkingLevel,
+  },
   onDelta,
   onStep = () => {},
 ) {
@@ -2926,6 +2982,7 @@ async function askGeneralChat(
       images: imagesSupported ? images : undefined,
       media: mediaSupported ? media : undefined,
       thinkingLevel,
+      historyTurns,
     },
   );
 
@@ -3058,11 +3115,19 @@ async function askAgent(
   // stays available for a caller that already knows its adapter).
   const { images, documents, media } = await resolveChatAttachments(client, attachmentIds, identityContext);
   const attachmentHint = buildAttachmentHint(documents);
-  const historyHint = buildHistoryHint(history);
+  // ARCNAVE modernization P2 / 1.6 — history no longer joins the
+  // hints/promptQuestion text blobs below (buildHistoryHint is kept for
+  // its own existing callers/tests, just no longer called here): real
+  // prior turns now travel structurally via historyTurns, computed once
+  // per turn and passed unchanged to every buildContext call below and in
+  // every function this turn calls, mirroring how attachmentHint/priorTurns
+  // are each computed once and reused. See aiContextAssembly.js's own
+  // historyTurns comment for the full "why a separate field" reasoning.
+  const historyTurns = buildHistoryTurns(history);
   const focusHint = await buildFocusHint(focusContext, client, identityContext);
   const projectHint = buildProjectContextHint(projectContext);
   const memoryHint = await buildMemoryHint(client, identityContext);
-  const hints = [historyHint, projectHint, focusHint, memoryHint, attachmentHint].filter(Boolean).join('\n\n');
+  const hints = [projectHint, focusHint, memoryHint, attachmentHint].filter(Boolean).join('\n\n');
   const promptQuestion = hints ? `${hints}\n\nQuestion: ${question}` : question;
   // Review Finding #2 — same hints as promptQuestion above, minus the raw
   // attachment text (buildAttachmentMetadataHint instead of
@@ -3075,9 +3140,7 @@ async function askAgent(
   // own tool results instead. Not used for the answer/answerPromptQuestion
   // path below, which already drops the attachment hint entirely.
   const attachmentMetadataHint = buildAttachmentMetadataHint(documents);
-  const compactHints = [historyHint, projectHint, focusHint, memoryHint, attachmentMetadataHint]
-    .filter(Boolean)
-    .join('\n\n');
+  const compactHints = [projectHint, focusHint, memoryHint, attachmentMetadataHint].filter(Boolean).join('\n\n');
   const compactPromptQuestion = compactHints ? `${compactHints}\n\nQuestion: ${question}` : question;
   // The ANSWER-call variant: identical, minus the attachment hint. Once a
   // deterministic tool has run, its bounded result is already present as
@@ -3100,7 +3163,7 @@ async function askAgent(
   // the preamble and markers independently of buildAttachmentHint. This
   // drops document text, never rule-9 framing.
   // See ai-chat-attachment-hint-answer-call-approved-spec.md.
-  const answerHints = [historyHint, projectHint, focusHint, memoryHint].filter(Boolean).join('\n\n');
+  const answerHints = [projectHint, focusHint, memoryHint].filter(Boolean).join('\n\n');
   const answerPromptQuestion = answerHints ? `${answerHints}\n\nQuestion: ${question}` : question;
 
   // Research mode short-circuits before a single ARCNAVE tool is even
@@ -3136,7 +3199,8 @@ async function askAgent(
         aiConfig,
         images,
         media,
-        hasHistory: historyHint !== '',
+        hasHistory: historyTurns.length > 0,
+        historyTurns,
         hasAttachedDocuments: documents.length > 0,
         thinkingLevel,
       },
@@ -3347,7 +3411,7 @@ async function askAgent(
   const hasFileTool = roleTools.some((t) => FILE_TOOL_NAMES.has(t.name)) || documents.length > 0;
   const decisionPolicy = aiPolicyAssembly.buildPolicy({
     mode: 'curriculum',
-    hasHistory: historyHint !== '',
+    hasHistory: historyTurns.length > 0,
     toolCount: tools.length,
     hasFileTool,
     focusEntityType: focusContext && focusContext.entityType,
@@ -3566,6 +3630,7 @@ async function askAgent(
     thinkingLevel,
     includeThoughts,
     cachedSystemInstructionName,
+    historyTurns,
   });
   let continuationContext = aiContextAssembly.buildContext(continuationSegments, {
     tools: offeredTools,
@@ -3574,6 +3639,7 @@ async function askAgent(
     thinkingLevel,
     includeThoughts,
     cachedSystemInstructionName,
+    historyTurns,
   });
 
   const decisionStartedAt = Date.now();
@@ -3695,6 +3761,7 @@ async function askAgent(
             media: decisionMedia,
             thinkingLevel,
             cachedSystemInstructionName,
+            historyTurns,
           });
         }
         const unknown = requested.filter((n) => !resolvedTools.some((t) => t.name === n));
@@ -3765,7 +3832,8 @@ async function askAgent(
           identityBlock,
           adapter,
           aiConfig,
-          hasHistory: historyHint !== '',
+          hasHistory: historyTurns.length > 0,
+          historyTurns,
         },
         onDelta,
         onStep,
@@ -4054,7 +4122,8 @@ async function askAgent(
       adapter,
       aiConfig,
       identityBlock,
-      historyHint !== '',
+      historyTurns.length > 0,
+      historyTurns,
       onDelta,
       blockedActionNote,
     );
@@ -4124,6 +4193,7 @@ module.exports = {
   resolveChatAttachments,
   buildAttachmentHint,
   buildHistoryHint,
+  buildHistoryTurns,
   buildMemoryHint,
   // Review Finding #10 — exported for direct unit testing only, same
   // precedent as buildAttachmentHint/buildHistoryHint/buildMemoryHint

@@ -208,8 +208,16 @@ async function postJson(cfg, bodyFields) {
 // Token/cost telemetry (P1.1) — see openai.js's own comment for the
 // shared reasoning. Claude's usage block uses input_tokens/output_tokens,
 // not the OpenAI-compatible prompt_tokens/completion_tokens naming.
+// ARCNAVE modernization P2 / 1.6 — see gemini.js's own buildHistoryContents
+// comment for the shared reasoning (real prior turns, placed before the
+// current user turn, never after). Claude's own text-content-block shape.
+function buildHistoryMessages(historyTurns) {
+  if (!Array.isArray(historyTurns)) return [];
+  return historyTurns.map((turn) => ({ role: turn.role, content: [{ type: 'text', text: turn.content }] }));
+}
+
 async function completeWithMeta(cfg, arcnaveContext) {
-  const { systemPrompt, userPrompt, images } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, images, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey/projectId)');
   }
@@ -218,7 +226,7 @@ async function completeWithMeta(cfg, arcnaveContext) {
     model: cfg.model,
     max_tokens: MAX_TOKENS,
     system: systemPrompt,
-    messages: [{ role: 'user', content: buildUserContent(userPrompt, images) }],
+    messages: [...buildHistoryMessages(historyTurns), { role: 'user', content: buildUserContent(userPrompt, images) }],
   });
 
   const block = payload && Array.isArray(payload.content) ? payload.content.find((b) => b.type === 'text') : null;
@@ -256,7 +264,7 @@ async function complete(cfg, prompts) {
 // simply keeps overwriting rather than summing. Never called if neither
 // event carried a usage block, rather than reporting a fabricated zero.
 async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
-  const { systemPrompt, userPrompt, images } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, images, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey/projectId)');
   }
@@ -267,7 +275,7 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
       model: cfg.model,
       max_tokens: MAX_TOKENS,
       system: systemPrompt,
-      messages: [{ role: 'user', content: buildUserContent(userPrompt, images) }],
+      messages: [...buildHistoryMessages(historyTurns), { role: 'user', content: buildUserContent(userPrompt, images) }],
       stream: true,
     },
     'stream',
@@ -337,7 +345,7 @@ function buildPriorTurnMessages(priorTurns) {
 }
 
 async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
-  const { systemPrompt, userPrompt, tools, images } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, tools, images, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey/projectId)');
   }
@@ -346,7 +354,11 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
     model: cfg.model,
     max_tokens: MAX_TOKENS,
     system: systemPrompt,
-    messages: [{ role: 'user', content: buildUserContent(userPrompt, images) }, ...buildPriorTurnMessages(priorTurns)],
+    messages: [
+      ...buildHistoryMessages(historyTurns),
+      { role: 'user', content: buildUserContent(userPrompt, images) },
+      ...buildPriorTurnMessages(priorTurns),
+    ],
     // Prompt caching (P1.2): a cache_control breakpoint on the LAST
     // tool caches this entire tools array — the ~10k-token role-
     // filtered tool schema list, unlike the system/user prompt which

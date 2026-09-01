@@ -255,6 +255,43 @@ test('flattenToPrompts: tools/images pass through as context fields, never strin
   assert.ok(!flat.userPrompt.includes('get_college_profile'));
 });
 
+// --- historyTurns (ARCNAVE modernization P2 / 1.6) ---
+
+test('buildContext: no historyTurns option -> historyTurns defaults to an empty array, never undefined', () => {
+  const ctx = buildContext([
+    segment({ source: 'mode-prefix', stability: STABILITY.STATIC, target: 'system', content: 'MODE_PREFIX' }),
+  ]);
+  assert.deepEqual(ctx.historyTurns, []);
+});
+
+test('flattenToPrompts: historyTurns passes through as a context field, and appends the framing note to systemPrompt exactly once', () => {
+  const historyTurns = [
+    { role: 'user', content: 'earlier question' },
+    { role: 'assistant', content: 'earlier answer' },
+  ];
+  const ctx = buildContext(
+    [segment({ source: 'mode-prefix', stability: STABILITY.STATIC, target: 'system', content: 'MODE_PREFIX' })],
+    { historyTurns },
+  );
+  const flat = flattenToPrompts(ctx);
+  assert.equal(flat.historyTurns, historyTurns);
+  assert.ok(flat.systemPrompt.startsWith('MODE_PREFIX'));
+  assert.match(flat.systemPrompt, /never new/);
+  // Never stringified into the actual prior turn text — that stays
+  // structural, same "not a segment" posture tools/images already have.
+  assert.ok(!flat.systemPrompt.includes('earlier question'));
+  assert.ok(!flat.userPrompt.includes('earlier question'));
+});
+
+test('flattenToPrompts: empty historyTurns -> no framing note added, systemPrompt unchanged', () => {
+  const ctx = buildContext([
+    segment({ source: 'mode-prefix', stability: STABILITY.STATIC, target: 'system', content: 'MODE_PREFIX' }),
+  ]);
+  const flat = flattenToPrompts(ctx);
+  assert.equal(flat.systemPrompt, 'MODE_PREFIX');
+  assert.ok(!flat.systemPrompt.includes('never new'));
+});
+
 // --- fingerprint ---
 
 test('fingerprint: deterministic — same segments produce the same fingerprint', () => {

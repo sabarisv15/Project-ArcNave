@@ -1126,6 +1126,33 @@ test('gemini adapter.completeWithTools: priorTurns=[]/omitted produces a byte-id
   assert.deepEqual(withEmpty, omitted);
 });
 
+// ARCNAVE modernization P2 / 1.6 — historyTurns become real 'user'/'model'
+// contents turns, placed BEFORE the current user turn (never after —
+// that's where priorTurns' own same-turn functionCall/functionResponse
+// pairs belong).
+test('gemini adapter.completeWithTools: historyTurns become real user/model contents turns, placed before the current user turn', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const contextWithHistory = contextFromFlatPrompts({
+    systemPrompt: 's',
+    userPrompt: 'u',
+    tools: P2C_TOOLS,
+    historyTurns: [
+      { role: 'user', content: 'earlier question' },
+      { role: 'assistant', content: 'earlier answer' },
+    ],
+  });
+  const body = await capturedRequestBody(() =>
+    gemini
+      .completeWithTools({ projectId: 'p', accessToken: 't', model: 'gemini-x' }, contextWithHistory)
+      .catch(() => {}),
+  );
+  assert.deepEqual(body.contents, [
+    { role: 'user', parts: [{ text: 'earlier question' }] },
+    { role: 'model', parts: [{ text: 'earlier answer' }] },
+    { role: 'user', parts: [{ text: 'u' }] },
+  ]);
+});
+
 test('gemini adapter.completeWithTools: tool definitions are chain-equal across 3 iterations (0, 1, 2 prior turns) — a continuation never narrows the tool list', async () => {
   const gemini = aiProviders.getAdapter('gemini');
   const cfg = { projectId: 'p', accessToken: 't', model: 'gemini-x' };
@@ -1208,6 +1235,29 @@ test('claude adapter.completeWithTools: priorTurns=[]/omitted produces a byte-id
   assert.deepEqual(withEmpty, omitted);
 });
 
+// ARCNAVE modernization P2 / 1.6 — see gemini's own equivalent test for
+// the shared reasoning. Claude's own text-content-block message shape.
+test('claude adapter.completeWithTools: historyTurns become real user/assistant messages, placed before the current user message', async () => {
+  const claude = aiProviders.getAdapter('claude');
+  const contextWithHistory = contextFromFlatPrompts({
+    systemPrompt: 's',
+    userPrompt: 'u',
+    tools: P2C_TOOLS,
+    historyTurns: [
+      { role: 'user', content: 'earlier question' },
+      { role: 'assistant', content: 'earlier answer' },
+    ],
+  });
+  const body = await capturedRequestBody(() =>
+    claude.completeWithTools({ apiKey: 'k', model: 'claude-x' }, contextWithHistory).catch(() => {}),
+  );
+  assert.deepEqual(body.messages, [
+    { role: 'user', content: [{ type: 'text', text: 'earlier question' }] },
+    { role: 'assistant', content: [{ type: 'text', text: 'earlier answer' }] },
+    { role: 'user', content: 'u' },
+  ]);
+});
+
 test('claude adapter.completeWithTools: tool definitions are chain-equal across 3 iterations', async () => {
   const claude = aiProviders.getAdapter('claude');
   const cfg = { apiKey: 'k', model: 'claude-x' };
@@ -1280,6 +1330,38 @@ test('openai adapter.completeWithTools: priorTurns=[]/omitted produces a byte-id
   assert.deepEqual(withEmpty, omitted);
 });
 
+// ARCNAVE modernization P2 / 1.6 — see gemini's own equivalent test for
+// the shared reasoning. The OpenAI-compatible convention's own plain
+// {role, content} message shape needs no translation.
+test('openai adapter.completeWithTools: historyTurns become real user/assistant messages, placed between system and the current user message', async () => {
+  const openai = aiProviders.getAdapter('openai');
+  const contextWithHistory = contextFromFlatPrompts({
+    systemPrompt: 's',
+    userPrompt: 'u',
+    tools: P2C_TOOLS,
+    historyTurns: [
+      { role: 'user', content: 'earlier question' },
+      { role: 'assistant', content: 'earlier answer' },
+    ],
+  });
+  const body = await capturedRequestBody(() =>
+    openai.completeWithTools({ apiKey: 'k', model: 'gpt-x' }, contextWithHistory).catch(() => {}),
+  );
+  // System content also carries the 1.6 framing note whenever historyTurns
+  // is non-empty (aiContextAssembly.js) — checked loosely here (starts
+  // with/contains) since that exact wording is that file's own concern,
+  // not this adapter's.
+  assert.equal(body.messages.length, 4);
+  assert.equal(body.messages[0].role, 'system');
+  assert.ok(body.messages[0].content.startsWith('s'));
+  assert.match(body.messages[0].content, /never new/);
+  assert.deepEqual(body.messages.slice(1), [
+    { role: 'user', content: 'earlier question' },
+    { role: 'assistant', content: 'earlier answer' },
+    { role: 'user', content: 'u' },
+  ]);
+});
+
 test('openai adapter.completeWithTools: tool definitions are chain-equal across 3 iterations', async () => {
   const openai = aiProviders.getAdapter('openai');
   const cfg = { apiKey: 'k', model: 'gpt-x' };
@@ -1337,6 +1419,36 @@ test('selfHosted adapter.completeWithTools: priorTurns=[]/omitted produces a byt
     { role: 'user', content: 'u' },
   ]);
   assert.deepEqual(withEmpty, omitted);
+});
+
+// ARCNAVE modernization P2 / 1.6 — see gemini's own equivalent test for
+// the shared reasoning (same OpenAI-compatible convention openai.js uses).
+test('selfHosted adapter.completeWithTools: historyTurns become real user/assistant messages, placed between system and the current user message', async () => {
+  const selfHosted = aiProviders.getAdapter('self_hosted');
+  const contextWithHistory = contextFromFlatPrompts({
+    systemPrompt: 's',
+    userPrompt: 'u',
+    tools: P2C_TOOLS,
+    historyTurns: [
+      { role: 'user', content: 'earlier question' },
+      { role: 'assistant', content: 'earlier answer' },
+    ],
+  });
+  const body = await capturedRequestBody(() =>
+    selfHosted.completeWithTools({ baseUrl: 'http://localhost:1', model: 'sh-x' }, contextWithHistory).catch(() => {}),
+  );
+  // System content also carries the 1.6 framing note whenever historyTurns
+  // is non-empty (aiContextAssembly.js) — checked loosely here, same as
+  // openai's own equivalent test.
+  assert.equal(body.messages.length, 4);
+  assert.equal(body.messages[0].role, 'system');
+  assert.ok(body.messages[0].content.startsWith('s'));
+  assert.match(body.messages[0].content, /never new/);
+  assert.deepEqual(body.messages.slice(1), [
+    { role: 'user', content: 'earlier question' },
+    { role: 'assistant', content: 'earlier answer' },
+    { role: 'user', content: 'u' },
+  ]);
 });
 
 test('selfHosted adapter.completeWithTools: tool definitions are chain-equal across 3 iterations', async () => {

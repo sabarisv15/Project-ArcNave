@@ -4,6 +4,58 @@ _Last updated: 2026-09-01._
 
 ---
 
+# ⛔ NEWEST BANNER — P3 D3 (hybrid tool search) shipped, 2026-09-01. Commit `c0ea640` on `p0-modernization-foundation` (not merged, no PR), on top of the 7 items the banner below already records.
+
+**D3 — hybrid keyword + meaning tool search, mechanism built, shipped
+OFF.** `config.aiHybridToolRetrieval` (`AI_HYBRID_TOOL_RETRIEVAL=true`)
+blends `aiToolRetrievalService.js`'s existing semantic margin-cutoff
+tier (1.2/C4, this same modernization effort, already live-measured)
+with a new lexical-overlap ranking (`aiToolRegistry.rankToolsByKeywordOverlap`,
+extracted from `filterToolsByRelevance` unchanged) via Reciprocal Rank
+Fusion (`reciprocalRankFusion`, `RRF_K = 60`, standard constant).
+Shipped OFF by design — same posture `config.toolSearch`/
+`config.aiExplicitCache` already use — because this fusion tier, unlike
+1.2/C4's cutoff, has NOT been live-measured against real Gemini
+embeddings yet. `scripts/tool-retrieval-hybrid-probe.js` (new) is that
+measurement, ready to run. Full reasoning: [ADL-073](../30-decisions/ledger.md#adl-073).
+14 new tests, all passing standalone (host has no Docker).
+
+**8 of 13 P3 items now shipped this thread: 3.2, 4.3/5.2, 1.13 (+
+wiring), 2.3, 1.11, 1.12, D3.** (D3 was mistagged "1.5" in the plan's
+own bullet list — see ADL-073 for why D3's table row is the real
+match.) Full detail for each in the banners directly below — read
+those before continuing, don't re-derive.
+
+**Remaining P3 items — same by-size/risk breakdown as the previous
+banner, unchanged except D3 is now done:**
+- **1.16 / clash C10 — rewrite the agent as a step-by-step machine.**
+  Still the biggest, most invasive item — needs its own multi-day
+  scoping pass. Do NOT attempt alongside smaller items.
+- **4.6 — split the huge files.** `aiService.js` overlaps with whatever
+  1.16 will eventually do to the same file — consider sequencing after
+  1.16, or scope 4.6 to other large files first (no line-count survey
+  run yet this thread).
+- **2.4/2.5 — vision model for scans; complex-PDF fallback.** Needs a
+  live, billable Vertex measurement this environment can't run right
+  now (no Docker/GCP access this session).
+- **1.18 — guardrail layer.** Still needs a product-level decision
+  (what a guardrail actually checks/blocks) before code.
+- **4.9 — status still unclear.** Plan's bullet list and its own table
+  row (line 268) describe different scopes — still parked.
+- **5.8/5.9 — frontend reorg + state library.** No backend conflict,
+  safe to start any time, needs its own scoping pass (structure survey,
+  target shape, state-library choice) — not started this thread.
+
+**Exact next action:** same as before D3 — **5.8/5.9** (frontend
+reorg, start with a structure survey) is the next reasonably-scoped
+item without more input needed. 1.16/4.6 need real multi-day scoping;
+2.4/2.5 need a live/billable measurement. Docker full-suite
+verification is owed across ALL of this session's P3 commits
+(c0ea640/c9f955f/03d826c/731440a/896adfc plus the three before them)
+at the next checkpoint with Docker access.
+
+---
+
 # ⛔ NEWEST BANNER — P3 session paused after 7 items shipped, 2026-09-01. Commits `c9f955f`/`03d826c`/`731440a`/`896adfc` on `p0-modernization-foundation` (not merged, no PR), on top of everything the two banners below already record.
 
 **1.12 — native forced-format for every provider, just shipped.**

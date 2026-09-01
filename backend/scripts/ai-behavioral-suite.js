@@ -124,6 +124,12 @@ async function cleanupTenant(adminPool, collegeId) {
   // lookup-then-act scenario) reference drafted_by_user_id -> users —
   // must go before users, same reasoning as artifacts/documents above.
   await adminPool.query('DELETE FROM notifications WHERE college_id = $1', [collegeId]);
+  // ARCNAVE modernization P2 (PDF D4) — ai_usage_counters FK-references
+  // colleges(college_id); logLlmCall's fire-and-forget counter increment
+  // (aiService.js) means this whole suite's real Vertex calls leave rows
+  // here, so it must be cleaned up before the college row itself, same
+  // as every other tenant table here.
+  await adminPool.query('DELETE FROM ai_usage_counters WHERE college_id = $1', [collegeId]);
   await adminPool.query('DELETE FROM audit_log WHERE college_id = $1', [collegeId]);
   await cleanupPositionRows(adminPool, collegeId);
   await adminPool.query('DELETE FROM staff WHERE college_id = $1', [collegeId]);
@@ -186,6 +192,22 @@ const FALSE_INCAPABILITY_PHRASES = [
   "don't have the ability to generate",
   'unable to generate a document',
   'no way to create a pdf',
+  // ARCNAVE modernization P2 / PDF 3.3 — added after category L's own
+  // l1 scenario caught this live, first run: asked to build an Excel
+  // workbook, the model answered "I cannot generate or export a
+  // downloadable Excel file" without ever calling list_skills/
+  // describe_skill/execute_code (the xlsx skill exists for exactly this).
+  // The original phrase list above is PDF/document-generic and missed
+  // it, which is itself the finding — spreadsheet-specific incapability
+  // claims are a real, distinct failure mode, not covered by "cannot
+  // create a document."
+  'cannot generate or export',
+  'cannot generate a downloadable',
+  "can't generate a downloadable",
+  'unable to generate a downloadable',
+  'cannot generate an excel',
+  "can't generate an excel",
+  'unable to generate an excel',
 ];
 
 function noToolUsed(result) {
@@ -549,6 +571,95 @@ function buildScenarios({ artifactId, notificationId }) {
         ok: true,
         reason: `paused for confirmation as required, toolsUsed before the pause: ${JSON.stringify(used)}`,
       };
+    },
+  });
+
+  // L — Skills subsystem (ARCNAVE modernization P2 / PDF 3.3: "put
+  // skills in the AI test set"). list_skills/describe_skill are the two
+  // real tools (aiToolRegistry.js's own comment) — a skill is guidance
+  // for execute_code, never executable itself. Both are budget-exempt
+  // lookups (aiService.js's BUDGET_EXEMPT_LOOKUP_TOOLS), so they can
+  // chain with one real action tool even under the default
+  // maxToolCallsPerTurn=1 cap every other non-K category runs under —
+  // no cap override needed here, unlike category K.
+  scenarios.push({
+    id: 'l1',
+    category: 'L: skills',
+    // F15 (aiService.js's own BUDGET_EXEMPT_LOOKUP_TOOLS comment) — a
+    // real live-caught bug: a turn spent its only tool call on
+    // list_skills, got back a list of names, and told the user it had
+    // no data instead of ever taking the real action the names were
+    // fetched to inform. This scenario is that exact regression, guarded
+    // — plus a second, DIFFERENT real regression this exact scenario
+    // caught live the first time it ran (2026-09-01): the model skipped
+    // list_skills/describe_skill/execute_code entirely and answered "I
+    // cannot generate or export a downloadable Excel file," a false
+    // incapability claim (the xlsx skill + execute_code exist for
+    // exactly this) — see FALSE_INCAPABILITY_PHRASES' own comment. Left
+    // as a genuinely failing assertion, not silently loosened: a build-
+    // vs-fix pass for the underlying model-prompting gap is its own
+    // separate, scoped item, not something this test-set addition
+    // should absorb.
+    question: 'Build me a formatted Excel workbook listing our departments, ready to download.',
+    expect: (r) => {
+      const used = r.toolsUsed || [];
+      const onlyLookups = used.length > 0 && used.every((name) => name === 'list_skills' || name === 'describe_skill');
+      if (onlyLookups) {
+        return {
+          ok: false,
+          reason: `F15 regression — stopped after skill lookup(s) only (${JSON.stringify(used)}), never took a real action; answer: "${r.answer}"`,
+        };
+      }
+      if (containsAny(r.answer, FALSE_INCAPABILITY_PHRASES)) {
+        return {
+          ok: false,
+          reason: `false incapability claim — never reached for the xlsx skill/execute_code at all, toolsUsed=${JSON.stringify(used)}; answer: "${r.answer}"`,
+        };
+      }
+      return { ok: true, reason: `toolsUsed=${JSON.stringify(used)}, answer: "${r.answer}"` };
+    },
+  });
+
+  scenarios.push({
+    id: 'l2',
+    category: 'L: skills',
+    // Restraint check, same shape as k2's tool-count restraint — a
+    // plain data question has no file-handling concern at all, so a
+    // skill lookup here would be exactly the "toolbox they didn't ask
+    // for" waste the greeting-fast-path work (P2 / clash C1) exists to
+    // avoid at the catalogue level; this checks the same discipline one
+    // layer down, inside an already-tool-using turn.
+    question: "What is our college's name?",
+    expect: (r) => {
+      const used = r.toolsUsed || [];
+      if (used.includes('list_skills') || used.includes('describe_skill')) {
+        return { ok: false, reason: `unnecessary skill lookup for a plain-data question, toolsUsed=${JSON.stringify(used)}` };
+      }
+      return { ok: true, reason: 'no unnecessary skill lookup, as expected' };
+    },
+  });
+
+  scenarios.push({
+    id: 'l3',
+    category: 'L: skills',
+    // describe_skill's own thrown SkillNotFoundError names the exact
+    // failure mode this guards against: "call list_skills first rather
+    // than guessing a name" — a model that guesses anyway (skips
+    // list_skills, invents a plausible-sounding skill name straight into
+    // describe_skill) should show up here as a leaked "no skill named"
+    // error reaching the user-visible answer, never silently absorbed as
+    // a normal-looking response.
+    question:
+      'A parent uploaded a PDF fee receipt where the columns look merged together — what is the safest way to read it accurately?',
+    expect: (r) => {
+      const used = r.toolsUsed || [];
+      if (used.includes('describe_skill') && /no skill named/i.test(r.answer || '')) {
+        return {
+          ok: false,
+          reason: `describe_skill was called with a guessed/invalid name, the error leaked into the answer: "${r.answer}"`,
+        };
+      }
+      return { ok: true, reason: `toolsUsed=${JSON.stringify(used)}, answer: "${r.answer}"` };
     },
   });
 

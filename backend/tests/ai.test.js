@@ -166,6 +166,12 @@ async function seedTenant(adminPool, label) {
 }
 
 async function cleanupTenant(adminPool, college) {
+  // ARCNAVE modernization P2 (PDF D4) — ai_usage_counters FK-references
+  // colleges(college_id); logLlmCall's fire-and-forget counter increment
+  // (aiService.js) means any AI call this file's own tests make can
+  // leave a row here, so it must be cleaned up before the college row
+  // itself, same as every other tenant table below.
+  await adminPool.query('DELETE FROM ai_usage_counters WHERE college_id = $1', [college.collegeId]);
   await adminPool.query('DELETE FROM audit_log WHERE college_id = $1', [college.collegeId]);
   await adminPool.query('DELETE FROM notification_delivery WHERE college_id = $1', [college.collegeId]);
   await adminPool.query('DELETE FROM notifications WHERE college_id = $1', [college.collegeId]);

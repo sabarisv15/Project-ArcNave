@@ -29,6 +29,7 @@ const configurationService = require('./configurationService');
 const config = require('../config');
 const documentService = require('./documentService');
 const auditLogRepository = require('../repositories/auditLogRepository');
+const aiUsageCounterRepository = require('../repositories/aiUsageCounterRepository');
 const tracer = require('../tracing/tracer');
 const idempotencyKeyRepository = require('../repositories/idempotencyKeyRepository');
 const documentTextExtractionService = require('./documentTextExtractionService');
@@ -2481,6 +2482,27 @@ async function logLlmCall(
     })
     .catch((err) => {
       logError('ai_llm_call_audit_write_failed', { collegeId: identityContext.collegeId, error: err.message });
+    });
+
+  // ARCNAVE modernization P2 (PDF D4) — a SECOND fire-and-forget write
+  // alongside the audit_log INSERT above, never a replacement for it:
+  // audit_log stays the append-only source of truth/timeline; this
+  // keeps aiCostControlService's monthly-quota read an O(1) primary-key
+  // lookup instead of a full-month scan. Same connection, same
+  // "errors swallowed+logged, nothing downstream awaits this" posture as
+  // the audit write above — a failed increment must never fail or
+  // retroactively distort the turn that already completed. periodMonth
+  // uses aiCostControlService's own startOfCurrentMonth so the boundary
+  // an increment writes against is always identical to the one a read
+  // later queries against.
+  const tokensDelta = usage ? (usage.inputTokens || 0) + (usage.outputTokens || 0) : 0;
+  aiUsageCounterRepository
+    .incrementUsage(client, identityContext.collegeId, aiCostControlService.startOfCurrentMonth(), {
+      tokensDelta,
+      callsDelta: 1,
+    })
+    .catch((err) => {
+      logError('ai_usage_counter_increment_failed', { collegeId: identityContext.collegeId, error: err.message });
     });
 }
 

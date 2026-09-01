@@ -11,18 +11,27 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const auditLogRepository = require('../src/repositories/auditLogRepository');
+const aiUsageCounterRepository = require('../src/repositories/aiUsageCounterRepository');
 const configurationService = require('../src/services/configurationService');
 const globalConfig = require('../src/config');
 const aiCostControlService = require('../src/services/aiCostControlService');
 
+// ARCNAVE modernization P2 (PDF D4) — the old combined
+// auditLogRepository.getAiUsageWindow mock is now two independent
+// mocks: the monthly quota side reads aiUsageCounterRepository (the new
+// incremental counter table), the 60-second rate-limit side stays on
+// auditLogRepository's narrower getRateLimitWindowCount.
 function mockUsageWindow(t, { periodTokens = 0, periodCallCount = 0, windowCallCount = 0 } = {}) {
-  const m = t.mock.method(auditLogRepository, 'getAiUsageWindow', async () => ({
-    periodTokens,
-    periodCallCount,
-    windowCallCount,
+  const counterMock = t.mock.method(aiUsageCounterRepository, 'getUsage', async () => ({
+    tokensUsed: periodTokens,
+    callCount: periodCallCount,
   }));
-  t.after(() => m.mock.restore());
-  return m;
+  const windowMock = t.mock.method(auditLogRepository, 'getRateLimitWindowCount', async () => windowCallCount);
+  t.after(() => {
+    counterMock.mock.restore();
+    windowMock.mock.restore();
+  });
+  return { counterMock, windowMock };
 }
 
 function mockQuotaConfig(t, configuration = null) {

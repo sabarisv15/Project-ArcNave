@@ -14,12 +14,18 @@
 // already carries inputTokens/outputTokens per call; a second ledger
 // would just be the same numbers in a second place to keep consistent.
 //
-// checkUsageLimits is the ONE call site aiService.js's askAgent/
-// askGeneralChat use (a single combined query — see
-// auditLogRepository.getAiUsageWindow's own comment on why quota and
-// rate-limit share one query rather than costing a turn two).
+// ARCNAVE modernization P2 (PDF D4) — the monthly quota side of
+// checkUsageLimits no longer scans audit_log at all: it reads
+// aiUsageCounterRepository's incremental ai_usage_counters table (one
+// O(1) primary-key lookup, kept up to date by aiService.js's logLlmCall
+// on every real call). Only the 60-second rate-limit window still reads
+// audit_log (auditLogRepository.getRateLimitWindowCount) — it needs
+// real per-row timestamps a monthly-grain counter table can't answer.
+// audit_log itself is untouched otherwise — still the append-only
+// source of truth/timeline this file's own header already established.
 
 const auditLogRepository = require('../repositories/auditLogRepository');
+const aiUsageCounterRepository = require('../repositories/aiUsageCounterRepository');
 const configurationService = require('./configurationService');
 const globalConfig = require('../config');
 
@@ -58,32 +64,35 @@ async function getMonthlyTokenQuota(client, collegeId) {
   return configured !== null ? configured : globalConfig.aiDefaultMonthlyTokenQuota;
 }
 
-// Non-throwing — one combined DB read shared by both the enforcement
-// path (checkUsageLimits below) and the admin ops-status endpoint
+// Non-throwing — reads shared by both the enforcement path
+// (checkUsageLimits below) and the admin ops-status endpoint
 // (routes/aiConfig.js), which needs to SHOW a college that's already
 // over budget or rate-limited, not receive a 500 while trying to look
-// at it.
+// at it. Two independent reads, deliberately NOT combined into one
+// query the way the pre-D4 version was — see this file's own D4
+// comment above for why the two now live on different storage.
 async function getUsageStatus(client, collegeId) {
   const periodStart = startOfCurrentMonth();
   const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MS);
-  const [tokensLimit, usage] = await Promise.all([
+  const [tokensLimit, counterUsage, windowCallCount] = await Promise.all([
     getMonthlyTokenQuota(client, collegeId),
-    auditLogRepository.getAiUsageWindow(client, collegeId, { periodStart, windowStart }),
+    aiUsageCounterRepository.getUsage(client, collegeId, periodStart),
+    auditLogRepository.getRateLimitWindowCount(client, collegeId, windowStart),
   ]);
   const rateLimit = globalConfig.aiRateLimitPerMinute;
   return {
     quota: {
-      tokensUsed: usage.periodTokens,
-      callCount: usage.periodCallCount,
+      tokensUsed: counterUsage.tokensUsed,
+      callCount: counterUsage.callCount,
       tokensLimit,
-      percentUsed: tokensLimit > 0 ? Math.round((usage.periodTokens / tokensLimit) * 100) : 100,
-      withinBudget: usage.periodTokens < tokensLimit,
+      percentUsed: tokensLimit > 0 ? Math.round((counterUsage.tokensUsed / tokensLimit) * 100) : 100,
+      withinBudget: counterUsage.tokensUsed < tokensLimit,
       periodStart: periodStart.toISOString(),
     },
     rateLimit: {
-      callsInWindow: usage.windowCallCount,
+      callsInWindow: windowCallCount,
       limit: rateLimit,
-      withinLimit: usage.windowCallCount < rateLimit,
+      withinLimit: windowCallCount < rateLimit,
     },
   };
 }
@@ -125,4 +134,9 @@ module.exports = {
   getUsageStatus,
   checkUsageLimits,
   getOpsStatus,
+  // Exported for aiService.js's logLlmCall (D4's counter-increment write
+  // side) so the period boundary used to INCREMENT a row is always
+  // computed the exact same way as the boundary used to READ it back —
+  // never two independently-drifting "start of month" implementations.
+  startOfCurrentMonth,
 };

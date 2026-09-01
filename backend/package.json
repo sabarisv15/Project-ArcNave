@@ -2,13 +2,14 @@
   "name": "arcnave-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "ARCNAVE backend — Express (Node.js, plain JavaScript). See docs/adr/ADR-016-Node-Backend.md.",
+  "description": "ARCNAVE backend — Express (Node.js). Existing code is plain JavaScript; new files may be TypeScript (ADR-016 Amendment 1, ADL-072). See bka/30-decisions/adr-register.md.",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "migrate": "node scripts/migrate.js up",
     "migrate:down": "node scripts/migrate.js down",
     "test": "node --test tests/",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
@@ -38,12 +39,15 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/node": "^26.4.0",
     "eslint": "^10.9.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-n": "^18.3.0",
     "globals": "^17.11.0",
     "jszip": "^3.10.1",
     "node-pg-migrate": "^7.6.1",
-    "prettier": "^3.9.6"
+    "prettier": "^3.9.6",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
   }
 }

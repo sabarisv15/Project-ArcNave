@@ -6050,3 +6050,93 @@ No migration.
 **Verification.** Unit + adapter tests green; full backend suite in
 Docker (see CURRENT-STATE P2 banner). `demo` `ai_quota` confirmed
 restored to `{monthlyTokenQuota: 2000000}` after the paid runs.
+
+## ADL-072
+
+### C7 (modernization P3, 4.3/5.2) — start the typed-code migration: reverses ADR-016's "TypeScript for now, rejected"
+
+**What prompted this.** ADR-016 (original ADR estate, still governing —
+see `bka/90-appendix/traceability.md`) chose plain JavaScript for the
+backend, explicitly rejecting TypeScript "for now," with its own stated
+revisit trigger: "once the lack of static types is a demonstrated
+maintenance cost." The modernization plan's P3 item 4.3/5.2 proposes
+starting a typed-code migration; clash C7 (Part 6 of the plan) flags
+this as a genuine reversal of that stance, not a routine implementation
+step, and requires "re-weigh the reason behind that decision and write a
+new decision entry before starting" rather than silently building it.
+Per the standing P0-P5 mandate (session memory
+`arcnave-p0-p5-rewrite-mandate.md`), this is exactly the class of
+decision the mandate does NOT let an agent make unilaterally — asked in
+chat; owner said yes, 2026-09-01.
+
+**Decision: start the migration, gradual, additive-only, new files
+only.** Not a demonstrated-cost-driven reversal (ADR-016's own trigger
+condition is not independently re-verified here) — a deliberate,
+owner-authorised policy change instead, consistent with the mandate's
+explicit allowance to bypass a `bka/` "decided" banner for this specific
+rewrite effort.
+
+**What actually shipped, this pass.**
+- `backend/tsconfig.json` (new) — `noEmit: true`, `allowJs: true`,
+  `checkJs: false`, `strict: true`. Type-CHECK only; changes nothing
+  about what Node actually runs (`node src/index.js`, unchanged) — every
+  existing `.js` file is untouched and un-typechecked (`checkJs: false`
+  deliberately). `typescript`, `tsx`, `@types/node` added as
+  devDependencies. `npm run typecheck` (new script) verified clean
+  against the current all-`.js` tree (zero `.ts` files exist yet, so
+  this is a trivial pass, not yet a real signal). `npx tsx` verified
+  live: executes a real `.ts` file end-to-end (a throwaway smoke script,
+  not committed) — the runtime path for a new `.ts` *script* (not yet
+  application request-path code) is real, not just configured.
+- `frontend/tsconfig.json` (new) — same `noEmit`/`allowJs`/`strict`
+  posture. Vite (`@vitejs/plugin-react`, esbuild) already transpiles
+  `.ts`/`.tsx` with **zero config change** — verified live: a throwaway
+  `.tsx` smoke component built cleanly via `npx vite build` (not
+  committed), so a new frontend file can be genuine TypeScript today
+  with no additional tooling. `typescript`, `@types/react`,
+  `@types/react-dom` added as devDependencies (`--legacy-peer-deps` —
+  pre-existing React 19 vs. `next-themes`/Radix peer-range conflict,
+  already tracked in `dependency-scan-baseline.md` and the CI workflow's
+  own `npm ci --legacy-peer-deps` comment; not introduced by this
+  change). `npm run typecheck` (new script) clean.
+- `.github/workflows/ci.yml` — `npm run typecheck` added to both the
+  backend and frontend jobs, **blocking** (not informational like the
+  `npm audit` step) — safe to block immediately because today's baseline
+  is trivially clean (no `.ts` files exist), so it can only ever fail on
+  a real new type error introduced going forward, never pre-existing
+  debt. NOT verified inside the real Docker `app` container this
+  session (host has no Docker available for a live run per this
+  project's own established constraint) — the backend Dockerfile's own
+  `npm install` step should pick up the new devDependencies on next
+  build; flag this as unverified-in-Docker if it's the first thing that
+  breaks after this lands.
+- `bka/30-decisions/adr-register.md` — ADR-016 gained "Amendment 1
+  (typed-code migration, ADL-072)" pointing here, same pattern
+  ADR-009/ADR-024/ADR-021 amendments already use. ADR-016's original
+  text is preserved unchanged (history), not rewritten.
+
+**Explicitly NOT done this pass (own future passes, not silently
+assumed).** No existing `.js` file was converted or typechecked
+(`checkJs: false` is deliberate, not an oversight) — this is scaffolding
+only, proving the tooling works, not a migration of real code. No
+backend *application* (request-path) code runs as `.ts` yet — only a
+`.ts` *script* run via `tsx` was proven; wiring `tsx`/a build step into
+the actual `node src/index.js` production runtime is its own decision
+(changes the deploy artifact) and its own pass. Which files/modules
+migrate first, and on what cadence, is not decided here.
+
+**Affected artefacts.** New: `backend/tsconfig.json`,
+`frontend/tsconfig.json`. Modified: `backend/package.json`,
+`backend/package-lock.json`, `frontend/package.json`,
+`frontend/package-lock.json`, `.github/workflows/ci.yml`,
+`bka/30-decisions/adr-register.md` (ADR-016 Amendment 1). No migration,
+no runtime behavior change for any existing file.
+
+**Verification.** `npm run typecheck` clean in both `backend/` and
+`frontend/` (host). `npx tsc --noEmit` and `npx tsx <file>.ts`
+(backend) and `npx vite build` on a real `.tsx` file (frontend) each
+verified live, then the throwaway proof files removed — not committed,
+by design (this slice ships tooling, not a first real TypeScript
+file). Full backend suite NOT re-run in Docker for this slice
+specifically (devDependency-only change, no runtime `.js` file
+touched) — due before the next Docker-verified P3 checkpoint regardless.

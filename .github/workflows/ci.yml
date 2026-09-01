@@ -50,6 +50,14 @@ jobs:
         run: docker compose exec -T app npm run lint
       - name: Format check
         run: docker compose exec -T app npm run format:check
+      # P3 4.3/5.2, clash C7, ADR-016 Amendment 1 (ADL-072) — TypeScript
+      # is opt-in for new files only, zero existing .js files touched.
+      # Blocking (not informational like the audit step above) because
+      # today's baseline is trivially clean (no .ts files exist yet) —
+      # this only ever fails on a REAL new type error, never pre-existing
+      # debt.
+      - name: Typecheck
+        run: docker compose exec -T app npm run typecheck
       # Dependency scanning (P0 item 3) — real findings already exist
       # today (see dependency-scan-baseline.md, 6 vulnerabilities, 4
       # high) that each need a breaking-change upgrade + its own
@@ -95,6 +103,10 @@ jobs:
         run: npm run lint
       - name: Format check
         run: npm run format:check
+      # P3 4.3/5.2, clash C7, ADR-016 Amendment 1 (ADL-072) — see the
+      # matching backend step's comment.
+      - name: Typecheck
+        run: npm run typecheck
       - name: Dependency audit (informational — see dependency-scan-baseline.md)
         run: npm audit || true
       - name: Test

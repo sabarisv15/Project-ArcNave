@@ -156,6 +156,14 @@ friction rather than removing it — revisit once the lack of static types is a
 demonstrated maintenance cost). The database design underneath was
 re-implemented faithfully, not re-thought.
 
+**Amendment 1 (typed-code migration, [ADL-072](ledger.md#adl-072)).**
+Reversed for NEW files only, 2026-09-01, as part of the ARCNAVE
+modernization plan's P3 (4.3/5.2, clash C7) — owner authorised the
+reversal explicitly rather than this being silently decided in code.
+Every existing `.js` file is unaffected; TypeScript is additive
+tooling, not a rewrite mandate. See ADL-072 for the reasoning and
+what shipped.
+
 ### ADR-017
 **Local disk storage for documents.** Object storage's main advantage — a shared
 blob store reachable from many stateless instances — buys nothing until a second

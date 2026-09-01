@@ -17,6 +17,12 @@ const LEVELS = ['fast', 'balanced', 'deep'];
 
 export function ThinkingLevelToggle({ level, onLevel }) {
   const base = 'w-[76px] h-[28px] rounded-[8px] border-0 text-[12.5px] cursor-pointer transition-colors duration-200';
+  // `level` is `null` until the user actually clicks a button (P3 1.11 —
+  // EMPTY_COMPOSER.thinkingLevel's own comment): displays exactly as
+  // before ("Fast" pressed) so this is a zero-visual-change default,
+  // even though the real wire value sent to the backend stays `null`
+  // (letting the backend auto-pick depth) until a real click happens.
+  const displayLevel = level ?? 'fast';
   return (
     <div
       role="group"
@@ -24,7 +30,7 @@ export function ThinkingLevelToggle({ level, onLevel }) {
       className="flex items-center gap-[2px] p-[2px] bg-tint2 rounded-[10px]"
     >
       {LEVELS.map((l) => {
-        const active = level === l;
+        const active = displayLevel === l;
         return (
           <button
             key={l}

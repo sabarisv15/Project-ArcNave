@@ -38,13 +38,20 @@ export const EMPTY_COMPOSER = Object.freeze({
   // one ScopeToggle click away the moment a college-data question needs it.
   mode: 'general',
   // CEO Vertex/Gemini audit #26 (2026-08-30) — "in AI Composer enable
-  // level switching let user decide". 'fast' maps to gemini.js's own
-  // existing GENERATION_CONFIG.thinkingConfig.thinkingLevel default
-  // ('LOW') — a composer nobody has touched sends the exact same request
-  // shape as before this field existed. Same per-scope-draft precedent
-  // as `mode` above — a level chosen in one chat/project/artifact
-  // composer never leaks into another.
-  thinkingLevel: 'fast',
+  // level switching let user decide". `null` means "the user hasn't
+  // touched the toggle" — routes/ai.js's resolveThinkingLevel then
+  // auto-picks a depth from the question's own difficulty (P3 1.11,
+  // aiThinkingDepthClassifier.js) instead of always defaulting to
+  // 'fast'/LOW. ThinkingLevelToggle still visually shows "Fast" as
+  // pressed when this is `null` (its own `level ?? 'fast'` display
+  // fallback) — no visual change, only the WIRE value sent to the
+  // backend changes, and only for a composer nobody has clicked yet.
+  // The moment a user clicks any of the three buttons, this becomes a
+  // real 'fast'/'balanced'/'deep' string and is respected verbatim,
+  // never auto-overridden — same per-scope-draft precedent as `mode`
+  // above, a level chosen in one chat/project/artifact composer never
+  // leaks into another.
+  thinkingLevel: null,
   attachments: [],
   contextChips: [],
   mention: null,

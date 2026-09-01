@@ -22,16 +22,14 @@ const projectService = require('../services/projectService');
 const artifactService = require('../services/artifactService');
 const documentService = require('../services/documentService');
 const aiCostControlService = require('../services/aiCostControlService');
+const aiThinkingDepthClassifier = require('../services/aiThinkingDepthClassifier');
 const { IdentifierResolutionError } = require('../identifierResolution');
 
 // CEO Vertex/Gemini audit #26 (2026-08-30) — "in AI Composer enable
 // level switching let user decide". Frontend-facing labels
 // (ThinkingLevelToggle.jsx) are deliberately decoupled from Gemini's own
 // enum, same "label only, wire-level value is this codebase's own"
-// precedent ScopeToggle.jsx already established for mode/'general'. An
-// unrecognized/missing value falls through to DEFAULT_THINKING_LEVEL
-// ('fast' -> LOW) — gemini.js's own existing GENERATION_CONFIG default,
-// so a caller that never sends this field keeps today's exact behavior.
+// precedent ScopeToggle.jsx already established for mode/'general'.
 // MEDIUM/HIGH are NOT independently live-verified against the real
 // Vertex endpoint — only LOW has been (gemini.js's own GENERATION_CONFIG
 // comment) — this mapping is Google's documented enum shape, not a
@@ -40,7 +38,20 @@ const { IdentifierResolutionError } = require('../identifierResolution');
 const THINKING_LEVEL_BY_LABEL = { fast: 'LOW', balanced: 'MEDIUM', deep: 'HIGH' };
 const DEFAULT_THINKING_LEVEL = 'fast';
 
-function resolveThinkingLevel(label) {
+// P3 1.11 — a label the user genuinely clicked (a real 'fast'/
+// 'balanced'/'deep' string) is ALWAYS respected verbatim and never
+// reaches the classifier below; only a missing/unset label (the
+// composer's own `null` default, EMPTY_COMPOSER.thinkingLevel) falls
+// through to aiThinkingDepthClassifier's difficulty-based guess. An
+// unrecognized-but-present label (a bug, not "let auto decide") still
+// falls back to DEFAULT_THINKING_LEVEL exactly as before — only a truly
+// ABSENT label triggers auto-classification, so a malformed request
+// never silently gets a different, unexpected escalation behavior.
+function resolveThinkingLevel(label, question) {
+  if (label === undefined || label === null || label === '') {
+    const autoLabel = aiThinkingDepthClassifier.classifyThinkingDepth(question);
+    return THINKING_LEVEL_BY_LABEL[autoLabel] || THINKING_LEVEL_BY_LABEL[DEFAULT_THINKING_LEVEL];
+  }
   return THINKING_LEVEL_BY_LABEL[label] || THINKING_LEVEL_BY_LABEL[DEFAULT_THINKING_LEVEL];
 }
 
@@ -517,7 +528,7 @@ function createAiRouter() {
       history,
       attachmentIds,
       mode,
-      thinkingLevel: resolveThinkingLevel(thinkingLevel),
+      thinkingLevel: resolveThinkingLevel(thinkingLevel, question),
     };
   }
 
@@ -650,3 +661,9 @@ function createAiRouter() {
 }
 
 module.exports = createAiRouter;
+// P3 1.11 — attached as a property on the factory function (not a
+// second named export replacing the default) so tenantApp.js's own
+// `createAiRouter()` call site is completely unaffected; exists purely
+// so a unit test can exercise the label/auto-classify boundary without
+// spinning up a real Express app + DB.
+module.exports.resolveThinkingLevel = resolveThinkingLevel;

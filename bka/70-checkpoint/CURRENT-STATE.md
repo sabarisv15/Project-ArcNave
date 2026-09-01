@@ -94,14 +94,58 @@ wait or be built avoiding them:**
   (`aiService.js`) — likely also touches the same file. Check exact scope
   before deciding if it's blocked.
 
-**Exact next action:** continue with the non-conflicting items in
-roughly this order — **D1** (connection pooler, mechanical, no
-decisions needed) or **5.8/5.9** (frontend reorg, needs its own scoping
-pass but zero backend conflict) next, then **4.9** (contract tests,
-needs a "noisiest routes" metric decided first), then **1.13** (Tamil
-number checks, standalone validator). Re-check whether the P2 session
-has committed before attempting anything flagged CONFLICT above — do
-not build blind against files it may still be mid-editing.
+**D1 — asked, owner deferred it.** Explained via a non-technical
+analogy (one waiter/one app instance today; a pooler is an
+order-counter that only helps once there are several waiters/app
+instances) — owner chose "build it when there are multiple app
+instances," matching this project's own existing C8 precedent
+("don't build multi-instance tooling ahead of actually running
+multiple server processes"). **Do not build D1 until ARCNAVE actually
+runs more than one app instance.**
+
+3. **1.13 — Tamil / mixed-language numeric-claim safety layer.** Commit
+   `e731464`. `backend/src/services/aiNumericClaimLocaleSupport.js`
+   (new, standalone): `normalizeTamilDigits` (Tamil numeral glyphs
+   U+0BE6–U+0BEF → ASCII), a curated Tamil count-noun vocabulary
+   mirroring `aiService.js`'s English `COUNT_CLAIM_PATTERN` list, and
+   `extractCountClaims(text, englishPattern)` — a drop-in replacement
+   shape for `verifyNumericClaims`'s own claim-extraction line. 13 new
+   tests, all passing; lint clean. **NOT wired into
+   `verifyNumericClaims` itself** (aiService.js conflict, same reason
+   as everything else flagged CONFLICT above) — a one-line follow-up
+   once the P2 session's changes land.
+
+**4.9 — status unclear, paused rather than guessed at.** The plan's own
+bullet list says "contract tests on the noisiest routes"; its own table
+row (line 268) describes something different — "real database test
+containers + circuit breakers/timeouts/graceful fallback." These aren't
+the same scope. Rather than guess which one (or invent a "noisiest
+routes" metric unilaterally), this is parked for its own scoping pass —
+read both, possibly ask the owner which is meant, before writing code.
+
+**Session paused here, 2026-09-01 — 3 of 13 P3 items shipped
+(3.2, 4.3/5.2, 1.13), all committed, tested, and scope-isolated from
+the concurrent P2 session.** Not attempting the remaining items
+(1.16 agent rewrite, 4.6 file splits, 5.8/5.9 frontend reorg, 1.5/D3
+hybrid search, 1.18 guardrail layer, 1.11/1.12 CONFLICT items, 2.3/2.4/2.5
+CONFLICT items, 4.9 ambiguous-scope) in this same pass — each is either
+blocked on the concurrent P2 session finishing, needs a real scoping
+pass (frontend reorg, guardrail layer's product definition), or has
+an ambiguous plan description (4.9) not safe to guess at. This matches
+the project's own established one-slice-at-a-time discipline, not a
+stall.
+
+**Exact next action, resuming this thread:** check whether the P2
+session (aiService.js and friends) has committed/merged — if yes,
+1.11/1.12/2.3/2.4/2.5/1.16/4.6's aiService.js portion, and wiring 1.13,
+all unblock at once. If P2 is still running, continue on the safe list:
+**5.8/5.9** (frontend reorg — needs its own scoping pass: current
+structure survey, target shape, state-library choice) is the next
+highest-value non-conflicting item; **1.18** (guardrail layer) likely
+needs a `NEEDS PRODUCT DECISION` pass (what a guardrail actually
+checks/blocks) before code, per this project's own product-reasoning
+workflow — not a silent build; **4.9** needs the scope-ambiguity above
+resolved first.
 
 ---
 

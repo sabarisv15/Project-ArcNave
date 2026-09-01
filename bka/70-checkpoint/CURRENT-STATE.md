@@ -4,6 +4,61 @@ _Last updated: 2026-09-01._
 
 ---
 
+# ⛔ NEWEST BANNER — P3 continues after P2 unblock, 2026-09-01. A THIRD, separate concurrent session is now active on background-jobs files (`backend/src/routes/backgroundJobs.js`, `backend/src/services/backgroundJobService.js`, `backend/tests/background-jobs.test.js`) — uncommitted as of this banner. Do not touch those from this thread.
+
+**Shipped this continuation (commits `c9f955f`, `03d826c`, `731440a`,
+all on `p0-modernization-foundation`):**
+- **1.13 wiring** — `aiNumericClaimLocaleSupport.js` (already-built,
+  standalone) wired into `aiService.js`'s `verifyNumericClaims` /
+  `researchAnswerMakesNumericClaim` / `verifyResearchNumericClaims` via
+  a new `extractCountClaims` wrapper. `COUNT_CLAIM_PATTERN` itself
+  unchanged — only adds Tamil-digit/Tamil-noun coverage.
+- **2.3 — cache extracted chat-attachment text.**
+  `documentTextExtractionCache.js` (new, in-memory, keyed by
+  attachmentId, 24h TTL + 2000-entry cap) wraps ONLY
+  `documentTextExtractionService.extractPlainText`'s call in
+  `resolveChatAttachments` — the disk download + File Intelligence
+  Router classification before it is deliberately NOT skipped (real
+  magic-byte sniffing, must not trust a cached/declared mime type).
+  Found + fixed a real test-isolation bug while wiring this in:
+  `tests/ai-service.test.js` reuses the literal id `'att-1'` across
+  ~17 separate tests — added a file-level `test.beforeEach` cache
+  reset, plus a per-iteration reset in the one test that reuses
+  `'att-1'` across 8 loop iterations within a single test.
+- **1.11 — adjust AI thinking depth to difficulty.**
+  `aiThinkingDepthClassifier.js` (new): bounded, deterministic
+  fast/balanced/deep scoring (length + curated analytical-keyword list
+  + compound-question signal), conservative by design (keyword score
+  capped — ambiguous stays cheap). `routes/ai.js`'s
+  `resolveThinkingLevel(label, question)` now auto-classifies ONLY
+  when label is missing/null/empty; an explicit user choice (including
+  a garbage label) is untouched. Root cause of "always LOW" traced to
+  the frontend: `ComposerProvider.jsx`'s `EMPTY_COMPOSER.thinkingLevel`
+  always initialized to the literal `'fast'`, making "untouched" and
+  "explicitly chose fast" indistinguishable server-side — changed to
+  `null` (zero visual change, `ThinkingLevelToggle.jsx` still displays
+  "Fast" pressed via `level ?? 'fast'`).
+
+**Still unblocked, not yet attempted:** 1.12 (native forced-format for
+every provider), 2.4/2.5 (vision model for scans / complex-PDF
+fallback), 1.16 (agent rewrite, clash C10 — the biggest, most invasive
+remaining item), 4.6 (split huge files, `aiService.js` portion), 1.5/D3
+(hybrid search, builds on P2's own 1.2/C4 `aiToolRetrievalService.js`
+change — read that first). Still parked: 1.18 (guardrail layer — needs
+a product decision), 4.9 (ambiguous scope between the plan's bullet
+list and its own table row).
+
+**Exact next action:** continue down the unblocked list — **1.12**
+(native forced-format) next, natural sibling to 1.11 just shipped, then
+assess 1.16/4.6's `aiService.js` scope now that it's real and current.
+Re-check for new concurrent-session files before touching
+`aiService.js`/`aiToolRetrievalService.js` again — a third session is
+now active on background-jobs files as of this banner, confirming this
+project can have multiple concurrent sessions; always `git status`
+first.
+
+---
+
 # ⛔ NEWEST BANNER — the CONCURRENT P2 session the banner below refers to is now DONE, 2026-09-01. Every file it flagged as off-limits (`aiService.js`, `auditLogRepository.js`, `aiCostControlService.js`, `index.js`, `backgroundJobRepository.js`, `backgroundJobService.js`) is committed and safe to touch again.
 
 **P2 is fully shipped — all 5 remaining items (1.6, D4, 3.3, 4.5/C8,

@@ -33,6 +33,7 @@ const aiUsageCounterRepository = require('../repositories/aiUsageCounterReposito
 const tracer = require('../tracing/tracer');
 const idempotencyKeyRepository = require('../repositories/idempotencyKeyRepository');
 const documentTextExtractionService = require('./documentTextExtractionService');
+const documentTextExtractionCache = require('./documentTextExtractionCache');
 const fileIntelligenceRouter = require('./fileIntelligenceRouter');
 const sandboxExecutionService = require('./sandboxExecutionService');
 const aiMemoryService = require('./aiMemoryService');
@@ -755,8 +756,20 @@ async function resolveChatAttachments(client, attachmentIds, identityContext) {
       );
     }
 
+    // P3 2.3 — "each new turn re-downloads and re-extracts the file;
+    // extracted text is not saved." documentTextExtractionCache caches
+    // only this PARSE step (the real CPU-heavy work — pdf-parse/mammoth/
+    // exceljs), keyed by attachmentId; a chat attachment's content is
+    // immutable once uploaded, so a hit needs no staleness check. The
+    // disk download + File Intelligence Router classification above are
+    // deliberately NOT cached/skipped — that classification is real
+    // magic-byte sniffing on the actual bytes and must not be trusted to
+    // a cached/declared mime type alone (see that module's own reasoning
+    // for why the router exists at all).
     // eslint-disable-next-line no-await-in-loop
-    const extraction = await documentTextExtractionService.extractPlainText(downloaded.buffer, document.mime_type);
+    const extraction = await documentTextExtractionCache.getOrExtract(attachmentId, () =>
+      documentTextExtractionService.extractPlainText(downloaded.buffer, document.mime_type),
+    );
     if (extraction.text === null) {
       const reason = describeExtractionFailureReason(extraction.failureReason);
       // eslint-disable-next-line no-await-in-loop
@@ -766,7 +779,7 @@ async function resolveChatAttachments(client, attachmentIds, identityContext) {
         action: 'ai_attachment_extraction_failed',
         entity: 'ai_attachments',
         entityId: attachmentId,
-        metadata: { documentId: attachmentId, mimeType: document.mime_type, reason },
+        metadata: { documentId: attachmentId, mimeType: document.mime_type, reason, cacheHit: extraction.cacheHit },
       });
       documents.push({
         attachmentId,
@@ -778,6 +791,10 @@ async function resolveChatAttachments(client, attachmentIds, identityContext) {
       continue; // eslint-disable-line no-continue
     }
 
+    // Audit entry still written on every turn, cache hit or not — same
+    // "this attachment was used in this turn" trail as before, just
+    // with cacheHit added so an operator can see the cache actually
+    // working, never a reduction in what gets audited.
     // eslint-disable-next-line no-await-in-loop
     await auditLogRepository.createAuditLogEntry(client, {
       collegeId: identityContext.collegeId,
@@ -791,6 +808,7 @@ async function resolveChatAttachments(client, attachmentIds, identityContext) {
         fileName: document.file_name,
         extractedChars: extraction.text.length,
         extractionMethod: extraction.method,
+        cacheHit: extraction.cacheHit,
       },
     });
     documents.push({

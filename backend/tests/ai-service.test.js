@@ -35,6 +35,7 @@ const collegeProfileService = require('../src/services/collegeProfileService');
 const documentService = require('../src/services/documentService');
 const artifactService = require('../src/services/artifactService');
 const documentTextExtractionService = require('../src/services/documentTextExtractionService');
+const documentTextExtractionCache = require('../src/services/documentTextExtractionCache');
 const sandboxExecutionService = require('../src/services/sandboxExecutionService');
 const configurationService = require('../src/services/configurationService');
 const aiToolSearchService = require('../src/services/aiToolSearchService');
@@ -53,6 +54,19 @@ const { contextFromFlatPrompts } = require('../src/services/aiContextAssembly');
 // coverage in ai-tool-retrieval-service.test.js, against real fixtures
 // built for it, not shoehorned in here.
 embeddingService.isAvailable = () => false;
+
+// P3 2.3 — documentTextExtractionCache is a module-level, process-wide
+// singleton keyed by attachmentId (by design — see its own comment).
+// This file reuses the literal id 'att-1' across many independent
+// resolveChatAttachments tests, each mocking a DIFFERENT extraction
+// result for it — without a reset between tests, the second such test
+// to run would silently get the FIRST one's cached result instead of
+// exercising its own mock. Reset before every test in this file, same
+// "shared module-level state must not leak between tests" discipline
+// mock.restoreAll() already applies to method mocks.
+test.beforeEach(() => {
+  documentTextExtractionCache._reset();
+});
 
 function fakeClient() {
   const queries = [];
@@ -4274,6 +4288,13 @@ test('resolveChatAttachments: a docx/xlsx/csv/md/txt attachment each resolves th
     }));
     const client = fakeClient();
     const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+    // documentTextExtractionCache is keyed by attachmentId — this loop
+    // deliberately reuses 'att-1' across iterations to exercise the
+    // SAME code path with different mime types, so each iteration must
+    // reset the cache itself (the file-level beforeEach only runs once
+    // for the whole test, not per iteration) or it would get the first
+    // iteration's cached extraction result instead of its own mock.
+    documentTextExtractionCache._reset();
     // eslint-disable-next-line no-await-in-loop
     const { documents } = await aiService.resolveChatAttachments(client, ['att-1'], identityContext);
     assert.equal(documents.length, 1, `expected ${mimeType} to resolve`);
@@ -4300,7 +4321,7 @@ test('resolveChatAttachments: an extraction failure degrades gracefully — neve
   assert.equal(auditQueries[0].params[2], 'ai_attachment_extraction_failed');
   const metadata = JSON.parse(auditQueries[0].params[5]);
   assert.equal(metadata.reason, 'password_protected');
-  assert.deepEqual(Object.keys(metadata).sort(), ['documentId', 'mimeType', 'reason']);
+  assert.deepEqual(Object.keys(metadata).sort(), ['cacheHit', 'documentId', 'mimeType', 'reason']);
 });
 
 test('resolveChatAttachments: an extraction failure with an unrecognized reason is normalized to extraction_failed for the audit row', async (t) => {

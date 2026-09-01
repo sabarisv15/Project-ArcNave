@@ -148,12 +148,15 @@ function safeJsonParse(raw) {
 // safeJsonParse's null return already degraded that safely (no crash),
 // but silently, with no operator-visible signal of how often it
 // happens. Two independent layers now apply: (1) a real JSON-Schema
-// object passed through to the provider adapter (gemini.js/openai.js
-// honor it natively via responseSchema/response_format; claude.js/
-// vertexMaas.js/selfHosted.js ignore the field harmlessly — see
-// aiContextAssembly.js's buildContext comment), and (2) this
-// deterministic shape check, which runs regardless of provider and is
-// the only guarantee for the providers with no native enforcement.
+// object passed through to the provider adapter — every adapter now
+// honors it natively (P3 1.12: gemini.js/openai.js/selfHosted.js/
+// vertexMaas.js via responseSchema/response_format, claude.js via a
+// forced single-tool-call — see openAiCompatibleUtils.js's
+// responseFormatFor and claude.js's own completeWithMeta comment) — and
+// (2) this deterministic shape check, which runs regardless of provider
+// and stays as a second, independent line of defense even now that
+// every adapter attempts native enforcement (a provider can still
+// return a malformed shape despite asking it not to).
 // Logged, never thrown — a malformed response degrades to the exact
 // same "discard, confidence 0" behavior classifyDocument/extractFields
 // already had, just now with visibility into how often it occurs.

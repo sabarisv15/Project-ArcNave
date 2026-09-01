@@ -26,6 +26,7 @@ const {
   extractOpenAiCompatibleUsage,
   buildOpenAiCompatiblePriorTurnMessages,
   buildOpenAiCompatibleHistoryMessages,
+  responseFormatFor,
 } = require('./openAiCompatibleUtils');
 const { flattenToPrompts } = require('../aiContextAssembly');
 
@@ -98,18 +99,12 @@ function buildUserContent(userPrompt, images) {
 // CEO Vertex/Gemini audit #12/C3 (2026-08-30) — same responseSchema
 // contract gemini.js's generationConfigFor honors, mapped to OpenAI's
 // own documented `response_format: {type: 'json_schema', ...}` shape.
-// `strict: true` asks OpenAI to enforce the schema itself, not just
-// validate after the fact. Not live-verified against a real OpenAI key
-// (same caveat this whole file already carries) — the shape matches
-// OpenAI's published Structured Outputs convention, not fabricated.
-function responseFormatFor(responseSchema) {
-  if (!responseSchema) return undefined;
-  return {
-    type: 'json_schema',
-    json_schema: { name: 'arcnave_extraction', schema: responseSchema, strict: true },
-  };
-}
-
+// Not live-verified against a real OpenAI key (same caveat this whole
+// file already carries) — the shape matches OpenAI's published
+// Structured Outputs convention, not fabricated. Moved to
+// openAiCompatibleUtils.js (P3 1.12) — see that module's own comment
+// for why selfHosted.js/vertexMaas.js now share this exact function
+// instead of each re-declaring it.
 async function completeWithMeta(cfg, arcnaveContext) {
   const { systemPrompt, userPrompt, images, responseSchema, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {

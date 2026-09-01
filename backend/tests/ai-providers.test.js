@@ -699,20 +699,24 @@ test('openai adapter.completeWithMeta: an attached responseSchema maps to respon
   assert.deepEqual(body.response_format.json_schema.schema, schema);
 });
 
-test('claude/self_hosted adapters ignore an attached responseSchema harmlessly (no native support, no crash, unchanged request shape)', async () => {
-  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] };
-  const claudeBody = await capturedRequestBody(() =>
+// P3 1.12 — "forced-format replies only half-supported ... only two
+// providers enforce it natively." Every adapter now honors an attached
+// responseSchema natively; these replace the old
+// "claude/self_hosted ignore it harmlessly" test, which asserted the
+// exact gap this item closes.
+test('selfHosted/vertexMaas adapters (OpenAI-compatible): no responseSchema means no response_format on the wire (unchanged shape)', async () => {
+  const selfHostedBody = await capturedRequestBody(() =>
     aiProviders
-      .getAdapter('claude')
-      .completeWithMeta(
-        { apiKey: 'k', model: 'claude-x' },
-        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
-      )
+      .getAdapter('self_hosted')
+      .completeWithMeta({ baseUrl: 'http://x', model: 'm' }, contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }))
       .catch(() => {}),
   );
-  assert.equal(claudeBody.messages[0].content, 'u');
+  assert.equal('response_format' in selfHostedBody, false);
+});
 
-  const selfHostedBody = await capturedRequestBody(() =>
+test('selfHosted adapter.completeWithMeta: an attached responseSchema maps to response_format: json_schema, strict (same OpenAI-compatible shape as openai.js)', async () => {
+  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] };
+  const body = await capturedRequestBody(() =>
     aiProviders
       .getAdapter('self_hosted')
       .completeWithMeta(
@@ -721,7 +725,97 @@ test('claude/self_hosted adapters ignore an attached responseSchema harmlessly (
       )
       .catch(() => {}),
   );
-  assert.equal(selfHostedBody.messages[1].content, 'u');
+  assert.equal(body.response_format.type, 'json_schema');
+  assert.equal(body.response_format.json_schema.strict, true);
+  assert.deepEqual(body.response_format.json_schema.schema, schema);
+  assert.equal(body.messages[1].content, 'u');
+});
+
+test('vertexMaas adapter.completeWithMeta: an attached responseSchema maps to response_format: json_schema, strict', async () => {
+  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] };
+  const body = await capturedRequestBody(() =>
+    aiProviders
+      .getAdapter('vertex_maas')
+      .completeWithMeta(
+        { projectId: 'p', accessToken: 't', model: 'qwen/qwen3-next-80b-a3b-thinking-maas' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
+      )
+      .catch(() => {}),
+  );
+  assert.equal(body.response_format.type, 'json_schema');
+  assert.deepEqual(body.response_format.json_schema.schema, schema);
+});
+
+test('claude adapter.completeWithMeta: no responseSchema means no tools/tool_choice on the wire (unchanged shape)', async () => {
+  const body = await capturedRequestBody(() =>
+    aiProviders
+      .getAdapter('claude')
+      .completeWithMeta({ apiKey: 'k', model: 'claude-x' }, contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }))
+      .catch(() => {}),
+  );
+  assert.equal('tools' in body, false);
+  assert.equal('tool_choice' in body, false);
+  assert.equal(body.messages[0].content, 'u');
+});
+
+test('claude adapter.completeWithMeta: an attached responseSchema forces a single structured_output tool call (no native response_format field on Anthropic’s API)', async () => {
+  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] };
+  const body = await capturedRequestBody(() =>
+    aiProviders
+      .getAdapter('claude')
+      .completeWithMeta(
+        { apiKey: 'k', model: 'claude-x' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
+      )
+      .catch(() => {}),
+  );
+  assert.equal(body.tools.length, 1);
+  assert.equal(body.tools[0].name, 'structured_output');
+  assert.deepEqual(body.tools[0].input_schema, schema);
+  assert.deepEqual(body.tool_choice, { type: 'tool', name: 'structured_output' });
+  assert.equal(body.messages[0].content, 'u');
+});
+
+test('claude adapter.completeWithMeta: a forced tool_use response is re-serialized to a JSON string (same string contract as gemini/openai)', async () => {
+  const claude = aiProviders.getAdapter('claude');
+  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] };
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      content: [{ type: 'tool_use', name: 'structured_output', input: { x: 'value' } }],
+      usage: { input_tokens: 5, output_tokens: 3 },
+    }),
+  });
+  try {
+    const { text, usage } = await claude.completeWithMeta(
+      { apiKey: 'k', model: 'claude-x' },
+      contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
+    );
+    assert.equal(text, JSON.stringify({ x: 'value' }));
+    assert.deepEqual(usage, { inputTokens: 5, outputTokens: 3 });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('claude adapter.completeWithMeta: a missing forced tool_use block throws rather than silently returning nothing', async () => {
+  const claude = aiProviders.getAdapter('claude');
+  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] };
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({ ok: true, json: async () => ({ content: [] }) });
+  try {
+    await assert.rejects(
+      () =>
+        claude.completeWithMeta(
+          { apiKey: 'k', model: 'claude-x' },
+          contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
+        ),
+      /structured_output/,
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
 });
 
 // Mocks fetch and returns BOTH the request body sent and the real

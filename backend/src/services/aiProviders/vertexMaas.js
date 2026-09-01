@@ -40,6 +40,7 @@ const {
   extractOpenAiCompatibleUsage,
   buildOpenAiCompatiblePriorTurnMessages,
   buildOpenAiCompatibleHistoryMessages,
+  responseFormatFor,
 } = require('./openAiCompatibleUtils');
 const { flattenToPrompts } = require('../aiContextAssembly');
 const vertexCapabilityRegistry = require('../vertexCapabilityRegistry');
@@ -318,14 +319,22 @@ function truncationError(rawFinishReason) {
   );
 }
 
+// P3 1.12 — "forced-format replies only half-supported ... only two
+// providers enforce it natively." Same reasoning as selfHosted.js's own
+// comment: this adapter's own header already documents the request
+// SHAPE as the identical OpenAI-compatible convention openai.js speaks
+// ("Vertex's MaaS 'openapi' route is documented as OpenAI-compatible"),
+// so responseSchema (previously silently dropped) now forwards as the
+// same response_format field.
 async function completeWithMeta(cfg, arcnaveContext) {
-  const { systemPrompt, userPrompt, historyTurns } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, responseSchema, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError(
       'no Vertex AI MaaS provider is configured for this college (missing projectId or model)',
     );
   }
 
+  const responseFormat = responseFormatFor(responseSchema);
   const payload = await postJson(cfg, {
     model: cfg.model,
     messages: [
@@ -335,6 +344,7 @@ async function completeWithMeta(cfg, arcnaveContext) {
     ],
     max_tokens: MAX_TOKENS,
     temperature: 0.2,
+    ...(responseFormat ? { response_format: responseFormat } : {}),
   });
 
   const choice = payload && Array.isArray(payload.choices) ? payload.choices[0] : null;

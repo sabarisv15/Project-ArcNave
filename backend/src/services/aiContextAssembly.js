@@ -88,21 +88,20 @@ function computeFingerprint(segments) {
 // caller/test keeps its exact original shape untouched; only aiService's
 // new audio/video path populates `media`.
 //
-// `responseSchema` (CEO Vertex/Gemini audit #12/C3, 2026-08-30) — an
-// optional plain JSON-Schema object a caller can attach when it needs
-// the model's reply forced into a specific shape, e.g.
-// documentExtractionService.js's classify/extract calls (today: prompt
-// text asking for "strict JSON", nothing enforcing it). Deliberately a
-// passthrough field, not consumed here: only gemini.js/openai.js map it
-// to their own native structured-output mechanism today (see those
-// files); an adapter that doesn't destructure it (claude.js,
-// vertexMaas.js, selfHosted.js) is completely unaffected — additive,
-// zero behavior change for every caller that never sets it. Every
-// caller that DOES set it must still validate the parsed result itself
-// (RS-AIG-012/C3 "post-generation validation mandatory") — native
-// enforcement narrows how a model can fail, it does not replace the
-// check, and providers with no native support have no enforcement at
-// all beyond that check.
+// `responseSchema` (CEO Vertex/Gemini audit #12/C3, 2026-08-30; native
+// coverage completed P3 1.12, 2026-09-01) — an optional plain
+// JSON-Schema object a caller can attach when it needs the model's
+// reply forced into a specific shape, e.g. documentExtractionService.js's
+// classify/extract calls (today: prompt text asking for "strict JSON",
+// nothing enforcing it). Deliberately a passthrough field, not consumed
+// here: every adapter now maps it to its own native structured-output
+// mechanism (gemini.js/openai.js/selfHosted.js/vertexMaas.js via
+// responseSchema/response_format, claude.js via a forced single-tool
+// call — see each file's own comment) — additive, zero behavior change
+// for every caller that never sets it. Every caller that DOES set it
+// must still validate the parsed result itself (RS-AIG-012/C3
+// "post-generation validation mandatory") — native enforcement narrows
+// how a model can fail, it does not replace the check.
 // `thinkingLevel` (CEO Vertex/Gemini audit #26, 2026-08-30) — an
 // optional 'LOW'/'MEDIUM'/'HIGH' override for gemini.js's own
 // GENERATION_CONFIG.thinkingConfig.thinkingLevel default. Same

@@ -27,6 +27,7 @@ const {
   extractOpenAiCompatibleUsage,
   buildOpenAiCompatiblePriorTurnMessages,
   buildOpenAiCompatibleHistoryMessages,
+  responseFormatFor,
 } = require('./openAiCompatibleUtils');
 const { flattenToPrompts } = require('../aiContextAssembly');
 
@@ -73,12 +74,21 @@ async function postJson(cfg, path, body) {
 
 // Token/cost telemetry (P1.1) — see openai.js's own comment; same
 // shape, same OpenAI-compatible `usage` block.
+// P3 1.12 — "forced-format replies only half-supported ... only two
+// providers enforce it natively." responseSchema used to be silently
+// dropped here (flattenToPrompts returns it, but this function never
+// read it) — now forwarded as the same `response_format` shape
+// openai.js/vertexMaas.js send, since a self-hosted deployment is
+// defined (this file's own header comment) as speaking the identical
+// OpenAI-compatible convention. A server that doesn't understand the
+// field ignores it — see responseFormatFor's own comment.
 async function completeWithMeta(cfg, arcnaveContext) {
-  const { systemPrompt, userPrompt, historyTurns } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, responseSchema, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no self-hosted LLM provider is configured for this college (missing baseUrl)');
   }
 
+  const responseFormat = responseFormatFor(responseSchema);
   const payload = await postJson(cfg, '/chat/completions', {
     model: cfg.model,
     messages: [
@@ -88,6 +98,7 @@ async function completeWithMeta(cfg, arcnaveContext) {
     ],
     max_tokens: MAX_TOKENS,
     temperature: 0.2,
+    ...(responseFormat ? { response_format: responseFormat } : {}),
   });
 
   const choice = payload && Array.isArray(payload.choices) ? payload.choices[0] : null;

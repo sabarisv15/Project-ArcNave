@@ -216,8 +216,21 @@ function buildHistoryMessages(historyTurns) {
   return historyTurns.map((turn) => ({ role: turn.role, content: [{ type: 'text', text: turn.content }] }));
 }
 
+// P3 1.12 — "forced-format replies only half-supported ... only two
+// providers enforce it natively." Anthropic's Messages API has no
+// OpenAI/Gemini-style responseSchema/response_format field — the
+// documented mechanism for forcing schema-conformant JSON output is a
+// single synthetic tool whose input_schema IS the desired schema, with
+// tool_choice forced to it (Anthropic's own recommended structured-
+// output pattern before they had a dedicated feature). Reuses
+// completeWithTools' own real `tools`/`input_schema` request shape
+// below, just with exactly one forced tool instead of the caller's real
+// tool list. NOT live-verified against a real Anthropic key (same
+// caveat this whole file's header already carries).
+const STRUCTURED_OUTPUT_TOOL_NAME = 'structured_output';
+
 async function completeWithMeta(cfg, arcnaveContext) {
-  const { systemPrompt, userPrompt, images, historyTurns } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, images, responseSchema, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey/projectId)');
   }
@@ -227,17 +240,44 @@ async function completeWithMeta(cfg, arcnaveContext) {
     max_tokens: MAX_TOKENS,
     system: systemPrompt,
     messages: [...buildHistoryMessages(historyTurns), { role: 'user', content: buildUserContent(userPrompt, images) }],
+    ...(responseSchema
+      ? {
+          tools: [
+            {
+              name: STRUCTURED_OUTPUT_TOOL_NAME,
+              description: 'Return the result as structured data matching the required schema.',
+              input_schema: responseSchema,
+            },
+          ],
+          tool_choice: { type: 'tool', name: STRUCTURED_OUTPUT_TOOL_NAME },
+        }
+      : {}),
   });
-
-  const block = payload && Array.isArray(payload.content) ? payload.content.find((b) => b.type === 'text') : null;
-  if (!block || typeof block.text !== 'string') {
-    throw new LlmRequestError('Claude response did not contain a text content block');
-  }
 
   const usage =
     payload && payload.usage
       ? { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens }
       : undefined;
+
+  if (responseSchema) {
+    const blocks = Array.isArray(payload && payload.content) ? payload.content : [];
+    const toolUse = blocks.find((b) => b.type === 'tool_use' && b.name === STRUCTURED_OUTPUT_TOOL_NAME);
+    if (!toolUse) {
+      throw new LlmRequestError('Claude response did not contain the forced structured_output tool call');
+    }
+    // Callers of every other adapter's responseSchema path (gemini.js/
+    // openai.js) already expect a JSON-serialized STRING back (they
+    // JSON.parse it themselves, e.g. documentTextExtractionService's own
+    // safeJsonParse) — Anthropic parses tool_use.input into a real
+    // object for us, so it's re-serialized here to keep that same
+    // string contract rather than changing what every caller expects.
+    return { text: JSON.stringify(toolUse.input), usage };
+  }
+
+  const block = payload && Array.isArray(payload.content) ? payload.content.find((b) => b.type === 'text') : null;
+  if (!block || typeof block.text !== 'string') {
+    throw new LlmRequestError('Claude response did not contain a text content block');
+  }
   return { text: block.text, usage };
 }
 

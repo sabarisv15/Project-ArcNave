@@ -23,6 +23,8 @@ const artifactService = require('../services/artifactService');
 const documentService = require('../services/documentService');
 const aiCostControlService = require('../services/aiCostControlService');
 const aiThinkingDepthClassifier = require('../services/aiThinkingDepthClassifier');
+const aiGuardrailService = require('../services/aiGuardrailService');
+const auditLogRepository = require('../repositories/auditLogRepository');
 const { IdentifierResolutionError } = require('../identifierResolution');
 
 // CEO Vertex/Gemini audit #26 (2026-08-30) — "in AI Composer enable
@@ -532,6 +534,58 @@ function createAiRouter() {
     };
   }
 
+  // P3 1.18 — the guardrail layer, wired here rather than inside
+  // aiService.js on purpose. Refusing a blocked turn at the route means
+  // no provider call, no quota spend and no prompt assembly at all; and
+  // it keeps this change entirely out of aiService.js, whose per-turn
+  // system-instruction text is under clash C10/C11's "must stay
+  // byte-identical" constraint and is 1.16's own target.
+  //
+  // Only the BLOCK tier is enforced here. The FLAG tier's reinforcement
+  // note (aiGuardrailService.REINFORCEMENT_NOTE) is built and tested but
+  // deliberately NOT wired: injecting it would mean adding a conditional
+  // segment to the system prompt, which is precisely the change clash
+  // C10/C11 records as having measurably weakened rule-following
+  // (3/3 correct -> 2/7). That wiring belongs to the 1.16 session, which
+  // owns that file and can verify it against the live behavioural suite.
+  //
+  // A guardrail refusal is recorded in the audit log via the same
+  // ai_guardrail_blocked action both routes use, carrying pattern IDS
+  // only — never the offending text.
+  // Best-effort: a failed audit write must never turn a correct refusal
+  // into a 500. The refusal itself is the security-relevant behaviour;
+  // the row is visibility.
+  async function auditLogGuardrailBlock(req, identityContext, matched) {
+    try {
+      await auditLogRepository.createAuditLogEntry(req.dbClient, {
+        collegeId: identityContext.collegeId,
+        userId: identityContext.userId,
+        action: 'ai_guardrail_blocked',
+        entity: 'ai_requests',
+        entityId: null,
+        // Pattern ids only. Storing the question verbatim would turn the
+        // audit log into a searchable archive of hostile input — the same
+        // reason the chat-attachment path audits a fixed failureReason
+        // vocabulary instead of the raw extraction error.
+        metadata: { matched },
+      });
+    } catch {
+      // deliberately swallowed — see above
+    }
+  }
+
+  async function guardrailBlock(req, identityContext, question) {
+    const screening = aiGuardrailService.screenInput(question);
+    if (screening.verdict !== 'block') return null;
+    await auditLogGuardrailBlock(req, identityContext, screening.matched);
+    return {
+      answer: aiGuardrailService.REFUSAL_MESSAGE,
+      toolUsed: null,
+      evidence: null,
+      guardrail: { blocked: true, matched: screening.matched },
+    };
+  }
+
   router.post(
     '/ai/ask',
     requireAuth,
@@ -539,6 +593,13 @@ function createAiRouter() {
       if (!requireResolvedTenant(req, res)) return;
       const { question, identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel } =
         await resolveAskContext(req);
+
+      const blocked = await guardrailBlock(req, identityContext, question);
+      if (blocked) {
+        res.json(blocked);
+        return;
+      }
+
       try {
         const result = await aiService.askAgent(req.dbClient, question, {
           identityContext,
@@ -549,6 +610,13 @@ function createAiRouter() {
           mode,
           thinkingLevel,
         });
+        // Output screening: Aadhaar (RS-STU-002, statutory — never in AI
+        // reasoning or reporting) and credential-shaped secrets.
+        const screened = aiGuardrailService.screenOutput(result.answer);
+        if (screened.redactions.length > 0) {
+          result.answer = screened.text;
+          result.guardrail = { redactions: screened.redactions };
+        }
         res.json(result);
       } catch (err) {
         if (mapAiToolError(err, res)) return;
@@ -588,6 +656,24 @@ function createAiRouter() {
         res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
       };
 
+      // P3 1.18 — a blocked question is refused on the stream itself
+      // (headers are already sent by this point, so an SSE delta+done
+      // pair is the only honest way to say it), never by changing the
+      // HTTP status. The client reconciles from `done` exactly as it
+      // does for any other turn.
+      const streamBlocked = await guardrailBlock(req, identityContext, question);
+      if (streamBlocked) {
+        writeEvent('delta', { delta: streamBlocked.answer });
+        writeEvent('done', streamBlocked);
+        res.end();
+        return;
+      }
+
+      // Output screening across chunk boundaries — see
+      // aiGuardrailService.createOutputRedactor for why per-chunk
+      // redaction would be worse than useless here.
+      const redactor = aiGuardrailService.createOutputRedactor();
+
       try {
         const result = await aiService.askAgent(
           req.dbClient,
@@ -601,9 +687,23 @@ function createAiRouter() {
             mode,
             thinkingLevel,
           },
-          (delta) => writeEvent('delta', { delta }),
+          (delta) => {
+            const safe = redactor.push(delta);
+            if (safe) writeEvent('delta', { delta: safe });
+          },
           (step) => writeEvent('step', step),
         );
+        const tail = redactor.flush();
+        if (tail) writeEvent('delta', { delta: tail });
+
+        // `done` carries the full answer, so it is screened in its own
+        // right — the streamed deltas and this payload must not disagree
+        // about what was redacted.
+        const screened = aiGuardrailService.screenOutput(result.answer);
+        if (screened.redactions.length > 0) {
+          result.answer = screened.text;
+          result.guardrail = { redactions: screened.redactions };
+        }
         writeEvent('done', result);
       } catch (err) {
         // The response has already started (headers sent) by the time

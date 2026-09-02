@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Greeting } from '../components/Greeting';
-import { AIComposer } from '../components/AIComposer';
+import { AIComposer } from '@/features/chat';
 import { ScheduleStrip } from '../components/ScheduleStrip';
 import { IdeasList } from '../components/IdeasList';
 import { useWorkspace } from '../store/WorkspaceProvider';

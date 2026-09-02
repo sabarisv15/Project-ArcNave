@@ -11,16 +11,16 @@ import {
   ThumbsUp,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Markdown } from './Markdown';
+import { Markdown } from '../../../components/Markdown';
 import { CollapsibleContent } from './CollapsibleContent';
 import { GenerationState, ANMessageMark } from './GenerationState';
-import { CopyButton } from './ui/CopyButton';
+import { CopyButton } from '../../../components/ui/CopyButton';
 import { iconFor } from './ComposerAttachmentStrip';
-import { useRelativeTime } from '../hooks/useRelativeTime';
-import { useTypewriter } from '../hooks/useTypewriter';
-import { cn } from '../lib/utils';
-import { formatBytes } from '../lib/composerAttachments';
-import { downloadFile, fetchBlobUrl } from '../api/client';
+import { useRelativeTime } from '../../../hooks/useRelativeTime';
+import { useTypewriter } from '../../../hooks/useTypewriter';
+import { cn } from '../../../lib/utils';
+import { formatBytes } from '../../../lib/composerAttachments';
+import { downloadFile, fetchBlobUrl } from '../../../api/client';
 
 const ACTION =
   'w-[26px] h-[26px] grid place-items-center border-0 bg-transparent rounded-[7px] text-ink-ghost cursor-pointer transition-colors duration-200 hover:bg-tint2 hover:text-ink-soft focus-visible:opacity-100';

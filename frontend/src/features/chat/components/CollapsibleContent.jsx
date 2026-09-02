@@ -1,8 +1,14 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
-import { Markdown } from './Markdown';
-import { cn } from '../lib/utils';
-import { MESSAGE_PREVIEW_LINES, isLongContent, lineCountLabel, previewLines, showMoreLabel } from '../lib/longContent';
+import { Markdown } from '../../../components/Markdown';
+import { cn } from '../../../lib/utils';
+import {
+  MESSAGE_PREVIEW_LINES,
+  isLongContent,
+  lineCountLabel,
+  previewLines,
+  showMoreLabel,
+} from '../../../lib/longContent';
 
 /**
  * A sent message that happens to be 271 lines long.

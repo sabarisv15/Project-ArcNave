@@ -7,7 +7,7 @@ vi.mock('../api/client', () => ({
 }));
 
 import { downloadFile } from '../api/client';
-import { SourcesTrigger } from '../components/SourcesPopover';
+import { SourcesTrigger } from '@/features/chat';
 
 // Regression: an attachment/document source (`kind: 'uploaded'`) fell
 // back to SourcesPopover's KIND.record entry (no href, not previewable),

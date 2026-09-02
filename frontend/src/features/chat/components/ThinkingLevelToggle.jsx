@@ -1,4 +1,4 @@
-import { cn } from '../lib/utils';
+import { cn } from '../../../lib/utils';
 
 /**
  * Fast | Balanced | Deep — CEO Vertex/Gemini audit #26 (2026-08-30): "in AI

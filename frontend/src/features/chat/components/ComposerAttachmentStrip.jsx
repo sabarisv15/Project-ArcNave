@@ -10,7 +10,7 @@ import {
   X,
 } from 'lucide-react';
 import { AttachmentManager } from './AttachmentManager';
-import { cn } from '../lib/utils';
+import { cn } from '../../../lib/utils';
 
 /**
  * The attachment tray — a fixed-height region that sits **above** the composer

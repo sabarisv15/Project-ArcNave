@@ -1,5 +1,5 @@
-import { cn } from '../lib/utils';
-import { JumpToLatest } from './JumpToLatest';
+import { cn } from '../../../lib/utils';
+import { JumpToLatest } from '../../../components/JumpToLatest';
 
 /**
  * The one ArcNave chat-based workspace shell — normal chat, Project chat, and

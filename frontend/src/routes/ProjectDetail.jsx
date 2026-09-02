@@ -3,10 +3,15 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Archive, PanelRight, Pencil, Pin, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { AIComposer } from '../components/AIComposer';
-import { ChatMessage } from '../components/ChatMessage';
-import { ChatHeader } from '../components/ChatHeader';
-import { ChatWorkspace, ChatTranscriptScrollArea, ChatComposerDock, CHAT_GUTTER } from '../components/ChatWorkspace';
+import {
+  AIComposer,
+  ChatMessage,
+  ChatHeader,
+  ChatWorkspace,
+  ChatTranscriptScrollArea,
+  ChatComposerDock,
+  CHAT_GUTTER,
+} from '@/features/chat';
 import { ProjectContextPanel, ProjectContextDrawer } from '../components/ProjectContextPanel';
 import { ProjectContextStrip, ProjectContextBadge } from '../components/ProjectContextStrip';
 import { DeleteProjectDialog } from '../components/Dialogs';

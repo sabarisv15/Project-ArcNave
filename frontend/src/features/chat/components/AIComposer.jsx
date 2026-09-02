@@ -3,13 +3,13 @@ import { ArrowUp, ChevronDown, ChevronUp, Mic, Paperclip } from 'lucide-react';
 import { ScopeToggle } from './ScopeToggle';
 import { ThinkingLevelToggle } from './ThinkingLevelToggle';
 import { ComposerAttachmentStrip } from './ComposerAttachmentStrip';
-import { IconButton } from './ui/IconButton';
+import { IconButton } from '../../../components/ui/IconButton';
 import { useComposerAttachments } from '../hooks/useComposerAttachments';
-import { useSpeechToText } from '../hooks/useSpeechToText';
-import { ACCEPTED_ATTACHMENT_TYPES } from '../lib/composerAttachments';
-import { markdownFromClipboard } from '../lib/richPaste';
-import { countLines, isLongContent, lineCountLabel, showMoreLabel } from '../lib/longContent';
-import { cn, hasTypedContent } from '../lib/utils';
+import { useSpeechToText } from '../../../hooks/useSpeechToText';
+import { ACCEPTED_ATTACHMENT_TYPES } from '../../../lib/composerAttachments';
+import { markdownFromClipboard } from '../../../lib/richPaste';
+import { countLines, isLongContent, lineCountLabel, showMoreLabel } from '../../../lib/longContent';
+import { cn, hasTypedContent } from '../../../lib/utils';
 
 /**
  * Two composers, one component.

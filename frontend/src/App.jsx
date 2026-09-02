@@ -28,7 +28,7 @@ import { Loading } from './components/InstitutionalState';
 // bundle regardless of which seat/page a visitor ever opened.
 const lazyNamed = (importer, name) => lazy(() => importer().then((m) => ({ default: m[name] })));
 
-const ChatRoute = lazyNamed(() => import('./routes/ChatRoute'), 'ChatRoute');
+const ChatRoute = lazyNamed(() => import('./features/chat/routes/ChatRoute'), 'ChatRoute');
 const AiMemorySettingsView = lazyNamed(() => import('./routes/AiMemorySettingsView'), 'AiMemorySettingsView');
 const ProjectsView = lazyNamed(() => import('./routes/ProjectsView'), 'ProjectsView');
 const ProjectDetail = lazyNamed(() => import('./routes/ProjectDetail'), 'ProjectDetail');

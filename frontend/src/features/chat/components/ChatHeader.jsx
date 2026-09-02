@@ -3,7 +3,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { BookOpen, ChevronDown, FolderInput, Pencil, Share2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { SourcesTrigger } from './SourcesPopover';
-import { cn } from '../lib/utils';
+import { cn } from '../../../lib/utils';
 
 const ICON_BTN =
   'w-[30px] h-[30px] grid place-items-center border-0 bg-transparent rounded-[9px] text-ink-faint cursor-pointer transition-colors duration-200 hover:bg-accent-soft hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-ink-faint';

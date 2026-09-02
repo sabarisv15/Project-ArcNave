@@ -19,8 +19,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { SourcePreviewDrawer } from './SourcePreviewDrawer';
-import { downloadFile } from '../api/client';
-import { cn } from '../lib/utils';
+import { downloadFile } from '../../../api/client';
+import { cn } from '../../../lib/utils';
 
 /**
  * Sources — what the selected assistant reply actually used.

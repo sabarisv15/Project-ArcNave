@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import { AIComposer } from './AIComposer';
+import { AIComposer } from '@/features/chat';
 
 /**
  * The artifact workspace composer: content only, no dock wrapper — the caller

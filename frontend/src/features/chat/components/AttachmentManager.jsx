@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { AlertCircle, ExternalLink, FileText, RotateCcw, X } from 'lucide-react';
-import { formatBytes } from '../lib/composerAttachments';
-import { cn } from '../lib/utils';
+import { formatBytes } from '../../../lib/composerAttachments';
+import { cn } from '../../../lib/utils';
 
 /**
  * Every file currently attached to this composer — all of them, always.

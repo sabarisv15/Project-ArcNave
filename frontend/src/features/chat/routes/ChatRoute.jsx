@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { ChatView } from '../components/ChatView';
-import { useWorkspace } from '../store/WorkspaceProvider';
+import { useWorkspace } from '../../../store/WorkspaceProvider';
 
 export function ChatRoute() {
   const { chatId } = useParams();

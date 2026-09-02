@@ -6,8 +6,8 @@ import {
   imagesFromClipboard,
   readFileAsBase64,
   releasePreview,
-} from '../lib/composerAttachments';
-import { aiApi } from '../api/ai';
+} from '../../../lib/composerAttachments';
+import { aiApi } from '../../../api/ai';
 
 /**
  * The upload pipeline behind every composer attachment.

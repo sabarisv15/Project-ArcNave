@@ -1,4 +1,4 @@
-import { cn } from '../lib/utils';
+import { cn } from '../../../lib/utils';
 
 /**
  * Research | Curriculum — what used to be Ask/Act (read vs write). Redefined:

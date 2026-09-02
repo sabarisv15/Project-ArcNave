@@ -4,7 +4,85 @@ _Last updated: 2026-09-02._
 
 ---
 
-# ⛔ NEWEST BANNER — 5.8/5.9 CHAT slice wiring shipped, 2026-09-02, same session as the banner below (not yet committed).
+# ⛔ NEWEST BANNER — 5.9 chat COMPONENTS moved into features/chat/, 2026-09-02, same session as the two banners below (not yet committed).
+
+**The last unstarted piece of 5.9 (banner below, "Not started at all") is
+now done.** 15 files moved with `git mv` from flat `components/`/`hooks/`/
+`routes/` into `features/chat/{components,hooks,routes}/`, every importer
+checked individually (not assumed) before deciding scope:
+
+**Moved (all chat-internal or chat's own public surface once every
+importer was checked):** `ChatView.jsx`, `ChatHeader.jsx`,
+`ChatMessage.jsx`, `ChatWorkspace.jsx`, `AIComposer.jsx`,
+`ComposerAttachmentStrip.jsx`, `GenerationState.jsx`, `ScopeToggle.jsx`,
+`SourcesPopover.jsx`, `ThinkingLevelToggle.jsx`, `CollapsibleContent.jsx`,
+`SourcePreviewDrawer.jsx`, `AttachmentManager.jsx` → all under
+`features/chat/components/`; `useComposerAttachments.js` →
+`features/chat/hooks/`; `ChatRoute.jsx` → `features/chat/routes/`.
+`CollapsibleContent`/`SourcePreviewDrawer`/`AttachmentManager` weren't in
+the checkpoint's original named list — found by checking every import
+inside the named files and discovering each had exactly one importer,
+itself a moving chat file.
+
+**Left in place, deliberately, after checking (not assuming):**
+- `ArtifactRevisionComposer.jsx` (`components/`) — only importer is
+  `routes/ArtifactEditor.jsx`, an artifact concern wrapping `AIComposer`,
+  not a chat one. Its own `AIComposer` import updated to
+  `@/features/chat`, file itself not moved.
+- `ComposerWorkspaceGroup.jsx` (`components/`) — genuinely dead code,
+  **zero importers anywhere**, found while checking `Composer*`
+  candidates. Not deleted here (out of this slice's scope) —
+  spawned as its own flagged task instead
+  ([task_05eba899] — remove or wire it up).
+- `lib/composerAttachments.js` — shared by `AttachmentManager.jsx`
+  (moved) AND `WorkspaceProvider.jsx`/`hooks/useComposerAttachments.js`'s
+  sibling non-chat consumer; genuinely cross-cutting, stays in `lib/`.
+- `store/ComposerProvider.jsx` — already tracked separately as one of
+  the 7 remaining flat providers (banner below), not part of this
+  component move.
+- `Markdown.jsx`, `ArcNaveVelMark.jsx`, `JumpToLatest.jsx` — each has a
+  real second importer outside chat (`ArtifactEditor.jsx`/`Greeting.jsx`/
+  `ArtifactEditor.jsx`+`ProjectDetail.jsx` respectively), so genuinely
+  shared — stay in flat `components/`.
+
+**New:** `features/chat/index.js` — the feature's public barrel
+(`AIComposer`, `ChatHeader`, `ChatMessage`, `ChatWorkspace` +
+`ChatTranscriptScrollArea`/`ChatComposerDock`/`CHAT_GUTTER`,
+`SourcesWidget`/`SourcesTrigger`). `ChatRoute` deliberately NOT
+re-exported — `App.jsx` lazy-loads it by direct path
+(`./features/chat/routes/ChatRoute`), same convention
+`AttendanceHomeView`/`DocumentsView` already use, so barrel-importing it
+would defeat that code-split. `routes/ArtifactEditor.jsx`,
+`routes/ProjectDetail.jsx`, `routes/HomeView.jsx`,
+`components/ArtifactRevisionComposer.jsx`, and 4 test files now import
+through `@/features/chat` instead of reaching into
+`features/chat/components/*` directly.
+
+**Verified, this session:** `npx eslint src/` on the whole frontend — 0
+errors (88 pre-existing warnings, same a11y/exhaustive-deps baseline the
+checkpoint already knew about, none new). Full suite —
+**552/552, unchanged**. `npm run build` — clean, and `dist/assets/` still
+has a separate `ChatRoute-*.js` chunk, confirming the move didn't
+collapse ChatRoute's lazy code-split into the main bundle.
+
+**Exact next action:** commit and push this move (uncommitted as of this
+banner — do that before anything else, per the "push before delegating"
+lesson two banners down). After that, 5.9 itself is fully done. What's
+left of 5.8/5.9's original scope is the survey-only remainder already
+named below: 7 more flat context providers (`WorkspaceProvider` ~955
+lines, `InstitutionalLifecycleProvider` 784, `AcademicRosterProvider`
+437, `ComposerProvider` 262, `AcademicTermProvider` 216,
+`AssessmentsProvider` 161, `CalendarProvider` 95) and ~110 remaining
+files in flat `components/`/`routes/`/`lib/` (down from ~125/42/55 now
+that 13 chat components + `ChatRoute.jsx` moved out) — no scoped ask for
+tackling those yet; likely needs its own fresh scoping pass rather than
+continuing to freewheel file-by-file. Otherwise, **1.16** (agent
+rewrite) remains the highest-value pending P3 item, per the banner two
+below.
+
+---
+
+# ⛔ Previous banner — 5.8/5.9 CHAT slice wiring shipped, 2026-09-02, same session as the banner below (not yet committed).
 
 **The chat slice's wiring attempt (banner below, item 3) is done and did
 NOT reproduce the first attempt's regression.** Changed, uncommitted:

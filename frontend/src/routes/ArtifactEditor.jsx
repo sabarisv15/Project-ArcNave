@@ -2,13 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { FileOutput } from 'lucide-react';
-import { ChatMessage } from '../components/ChatMessage';
 import { Markdown } from '../components/Markdown';
 import { ArtifactRevisionComposer } from '../components/ArtifactRevisionComposer';
-import { ChatHeader } from '../components/ChatHeader';
-import { ChatWorkspace, ChatTranscriptScrollArea, ChatComposerDock } from '../components/ChatWorkspace';
 import { ArtifactContextPanel, ArtifactContextDrawer } from '../components/ArtifactContextPanel';
-import { SourcesWidget } from '../components/SourcesPopover';
+import {
+  ChatMessage,
+  ChatHeader,
+  ChatWorkspace,
+  ChatTranscriptScrollArea,
+  ChatComposerDock,
+  SourcesWidget,
+} from '@/features/chat';
 import { useTranscriptScroll } from '../hooks/useTranscriptScroll';
 import { useWorkspace } from '../store/WorkspaceProvider';
 import { composerScope, useComposer } from '../store/ComposerProvider';

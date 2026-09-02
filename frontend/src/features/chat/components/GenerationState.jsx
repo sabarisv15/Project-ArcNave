@@ -1,5 +1,5 @@
 import { Sparkles, Terminal } from 'lucide-react';
-import { ArcNaveVelMark } from './ArcNaveVelMark';
+import { ArcNaveVelMark } from '../../../components/ArcNaveVelMark';
 
 /**
  * Compact generation state — never a large loading panel, and deliberately no

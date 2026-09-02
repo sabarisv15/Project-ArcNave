@@ -4,7 +4,7 @@ _Last updated: 2026-09-02._
 
 ---
 
-# ⛔ NEWEST BANNER — P3 continued, 2026-09-02. Docker verification debt PAID. 4.9 and 1.18 shipped. 5.8 part 1 shipped. 10/14 P3 items now done.
+# ⛔ NEWEST BANNER — P3 continued, 2026-09-02. Docker verification debt PAID. 4.9, 1.18 and 5.8/5.9 (2 of 3 feature slices) shipped. 10/14 P3 items done, 5.8/5.9 partially.
 
 **Docker became available this session.** The verification owed across
 all 8 earlier P3 commits (`4e8b38f`..`c0ea640`) is paid: full backend
@@ -48,6 +48,46 @@ dependency change.**
    conditional system-prompt segment, precisely what clash C10/C11
    records as dropping rule-following 3/3 → 2/7. **That wiring is 1.16's
    job**, with live behavioural verification.
+4. **5.8/5.9 parts 2 and 3 — two real feature slices** (`afcae42`,
+   `f699db1`). Both halves of 5.9 are now demonstrated, one per slice:
+   - **attendance → Zustand** (client state: everything comes from the
+     `attendanceData` fixtures and is mutated locally).
+   - **documents → React Query** (server state: every read/write already
+     went through the real API). **This is the first place react-query
+     does any work at all** — it has been a dependency, wrapped at
+     `main.jsx`, with zero hooks using it.
+
+   The migration pattern to reuse for the remaining features: keep the
+   public hook's NAME and SHAPE, so no consumer changes. Zustand's hook
+   takes an optional selector, so `useAttendanceStore()` still returns
+   everything while new code can subscribe narrowly.
+
+   **Three behaviour differences were found and deliberately closed
+   rather than silently adopted** — each caught by writing tests, not by
+   reading code: (a) `AttendanceProvider` was mounted per-route so
+   leaving the section discarded all state; a module-level store would
+   start persisting it, so `useAttendanceLifecycle` restores the old
+   reset-on-entry exactly; (b) two independent documents queries would
+   render partial data, and a folders failure would make filed documents
+   appear at the root as though unfiled — `nodes` is now all-or-nothing
+   like the provider's `Promise.all`; (c) the documents load-failure
+   toast had silently disappeared into React Query's error state and was
+   restored.
+
+   **Two structural findings the flat folders had hidden:**
+   `AttendanceActionDrawer.jsx` was also the home of the app's shared
+   drawer chrome used by ~25 unrelated drawers (promoted to
+   `components/ui/Drawer.jsx`), and `documentsData.js` was the home of
+   the `ME` identity fixture used by assessments/calendar (moved to
+   `lib/currentUser.js`). Note these went in OPPOSITE directions —
+   checking every importer rather than assuming is what separated them.
+   **Flagged, not fixed:** three different `ME` fixtures exist with the
+   same id but different names/shapes; merging them would change visible
+   UI text, so it needs a product decision.
+
+   36 new co-located tests. Frontend **550/552**, build clean, lint 0
+   errors.
+
 3. **5.8 part 1 — shared test render helper** (`c54e129`). The 5.8/5.9
    scoping pass found the frontend suite could not verify a reorg:
    **106 of 516 tests were already failing.** Not 106 bugs — two
@@ -80,18 +120,21 @@ not caused by this session's changes.
 2. **4.6 — split the huge files.** `aiService.js` (~4,262 lines)
    overlaps 1.16's target — sequence after 1.16 or scope to other files
    first. No line-count survey of the rest of the backend has been run.
-3. **5.8 part 2 / 5.9 — the actual feature-folder move + state library.**
-   Owner chose **React Query + Zustand**; reorg size defaulted to
-   **incremental (3 features: attendance, documents, chat)**, not
-   explicitly confirmed. Survey findings, do not re-derive:
-   `components/` has **132 flat files**, `routes/` 44, `lib/` 57,
-   `hooks/` 15, `store/` 9. `features/` already exists but holds only
-   `auth/LoginPage.jsx`. **`@tanstack/react-query` is already a
-   dependency and already wrapped at `main.jsx`, but ZERO hooks use
-   `useQuery`/`useMutation`** — all state runs through 9 contexts,
-   `WorkspaceProvider.jsx` alone at 972 lines,
-   `InstitutionalLifecycleProvider.jsx` 784. Respect the LOCKED visual
-   design — this is code organization, not a restyle.
+3. **5.8/5.9 — the REMAINING features.** Two of the three planned
+   pilot slices are done (attendance, documents). **The third, chat, was
+   deliberately NOT started**: it means heavily editing
+   `WorkspaceProvider.jsx` (972 lines) and `ComposerProvider.jsx`, which
+   is exactly what a concurrent session's `flows.test.jsx` work
+   exercises (composer send → conversation → artifact). Start it only
+   once that session has landed.
+
+   Still flat and unmoved: 7 remaining context providers
+   (`WorkspaceProvider` 972 lines, `InstitutionalLifecycleProvider` 784,
+   `AcademicRosterProvider` 437, `ComposerProvider` 262,
+   `AcademicTermProvider` 216, `AssessmentsProvider` 161,
+   `CalendarProvider` 95), plus ~125 files still in flat `components/`,
+   42 in `routes/`, 55 in `lib/`. Respect the LOCKED visual design —
+   this is code organization, not a restyle.
 4. **2.4/2.5 — vision model for scans; complex-PDF fallback.** Still
    needs a real, billable Vertex measurement.
 
@@ -104,14 +147,15 @@ composer-send and artifact-create paths now hit the real backend since
 the frontend was repointed off `mockApi`; they need API mocking, which
 is its own decision).
 
-**Exact next action:** **5.8 part 2 / 5.9** is the natural continuation —
-the suite is now trustworthy enough to verify a reorg, which was the
-whole blocker. Start with attendance as the pilot slice (its files are
-already identified: `AttendanceActionDrawer`/`AttendanceStatus`,
-`AttendanceHomeView`/`AttendanceTabsLayout`, `useAttendanceLedger`,
-`attendanceData`/`attendanceLedger`, `AttendanceProvider`). Alternatively
-**1.16** now that Docker is available — but give it its own session and
-do not combine it with anything.
+**Exact next action:** **1.16** is the highest-value remaining item and
+Docker is now available for the live verification it requires — but give
+it its own session, combine it with nothing, and note it inherits 1.18's
+deliberately-unwired FLAG-tier note. If continuing the frontend reorg
+instead, take the next feature slice using the pattern the two shipped
+slices establish (keep the hook's name and shape; check every importer
+before deciding whether a file is shared or feature-internal), and pick
+anything EXCEPT chat until the concurrent `flows.test.jsx` session
+lands.
 
 ---
 

@@ -1,10 +1,121 @@
 # Current State
 
-_Last updated: 2026-09-01._
+_Last updated: 2026-09-02._
 
 ---
 
-# ⛔ NEWEST BANNER — P3 session paused for handoff, 2026-09-01. 8/14 items shipped, 1 explicitly deferred, 5 genuinely pending. Read this before resuming P3 — do not reconstruct from chat history.
+# ⛔ NEWEST BANNER — P3 continued, 2026-09-02. Docker verification debt PAID. 4.9 and 1.18 shipped. 5.8 part 1 shipped. 10/14 P3 items now done.
+
+**Docker became available this session.** The verification owed across
+all 8 earlier P3 commits (`4e8b38f`..`c0ea640`) is paid: full backend
+suite **2815/2815 clean** before any new work.
+
+**One real trap confirmed while doing it** — exactly the risk commit
+`5c8047e` flagged: `typescript`/`tsx`/`@types/node` were in
+`backend/package.json` but NOT installed in the container, because the
+anonymous `node_modules` volume never refreshes on rebuild. Fix:
+`docker compose build app && docker compose up -d --force-recreate
+--renew-anon-volumes app`. The CI `typecheck` step passes in-container
+once refreshed. **Do this first if anything looks stale after a
+dependency change.**
+
+**Shipped this session:**
+1. **4.9 — resilience** (`0bd1322`). Owner resolved the long-standing
+   scope ambiguity in favour of the plan's TABLE ROW (line 268), not the
+   bullet list. Survey first found most of that row ALREADY SATISFIED —
+   real Dockerized-Postgres tests, cross-provider fallback, and adapter
+   timeouts all already exist; do not rebuild them. Genuinely missing and
+   now built: a **circuit breaker**
+   (`aiProviders/circuitBreaker.js`, opens after 3 consecutive
+   `LlmRequestError`s, 30s cooldown, half-open single probe, wired into
+   `aiProviderFallbackService.wrapMethod`) and **three outbound calls
+   with no timeout at all** (`msg91.js`, `whatsapp/meta.js`,
+   `aiExplicitCache.js`). Key invariant: an open breaker NEVER fails a
+   call by itself — with no usable fallback the primary is still tried.
+   Only `LlmRequestError` trips it; `LlmNotConfiguredError` must not,
+   or one college's bad key would trip a provider-keyed breaker shared
+   by every tenant.
+2. **1.18 — guardrail layer** (`d067e96`). Owner scoped it (it had been
+   parked as NEEDS PRODUCT DECISION) to jailbreak + PII output filter.
+   `aiGuardrailService.js`: two-tier input screening + output redaction
+   of **Aadhaar** (RS-STU-002 is STATUTORY — Verhoeff check digit
+   validated, so ordinary 12-digit ERP values are untouched) and
+   credential-shaped secrets. **Phone/email deliberately NOT redacted** —
+   legitimate RBAC-gated ERP fields; redacting them would break correct
+   GUI-parity behaviour. Wired in `routes/ai.js`, NOT `aiService.js`.
+   **Only the BLOCK tier is enforced. The FLAG tier's reinforcement note
+   is built and tested but UNWIRED on purpose** — injecting it means a
+   conditional system-prompt segment, precisely what clash C10/C11
+   records as dropping rule-following 3/3 → 2/7. **That wiring is 1.16's
+   job**, with live behavioural verification.
+3. **5.8 part 1 — shared test render helper** (`c54e129`). The 5.8/5.9
+   scoping pass found the frontend suite could not verify a reorg:
+   **106 of 516 tests were already failing.** Not 106 bugs — two
+   environment faults masked behind an early crash: every full-app test
+   mounted `WorkspaceProvider` with no `AuthProvider` above it, and this
+   environment's jsdom exposes no Storage API at all (verified directly;
+   Node 22's own `localStorage` global also needs `--localstorage-file`).
+   Fixed via one shared `src/test/renderApp.jsx` replacing 17
+   hand-copied, byte-identical `renderApp` helpers, plus a memory
+   Storage polyfill in `src/test/setup.js`. `AuthContext` is now exported
+   from `useAuth.jsx` (one line, no runtime change) so tests can supply a
+   ready authenticated value — the real provider only sets `sessionReady`
+   from `restoreSession()`, so tests using it hang on "Loading your
+   session…". **Suite: 514/516, up from 410/516. No previously-passing
+   test broke.**
+
+**Backend suite after all of the above: 2865/2865 clean. Lint 0 errors.
+Typecheck clean. Frontend build clean.**
+
+**Flagged, not swallowed:** one backend full run reported
+`configurations` + `documents` failing (2863/2865); both passed in
+isolation and the next full run was clean. Real suite nondeterminism,
+not caused by this session's changes.
+
+**Genuinely pending in P3 — now 4 items:**
+1. **1.16 / clash C10 — agent as a step-by-step machine.** Still THE
+   biggest item; still needs its own dedicated session. Docker IS
+   available now, which unblocks it. It also inherits 1.18's unwired
+   FLAG-tier note (above).
+2. **4.6 — split the huge files.** `aiService.js` (~4,262 lines)
+   overlaps 1.16's target — sequence after 1.16 or scope to other files
+   first. No line-count survey of the rest of the backend has been run.
+3. **5.8 part 2 / 5.9 — the actual feature-folder move + state library.**
+   Owner chose **React Query + Zustand**; reorg size defaulted to
+   **incremental (3 features: attendance, documents, chat)**, not
+   explicitly confirmed. Survey findings, do not re-derive:
+   `components/` has **132 flat files**, `routes/` 44, `lib/` 57,
+   `hooks/` 15, `store/` 9. `features/` already exists but holds only
+   `auth/LoginPage.jsx`. **`@tanstack/react-query` is already a
+   dependency and already wrapped at `main.jsx`, but ZERO hooks use
+   `useQuery`/`useMutation`** — all state runs through 9 contexts,
+   `WorkspaceProvider.jsx` alone at 972 lines,
+   `InstitutionalLifecycleProvider.jsx` 784. Respect the LOCKED visual
+   design — this is code organization, not a restyle.
+4. **2.4/2.5 — vision model for scans; complex-PDF fallback.** Still
+   needs a real, billable Vertex measurement.
+
+**D1 (connection pooler) remains explicitly owner-deferred — do not
+re-ask.**
+
+**Two follow-ups queued as separate tasks, not done here:** the backend
+suite's nondeterminism, and `flows.test.jsx`'s last 2 failures (its
+composer-send and artifact-create paths now hit the real backend since
+the frontend was repointed off `mockApi`; they need API mocking, which
+is its own decision).
+
+**Exact next action:** **5.8 part 2 / 5.9** is the natural continuation —
+the suite is now trustworthy enough to verify a reorg, which was the
+whole blocker. Start with attendance as the pilot slice (its files are
+already identified: `AttendanceActionDrawer`/`AttendanceStatus`,
+`AttendanceHomeView`/`AttendanceTabsLayout`, `useAttendanceLedger`,
+`attendanceData`/`attendanceLedger`, `AttendanceProvider`). Alternatively
+**1.16** now that Docker is available — but give it its own session and
+do not combine it with anything.
+
+---
+
+# ⛔ Previous banner — P3 session paused for handoff, 2026-09-01. 8/14 items shipped, 1 explicitly deferred, 5 genuinely pending. Read this before resuming P3 — do not reconstruct from chat history.
 
 **Correction to earlier banners: P3 has 14 items, not 13** (a
 miscount in this thread's own earlier checkpoints) — recounted

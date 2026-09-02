@@ -20,6 +20,38 @@ import { describe, expect, it, vi } from 'vitest';
  * for the same reason: the AI turn fires immediately after the message is
  * sent, and a real `fetch` there is a network call this test never wants.
  */
+/**
+ * The whole app is rendered here, so `WorkspaceProvider` (and
+ * `DocumentsProvider`) call `useAuth`, which throws outside an
+ * `AuthProvider`. Auth is not what these flows are about — a signed-in
+ * session is the precondition, not the subject — so the hook module is
+ * stubbed with one, rather than standing up the real provider and a token.
+ */
+vi.mock('@/hooks/useAuth', () => ({
+  AuthProvider: ({ children }) => children,
+  useAuth: () => ({
+    user: { userId: 'u1', collegeId: 'c1', role: 'Admin' },
+    isAuthenticated: true,
+    sessionReady: true,
+    login: async () => ({ mfaRequired: false }),
+    verifyMfa: async () => {},
+    logout: async () => {},
+    restoreSession: async () => {},
+    can: () => true,
+  }),
+}));
+
+vi.mock('@/api/projects', () => ({
+  projectsApi: {
+    list: vi.fn(async () => []),
+    get: vi.fn(async () => ({})),
+    create: vi.fn(async ({ title }) => ({ id: 'p1', title })),
+    update: vi.fn(async () => ({})),
+    remove: vi.fn(async () => ({})),
+    setPinned: vi.fn(async () => ({})),
+  },
+}));
+
 vi.mock('@/api/conversations', () => ({
   conversationsApi: {
     create: vi.fn(async ({ title }) => ({ id: 'c1', title })),

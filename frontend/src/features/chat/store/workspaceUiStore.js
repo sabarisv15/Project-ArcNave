@@ -1,16 +1,10 @@
+import { useState } from 'react';
 import { create } from 'zustand';
 
-// ⚠ SCAFFOLDING — BUILT BUT NOT WIRED. WorkspaceProvider still owns all of
-// this state in its own useState calls; nothing imports this file yet.
-// Wiring it is the next session's job. Read the "what went wrong on the
-// first attempt" note at the bottom before doing so — it is the whole
-// reason this is unwired rather than shipped.
-//
-// (Same posture 1.13 and D3 already used in this modernization effort:
-// build the mechanism standalone, wire it in its own verified pass.)
-//
 // P3 5.9 — the third slice, and the one where the split 5.9 asks for is
-// clearest.
+// clearest. Wired into WorkspaceProvider via useWorkspaceUiLifecycle below —
+// read the "what went wrong on the first attempt" note at the bottom for why
+// the reset-on-mount call exists.
 //
 // WorkspaceProvider is 972 lines and holds two completely different kinds
 // of state that had no reason to be together:
@@ -89,7 +83,11 @@ export const useWorkspaceUi = create((set) => ({
   ...initialUi,
 
   setActiveWorkspaceMode: (value) => set({ activeWorkspaceMode: value }),
-  setSidebarMode: (value) => set({ sidebarMode: value }),
+  // Accepts either a value or an updater — pinSidebar/collapseSidebar
+  // (WorkspaceProvider) pass a value, revealSidebar/hideOverlay pass
+  // `(prev) => ...` since they toggle relative to whatever it currently is.
+  setSidebarMode: (next) =>
+    set((s) => ({ sidebarMode: typeof next === 'function' ? next(s.sidebarMode) : next })),
   setActiveRole: (value) => set({ activeRole: value }),
   setRecentQuery: (value) => set({ recentQuery: value }),
   setRecentFilter: (value) => set({ recentFilter: value }),
@@ -132,8 +130,30 @@ export const useWorkspaceUi = create((set) => ({
   resetWorkspaceUi: () => set({ ...initialUi }),
 }));
 
+/**
+ * Resets the store during WorkspaceProvider's FIRST render, not in an
+ * effect — same lazy-useState-initializer trick useAttendanceLifecycle
+ * uses, and for the same reason: resetting in an effect would let the
+ * first paint show whatever the previous mount (or, in tests, the previous
+ * test's app render) left behind, then snap back. `resetWorkspaceUi` is
+ * idempotent, so StrictMode's double-invoke is harmless.
+ *
+ * WorkspaceProvider mounts once per app render — in production that's once
+ * ever, so this is a no-op cost; in tests, where the whole app is mounted
+ * fresh per test, it's what stops `activeRole` (and the rest of this store)
+ * leaking between tests. See the note below for why that leak happened.
+ */
+export function useWorkspaceUiLifecycle() {
+  useState(() => {
+    useWorkspaceUi.getState().resetWorkspaceUi();
+    return true;
+  });
+}
+
 // ---------------------------------------------------------------------
-// What went wrong on the first wiring attempt — read before retrying
+// What went wrong on the FIRST wiring attempt (since fixed by
+// useWorkspaceUiLifecycle above) — kept for the next migration that hits
+// the same module-global-vs-per-mount hazard
 // ---------------------------------------------------------------------
 //
 // Wiring this into WorkspaceProvider (replacing the fourteen useState

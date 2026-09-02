@@ -4,7 +4,69 @@ _Last updated: 2026-09-02._
 
 ---
 
-# ⛔ NEWEST BANNER — P3 continued, 2026-09-02. Docker verification debt PAID. 4.9, 1.18 and 5.8/5.9 (2 of 3 feature slices) shipped. 10/14 P3 items done, 5.8/5.9 partially.
+# ⛔ NEWEST BANNER — 5.8/5.9 CHAT slice wiring shipped, 2026-09-02, same session as the banner below (not yet committed).
+
+**The chat slice's wiring attempt (banner below, item 3) is done and did
+NOT reproduce the first attempt's regression.** Changed, uncommitted:
+
+- [`frontend/src/features/chat/store/workspaceUiStore.js`](../../frontend/src/features/chat/store/workspaceUiStore.js) —
+  added `useWorkspaceUiLifecycle()` (exported alongside `useWorkspaceUi`):
+  a lazy-`useState`-initializer that calls `resetWorkspaceUi()` during
+  first render, the same trick `useAttendanceLifecycle.js` already uses.
+  Also changed `setSidebarMode` to accept either a value or an updater
+  function (`typeof next === 'function' ? next(s.sidebarMode) : next`),
+  matching `setProjConv`/`setArtConv`'s existing shape — needed because
+  `WorkspaceProvider`'s `revealSidebar`/`hideOverlay` pass an updater.
+- [`frontend/src/store/WorkspaceProvider.jsx`](../../frontend/src/store/WorkspaceProvider.jsx) —
+  the 14 `useState` calls for `activeWorkspaceMode`, `sidebarMode`,
+  `activeRole`, `recentQuery`, `recentFilter`, `projectQuery`,
+  `projectSort`, `artifactQuery`, `artifactFilter`, `scheduleOpen`,
+  `profileDrawerOpen`, `instructions`, `projConv`, `artConv` are gone,
+  replaced by one `const { ... } = useWorkspaceUi();` destructure plus a
+  `useWorkspaceUiLifecycle();` call right above it. The context value's
+  shape is unchanged — same field names, so none of the 27 consumers
+  needed touching. Added the corresponding stable setters to 4
+  dependency arrays (one `useEffect`, three `useCallback`s, one
+  `useMemo` — the `value` memo itself) to close the
+  `react-hooks/exhaustive-deps` warnings this predictably introduced
+  (Zustand setters are stable — safe to add, not silently skipped).
+
+**Verified, this session:** `npx eslint` on both changed files — 0
+errors, 0 warnings. Full frontend suite — **552/552, same as before this
+change**, `cd frontend && npm test -- --run`. `npm run build` — clean
+(pre-existing chunk-size warnings only, unrelated). Not yet committed —
+do that first if resuming, before starting the next piece, so this
+isn't sitting alongside more uncommitted work.
+
+**Why the first attempt's regression didn't recur:** that attempt (see
+`workspaceUiStore.js`'s own "what went wrong" comment, kept in place)
+lost `activeRole`/etc. state across tests because a Zustand store is
+module-global while the `useState`s it replaced were per-mount. The
+mount-time reset closes exactly that gap — same fix the checkpoint
+banner below already predicted, no new investigation needed.
+
+**Exact next action — the rest of 5.9, NOT started:** moving the chat
+COMPONENTS (`ChatView`, `ChatHeader`, `ChatMessage`, `ChatWorkspace`,
+`AIComposer`, `Composer*`, `routes/ChatRoute.jsx` — exact current paths
+not yet surveyed this session, they're still in flat `components/`/
+`routes/`) into `features/chat/`, alongside the store that already
+lives there. Follow the two already-shipped slices' pattern: keep each
+public hook's NAME and SHAPE so no consumer changes, and check EVERY
+importer of each file before deciding whether it's shared or
+feature-internal (attendance's drawer chrome had to be promoted OUT to
+`components/ui/`; documents' icon/preview/rename dialogs turned out to
+be feature-internal — opposite outcomes, only checking told them
+apart). Re-run the full frontend suite after, same discipline as this
+pass. Still flat and unmoved after that: 7 remaining context providers
+(`WorkspaceProvider` now ~955 lines, `InstitutionalLifecycleProvider`
+784, `AcademicRosterProvider` 437, `ComposerProvider` 262,
+`AcademicTermProvider` 216, `AssessmentsProvider` 161,
+`CalendarProvider` 95), plus ~125 files in flat `components/`, 42 in
+`routes/`, 55 in `lib/`.
+
+---
+
+# ⛔ Previous banner — P3 continued, 2026-09-02. Docker verification debt PAID. 4.9, 1.18 and 5.8/5.9 (2 of 3 feature slices) shipped. 10/14 P3 items done, 5.8/5.9 partially.
 
 **Docker became available this session.** The verification owed across
 all 8 earlier P3 commits (`4e8b38f`..`c0ea640`) is paid: full backend

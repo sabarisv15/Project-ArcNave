@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { useWorkspaceUi, useWorkspaceUiLifecycle } from '../features/chat/store/workspaceUiStore';
 import { fetchContextFiles, queryKeys } from '../lib/mockApi';
 import { fetchChatsReal, fetchProjectsReal, fetchArtifactsReal } from '../lib/realWorkspaceApi';
 import { conversationsApi } from '@/api/conversations';
@@ -96,55 +97,45 @@ export function WorkspaceProvider({ children }) {
   const { data: contextFiles = [] } = useQuery({ queryKey: queryKeys.contextFiles, queryFn: fetchContextFiles });
   const { data: threads = {} } = useQuery({ queryKey: queryKeys.threads, queryFn: async () => ({}) });
 
-  // UI state
-  /**
-   * Which sidebar menu is showing. Deliberately its own state, never inferred
-   * from the pathname: switching context swaps the menu only, so whatever
-   * workspace is open stays open until the user picks an item themselves.
-   */
-  const [activeWorkspaceMode, setActiveWorkspaceMode] = useState('home');
-  /**
-   * `pinned`  — docked; occupies real layout width and never overlaps content.
-   * `overlay` — floating above the workspace, temporary.
-   * `hidden`  — no width reserved; only the left edge trigger remains.
-   */
-  const [sidebarMode, setSidebarMode] = useState('pinned');
-  /**
-   * Which institutional seat the prototype is being viewed as.
-   *
-   * `teaching_staff` — the original experience, unchanged in every respect.
-   * `class_tutor_l4` — the Class Tutor seat: one owned class, its own
-   *                    Curriculum menu and landing.
-   *
-   * This is a **review affordance for a design prototype**, not an
-   * authorization mechanism. This app has no auth at all, so nothing here
-   * protects anything — it only decides which experience renders. In the real
-   * product the active seat is resolved server-side from the signed-in
-   * Position Account and a switcher like this one does not exist.
-   *
-   * Explicit state next to `activeWorkspaceMode`, never derived from the
-   * pathname, for the same reason that one isn't: a mode that re-derives
-   * itself on every remount fights the user.
-   */
-  const [activeRole, setActiveRole] = useState('teaching_staff');
-  /*
-   * There is deliberately no `input`/`mode` here any more. A single global
-   * composer slot is what let Home's text turn up in a project's composer;
-   * every composer now owns a scoped draft in `ComposerProvider`, and
-   * `sendMessage` is handed the text explicitly rather than reaching for a
-   * shared one.
-   */
-  const [recentQuery, setRecentQuery] = useState('');
-  const [recentFilter, setRecentFilter] = useState('All conversations');
-  const [projectQuery, setProjectQuery] = useState('');
-  const [projectSort, setProjectSort] = useState('Last updated');
-  const [artifactQuery, setArtifactQuery] = useState('');
-  const [artifactFilter, setArtifactFilter] = useState('All artifacts');
-  const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
-  const [instructions, setInstructions] = useState('');
-  const [projConv, setProjConv] = useState({}); // projectId -> conversationId
-  const [artConv, setArtConv] = useState({}); // artifactId -> conversationId
+  // UI state — activeWorkspaceMode/sidebarMode/activeRole/recentQuery/
+  // recentFilter/projectQuery/projectSort/artifactQuery/artifactFilter/
+  // scheduleOpen/profileDrawerOpen/instructions/projConv/artConv all live in
+  // `useWorkspaceUi` (features/chat/store/workspaceUiStore.js) now — see that
+  // file for what each field means and why it isn't bundled with server
+  // state. `useWorkspaceUiLifecycle` resets it on this provider's first
+  // render, the per-mount behaviour a module-global store doesn't get for
+  // free (see that file's own note on why the first wiring attempt broke).
+  useWorkspaceUiLifecycle();
+  const {
+    activeWorkspaceMode,
+    setActiveWorkspaceMode,
+    sidebarMode,
+    setSidebarMode,
+    activeRole,
+    setActiveRole,
+    recentQuery,
+    setRecentQuery,
+    recentFilter,
+    setRecentFilter,
+    projectQuery,
+    setProjectQuery,
+    projectSort,
+    setProjectSort,
+    artifactQuery,
+    setArtifactQuery,
+    artifactFilter,
+    setArtifactFilter,
+    scheduleOpen,
+    setScheduleOpen,
+    profileDrawerOpen,
+    setProfileDrawerOpen,
+    instructions,
+    setInstructions,
+    projConv,
+    setProjConv,
+    artConv,
+    setArtConv,
+  } = useWorkspaceUi();
 
   // artConv otherwise only ever gains an entry when a revision message is
   // sent live in *this* browser session (the `scope === 'artifact'` branch
@@ -169,7 +160,7 @@ export function WorkspaceProvider({ children }) {
       }
       return changed ? next : m;
     });
-  }, [artifacts]);
+  }, [artifacts, setArtConv]);
 
   // chatId -> file[]. This is message/upload **metadata**, not a surface: the
   // "Files in this chat" widget and its header button are gone (Sources
@@ -612,7 +603,7 @@ export function WorkspaceProvider({ children }) {
 
       return id;
     },
-    [addChatFiles, projects, qc, setThreads, runAiTurn],
+    [addChatFiles, projects, qc, setThreads, runAiTurn, setProjConv, setArtConv],
   );
 
   /**
@@ -726,7 +717,7 @@ export function WorkspaceProvider({ children }) {
       conversationsApi.remove(id).catch(() => qc.invalidateQueries({ queryKey: queryKeys.chats }));
       toast('Chat deleted');
     },
-    [qc, setThreads],
+    [qc, setThreads, setProjConv, setArtConv],
   );
 
   const addChatToProject = useCallback(
@@ -738,7 +729,7 @@ export function WorkspaceProvider({ children }) {
       setProjConv((m) => ({ ...m, [projectId]: chatId }));
       toast(`Added to ${project?.title ?? 'project'}.`);
     },
-    [qc, projects],
+    [qc, projects, setProjConv],
   );
 
   const createProject = useCallback(
@@ -931,17 +922,29 @@ export function WorkspaceProvider({ children }) {
       addChatFiles,
       removeChatFile,
       activeWorkspaceMode,
+      setActiveWorkspaceMode,
       activeRole,
+      setActiveRole,
       sidebarMode,
+      setSidebarMode,
       recentQuery,
+      setRecentQuery,
       recentFilter,
+      setRecentFilter,
       projectQuery,
+      setProjectQuery,
       projectSort,
+      setProjectSort,
       artifactQuery,
+      setArtifactQuery,
       artifactFilter,
+      setArtifactFilter,
       scheduleOpen,
+      setScheduleOpen,
       profileDrawerOpen,
+      setProfileDrawerOpen,
       instructions,
+      setInstructions,
       projConv,
       artConv,
       sendMessage,

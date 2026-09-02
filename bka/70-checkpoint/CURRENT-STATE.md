@@ -104,13 +104,38 @@ dependency change.**
    session…". **Suite: 514/516, up from 410/516. No previously-passing
    test broke.**
 
-**Backend suite after all of the above: 2865/2865 clean. Lint 0 errors.
-Typecheck clean. Frontend build clean.**
+5. **Both test suites are now fully green** (`c5a5b4b`, `13498e7`), from
+   two background agents whose work was reviewed, adapted and
+   re-verified here rather than merged as-is.
+   - **Backend flake root-caused and fixed.** Three integration files
+     (`documents`, `documents-chat-attachments`, `reports`) each emptied
+     the SHARED `DOCUMENT_STORAGE_ROOT` wholesale in `t.after()`.
+     Correct alone, wrong under `node --test tests/` where they run as
+     concurrent processes: whichever finished first deleted files the
+     others were still uploading/reading/OCR-ing. New
+     `tests/helpers/storageFixtures.js` deletes only
+     `<root>/<collegeId>` (every fileStorage path is tenant-prefixed).
+     **If you add another test that writes real bytes, use that helper —
+     do not empty the root.** Verified with THREE consecutive full runs,
+     2865/2865 each.
+   - **Last 2 frontend failures fixed.** `flows.test.jsx`'s
+     composer-send and artifact-create paths cross a server boundary and
+     were written pre-`mockApi` removal; the API modules are now mocked
+     at module level. Mocking alone left the conversation flow flaky —
+     the docked chat mounts only after the POST resolves AND the router
+     navigates, racing `findBy`'s 1000ms default. Explicit 5s timeout,
+     three consecutive clean runs.
 
-**Flagged, not swallowed:** one backend full run reported
-`configurations` + `documents` failing (2863/2865); both passed in
-isolation and the next full run was clean. Real suite nondeterminism,
-not caused by this session's changes.
+**Backend 2865/2865. Frontend 552/552 (from 410/516). Lint 0 errors both
+sides. Typecheck clean. Build clean.**
+
+**⚠ PROCESS LESSON, worth not repeating:** both background agents
+branched from `bab197f` — **36 commits behind this branch, because the
+local branch had never been pushed.** Their diffs no longer applied
+(one had 3 conflicts; the other targeted a file that had since been
+rewritten). Both contributions were still valuable, but had to be
+adapted and re-verified by hand. **Push before delegating to a
+background/cloud agent**, or it works against a stale tree.
 
 **Genuinely pending in P3 — now 4 items:**
 1. **1.16 / clash C10 — agent as a step-by-step machine.** Still THE

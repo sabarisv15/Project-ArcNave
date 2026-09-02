@@ -10,15 +10,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const http = require('node:http');
-const fs = require('node:fs/promises');
-// Named nodePath, not path: this file's own requestJson(baseUrl, path,
-// method, ...) already uses `path` as a parameter name.
-const nodePath = require('node:path');
 const { Pool } = require('pg');
 const createApp = require('../src/app');
 const security = require('../src/security');
 const { seedPrincipalPosition, cleanupPositionRows } = require('./helpers/positionFixtures');
-const config = require('../src/config');
+const { cleanupCollegeStorage } = require('./helpers/storageFixtures');
 
 const MIGRATION_DATABASE_URL = process.env.MIGRATION_DATABASE_URL;
 const PASSWORD = 'ReportsTestPass123!';
@@ -137,14 +133,9 @@ test('reports', async (t) => {
     await stopServer(server);
     await cleanupTenant(adminPool, college);
     await adminPool.end();
-    // Empties documentStorageRoot's CONTENTS, not the directory itself
-    // — see documents.test.js's own comment on this exact fix: the
-    // path is now a Docker volume mount point (this session's own
-    // task), not rmdir-able from inside the container.
-    const entries = await fs.readdir(config.documentStorageRoot).catch(() => []);
-    await Promise.all(
-      entries.map((entry) => fs.rm(nodePath.join(config.documentStorageRoot, entry), { recursive: true, force: true })),
-    );
+    // This tenant's subtree only, never the whole shared storage root
+    // — see tests/helpers/storageFixtures.js.
+    await cleanupCollegeStorage(college.collegeId);
   });
 
   async function login(username) {

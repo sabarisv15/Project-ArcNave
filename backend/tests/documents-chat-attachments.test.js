@@ -16,14 +16,12 @@ const { mock } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const http = require('node:http');
-const fs = require('node:fs/promises');
-const path = require('node:path');
 const { Pool } = require('pg');
 const PizZip = require('pizzip');
 const createApp = require('../src/app');
 const security = require('../src/security');
-const config = require('../src/config');
 const sandboxExecutionService = require('../src/services/sandboxExecutionService');
+const { cleanupCollegeStorage } = require('./helpers/storageFixtures');
 
 const MIGRATION_DATABASE_URL = process.env.MIGRATION_DATABASE_URL;
 const PASSWORD = 'ChatAttachmentsTestPass123!';
@@ -186,10 +184,9 @@ test('documents chat-attachments', async (t) => {
     await stopServer(server);
     await cleanupTenant(adminPool, college);
     await adminPool.end();
-    const entries = await fs.readdir(config.documentStorageRoot).catch(() => []);
-    await Promise.all(
-      entries.map((entry) => fs.rm(path.join(config.documentStorageRoot, entry), { recursive: true, force: true })),
-    );
+    // This tenant's subtree only, never the whole shared storage root
+    // — see tests/helpers/storageFixtures.js.
+    await cleanupCollegeStorage(college.collegeId);
   });
 
   async function login(username) {

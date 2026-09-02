@@ -15,6 +15,7 @@ const { Pool } = require('pg');
 const createApp = require('../src/app');
 const security = require('../src/security');
 const { seedPrincipalPosition, cleanupPositionRows } = require('./helpers/positionFixtures');
+const { cleanupCollegeStorage } = require('./helpers/storageFixtures');
 
 const MIGRATION_DATABASE_URL = process.env.MIGRATION_DATABASE_URL;
 const PASSWORD = 'PeriodsTestPass123!';
@@ -109,6 +110,9 @@ async function cleanupTenant(adminPool, college) {
   await adminPool.query('DELETE FROM refresh_tokens WHERE college_id = $1', [college.collegeId]);
   await adminPool.query('DELETE FROM users WHERE college_id = $1', [college.collegeId]);
   await adminPool.query('DELETE FROM colleges WHERE college_id = $1', [college.collegeId]);
+  // Real uploaded bytes, same as the DB rows above — see
+  // tests/helpers/storageFixtures.js.
+  await cleanupCollegeStorage(college.collegeId);
 }
 
 test('timetable periods', async (t) => {

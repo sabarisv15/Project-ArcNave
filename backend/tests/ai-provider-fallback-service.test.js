@@ -18,6 +18,15 @@ const {
   buildFallbackTracker,
   isFallbackEligible,
 } = require('../src/services/aiProviderFallbackService');
+const circuitBreaker = require('../src/services/aiProviders/circuitBreaker');
+
+// P3 4.9 added a process-local circuit breaker keyed by primary provider
+// NAME, and every test in this file names its primary adapter 'primary'
+// — so without this reset the failure counts from one test would leak
+// into the next and silently change which path a later test exercises.
+// Same test-isolation hazard (and same fix) as the shared
+// documentTextExtractionCache reset in ai-service.test.js.
+test.beforeEach(() => circuitBreaker.reset());
 
 function fakeAdapter(name, { configured = true, complete } = {}) {
   return {

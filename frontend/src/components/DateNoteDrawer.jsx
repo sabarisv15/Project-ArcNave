@@ -8,7 +8,7 @@ import { useAutosave, useRestoredDraft } from '../hooks/useAutosave';
 import { draftKey } from '../lib/draftStore';
 import { useCalendarStore } from '../store/CalendarProvider';
 import { EVENT_TYPES, noteHasContent } from '../lib/calendarData';
-import { ME } from '../lib/documentsData';
+import { ME } from '@/lib/currentUser';
 import { formatDateDMY } from '../lib/ist';
 import { parseISTDateBounds } from '../lib/ist';
 

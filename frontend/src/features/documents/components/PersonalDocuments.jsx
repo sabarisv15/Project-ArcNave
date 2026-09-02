@@ -19,17 +19,17 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '../lib/utils';
-import { PANE, STICKY_HEAD, StickyTableShell, TABLE_HEAD } from './WorkspaceLayout';
-import { SearchPopoverField, SortIconPopover } from './ToolbarIcons';
+import { cn } from '@/lib/utils';
+import { PANE, STICKY_HEAD, StickyTableShell, TABLE_HEAD } from '@/components/WorkspaceLayout';
+import { SearchPopoverField, SortIconPopover } from '@/components/ToolbarIcons';
 import { DocumentIcon } from './DocumentIcon';
 import { DocumentPreviewDrawer } from './DocumentPreviewDrawer';
 import { RenameNodeDialog } from './RenameNodeDialog';
-import { useDocumentsStore } from '../store/DocumentsProvider';
-import { documentsApi } from '../api/documents';
+import { useDocumentsStore } from '../store/useDocumentsStore';
+import { documentsApi } from '@/api/documents';
 import { PERSONAL_ROOT, canMoveInto, formatSize, pathTo } from '../lib/documentsData';
-import { formatDateDMY } from '../lib/ist';
-import { FILTER_SURFACE } from './FilterPopover';
+import { formatDateDMY } from '@/lib/ist';
+import { FILTER_SURFACE } from '@/components/FilterPopover';
 
 const GRID = 'grid grid-cols-[minmax(0,2.6fr)_minmax(0,1fr)_minmax(0,.8fr)_36px] gap-[12px] items-center';
 

@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { LayoutGrid, List, Lock } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '../lib/utils';
-import { PANE, STICKY_HEAD, StickyTableShell, TABLE_HEAD, TableEmptyState } from './WorkspaceLayout';
-import { IconToolbar, SearchPopoverField, SortIconPopover } from './ToolbarIcons';
-import { FilterPopover, FilterSelect } from './FilterPopover';
+import { cn } from '@/lib/utils';
+import { PANE, STICKY_HEAD, StickyTableShell, TABLE_HEAD, TableEmptyState } from '@/components/WorkspaceLayout';
+import { IconToolbar, SearchPopoverField, SortIconPopover } from '@/components/ToolbarIcons';
+import { FilterPopover, FilterSelect } from '@/components/FilterPopover';
 import { DocumentIcon } from './DocumentIcon';
 import { DocumentPreviewDrawer } from './DocumentPreviewDrawer';
-import { documentsApi } from '../api/documents';
+import { documentsApi } from '@/api/documents';
 import { formatSize } from '../lib/documentsData';
-import { formatDateDMY } from '../lib/ist';
+import { formatDateDMY } from '@/lib/ist';
 
 const GRID =
   'grid grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,.8fr)_minmax(0,.6fr)] gap-[12px] items-center';

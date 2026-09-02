@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { INSTITUTIONAL_EVENTS, eventsByDay, noteHasContent } from '../lib/calendarData';
-import { ME } from '../lib/documentsData';
+import { ME } from '@/lib/currentUser';
 
 const CalendarContext = createContext(null);
 

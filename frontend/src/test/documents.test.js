@@ -1,16 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  INSTITUTIONAL_DOCS,
-  ME,
-  PERSONAL_ROOT,
-  assertScope,
-  canMoveInto,
-  canMutate,
-  descendantIds,
-  initialPersonalNodes,
-  pathTo,
-  uniqueName,
-} from '../lib/documentsData';
+import { INSTITUTIONAL_DOCS, ME, PERSONAL_ROOT, assertScope, canMoveInto, canMutate, descendantIds, initialPersonalNodes, pathTo, uniqueName } from '@/features/documents/lib/documentsData';
 
 describe('the two document scopes stay apart', () => {
   it('every institutional document is institutional and owner-less', () => {

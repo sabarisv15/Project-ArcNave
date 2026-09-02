@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { cn } from '../lib/utils';
-import { DocumentsProvider } from '../store/DocumentsProvider';
+import { cn } from '@/lib/utils';
 import { InstitutionalDocuments } from '../components/InstitutionalDocuments';
 import { PersonalDocuments } from '../components/PersonalDocuments';
 
@@ -25,9 +24,12 @@ const TABS = [
 export function DocumentsView() {
   const [tab, setTab] = useState('institutional');
 
+  // P3 5.9 — no provider to wrap in any more. Documents state moved to
+  // React Query (server data, cached and invalidated by the library) plus
+  // local component state for upload progress, so PersonalDocuments calls
+  // useDocumentsStore directly and this route is just the tab chrome.
   return (
-    <DocumentsProvider>
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden animate-viewIn">
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden animate-viewIn">
         <div className="flex-none px-[24px] pt-[18px] border-b border-line">
           <div
             role="tablist"
@@ -57,8 +59,7 @@ export function DocumentsView() {
           </div>
         </div>
 
-        {tab === 'institutional' ? <InstitutionalDocuments /> : <PersonalDocuments />}
-      </div>
-    </DocumentsProvider>
+      {tab === 'institutional' ? <InstitutionalDocuments /> : <PersonalDocuments />}
+    </div>
   );
 }

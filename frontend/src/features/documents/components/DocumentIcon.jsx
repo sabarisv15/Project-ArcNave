@@ -1,6 +1,6 @@
 import { FileImage, FileSpreadsheet, FileText, FileType2, Folder, Presentation, File } from 'lucide-react';
 import { fileKind } from '../lib/documentsData';
-import { cn } from '../lib/utils';
+import { cn } from '@/lib/utils';
 
 const ICONS = {
   pdf: FileType2,

@@ -9,7 +9,7 @@ import { istDayKey, parseISTDateBounds } from '../lib/ist';
 import { AutosaveStatus, DraftRestoredNote } from './AutosaveStatus';
 import { useAutosave, useRestoredDraft } from '../hooks/useAutosave';
 import { draftKey } from '../lib/draftStore';
-import { ME as DOC_ME } from '../lib/documentsData';
+import { ME as DOC_ME } from '@/lib/currentUser';
 
 const FIELD =
   'w-full h-[34px] font-sans text-[12.5px] text-ink bg-paper border border-line rounded-[10px] px-[10px] outline-none transition-colors duration-200 focus:border-accent-line focus:shadow-[0_0_0_3px_rgba(11,114,133,.1)]';

@@ -51,7 +51,7 @@ const ReportsView = lazyNamed(() => import('./routes/ReportsView'), 'ReportsView
 const TimetableView = lazyNamed(() => import('./routes/TimetableView'), 'TimetableView');
 const WorkloadView = lazyNamed(() => import('./routes/WorkloadView'), 'WorkloadView');
 const AssessmentsView = lazyNamed(() => import('./routes/AssessmentsView'), 'AssessmentsView');
-const DocumentsView = lazyNamed(() => import('./routes/DocumentsView'), 'DocumentsView');
+const DocumentsView = lazyNamed(() => import('./features/documents/routes/DocumentsView'), 'DocumentsView');
 const CalendarView = lazyNamed(() => import('./routes/CalendarView'), 'CalendarView');
 const DepartmentOverview = lazyNamed(() => import('./routes/DepartmentOverview'), 'DepartmentOverview');
 const DepartmentClassesView = lazyNamed(() => import('./routes/DepartmentClassesView'), 'DepartmentClassesView');

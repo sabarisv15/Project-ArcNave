@@ -2,9 +2,9 @@ import { Download, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { DrawerRail, DrawerShell, PRIMARY_BTN } from '@/components/ui/Drawer';
 import { DocumentIcon } from './DocumentIcon';
-import { documentsApi } from '../api/documents';
+import { documentsApi } from '@/api/documents';
 import { FILE_KINDS, fileKind, formatSize } from '../lib/documentsData';
-import { formatDateDMY } from '../lib/ist';
+import { formatDateDMY } from '@/lib/ist';
 
 function Row({ label, value }) {
   if (!value) return null;

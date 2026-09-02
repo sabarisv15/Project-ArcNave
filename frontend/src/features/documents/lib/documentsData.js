@@ -29,9 +29,16 @@
  *                     scope: 'personal' }
  */
 
-import { istMidnight, DAY_MS } from './ist';
+import { istMidnight, DAY_MS } from '@/lib/ist';
 
-export const ME = { id: 'staff-me', name: 'Priya Ramesh', role: 'Assistant Professor' };
+// ME moved to lib/currentUser.js — it is identity, not documents
+// data, and four modules outside this feature needed it. Re-exported
+// so this feature's own files keep one import.
+// Imported, not just re-exported: this module uses ME.id internally
+// (owner fields, canMutate's default) as well as handing it on.
+import { ME } from '@/lib/currentUser';
+
+export { ME };
 
 export const PERSONAL_ROOT = 'root';
 

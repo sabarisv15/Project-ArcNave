@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { cn } from '../lib/utils';
-import { AutosaveStatus, DraftRestoredNote } from './AutosaveStatus';
-import { useAutosave, useRestoredDraft } from '../hooks/useAutosave';
-import { draftKey } from '../lib/draftStore';
+import { cn } from '@/lib/utils';
+import { AutosaveStatus, DraftRestoredNote } from '@/components/AutosaveStatus';
+import { useAutosave, useRestoredDraft } from '@/hooks/useAutosave';
+import { draftKey } from '@/lib/draftStore';
 import { ME } from '../lib/documentsData';
 
 const FIELD =

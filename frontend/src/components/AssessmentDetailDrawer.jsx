@@ -16,7 +16,7 @@ import { formatDateDMY } from '../lib/ist';
 import { AutosaveStatus, DraftRestoredNote } from './AutosaveStatus';
 import { CELL_DEBOUNCE_MS, useAutosave, useRestoredDraft } from '../hooks/useAutosave';
 import { draftKey } from '../lib/draftStore';
-import { ME } from '../lib/documentsData';
+import { ME } from '@/lib/currentUser';
 
 /**
  * One student row. The marks input is the row's whole point, so it is the only

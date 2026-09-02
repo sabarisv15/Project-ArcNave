@@ -1,12 +1,6 @@
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import * as Tooltip from '@radix-ui/react-tooltip';
 import { describe, expect, it } from 'vitest';
-import App from '../App';
-import { WorkspaceProvider } from '../store/WorkspaceProvider';
-import { ComposerProvider } from '../store/ComposerProvider';
 import {
   PROVISIONING,
   PROVISIONING_WITHOUT_LEVEL_2,
@@ -31,6 +25,7 @@ import {
   canFinalApprove,
 } from '../lib/endorsementChain';
 import { LEVEL_2, PRINCIPAL_L1 } from '../lib/roles';
+import { renderApp as renderAppShared } from './renderApp';
 
 /**
  * Three states, kept structurally apart: **absent**, **configured but vacant**,
@@ -47,21 +42,8 @@ import { LEVEL_2, PRINCIPAL_L1 } from '../lib/roles';
 const ABSENT = PROVISIONING_WITHOUT_LEVEL_2;
 const VACANT = PROVISIONING_WITH_VACANT_LEVEL_2;
 
-function renderApp(route = '/') {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[route]}>
-        <Tooltip.Provider>
-          <WorkspaceProvider>
-            <ComposerProvider>
-              <App />
-            </ComposerProvider>
-          </WorkspaceProvider>
-        </Tooltip.Provider>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
+function renderApp(route = '/', options) {
+  return renderAppShared(route, options);
 }
 
 describe('L2 absent — the structure collapses entirely', () => {
@@ -174,7 +156,7 @@ describe('L2 configured and held — the live fixture', () => {
   it('offers a delegated switcher entry only in this state', async () => {
     const user = userEvent.setup();
     renderApp('/');
-    await user.click(screen.getByRole('button', { name: /open profile/i }));
+    await user.click(await screen.findByRole('button', { name: /open profile/i }));
     const group = await screen.findByRole('radiogroup', { name: /workspace view/i });
     expect(within(group).getByRole('radio', { name: /Dean — Academic Affairs/i })).toBeTruthy();
   });

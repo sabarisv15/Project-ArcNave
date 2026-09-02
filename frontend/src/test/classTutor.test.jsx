@@ -1,30 +1,12 @@
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import * as Tooltip from '@radix-ui/react-tooltip';
 import { describe, expect, it } from 'vitest';
-import App from '../App';
-import { WorkspaceProvider } from '../store/WorkspaceProvider';
-import { ComposerProvider } from '../store/ComposerProvider';
 import { CLASS_ROSTER, CURRENT_HOUR, LOW_ATTENDANCE_WATCHLIST, TODAY_HOURS } from '../lib/classTutorData';
 import { TIMETABLE_VERSIONS, CLASS_TIMETABLE } from '../lib/classTimetableData';
+import { renderApp as renderAppShared } from './renderApp';
 
-function renderApp(route = '/') {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[route]}>
-        <Tooltip.Provider>
-          <WorkspaceProvider>
-            <ComposerProvider>
-              <App />
-            </ComposerProvider>
-          </WorkspaceProvider>
-        </Tooltip.Provider>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
+function renderApp(route = '/', options) {
+  return renderAppShared(route, options);
 }
 
 /**
@@ -36,7 +18,7 @@ function renderApp(route = '/') {
  * `/department` and `/institution` already had.
  */
 async function useClassTutorSeat(user) {
-  await user.click(screen.getByRole('button', { name: /open profile/i }));
+  await user.click(await screen.findByRole('button', { name: /open profile/i }));
   const group = await screen.findByRole('radiogroup', { name: /workspace view/i });
   await user.click(within(group).getByRole('radio', { name: /class tutor/i }));
   await user.click(screen.getByRole('button', { name: /close profile/i }));

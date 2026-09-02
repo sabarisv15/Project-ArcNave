@@ -1,12 +1,6 @@
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import * as Tooltip from '@radix-ui/react-tooltip';
 import { describe, expect, it } from 'vitest';
-import App from '../App';
-import { WorkspaceProvider } from '../store/WorkspaceProvider';
-import { ComposerProvider } from '../store/ComposerProvider';
 import {
   capacityReading,
   coverageReading,
@@ -28,26 +22,14 @@ import { seatTitle } from '../lib/seatTitles';
 import { PRINCIPAL_L1 } from '../lib/roles';
 import { REVIEW_CANDIDATES } from '../lib/promotionData';
 import { DEPARTMENT_ID } from '../lib/departmentData';
+import { renderApp as renderAppShared } from './renderApp';
 
-function renderApp(route = '/curriculum') {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[route]}>
-        <Tooltip.Provider>
-          <WorkspaceProvider>
-            <ComposerProvider>
-              <App />
-            </ComposerProvider>
-          </WorkspaceProvider>
-        </Tooltip.Provider>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
+function renderApp(route = '/curriculum', options) {
+  return renderAppShared(route, options);
 }
 
 async function useView(user, name) {
-  await user.click(screen.getByRole('button', { name: /open profile/i }));
+  await user.click(await screen.findByRole('button', { name: /open profile/i }));
   const group = await screen.findByRole('radiogroup', { name: /workspace view/i });
   await user.click(within(group).getByRole('radio', { name }));
   await user.click(screen.getByRole('button', { name: /close profile/i }));

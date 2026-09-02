@@ -3,7 +3,11 @@ import { authApi } from '@/api/auth';
 import { hasPermission } from '@/lib/permissions';
 import { setAccessToken, decodeJwt, clearSession } from '@/lib/authStorage';
 
-const AuthContext = createContext(null);
+// Exported so tests can supply a ready, authenticated auth value
+// directly instead of driving the real AuthProvider through a mocked
+// network refresh. Production code must always go through AuthProvider /
+// useAuth below — nothing in src/ outside tests should import this.
+export const AuthContext = createContext(null);
 
 function claimsFromToken(accessToken) {
   const claims = decodeJwt(accessToken);

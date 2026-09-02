@@ -1,13 +1,8 @@
-import { render, screen, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import * as Tooltip from '@radix-ui/react-tooltip';
+import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import App from '../App';
-import { WorkspaceProvider } from '../store/WorkspaceProvider';
-import { ComposerProvider } from '../store/ComposerProvider';
 import { curriculumNavFor } from '../components/SidebarNavigation';
 import { TEACHING_STAFF } from '../lib/roles';
+import { renderApp as renderAppShared } from './renderApp';
 
 /**
  * Personal Staff is already built, and the institutional work must not move it.
@@ -20,21 +15,8 @@ import { TEACHING_STAFF } from '../lib/roles';
  * who holds no seat at all.
  */
 
-function renderApp(route = '/curriculum') {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[route]}>
-        <Tooltip.Provider>
-          <WorkspaceProvider>
-            <ComposerProvider>
-              <App />
-            </ComposerProvider>
-          </WorkspaceProvider>
-        </Tooltip.Provider>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
+function renderApp(route = '/curriculum', options) {
+  return renderAppShared(route, options);
 }
 
 const STAFF_DESTINATIONS = [
@@ -88,6 +70,9 @@ describe('Personal Staff — unchanged by the institutional foundation', () => {
       within(nav)
         .getAllByRole('link')
         .map((l) => l.textContent.trim()),
-    ).toEqual(['New', 'Projects', 'Artifacts']);
+      // 'AI Memory' joined this menu with the scoped AI preference memory
+      // page and was never reflected here, because this whole file was
+      // already red at the time and the drift went unseen.
+    ).toEqual(['New', 'Projects', 'Artifacts', 'AI Memory']);
   });
 });

@@ -49,6 +49,12 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // Without an explicit URL jsdom runs on an opaque origin, and the
+    // Storage API is unavailable on one — so `localStorage` was undefined
+    // in every test, and any test touching it crashed. Giving jsdom the
+    // dev server's own origin restores localStorage (and makes
+    // window.location realistic rather than about:blank).
+    environmentOptions: { jsdom: { url: 'http://localhost:3100' } },
     setupFiles: ['./src/test/setup.js'],
     globals: true,
   },

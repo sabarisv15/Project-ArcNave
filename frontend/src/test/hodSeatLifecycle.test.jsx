@@ -1,12 +1,6 @@
-import { act, renderHook, render, screen, within } from '@testing-library/react';
+import { act, renderHook, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import * as Tooltip from '@radix-ui/react-tooltip';
 import { describe, expect, it } from 'vitest';
-import App from '../App';
-import { WorkspaceProvider } from '../store/WorkspaceProvider';
-import { ComposerProvider } from '../store/ComposerProvider';
 import { AcademicTermProvider, useAcademicTerm } from '../store/AcademicTermProvider';
 import { AcademicRosterProvider } from '../store/AcademicRosterProvider';
 import { InstitutionalLifecycleProvider, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
@@ -14,6 +8,7 @@ import { HOD_SEATS, SEAT_STATES, hodSeat } from '../lib/seatState';
 import { DEPARTMENTS, facultyOfDepartment } from '../lib/institutionData';
 import { seatTitle } from '../lib/seatTitles';
 import { HOD_L3 } from '../lib/roles';
+import { renderApp as renderAppShared } from './renderApp';
 
 const wrapper = ({ children }) => (
   <AcademicTermProvider>
@@ -25,25 +20,12 @@ const wrapper = ({ children }) => (
 
 const lifecycle = () => renderHook(() => useInstitutionalLifecycle(), { wrapper });
 
-function renderApp(route = '/curriculum') {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[route]}>
-        <Tooltip.Provider>
-          <WorkspaceProvider>
-            <ComposerProvider>
-              <App />
-            </ComposerProvider>
-          </WorkspaceProvider>
-        </Tooltip.Provider>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
+function renderApp(route = '/curriculum', options) {
+  return renderAppShared(route, options);
 }
 
 async function usePrincipalView(user) {
-  await user.click(screen.getByRole('button', { name: /open profile/i }));
+  await user.click(await screen.findByRole('button', { name: /open profile/i }));
   const group = await screen.findByRole('radiogroup', { name: /workspace view/i });
   await user.click(within(group).getByRole('radio', { name: /principal/i }));
   await user.click(screen.getByRole('button', { name: /close profile/i }));
@@ -203,7 +185,7 @@ describe('The leadership surface is its own, and is not class-tutor assignment',
     await usePrincipalView(user);
     await navigateVia(user, /^departments$/i);
 
-    await user.click(screen.getByRole('tab', { name: /leadership seats/i }));
+    await user.click(await screen.findByRole('tab', { name: /leadership seats/i }));
 
     const title = seatTitle(HOD_L3);
     const row = await screen.findByRole('button', {

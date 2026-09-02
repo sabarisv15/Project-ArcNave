@@ -1,12 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import * as Tooltip from '@radix-ui/react-tooltip';
 import { describe, expect, it } from 'vitest';
-import App from '../App';
-import { WorkspaceProvider } from '../store/WorkspaceProvider';
-import { ComposerProvider } from '../store/ComposerProvider';
 import { InstitutionSetupPanel } from '../components/InstitutionSetupPanel';
 import {
   INSTITUTION_SETUP,
@@ -18,6 +13,7 @@ import {
 import { NOT_SUBMITTED_CLASS_IDS, PENDING_CLASS_IDS } from '../lib/timetableState';
 import { tutorCoverage } from '../lib/seatState';
 import { DEPARTMENTS, INST_CLASSES, INSTITUTION, hodOf } from '../lib/institutionData';
+import { renderApp as renderAppShared } from './renderApp';
 
 const derive = (key) => deriveInstitutionSetup(SETUP_SNAPSHOTS[key]);
 
@@ -29,25 +25,12 @@ function renderPanel(setup = INSTITUTION_SETUP) {
   );
 }
 
-function renderApp(route = '/') {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[route]}>
-        <Tooltip.Provider>
-          <WorkspaceProvider>
-            <ComposerProvider>
-              <App />
-            </ComposerProvider>
-          </WorkspaceProvider>
-        </Tooltip.Provider>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
+function renderApp(route = '/', options) {
+  return renderAppShared(route, options);
 }
 
 async function usePrincipalView(user) {
-  await user.click(screen.getByRole('button', { name: /open profile/i }));
+  await user.click(await screen.findByRole('button', { name: /open profile/i }));
   const group = await screen.findByRole('radiogroup', { name: /workspace view/i });
   await user.click(within(group).getByRole('radio', { name: /principal/i }));
   await user.click(screen.getByRole('button', { name: /close profile/i }));

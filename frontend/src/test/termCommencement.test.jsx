@@ -1,12 +1,6 @@
-import { act, render, renderHook, screen, within } from '@testing-library/react';
+import { act, renderHook, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import * as Tooltip from '@radix-ui/react-tooltip';
 import { describe, expect, it } from 'vitest';
-import App from '../App';
-import { WorkspaceProvider } from '../store/WorkspaceProvider';
-import { ComposerProvider } from '../store/ComposerProvider';
 import { AcademicTermProvider, useAcademicTerm } from '../store/AcademicTermProvider';
 import { AcademicRosterProvider, useAcademicRoster } from '../store/AcademicRosterProvider';
 import { InstitutionalLifecycleProvider, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
@@ -14,6 +8,7 @@ import { ACTIVE_CLASSES, BAND_SEMESTERS } from '../lib/academicCalendar';
 import { CLASS_TUTOR_SEATS } from '../lib/seatState';
 import { REVIEW_CANDIDATES } from '../lib/promotionData';
 import { DEPARTMENT_ID } from '../lib/departmentData';
+import { renderApp as renderAppShared } from './renderApp';
 
 /*
  * The same provider order `App.jsx` mounts, and the order is the point: the
@@ -267,21 +262,9 @@ describe('Attendance is locked after a commencement, by derivation', () => {
 describe('The scope line states the term the screen is showing', () => {
   it('tracks the live term rather than the label the fixtures loaded with', async () => {
     const user = userEvent.setup();
-    render(
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <MemoryRouter initialEntries={['/curriculum']}>
-          <Tooltip.Provider>
-            <WorkspaceProvider>
-              <ComposerProvider>
-                <App />
-              </ComposerProvider>
-            </WorkspaceProvider>
-          </Tooltip.Provider>
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
+    renderAppShared('/curriculum');
 
-    await user.click(screen.getByRole('button', { name: /open profile/i }));
+    await user.click(await screen.findByRole('button', { name: /open profile/i }));
     const group = await screen.findByRole('radiogroup', { name: /workspace view/i });
     await user.click(within(group).getByRole('radio', { name: /principal/i }));
     await user.click(screen.getByRole('button', { name: /close profile/i }));

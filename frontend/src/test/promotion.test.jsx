@@ -1,12 +1,6 @@
-import { act, render, renderHook, screen, within } from '@testing-library/react';
+import { act, renderHook, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import * as Tooltip from '@radix-ui/react-tooltip';
 import { describe, expect, it } from 'vitest';
-import App from '../App';
-import { WorkspaceProvider } from '../store/WorkspaceProvider';
-import { ComposerProvider } from '../store/ComposerProvider';
 import { AcademicTermProvider } from '../store/AcademicTermProvider';
 import { AcademicRosterProvider, useAcademicRoster } from '../store/AcademicRosterProvider';
 import { InstitutionalLifecycleProvider, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
@@ -20,6 +14,7 @@ import {
 } from '../lib/promotionData';
 import { ACTIVE_CLASS_BY_ID, BAND_SEMESTERS } from '../lib/academicCalendar';
 import { DEPARTMENT_ID } from '../lib/departmentData';
+import { renderApp as renderAppShared } from './renderApp';
 
 /**
  * The semester transition, from the seat that decides it.
@@ -32,25 +27,12 @@ import { DEPARTMENT_ID } from '../lib/departmentData';
  * student depends on the second being true.
  */
 
-function renderApp(route = '/department/promotions') {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[route]}>
-        <Tooltip.Provider>
-          <WorkspaceProvider>
-            <ComposerProvider>
-              <App />
-            </ComposerProvider>
-          </WorkspaceProvider>
-        </Tooltip.Provider>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
+function renderApp(route = '/department/promotions', options) {
+  return renderAppShared(route, options);
 }
 
 async function useHodView(user) {
-  await user.click(screen.getByRole('button', { name: /open profile/i }));
+  await user.click(await screen.findByRole('button', { name: /open profile/i }));
   const group = await screen.findByRole('radiogroup', { name: /workspace view/i });
   await user.click(within(group).getByRole('radio', { name: /head of department/i }));
   await user.click(screen.getByRole('button', { name: /close profile/i }));

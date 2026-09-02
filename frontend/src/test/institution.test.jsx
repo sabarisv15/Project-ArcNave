@@ -1,12 +1,6 @@
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import * as Tooltip from '@radix-ui/react-tooltip';
 import { describe, expect, it } from 'vitest';
-import App from '../App';
-import { WorkspaceProvider } from '../store/WorkspaceProvider';
-import { ComposerProvider } from '../store/ComposerProvider';
 import {
   ATTENDANCE_THRESHOLD,
   DEPARTMENTS,
@@ -40,27 +34,15 @@ import {
   DEPT_STUDENT_TOTAL,
 } from '../lib/departmentData';
 import { LIVE_VERSION, PENDING_REVISION } from '../lib/departmentTimetableData';
+import { renderApp as renderAppShared } from './renderApp';
 
-function renderApp(route = '/') {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[route]}>
-        <Tooltip.Provider>
-          <WorkspaceProvider>
-            <ComposerProvider>
-              <App />
-            </ComposerProvider>
-          </WorkspaceProvider>
-        </Tooltip.Provider>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
+function renderApp(route = '/', options) {
+  return renderAppShared(route, options);
 }
 
 /** Switches the prototype into the Principal view through the profile drawer. */
 async function usePrincipalView(user) {
-  await user.click(screen.getByRole('button', { name: /open profile/i }));
+  await user.click(await screen.findByRole('button', { name: /open profile/i }));
   const group = await screen.findByRole('radiogroup', { name: /workspace view/i });
   await user.click(within(group).getByRole('radio', { name: /principal/i }));
   await user.click(screen.getByRole('button', { name: /close profile/i }));
@@ -116,8 +98,11 @@ describe('Principal view — navigation', () => {
     const nav = await screen.findByRole('navigation', { name: /curriculum navigation/i });
     // Finance, Examinations, Reports, Alerts and Settings are planned but not
     // implemented for this seat — a menu entry for any would be a dead link.
+    // Anchored, not a loose substring: 'AI settings' (/institution/ai-settings)
+    // IS built and is a legitimate destination, so an unanchored /settings/i
+    // matched it and failed a test whose actual subject is dead links.
     ['examinations', 'reports', 'alerts', 'finance', 'settings'].forEach((label) => {
-      expect(within(nav).queryByRole('link', { name: new RegExp(label, 'i') })).not.toBeInTheDocument();
+      expect(within(nav).queryByRole('link', { name: new RegExp(`^${label}$`, 'i') })).not.toBeInTheDocument();
     });
   });
 

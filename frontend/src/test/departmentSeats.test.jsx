@@ -1,12 +1,6 @@
-import { act, render, renderHook, screen, within } from '@testing-library/react';
+import { act, renderHook, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import * as Tooltip from '@radix-ui/react-tooltip';
 import { describe, expect, it } from 'vitest';
-import App from '../App';
-import { WorkspaceProvider } from '../store/WorkspaceProvider';
-import { ComposerProvider } from '../store/ComposerProvider';
 import { AcademicTermProvider } from '../store/AcademicTermProvider';
 import { AcademicRosterProvider } from '../store/AcademicRosterProvider';
 import { InstitutionalLifecycleProvider, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
@@ -21,6 +15,7 @@ import {
 } from '../lib/seatState';
 import { ACTIVE_BAND, ACTIVE_CLASSES, BAND_SEMESTERS, activeClassesOfDepartment } from '../lib/academicCalendar';
 import { DEPARTMENT_ID, DEPT_CLASSES } from '../lib/departmentData';
+import { renderApp as renderAppShared } from './renderApp';
 
 /**
  * The Class Tutor seat, from the seat that fills it.
@@ -31,25 +26,12 @@ import { DEPARTMENT_ID, DEPT_CLASSES } from '../lib/departmentData';
  * do is move who holds it, and record that it moved.
  */
 
-function renderApp(route = '/department/classes') {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[route]}>
-        <Tooltip.Provider>
-          <WorkspaceProvider>
-            <ComposerProvider>
-              <App />
-            </ComposerProvider>
-          </WorkspaceProvider>
-        </Tooltip.Provider>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
+function renderApp(route = '/department/classes', options) {
+  return renderAppShared(route, options);
 }
 
 async function useHodView(user) {
-  await user.click(screen.getByRole('button', { name: /open profile/i }));
+  await user.click(await screen.findByRole('button', { name: /open profile/i }));
   const group = await screen.findByRole('radiogroup', { name: /workspace view/i });
   await user.click(within(group).getByRole('radio', { name: /head of department/i }));
   await user.click(screen.getByRole('button', { name: /close profile/i }));

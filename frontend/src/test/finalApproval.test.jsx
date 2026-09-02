@@ -1,12 +1,6 @@
-import { act, renderHook, render, screen, within } from '@testing-library/react';
+import { act, renderHook, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import * as Tooltip from '@radix-ui/react-tooltip';
 import { describe, expect, it } from 'vitest';
-import App from '../App';
-import { WorkspaceProvider } from '../store/WorkspaceProvider';
-import { ComposerProvider } from '../store/ComposerProvider';
 import { AcademicTermProvider } from '../store/AcademicTermProvider';
 import { AcademicRosterProvider } from '../store/AcademicRosterProvider';
 import { InstitutionalLifecycleProvider, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
@@ -22,6 +16,7 @@ import { PROVISIONING, PROVISIONING_WITHOUT_LEVEL_2 } from '../lib/provisioning'
 import { TIMETABLE_STATES, awaitsFinalApproval } from '../lib/institutionTimetableData';
 import { LEVEL_2, HOD_L3, PRINCIPAL_L1 } from '../lib/roles';
 import { DEPARTMENT as CSE_DEPARTMENT } from '../lib/departmentData';
+import { renderApp as renderAppShared } from './renderApp';
 
 const wrapper = ({ children }) => (
   <AcademicTermProvider>
@@ -33,25 +28,12 @@ const wrapper = ({ children }) => (
 
 const lifecycle = () => renderHook(() => useInstitutionalLifecycle(), { wrapper });
 
-function renderApp(route = '/curriculum') {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[route]}>
-        <Tooltip.Provider>
-          <WorkspaceProvider>
-            <ComposerProvider>
-              <App />
-            </ComposerProvider>
-          </WorkspaceProvider>
-        </Tooltip.Provider>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
+function renderApp(route = '/curriculum', options) {
+  return renderAppShared(route, options);
 }
 
 async function usePrincipalView(user) {
-  await user.click(screen.getByRole('button', { name: /open profile/i }));
+  await user.click(await screen.findByRole('button', { name: /open profile/i }));
   const group = await screen.findByRole('radiogroup', { name: /workspace view/i });
   await user.click(within(group).getByRole('radio', { name: /principal/i }));
   await user.click(screen.getByRole('button', { name: /close profile/i }));

@@ -1,12 +1,6 @@
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import * as Tooltip from '@radix-ui/react-tooltip';
 import { describe, expect, it } from 'vitest';
-import App from '../App';
-import { WorkspaceProvider } from '../store/WorkspaceProvider';
-import { ComposerProvider } from '../store/ComposerProvider';
 import {
   ENDORSEMENT_STATES,
   canEndorse,
@@ -23,6 +17,7 @@ import { DEPT_FACULTY } from '../lib/departmentData';
 import { FACULTY_LOAD } from '../lib/departmentSignals';
 import { FACULTY_LIFECYCLE_STATES, LIFECYCLE_KEYS, isAssignable, reassignmentPreflight } from '../lib/facultyLifecycle';
 import { CLASS_TUTOR_SEATS } from '../lib/seatState';
+import { renderApp as renderAppShared } from './renderApp';
 
 /**
  * What a Head of Department may say about a timetable, and about its own
@@ -34,25 +29,12 @@ import { CLASS_TUTOR_SEATS } from '../lib/seatState';
  * whether the institution provisioned a delegated seat in between.
  */
 
-function renderApp(route = '/department/timetable') {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[route]}>
-        <Tooltip.Provider>
-          <WorkspaceProvider>
-            <ComposerProvider>
-              <App />
-            </ComposerProvider>
-          </WorkspaceProvider>
-        </Tooltip.Provider>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
+function renderApp(route = '/department/timetable', options) {
+  return renderAppShared(route, options);
 }
 
 async function useHodView(user) {
-  await user.click(screen.getByRole('button', { name: /open profile/i }));
+  await user.click(await screen.findByRole('button', { name: /open profile/i }));
   const group = await screen.findByRole('radiogroup', { name: /workspace view/i });
   await user.click(within(group).getByRole('radio', { name: /head of department/i }));
   await user.click(screen.getByRole('button', { name: /close profile/i }));

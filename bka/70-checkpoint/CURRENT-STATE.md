@@ -145,13 +145,53 @@ background/cloud agent**, or it works against a stale tree.
 2. **4.6 — split the huge files.** `aiService.js` (~4,262 lines)
    overlaps 1.16's target — sequence after 1.16 or scope to other files
    first. No line-count survey of the rest of the backend has been run.
-3. **5.8/5.9 — the REMAINING features.** Two of the three planned
-   pilot slices are done (attendance, documents). **The third, chat, was
-   deliberately NOT started**: it means heavily editing
-   `WorkspaceProvider.jsx` (972 lines) and `ComposerProvider.jsx`, which
-   is exactly what a concurrent session's `flows.test.jsx` work
-   exercises (composer send → conversation → artifact). Start it only
-   once that session has landed.
+3. **5.8/5.9 — the CHAT slice. Scoped, attempted once, REVERTED.
+   Start here in a fresh session; everything needed is below and in
+   `frontend/src/features/chat/store/workspaceUiStore.js`.**
+
+   **What the survey established (do not re-derive):**
+   `WorkspaceProvider.jsx` (972 lines) holds two unrelated kinds of
+   state. Its SERVER state (chats, projects, artifacts, contextFiles,
+   threads) is **already on React Query** — nothing to migrate there,
+   unlike documents. The real problem is its **14 `useState` view-state
+   fields** all bundled into one context value: typing one character in
+   the Recents search box re-renders all **27** `useWorkspace()`
+   consumers, because context cannot subscribe to part of a value.
+
+   **Built, committed, NOT wired:**
+   `features/chat/store/workspaceUiStore.js` — a Zustand store holding
+   exactly those 14 fields plus `seedArtifactConversations`. Same posture
+   1.13 and D3 used: mechanism standalone, wiring as its own verified
+   pass.
+
+   **The first wiring attempt was reverted — read this before retrying.**
+   Replacing the 14 `useState` calls (keeping the context value's shape
+   identical, so no consumer would change) compiled, linted 0 errors, and
+   took the frontend suite **552/552 → 446/552, 106 failures.** Cause: a
+   Zustand store is MODULE-GLOBAL where `useState` in a provider is
+   per-mount, so `activeRole` — which many tests switch via the profile
+   drawer to preview another seat — leaks from one test into the next.
+   Same hazard the attendance slice hit, but it needs a DIFFERENT answer:
+   attendance's provider was per-route, so reset-on-entry was both the
+   faithful behaviour and the isolation fix in one move; this provider is
+   app-lifetime. Likely fix is a mount-time reset in `WorkspaceProvider`
+   via the lazy-`useState`-initializer trick `useAttendanceLifecycle`
+   already uses (during first render, not in an effect). **Re-run the FULL
+   suite — this failure mode is invisible to a single test file, which is
+   exactly why it was missed.** Also expect 4 new
+   `react-hooks/exhaustive-deps` warnings; Zustand setters are stable, but
+   decide deliberately, since one of those arrays guards the whole context
+   value's identity.
+
+   **Not started at all:** moving the chat COMPONENTS (`ChatView`,
+   `ChatHeader`, `ChatMessage`, `ChatWorkspace`, `AIComposer`,
+   `Composer*`, `routes/ChatRoute.jsx`) into `features/chat/`. Follow the
+   two shipped slices' pattern: keep each public hook's NAME and SHAPE so
+   no consumer changes, and check EVERY importer before deciding whether a
+   file is shared or feature-internal — attendance's drawer chrome had to
+   be promoted OUT to `components/ui/`, while documents' icon/preview/
+   rename dialogs turned out to be feature-internal. Opposite outcomes;
+   only checking told them apart.
 
    Still flat and unmoved: 7 remaining context providers
    (`WorkspaceProvider` 972 lines, `InstitutionalLifecycleProvider` 784,
@@ -172,15 +212,20 @@ composer-send and artifact-create paths now hit the real backend since
 the frontend was repointed off `mockApi`; they need API mocking, which
 is its own decision).
 
-**Exact next action:** **1.16** is the highest-value remaining item and
-Docker is now available for the live verification it requires — but give
-it its own session, combine it with nothing, and note it inherits 1.18's
-deliberately-unwired FLAG-tier note. If continuing the frontend reorg
-instead, take the next feature slice using the pattern the two shipped
-slices establish (keep the hook's name and shape; check every importer
-before deciding whether a file is shared or feature-internal), and pick
-anything EXCEPT chat until the concurrent `flows.test.jsx` session
-lands.
+**Exact next action:** the **chat slice (item 3 above)** — it is scoped,
+its store is already built and committed, and the one thing that broke
+the first attempt is written down with a proposed fix. Start by wiring
+`workspaceUiStore.js` into `WorkspaceProvider` WITH a mount-time reset,
+then run the FULL frontend suite (not one file) before going further.
+
+Alternatively **1.16**, the highest-value remaining item, now unblocked
+by Docker — but give it its own session, combine it with nothing, and
+note it inherits 1.18's deliberately-unwired FLAG-tier note.
+
+**Both suites are green as of this checkpoint (backend 2865/2865,
+frontend 552/552) and the branch is PUSHED to
+`origin/p0-modernization-foundation`.** Keep it pushed before delegating
+anything to a background/cloud agent — see the process lesson above.
 
 ---
 

@@ -4,6 +4,99 @@ _Last updated: 2026-09-01._
 
 ---
 
+# ⛔ NEWEST BANNER — P3 session paused for handoff, 2026-09-01. 8/14 items shipped, 1 explicitly deferred, 5 genuinely pending. Read this before resuming P3 — do not reconstruct from chat history.
+
+**Correction to earlier banners: P3 has 14 items, not 13** (a
+miscount in this thread's own earlier checkpoints) — recounted
+directly from `ARCNAVE-modernization-english.md`'s own P3 bullet list.
+
+**Shipped this thread, all committed on `p0-modernization-foundation`
+(not merged, no PR) — see the banners below for full per-item detail,
+do not re-read the plan/re-derive:**
+1. 3.2 — dead skill scripts removed (`4e8b38f`)
+2. 4.3/5.2, clash C7 — typed-code migration started, ADR-016 Amendment 1 (`5c8047e`)
+3. 1.13 — Tamil/mixed-language numeric-claim layer, built + wired into `verifyNumericClaims` (`e731464`, `c9f955f`)
+4. 2.3 — cache extracted chat-attachment text (`03d826c`)
+5. 1.11 — adjust AI thinking depth to question difficulty (`731440a`)
+6. 1.12 — native forced-format for every provider (`896adfc`)
+7. D3 (plan mistags it "1.5" — see ADL-073) — hybrid keyword + meaning tool search, mechanism built, shipped OFF pending a live probe (`c0ea640`)
+
+**Explicitly deferred by owner decision (asked, not assumed) — NOT
+pending, do not re-ask:**
+- **D1 — connection pooler.** Owner chose "build it once ARCNAVE
+  actually runs multiple app instances," matching this project's own
+  existing C8 precedent (don't build multi-instance tooling ahead of
+  actually running multiple server processes). Single app instance
+  today — this item stays untouched until that changes.
+
+**Genuinely pending — 5 items, by size/risk (read before picking one):**
+1. **1.16 / clash C10 — rewrite the agent as a step-by-step machine.**
+   THE biggest, most invasive item in all of P3. `aiService.js` is
+   4,262 lines today, one hand-written function covering
+   route → fetch-tools → decide → act → verify → write-up with no
+   clear step boundaries. Real hazard: clash C10/C11 — a PAST incident
+   (recorded in the plan itself) showed that re-packaging the system-
+   instruction rule text mid-turn measurably weakened rule-following
+   (3/3 correct down to 2/7). Any rewrite here MUST keep the rule text
+   byte-identical across a turn, and every trimmed/restructured piece
+   must be re-checked against the rule-following/behavioral tests —
+   this is not a "clean up the file" refactor, it is closer to surgery
+   on the AI's own decision loop. Needs its own dedicated session with
+   Docker access (live Gemini verification, not just unit tests) — do
+   NOT attempt this alongside any other item, and do not attempt it
+   without Docker/live-model access to verify against.
+2. **4.6 — split the huge files.** `aiService.js` (4,262 lines) is
+   both the single biggest file AND 1.16's own target — splitting it
+   structurally overlaps with whatever 1.16 will eventually do to the
+   same file. Sequence AFTER 1.16, or scope this item to OTHER large
+   files first (no line-count survey of the rest of the codebase has
+   been run yet this thread — that survey is 4.6's own first step).
+3. **5.8/5.9 — reorganise the frontend by feature + a small state
+   library.** No backend conflict, safe to start any time — but not
+   started this thread. Needs its own scoping pass first: a survey of
+   the CURRENT frontend structure, a target folder/feature shape, and a
+   state-library choice (today's state management approach not
+   surveyed yet either). Must respect the LOCKED visual design
+   (`bka/50-frontend/FRONTEND-REDESIGN-HANDOFF.md`) — this is a code
+   organization change, not a restyle.
+4. **4.9 — contract tests on the noisiest routes.** Scope is
+   AMBIGUOUS in the plan itself: the bullet list says "contract tests
+   on the noisiest routes," but the plan's own table row (line 268)
+   describes something different — "real database test containers +
+   circuit breakers/timeouts/graceful fallback." These are not the same
+   feature. Do not guess which one (or invent a "noisiest routes"
+   metric unilaterally) — read both descriptions again fresh, and
+   likely ask the owner which is meant, before writing any code.
+5. **1.18 — guardrail layer.** Still needs a product-level decision
+   (what does a guardrail actually check/block? against what policy?)
+   before any code — this is very likely a `NEEDS PRODUCT DECISION`
+   per this project's own `/product-reasoning` workflow, not something
+   to silently build an implementation-level guess for.
+6. **2.4/2.5 — vision model for scans; complex-PDF fallback
+   tightened.** Needs a real, live, BILLABLE measurement against
+   Vertex/Gemini before deciding scope (same "measure before designing"
+   discipline every other mechanism in this modernization effort has
+   used) — this environment has had no Docker/GCP access all session,
+   so this item could not even be scoped, let alone built, this thread.
+
+**Owner explicitly asked about running work in the cloud/background
+this session — not yet set up.** If a next session wants to delegate
+1.16 (or any pending item) to a remote/background agent, that still
+needs Docker + live Gemini access wired into that environment first —
+untouched infrastructure question, not decided here.
+
+**Exact next action, resuming P3:** the two items with NO blockers at
+all are **5.8/5.9** (frontend reorg — start with the structure survey)
+and **4.9** (once its scope ambiguity is resolved, likely by asking the
+owner). 1.16/4.6 need a dedicated session with Docker/live-model
+access. 2.4/2.5 needs the same plus real GCP billing access. Docker
+full-suite verification is owed across EVERY P3 commit this thread
+shipped (`4e8b38f` through `c0ea640`, 8 commits) at the first
+opportunity with Docker access — none of this thread's work has been
+Docker-verified yet, only unit-tested standalone with dummy env vars.
+
+---
+
 # ⛔ NEWEST BANNER — P4 (5.4) BOTH HALVES SHIPPED, 2026-09-01, plus two real cross-cutting bugs caught and fixed. Concurrent P3 session (banner below) unaffected — no shared files touched.
 
 **5.4 — "notifications / job progress are polled today, should be one

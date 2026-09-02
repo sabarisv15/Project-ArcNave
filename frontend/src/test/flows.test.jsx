@@ -3,10 +3,63 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as Tooltip from '@radix-ui/react-tooltip';
-import { describe, expect, it } from 'vitest';
-import App from '../App';
-import { WorkspaceProvider } from '../store/WorkspaceProvider';
-import { ComposerProvider } from '../store/ComposerProvider';
+import { describe, expect, it, vi } from 'vitest';
+
+/**
+ * Two of these flows cross a server boundary: sending the first message
+ * creates a conversation (`POST /conversations`) before Home may navigate
+ * to it, and choosing an artifact type creates the artifact
+ * (`POST /artifacts`) before the editor may open. Both call sites await the
+ * real API and navigate only on success, so with no backend behind jsdom
+ * the promise rejects and the flow correctly stops where it is.
+ *
+ * The flow under test is the client one — draft becomes docked chat, type
+ * choice becomes an editor — not the HTTP call, so the two API modules are
+ * mocked at the module level (the pattern `delegatedAbsentRoute.test.jsx`
+ * already uses) and everything underneath stays live. `@/api/ai` is mocked
+ * for the same reason: the AI turn fires immediately after the message is
+ * sent, and a real `fetch` there is a network call this test never wants.
+ */
+vi.mock('@/api/conversations', () => ({
+  conversationsApi: {
+    create: vi.fn(async ({ title }) => ({ id: 'c1', title })),
+    listMessages: vi.fn(async () => []),
+    addMessage: vi.fn(async () => ({ id: 'm1' })),
+    update: vi.fn(async () => ({})),
+    remove: vi.fn(async () => ({})),
+    editMessage: vi.fn(async () => ({})),
+    list: vi.fn(async () => []),
+  },
+}));
+
+vi.mock('@/api/artifacts', () => ({
+  artifactsApi: {
+    create: vi.fn(async ({ title, content }) => ({
+      id: 'a1', title, content, status: 'Draft',
+    })),
+    get: vi.fn(async () => ({ id: 'a1', title: 'Untitled notice', content: '# Untitled notice\n\n' })),
+    list: vi.fn(async () => []),
+    listVersions: vi.fn(async () => []),
+    update: vi.fn(async () => ({})),
+    remove: vi.fn(async () => ({})),
+    publish: vi.fn(async () => ({ status: 'Published' })),
+    export: vi.fn(async () => ({})),
+  },
+}));
+
+vi.mock('@/api/ai', () => ({
+  aiApi: {
+    ask: vi.fn(async () => ({ answer: '' })),
+    askStream: vi.fn(async () => ({ answer: '' })),
+    executeWorkflow: vi.fn(async () => ({})),
+    invokeTool: vi.fn(async () => ({})),
+    uploadAttachment: vi.fn(async () => ({ id: 'f1' })),
+  },
+}));
+
+const { default: App } = await import('../App');
+const { WorkspaceProvider } = await import('../store/WorkspaceProvider');
+const { ComposerProvider } = await import('../store/ComposerProvider');
 
 function renderApp(route = '/') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });

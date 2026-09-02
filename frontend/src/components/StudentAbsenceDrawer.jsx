@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { formatDateDMY } from '../lib/ist';
-import { formatTime } from '../lib/attendanceData';
-import { ATTENDANCE_THRESHOLD } from '../lib/attendanceLedger';
+import { formatTime } from '@/features/attendance/lib/attendanceData';
+import { ATTENDANCE_THRESHOLD } from '@/features/attendance/lib/attendanceLedger';
 import { inDateRange } from '../lib/dateFilters';
 import { cn } from '../lib/utils';
 

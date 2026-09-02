@@ -1,22 +1,22 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { MY_PERIODS_TODAY, SUBSTITUTE_DUTIES_TODAY, periodTimePhase } from '../lib/attendanceData';
-import { useAttendanceStore } from '../store/AttendanceProvider';
+import { useAttendanceStore } from '../store/attendanceStore';
 import { useAttendanceLedger, LEDGER_SORTS } from '../hooks/useAttendanceLedger';
-import { useSubstitute } from '../hooks/useSubstitute';
-import { TodaysScheduleTable } from '../components/TodaysScheduleTable';
+import { useSubstitute } from '@/hooks/useSubstitute';
+import { TodaysScheduleTable } from '@/components/TodaysScheduleTable';
 import { AttendanceActionDrawer } from '../components/AttendanceActionDrawer';
-import { SubstituteRequestDrawer } from '../components/SubstituteRequestDrawer';
-import { SubstitutePane } from '../components/SubstitutePane';
-import { SubjectScopeSelector, SubjectSummaryStrip } from '../components/SubjectScopeSelector';
-import { StudentLedgerTable } from '../components/StudentLedgerTable';
-import { StudentAbsenceDrawer } from '../components/StudentAbsenceDrawer';
-import { LedgerFilterPopover, LedgerChips } from '../components/LedgerFilters';
-import { SearchPopoverField, SortIconPopover } from '../components/ToolbarIcons';
-import { FilterPopover, FilterSelect } from '../components/FilterPopover';
-import { PANE } from '../components/WorkspaceLayout';
-import { dayKeyOffset, myPeriodsOnDate } from '../lib/substituteData';
-import { cn } from '../lib/utils';
+import { SubstituteRequestDrawer } from '@/components/SubstituteRequestDrawer';
+import { SubstitutePane } from '@/components/SubstitutePane';
+import { SubjectScopeSelector, SubjectSummaryStrip } from '@/components/SubjectScopeSelector';
+import { StudentLedgerTable } from '@/components/StudentLedgerTable';
+import { StudentAbsenceDrawer } from '@/components/StudentAbsenceDrawer';
+import { LedgerFilterPopover, LedgerChips } from '@/components/LedgerFilters';
+import { SearchPopoverField, SortIconPopover } from '@/components/ToolbarIcons';
+import { FilterPopover, FilterSelect } from '@/components/FilterPopover';
+import { PANE } from '@/components/WorkspaceLayout';
+import { dayKeyOffset, myPeriodsOnDate } from '@/lib/substituteData';
+import { cn } from '@/lib/utils';
 
 /** Own periods and approved substitute duties for today, one combined list — strict ascending IST start-time order. */
 const TODAYS_SCHEDULE = [...MY_PERIODS_TODAY, ...SUBSTITUTE_DUTIES_TODAY].sort((a, b) => a.startTime - b.startTime);

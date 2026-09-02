@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import { Lock, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { DrawerShell, DrawerRail, GHOST_BTN } from './AttendanceActionDrawer';
+import { DrawerRail, DrawerShell, GHOST_BTN } from '@/components/ui/Drawer';
 import { AutosaveStatus, DraftRestoredNote } from './AutosaveStatus';
 import { useAutosave, useRestoredDraft } from '../hooks/useAutosave';
 import { draftKey } from '../lib/draftStore';

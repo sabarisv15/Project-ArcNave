@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { DrawerShell } from './AttendanceActionDrawer';
+import { DrawerShell } from '@/components/ui/Drawer';
 import { WorkflowTimeline } from './WorkflowTimeline';
 import { ATTENDANCE_THRESHOLD, studentsOfClass } from '../lib/departmentData';
 import { ATTENTION_STATES, facultyName } from '../lib/departmentSignals';

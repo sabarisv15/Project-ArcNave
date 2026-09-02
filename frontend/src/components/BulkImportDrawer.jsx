@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Check, FileSpreadsheet, Upload } from 'lucide-react';
-import { DrawerShell, DrawerRail, GHOST_BTN, PRIMARY_BTN } from './AttendanceActionDrawer';
+import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '@/components/ui/Drawer';
 import {
   ACCEPTED_EXTENSIONS,
   IMPORT_FIELDS,

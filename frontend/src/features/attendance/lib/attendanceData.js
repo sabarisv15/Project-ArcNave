@@ -69,8 +69,8 @@ import {
   formatTime12IST,
   istDayKey,
   istMidnight,
-} from './ist';
-import { ACTIVE_VERSION_ID, periodsForDate } from './timetableData';
+} from '@/lib/ist';
+import { ACTIVE_VERSION_ID, periodsForDate } from '@/lib/timetableData';
 
 const FIRST = [
   'Arjun',

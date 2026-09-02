@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { AlertTriangle } from 'lucide-react';
-import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from './AttendanceActionDrawer';
+import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '@/components/ui/Drawer';
 import { SeatStateBadge } from './SeatStateBadge';
 import { DEPARTMENT, DEPT_FACULTY, FACULTY_BY_ID, facultyInitials } from '../lib/departmentData';
 import { FACULTY_LIFECYCLE_STATES, assignabilityReason, isAssignable } from '../lib/facultyLifecycle';

@@ -4,7 +4,7 @@ import { formatHours, versionMeta, workloadForVersion } from '../lib/timetableDa
 import { PANE, TABLE_HEAD, TableEmptyState } from '../components/WorkspaceLayout';
 import { SESSION_TYPES, SessionTypeChip } from '../components/SessionType';
 import { TimetableVersionSelect } from '../components/TimetableVersionSelect';
-import { useAttendanceStore } from '../store/AttendanceProvider';
+import { useAttendanceStore } from '@/features/attendance';
 
 const GRID = 'grid grid-cols-[1.5fr_120px_1.4fr_112px] gap-x-[12px] items-center px-[16px]';
 

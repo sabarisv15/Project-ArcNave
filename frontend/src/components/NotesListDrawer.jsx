@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
-import { DrawerShell } from './AttendanceActionDrawer';
+import { DrawerShell } from '@/components/ui/Drawer';
 import { useCalendarStore } from '../store/CalendarProvider';
 import { notePreview } from '../lib/calendarData';
 import { formatDateDMY, parseISTDateBounds } from '../lib/ist';

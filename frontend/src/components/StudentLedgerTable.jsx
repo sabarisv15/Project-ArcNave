@@ -1,5 +1,5 @@
 import { ChevronRight } from 'lucide-react';
-import { ATTENDANCE_THRESHOLD } from '../lib/attendanceLedger';
+import { ATTENDANCE_THRESHOLD } from '@/features/attendance/lib/attendanceLedger';
 import { STICKY_HEAD, TABLE_HEAD, StickyTableShell, TableEmptyState } from './WorkspaceLayout';
 import { cn } from '../lib/utils';
 

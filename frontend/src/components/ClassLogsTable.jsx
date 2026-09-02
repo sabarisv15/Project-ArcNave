@@ -1,5 +1,5 @@
-import { classLine, formatDateLabel, formatFullDate, formatTime } from '../lib/attendanceData';
-import { OwnershipBadge } from './AttendanceStatus';
+import { classLine, formatDateLabel, formatFullDate, formatTime } from '@/features/attendance/lib/attendanceData';
+import { OwnershipBadge } from '@/features/attendance';
 import { STICKY_HEAD, TABLE_HEAD, StickyTableShell, TableEmptyState } from './WorkspaceLayout';
 import { cn } from '../lib/utils';
 

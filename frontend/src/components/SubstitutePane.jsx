@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { cn } from '../lib/utils';
-import { DrawerShell, DrawerRail, PRIMARY_BTN, GHOST_BTN } from './AttendanceActionDrawer';
+import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '@/components/ui/Drawer';
 import { SubstituteRequestDrawer } from './SubstituteRequestDrawer';
 import { SearchPopoverField, SortIconPopover } from './ToolbarIcons';
 import { FilterPopover, FilterSelect, FilterField, FilterFieldLabel, FILTER_FIELD_INPUT } from './FilterPopover';
 import { TABLE_HEAD, TableEmptyState } from './WorkspaceLayout';
 import { DATE_PRESETS } from '../lib/dateFilters';
 import { LOG_SORTS } from '../hooks/useSubstitute';
-import { useAttendanceStore } from '../store/AttendanceProvider';
+import { useAttendanceStore } from '@/features/attendance';
 import {
   COLLEAGUE_BY_ID,
   LOG_ATTENDANCE_LABELS,
@@ -16,7 +16,7 @@ import {
   slotTimeRange,
 } from '../lib/substituteData';
 import { formatDateDMY } from '../lib/ist';
-import { formatTime, timeRange } from '../lib/attendanceData';
+import { formatTime, timeRange } from '@/features/attendance/lib/attendanceData';
 
 const SECTIONS = [
   { key: 'log', label: 'My substitute log' },

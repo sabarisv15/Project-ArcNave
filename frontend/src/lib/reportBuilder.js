@@ -1,4 +1,4 @@
-import { formatFullDate, formatTime } from './attendanceData';
+import { formatFullDate, formatTime } from '@/features/attendance/lib/attendanceData';
 import { DAY_MS, getISTParts, istDayKey, parseISTDateBounds, startOfWeekIST } from './ist';
 import { sessionDurationHours } from './reportsData';
 

@@ -4,14 +4,14 @@ import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { AppShell } from './components/AppShell';
 import { HomeView } from './routes/HomeView';
-import { AttendanceTabsLayout } from './routes/AttendanceTabsLayout';
+import { AttendanceTabsLayout } from '@/features/attendance';
 import { DepartmentGate } from './components/DepartmentGate';
 import { InstitutionGate } from './components/InstitutionGate';
 import { DelegatedGate, DelegatedNotConfigured } from './components/DelegatedGate';
 import { delegatedRegistered } from './lib/delegatedScope';
 import { ClassGate } from './components/ClassGate';
 import { AssessmentsProvider } from './store/AssessmentsProvider';
-import { AttendanceProvider } from './store/AttendanceProvider';
+import { useAttendanceLifecycle } from '@/features/attendance';
 import { AcademicRosterProvider } from './store/AcademicRosterProvider';
 import { AcademicTermProvider } from './store/AcademicTermProvider';
 import { InstitutionalLifecycleProvider } from './store/InstitutionalLifecycleProvider';
@@ -42,7 +42,10 @@ const MyClassStudentsView = lazyNamed(() => import('./routes/MyClassStudentsView
 const ClassApprovalsView = lazyNamed(() => import('./routes/ClassApprovalsView'), 'ClassApprovalsView');
 const ClassFinanceView = lazyNamed(() => import('./routes/ClassFinanceView'), 'ClassFinanceView');
 const ClassTimetableView = lazyNamed(() => import('./routes/ClassTimetableView'), 'ClassTimetableView');
-const AttendanceHomeView = lazyNamed(() => import('./routes/AttendanceHomeView'), 'AttendanceHomeView');
+const AttendanceHomeView = lazyNamed(
+  () => import('./features/attendance/routes/AttendanceHomeView'),
+  'AttendanceHomeView',
+);
 const ClassLogsView = lazyNamed(() => import('./routes/ClassLogsView'), 'ClassLogsView');
 const ReportsView = lazyNamed(() => import('./routes/ReportsView'), 'ReportsView');
 const TimetableView = lazyNamed(() => import('./routes/TimetableView'), 'TimetableView');
@@ -88,12 +91,15 @@ const DelegatedApprovalsView = lazyNamed(() => import('./routes/DelegatedApprova
 const DelegatedWorkAreasView = lazyNamed(() => import('./routes/DelegatedWorkAreaView'), 'DelegatedWorkAreasView');
 const DelegatedWorkAreaDetail = lazyNamed(() => import('./routes/DelegatedWorkAreaView'), 'DelegatedWorkAreaDetail');
 
+// P3 5.9 — attendance state moved from a context provider to a Zustand
+// store, so this layout no longer wraps anything; it owns the section's
+// lifecycle instead. useAttendanceLifecycle resets the store on entry
+// (preserving the provider's own mount/unmount semantics, which this
+// route tree relied on) and runs the 30s clock only while the section is
+// mounted.
 function AttendanceLayout() {
-  return (
-    <AttendanceProvider>
-      <Outlet />
-    </AttendanceProvider>
-  );
+  useAttendanceLifecycle();
+  return <Outlet />;
 }
 
 /**

@@ -25,7 +25,7 @@
  */
 
 import { ACTIVE_VERSION_ID, ownedScopesForVersion, scopeLabel } from './timetableData';
-import { buildRoster } from './attendanceData';
+import { buildRoster } from '@/features/attendance/lib/attendanceData';
 import { istMidnight, DAY_MS } from './ist';
 
 export const ME = { id: 'staff-me', name: 'Priya Ramesh' };

@@ -1,4 +1,4 @@
-import { DrawerShell } from './AttendanceActionDrawer';
+import { DrawerShell } from '@/components/ui/Drawer';
 import { ATTENDANCE_THRESHOLD, classLabel, departmentLabel, hodOf } from '../lib/institutionData';
 import { cn } from '../lib/utils';
 

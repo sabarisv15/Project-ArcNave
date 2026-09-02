@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Check, ChevronDown, NotebookPen } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { TOPIC_TAUGHT_MAX_LENGTH, formatTime } from '../lib/attendanceData';
+import { TOPIC_TAUGHT_MAX_LENGTH, formatTime } from '@/features/attendance/lib/attendanceData';
 import { AutosaveStatus } from './AutosaveStatus';
 import { useAutosave } from '../hooks/useAutosave';
 import { draftKey } from '../lib/draftStore';

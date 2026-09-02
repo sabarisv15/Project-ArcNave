@@ -1,6 +1,6 @@
 import { Download, Lock } from 'lucide-react';
 import { toast } from 'sonner';
-import { DrawerShell, DrawerRail, PRIMARY_BTN } from './AttendanceActionDrawer';
+import { DrawerRail, DrawerShell, PRIMARY_BTN } from '@/components/ui/Drawer';
 import { DocumentIcon } from './DocumentIcon';
 import { documentsApi } from '../api/documents';
 import { FILE_KINDS, fileKind, formatSize } from '../lib/documentsData';

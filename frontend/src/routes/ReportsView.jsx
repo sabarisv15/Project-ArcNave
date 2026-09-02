@@ -6,7 +6,7 @@ import { cn } from '../lib/utils';
 import { FILTER_SURFACE, FilterPopover, FilterSelect } from '../components/FilterPopover';
 import { SearchPopoverField } from '../components/ToolbarIcons';
 import { PANE, TABLE_HEAD, TableEmptyState } from '../components/WorkspaceLayout';
-import { formatFullDate, formatTime } from '../lib/attendanceData';
+import { formatFullDate, formatTime } from '@/features/attendance/lib/attendanceData';
 import { getISTParts } from '../lib/ist';
 import {
   REPORT_SUBJECTS,

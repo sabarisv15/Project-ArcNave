@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DrawerShell } from './AttendanceActionDrawer';
+import { DrawerShell } from '@/components/ui/Drawer';
 import { ATTENDANCE_THRESHOLD, classLabel } from '../lib/classTutorData';
 import { DocumentsPendingBadge, StudentOriginBadge } from './StudentOriginBadge';
 import { cn } from '../lib/utils';

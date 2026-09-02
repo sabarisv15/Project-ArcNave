@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DrawerShell } from './AttendanceActionDrawer';
+import { DrawerShell } from '@/components/ui/Drawer';
 import { WorkflowTimeline } from './WorkflowTimeline';
 import { DEPT_ATTENTION_STATES } from '../lib/institutionSignals';
 import { DEPT_ATTENTION_THRESHOLD, classesOfDepartment } from '../lib/institutionData';

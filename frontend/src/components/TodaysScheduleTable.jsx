@@ -1,6 +1,6 @@
-import { canMarkPeriod, classLine, formatTime, markingWindowEnd } from '../lib/attendanceData';
+import { canMarkPeriod, classLine, formatTime, markingWindowEnd } from '@/features/attendance/lib/attendanceData';
 import { useNowTick } from '../hooks/useNowTick';
-import { CompactPhase } from './AttendanceStatus';
+import { CompactPhase } from '@/features/attendance';
 import { TABLE_HEAD, TableEmptyState } from './WorkspaceLayout';
 import { cn } from '../lib/utils';
 

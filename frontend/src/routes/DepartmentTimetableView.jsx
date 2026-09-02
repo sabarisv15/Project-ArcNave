@@ -27,7 +27,7 @@ import { seatTitle } from '../lib/seatTitles';
 import { HOD_L3, LEVEL_2, PRINCIPAL_L1 } from '../lib/roles';
 import { DepartmentScopeHeader } from '../components/DepartmentScopeHeader';
 import { WorkflowTimeline } from '../components/WorkflowTimeline';
-import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '../components/AttendanceActionDrawer';
+import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '@/components/ui/Drawer';
 import { NoAssignedDepartment, NoConflicts, NoResults, NoTimetable } from '../components/InstitutionalState';
 import { PANE, STICKY_HEAD, TABLE_HEAD, StickyTableShell } from '../components/WorkspaceLayout';
 import { cn } from '../lib/utils';

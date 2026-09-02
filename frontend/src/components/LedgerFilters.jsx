@@ -2,7 +2,7 @@ import { X } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { FilterPopover, FilterSelect, FilterField, FilterFieldLabel, FILTER_FIELD_INPUT } from './FilterPopover';
 import { DATE_PRESETS } from '../lib/dateFilters';
-import { ATTENDANCE_THRESHOLD } from '../lib/attendanceLedger';
+import { ATTENDANCE_THRESHOLD } from '@/features/attendance/lib/attendanceLedger';
 
 /** Removable chips for whatever currently narrows the ledger — rendered only when something is active. */
 export function LedgerChips({ chips, onRemove, onClearAll }) {

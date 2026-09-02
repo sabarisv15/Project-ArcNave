@@ -11,7 +11,7 @@
  * and class-log query APIs and keep the same shapes (`REPORT_SESSIONS`,
  * `REPORT_CLASSES`).
  */
-import { buildRoster, midnightOf, periodDurationHours, seeded } from './attendanceData';
+import { buildRoster, midnightOf, periodDurationHours, seeded } from '@/features/attendance/lib/attendanceData';
 import { DAY_MS, istWeekday } from './ist';
 
 const CLASS_DEFS = [

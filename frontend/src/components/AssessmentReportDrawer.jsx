@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { DrawerShell, DrawerRail, PRIMARY_BTN, GHOST_BTN } from './AttendanceActionDrawer';
+import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '@/components/ui/Drawer';
 import { TYPE_LABELS, percentageFor } from '../lib/assessmentsData';
 import { downloadTextFile, printReport, rowsToCsv } from '../lib/reportBuilder';
 import { formatDateDMY, formatTime12IST, istDayKey } from '../lib/ist';

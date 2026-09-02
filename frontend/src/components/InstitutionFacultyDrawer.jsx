@@ -1,4 +1,4 @@
-import { DrawerShell } from './AttendanceActionDrawer';
+import { DrawerShell } from '@/components/ui/Drawer';
 import { WORKLOAD_STATES } from '../lib/departmentTimetableData';
 import { departmentLabel, hodOf } from '../lib/institutionData';
 import { cn } from '../lib/utils';

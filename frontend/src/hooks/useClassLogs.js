@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
-import { HISTORY_PERIODS, formatFullDate } from '../lib/attendanceData';
+import { HISTORY_PERIODS, formatFullDate } from '@/features/attendance/lib/attendanceData';
 import { DATE_PRESETS, inDateRange } from '../lib/dateFilters';
-import { useAttendanceStore } from '../store/AttendanceProvider';
+import { useAttendanceStore } from '@/features/attendance';
 
 const EMPTY_FILTERS = { ownership: '', code: '', subject: '', year: '' };
 const SORTS = [

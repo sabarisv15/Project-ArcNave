@@ -1,6 +1,6 @@
 import { Building2, Download, ExternalLink, FileText, Lock } from 'lucide-react';
 import { toast } from 'sonner';
-import { DrawerShell, DrawerRail, PRIMARY_BTN, GHOST_BTN } from './AttendanceActionDrawer';
+import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '@/components/ui/Drawer';
 
 /**
  * Preview for a document source — the institutional and personal documents a

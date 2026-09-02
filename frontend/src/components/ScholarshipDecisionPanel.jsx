@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Sparkles } from 'lucide-react';
-import { DrawerShell, DrawerRail, GHOST_BTN, PRIMARY_BTN } from './AttendanceActionDrawer';
+import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '@/components/ui/Drawer';
 import { AuditHistory } from './AuditHistory';
 import { cn } from '../lib/utils';
 

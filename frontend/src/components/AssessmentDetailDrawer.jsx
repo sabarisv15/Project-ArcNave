@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { Check, Search } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { DrawerShell, DrawerRail, PRIMARY_BTN, GHOST_BTN } from './AttendanceActionDrawer';
+import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '@/components/ui/Drawer';
 import { AssessmentReportDrawer } from './AssessmentReportDrawer';
 import { useAssessmentsStore } from '../store/AssessmentsProvider';
 import {

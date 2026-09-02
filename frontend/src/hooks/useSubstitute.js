@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { useAttendanceStore } from '../store/AttendanceProvider';
-import { PERIOD_BY_ID, SUBSTITUTE_DUTIES } from '../lib/attendanceData';
+import { useAttendanceStore } from '@/features/attendance';
+import { PERIOD_BY_ID, SUBSTITUTE_DUTIES } from '@/features/attendance/lib/attendanceData';
 import {
   LOG_ATTENDANCE_LABELS,
   SUBSTITUTE_LOG_HISTORY,

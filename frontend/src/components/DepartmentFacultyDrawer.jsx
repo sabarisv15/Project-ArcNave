@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { DrawerShell } from './AttendanceActionDrawer';
+import { DrawerShell } from '@/components/ui/Drawer';
 import { WorkflowTimeline } from './WorkflowTimeline';
 import { CLASS_BY_ID } from '../lib/departmentData';
 import { DEPT_REQUESTS, DEPT_REQUEST_KINDS } from '../lib/departmentApprovalsData';

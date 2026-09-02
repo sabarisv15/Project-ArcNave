@@ -18,8 +18,8 @@
  * One session is one teaching hour, matching how periods are counted
  * everywhere else in the app.
  */
-import { REPORT_SESSIONS } from './reportsData';
-import { inDateRange } from './dateFilters';
+import { REPORT_SESSIONS } from '@/lib/reportsData';
+import { inDateRange } from '@/lib/dateFilters';
 
 /** Below this, a student is flagged as at risk. */
 export const ATTENDANCE_THRESHOLD = 75;

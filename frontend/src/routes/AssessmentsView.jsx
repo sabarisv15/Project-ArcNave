@@ -14,7 +14,7 @@ import { formatDateDMY } from '../lib/ist';
 import { SearchPopoverField, SortIconPopover } from '../components/ToolbarIcons';
 import { FilterPopover, FilterSelect } from '../components/FilterPopover';
 import { TABLE_HEAD, TableEmptyState } from '../components/WorkspaceLayout';
-import { PRIMARY_BTN } from '../components/AttendanceActionDrawer';
+import { PRIMARY_BTN } from '@/components/ui/Drawer';
 import { AssessmentCreateDrawer } from '../components/AssessmentCreateDrawer';
 import { AssessmentDetailDrawer } from '../components/AssessmentDetailDrawer';
 

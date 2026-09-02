@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, Search } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { DrawerShell, DrawerRail, PRIMARY_BTN } from './AttendanceActionDrawer';
-import { useAttendanceStore } from '../store/AttendanceProvider';
+import { DrawerRail, DrawerShell, PRIMARY_BTN } from '@/components/ui/Drawer';
+import { useAttendanceStore } from '@/features/attendance';
 import {
   ME,
   dateFromDayKey,

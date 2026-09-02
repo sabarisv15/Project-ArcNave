@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { DrawerShell, DrawerRail, GHOST_BTN, PRIMARY_BTN } from './AttendanceActionDrawer';
+import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '@/components/ui/Drawer';
 import { WorkflowTimeline } from './WorkflowTimeline';
 import { AuditHistory } from './AuditHistory';
 import { REQUEST_KINDS, STATUS_LABELS, STATUS_TONE } from '../lib/approvalsData';

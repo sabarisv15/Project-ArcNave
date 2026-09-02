@@ -1,5 +1,5 @@
 import { Check, CheckCheck, CircleDot, Clock, Lock, LockKeyholeOpen, Repeat, UserRound } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn } from '@/lib/utils';
 import { PHASE_LABELS } from '../lib/attendanceData';
 
 // Labels live in `attendanceData.js` (PHASE_LABELS) so history search and

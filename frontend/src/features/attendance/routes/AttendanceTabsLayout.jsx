@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { cn } from '../lib/utils';
+import { cn } from '@/lib/utils';
 
 const TABS = [
   { to: '/curriculum/attendance', label: 'Attendance', end: true },

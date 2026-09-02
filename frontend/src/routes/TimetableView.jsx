@@ -12,7 +12,7 @@ import { formatClock12 } from '../lib/ist';
 import { PANE, TABLE_HEAD } from '../components/WorkspaceLayout';
 import { SESSION_TYPES, SessionTypeIcon, SessionTypeLegend } from '../components/SessionType';
 import { TimetableVersionSelect } from '../components/TimetableVersionSelect';
-import { useAttendanceStore } from '../store/AttendanceProvider';
+import { useAttendanceStore } from '@/features/attendance';
 
 const GRID = 'grid grid-cols-[92px_repeat(5,minmax(148px,1fr))]';
 

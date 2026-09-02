@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { AlertTriangle, Lock } from 'lucide-react';
-import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from './AttendanceActionDrawer';
+import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '@/components/ui/Drawer';
 import { DEPARTMENT } from '../lib/departmentData';
 import { PROMOTION_OUTCOMES, REVIEW_CONTEXT_NOTE, priorClassIndex, targetSectionsFor } from '../lib/promotionData';
 import { LIFECYCLE_REJECTION, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';

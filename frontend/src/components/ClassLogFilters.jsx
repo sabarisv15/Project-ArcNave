@@ -1,7 +1,7 @@
 import { ArrowDownWideNarrow, Check, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { FilterPopover, FilterSelect, FilterField, FilterFieldLabel, FILTER_FIELD_INPUT } from './FilterPopover';
-import { HISTORY_PERIODS } from '../lib/attendanceData';
+import { HISTORY_PERIODS } from '@/features/attendance/lib/attendanceData';
 import { DATE_PRESETS } from '../lib/dateFilters';
 import { CLASS_LOG_SORTS } from '../hooks/useClassLogs';
 

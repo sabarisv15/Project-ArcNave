@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { ATTENDANCE_THRESHOLD, LEDGER_SUBJECTS, buildSubjectLedger } from '../lib/attendanceLedger';
-import { DATE_PRESETS } from '../lib/dateFilters';
-import { useAttendanceStore } from '../store/AttendanceProvider';
+import { DATE_PRESETS } from '@/lib/dateFilters';
+import { useAttendanceStore } from '../store/attendanceStore';
 
 const SORTS = [
   { key: 'risk', label: 'Lowest attendance first' },

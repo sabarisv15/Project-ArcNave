@@ -4,7 +4,7 @@ _Last updated: 2026-09-03._
 
 ---
 
-# ⛔ NEWEST BANNER — P4 in progress: O3, 5.5/5.6, and 5.12 done and pushed; 5.4/5.10/5.11/5.3/3.4 remain, 2026-09-03.
+# ⛔ NEWEST BANNER — P4 in progress: O3, 5.5/5.6, 5.12, and 5.10 done and pushed; 5.4/5.11/5.3/3.4 remain, 2026-09-03.
 
 Same session as the O3 banner below, continued. Owner asked to work
 through the rest of P4 after O3. Triaged: O2 and O8 are genuinely
@@ -19,10 +19,11 @@ uncommitted):
 
 - **5.5/5.6 (bundle-size limit in CI)** — commit `f6bc6e8`, [ADL-078](../30-decisions/ledger.md#adl-078). `size-limit` budgeted against real measured build output (entry/vendor-react/vendor-radix/vendor-query/CSS, each measured-gzip + ~20% headroom); one naming-only `vite.config.js` addition (`entryFileNames`) to resolve a real glob collision found during measurement, explicitly NOT a chunking change (owner confirmed this distinction before it was made).
 - **5.12 (isolated error boundaries)** — commit `bde756b`, [ADL-079](../30-decisions/ledger.md#adl-079). Hand-rolled `ErrorBoundary` wraps `AppShell`'s `<Outlet/>` (page-level, keyed on route) and `Markdown`'s `<ReactMarkdown/>` (keyed on source). Plan originally targeted `MermaidDiagram` for the widget-level boundary; reading it in full showed it already self-heals its own render failures (dead-code boundary), so this retargeted to the actually-fragile `remark-math`/`rehype-katex` parse path instead — a real correction found during required inspection, not assumed going in.
+- **5.10 (accessibility audit)** — commit `55772c3`, [ADL-080](../30-decisions/ledger.md#adl-080). Real count at start: 57 `jsx-a11y` warnings. Found the root cause before touching any component: `eslint.config.js`'s blanket rule-enablement transform read only rule NAMES from jsx-a11y's recommended config, discarding severity/options — silently re-enabling the deprecated `label-has-for` (upstream default: off) and stripping `control-has-associated-label`'s own `ignoreElements: ['input','textarea',...]` list. Fixing that transform alone dropped 57→9 with zero markup changes; the remaining 9 got individual per-site fixes (never a fake role/handler where a real alternative existed). Final: 0 `jsx-a11y` warnings.
 
-**Exact next action:** continue through the remaining independently-buildable P4 items — 5.4 (live updates, notifications currently polled), 5.10 (full accessibility audit), 5.11 (design-system doc + component catalogue), 5.3 (newer type-safe router — flagged as high blast radius, touches every route), 3.4 (merge the document paths into one clear route) — one slice at a time, same plan→inspect→verify→commit→push discipline as the three done so far. None of these are blocked on O3's infra existing.
+**Exact next action:** continue through the remaining independently-buildable P4 items — 5.4 (live updates, notifications currently polled), 5.11 (design-system doc + component catalogue), 5.3 (newer type-safe router — flagged as high blast radius, touches every route), 3.4 (merge the document paths into one clear route) — one slice at a time, same plan→inspect→verify→commit→push discipline as the four done so far. None of these are blocked on O3's infra existing.
 
-**Committed and pushed:** yes, all three slices (`ae2b9fe`, `f6bc6e8`, `bde756b`) are on `origin/p0-modernization-foundation`.
+**Committed and pushed:** yes, all four slices (`ae2b9fe`, `f6bc6e8`, `bde756b`, `55772c3`) are on `origin/p0-modernization-foundation`.
 
 ---
 

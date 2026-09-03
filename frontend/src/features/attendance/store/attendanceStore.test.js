@@ -20,9 +20,7 @@ const store = () => useAttendanceStore.getState();
 
 // A period that starts life as an editable draft, so lock/submit have
 // somewhere real to run.
-const draftPeriodId = Object.keys(INITIAL_SESSIONS).find(
-  (id) => INITIAL_SESSIONS[id].attendanceStatus === 'draft',
-);
+const draftPeriodId = Object.keys(INITIAL_SESSIONS).find((id) => INITIAL_SESSIONS[id].attendanceStatus === 'draft');
 
 describe('attendance store — baseline', () => {
   beforeEach(() => store().reset());

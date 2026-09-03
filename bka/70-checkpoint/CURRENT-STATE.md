@@ -4,6 +4,18 @@ _Last updated: 2026-09-03._
 
 ---
 
+# ⛔ NEWEST BANNER — CI's first-ever real GitHub Actions run found and fixed 2 genuine bugs. 2026-09-03.
+
+[ADL-094](../30-decisions/ledger.md#adl-094). Opened [PR #2](https://github.com/sabarisv15/Project-ArcNave/pull/2) (`p0-modernization-foundation` → `master`, explicitly not for merge) to get `ci.yml` its first real trigger — it had never run because it only ever existed on this branch, never `master` (the default branch, required for GitHub to even discover a `workflow_dispatch`-eligible workflow), and its own `push`/`pull_request` triggers are scoped to `branches: [master]`.
+
+That first real run immediately found 2 bugs invisible to every prior Docker-only check this whole effort relied on: (1) `docker-compose.yml`'s `GEMINI_ADC_PATH` volume mount had no `:-/dev/null` fallback (unlike its own sibling line 5 lines below) — broke the `app` container's very first start whenever that env var is unset, true for CI and any fresh dev machine; (2) 11 frontend files had genuine (not CRLF-false-alarm) Prettier debt, confirmed via a real `node:22-slim` Linux container against the true git blobs. Both fixed, both Docker/local-verified (backend 2994/2994, frontend 564/564, both lint/typecheck/build clean).
+
+**Exact next action:** watch PR #2's own CI run (the fixes were just pushed) to confirm it's actually green now — that's the real, final proof this whole thread has been chasing, not another local check.
+
+**Committed:** yes, pushed to `p0-modernization-foundation`.
+
+---
+
 # ⛔ NEWEST BANNER — aiService.js's flagged Prettier formatting debt (ADL-088) is fixed. 2026-09-03.
 
 Same day, owner asked directly to fix the debt the P5 thread flagged and deliberately left unfixed. [ADL-093](../30-decisions/ledger.md#adl-093). Fixed against the true git blob (not this Windows checkout's CRLF-confused copy) to avoid reintroducing the same noise — confirmed the diff touches only the four already-named blocks, purely cosmetic, full backend suite unchanged at 2994/2994. The other P5-thread finding (CI never actually run on real GitHub Actions) is still open, not this pass's ask.

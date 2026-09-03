@@ -30,7 +30,6 @@ vi.mock('../lib/delegatedScope', async (importOriginal) => {
   };
 });
 
-
 function renderApp(route, options) {
   return renderAppShared(route, options);
 }

@@ -1,7 +1,13 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { Link } from 'react-router-dom';
 import { X } from 'lucide-react';
-import { PERIOD_BY_ID, canActOnPeriod, classLine, formatFullDate, formatTime } from '@/features/attendance/lib/attendanceData';
+import {
+  PERIOD_BY_ID,
+  canActOnPeriod,
+  classLine,
+  formatFullDate,
+  formatTime,
+} from '@/features/attendance/lib/attendanceData';
 import { useAttendanceStore } from '@/features/attendance';
 import { OwnershipBadge } from '@/features/attendance';
 import { ClassLogEditable } from './ClassLogSection';

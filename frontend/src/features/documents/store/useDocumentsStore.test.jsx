@@ -137,7 +137,12 @@ describe('useDocumentsStore — loading and shape', () => {
 
   it('childrenOf scopes to one parent', async () => {
     const { result } = await mountLoaded();
-    expect(result.current.childrenOf('f1').map((n) => n.id).sort()).toEqual(['d1', 'f2']);
+    expect(
+      result.current
+        .childrenOf('f1')
+        .map((n) => n.id)
+        .sort(),
+    ).toEqual(['d1', 'f2']);
   });
 
   it('tolerates a non-array response without crashing the tree', async () => {

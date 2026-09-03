@@ -153,8 +153,15 @@ services:
       # GOOGLE_APPLICATION_CREDENTIALS above points to. Never present in
       # a real deployment image; this is this docker-compose.yml's own
       # dev-sandbox convenience, not something config.js or gemini.js
-      # depends on existing.
-      - ${GEMINI_ADC_PATH}:/app/.gcp/adc.json:ro
+      # depends on existing. `:-/dev/null` default (same pattern the
+      # SANDBOX_INVOKER_KEY_PATH line below already uses) — GEMINI_ADC_PATH
+      # unset previously left this `${GEMINI_ADC_PATH}:/app/.gcp/adc.json:ro`,
+      # an empty host path Docker Compose can't even parse ("invalid spec:
+      # empty section between colons"), which is exactly what broke CI's
+      # first-ever real GitHub Actions run (no .env, so no GEMINI_ADC_PATH)
+      # — the same failure would hit any fresh dev machine with no gcloud
+      # ADC configured yet, this was never CI-specific.
+      - ${GEMINI_ADC_PATH:-/dev/null}:/app/.gcp/adc.json:ro
       # Same optional-mount shape as the ADC line above: SANDBOX_INVOKER_KEY_PATH
       # unset means this line does nothing and SANDBOX_SERVICE_CREDENTIALS_PATH
       # (above) is empty, so getIdTokenClient() falls back to its own ADC

@@ -116,10 +116,7 @@ export function useDocumentsStore() {
     queryFn: () => documentsApi.listPersonalDocuments(),
   });
 
-  const folders = useMemo(
-    () => (Array.isArray(foldersQuery.data) ? foldersQuery.data : []),
-    [foldersQuery.data],
-  );
+  const folders = useMemo(() => (Array.isArray(foldersQuery.data) ? foldersQuery.data : []), [foldersQuery.data]);
   const documents = useMemo(
     () => (Array.isArray(documentsQuery.data) ? documentsQuery.data : []),
     [documentsQuery.data],

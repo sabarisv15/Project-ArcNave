@@ -86,8 +86,7 @@ export const useWorkspaceUi = create((set) => ({
   // Accepts either a value or an updater — pinSidebar/collapseSidebar
   // (WorkspaceProvider) pass a value, revealSidebar/hideOverlay pass
   // `(prev) => ...` since they toggle relative to whatever it currently is.
-  setSidebarMode: (next) =>
-    set((s) => ({ sidebarMode: typeof next === 'function' ? next(s.sidebarMode) : next })),
+  setSidebarMode: (next) => set((s) => ({ sidebarMode: typeof next === 'function' ? next(s.sidebarMode) : next })),
   setActiveRole: (value) => set({ activeRole: value }),
   setRecentQuery: (value) => set({ recentQuery: value }),
   setRecentFilter: (value) => set({ recentFilter: value }),

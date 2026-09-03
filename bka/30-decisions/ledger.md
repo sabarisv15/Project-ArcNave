@@ -7710,3 +7710,86 @@ suite.
 `npm run typecheck` clean, full Docker backend suite **2994/2994**
 (unchanged from before this fix — confirms it's genuinely
 formatting-only).
+
+---
+
+## ADL-094
+
+### First real GitHub Actions run — two genuine bugs found and fixed, CI confirmed working for real
+
+**What prompted this.** ADL-088's other flagged finding (`gh run list`
+showed CI had never actually executed on GitHub Actions) — the owner
+asked to check whether it runs now. It didn't: `gh workflow run
+ci.yml --ref p0-modernization-foundation` returned `HTTP 404: workflow
+ci.yml not found on the default branch`. Root cause traced, not
+guessed: `.github/workflows/ci.yml` has only ever existed on
+`p0-modernization-foundation`, never on `master` (this repo's default
+branch) — GitHub Actions requires a workflow file to exist on the
+default branch before it's even discoverable for `workflow_dispatch`,
+and separately, `ci.yml`'s own `push`/`pull_request` triggers are
+scoped to `branches: [master]`, a branch this 79-commit effort has
+never merged into or opened a PR against. Repo-level Actions
+permissions were already fine (`allowed_actions: "all"`) — nothing
+needed re-enabling, the workflow simply never had a triggering event.
+
+**Resolved by opening [PR #2](https://github.com/sabarisv15/Project-ArcNave/pull/2)** (`p0-modernization-foundation` → `master`, explicitly NOT for merge — opening a PR is enough to fire the `pull_request` trigger using this branch's own `ci.yml`, without merging anything). Owner picked this option directly (over "just diagnose, don't act" or "merge to master now").
+
+**This produced ARCNAVE's first-ever real GitHub Actions run — and it
+found two genuine bugs immediately, both invisible to every prior
+Docker-only verification this whole P0-P5 effort has relied on:**
+
+1. **`docker-compose.yml`'s `GEMINI_ADC_PATH` volume mount had no
+   default fallback**, unlike the identical-shaped
+   `SANDBOX_INVOKER_KEY_PATH` line five lines below it, which already
+   used the correct `${VAR:-/dev/null}` pattern. With `GEMINI_ADC_PATH`
+   unset (true for CI — no `.env` exists there — and true for any
+   fresh dev machine before its first `gcloud auth application-default
+   login`), the mount evaluated to `:/app/.gcp/adc.json:ro`, which
+   Docker Compose can't even parse (`invalid spec: ... empty section
+   between colons`) — the `app` container never started, failing the
+   `backend` job at its very first real step. This was never
+   CI-specific: every session so far happened to already have
+   `GEMINI_ADC_PATH` set locally, so the bug was latent, not absent.
+   Fixed by applying the exact same `:-/dev/null}` fallback the
+   sibling line already modeled. Verified locally by explicitly
+   unsetting `GEMINI_ADC_PATH` (`env -u GEMINI_ADC_PATH docker compose
+   up -d app`) — container starts cleanly now, confirmed via the full
+   backend suite (2994/2994) run inside it.
+
+2. **11 frontend files genuinely failed `prettier --check` on the real
+   Linux runner** — a real, pre-existing bug this session's own earlier
+   local investigation (ADL-088/CURRENT-STATE's Windows
+   `core.autocrlf=true` diagnosis) had explicitly, correctly ruled out
+   as CRLF noise for every OTHER file it checked, but had not checked
+   these specific 11 against. Confirmed genuinely real (not another
+   CRLF false alarm) by extracting each file's true git blob and
+   running the pinned Prettier version (3.9.6, matching
+   `frontend/package.json`) inside a real `node:22-slim` Linux
+   container — same failure, same files, matching CI exactly. Fixed by
+   formatting those exact blobs and replacing the working files with
+   the result (never `git checkout`, which would reintroduce this
+   session's own CRLF checkout and risk masking the fix). Every diff
+   confirmed cosmetic only (re-indentation, line-wrap-at-120) before
+   applying — spot-checked `DocumentsView.jsx` (a re-indented JSX
+   block) and `routeTree.tsx` (JSX text re-wrap) directly.
+
+**Real methodological lesson, worth keeping:** a Windows checkout with
+`core.autocrlf=true` can produce BOTH false positives (this session's
+earlier ~40-70 file "failures" that don't exist in the real repo) AND
+mask true positives if never cross-checked against a real Linux
+environment — the 11 files here were part of that same noisy set
+locally, so nothing distinguished them from the ~57 false positives
+without actually running on Linux. Local CRLF-checkout `prettier
+--check` output is not sufficient evidence either way; only the real
+git blob (via `git show`/`git archive`, or a genuine Linux CI run)
+tells the truth.
+
+**Verified:** frontend `npm run lint` 0 errors/32 warnings (unchanged
+baseline), `npm run typecheck` clean, `npm test` **564/564** (unchanged
+baseline), `npm run build` clean. Backend: full Docker suite
+**2994/2994** with the docker-compose fix in place, re-confirmed after
+explicitly unsetting `GEMINI_ADC_PATH` to reproduce the exact CI
+condition. Both fixes pushed to `p0-modernization-foundation`;
+PR #2's own CI run is the authoritative next check — watch it, don't
+assume clean from local verification alone this time, since that's
+exactly the gap this whole entry exists to close.

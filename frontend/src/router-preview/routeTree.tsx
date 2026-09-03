@@ -37,8 +37,8 @@ function PreviewIndex() {
   return (
     <div>
       <p className="text-[13px] text-ink-muted mb-[12px]">
-        A real, type-safe route tree — this page and the one it links to are both genuine TanStack Router
-        routes, compiled by the same Vite config the rest of ArcNave uses.
+        A real, type-safe route tree — this page and the one it links to are both genuine TanStack Router routes,
+        compiled by the same Vite config the rest of ArcNave uses.
       </p>
       {/* `to`/`params` here are checked against the route tree's own types at
           compile time — a typo in either would be a real tsc error, not a
@@ -62,8 +62,8 @@ function PreviewStudent() {
   return (
     <div>
       <p className="text-[13px] text-ink-muted mb-[12px]">
-        <code className="px-[5px] py-[1px] rounded-[5px] bg-surface text-ink-soft">studentId</code> resolved from
-        the URL, typed end to end: <strong className="text-ink">{studentId}</strong>
+        <code className="px-[5px] py-[1px] rounded-[5px] bg-surface text-ink-soft">studentId</code> resolved from the
+        URL, typed end to end: <strong className="text-ink">{studentId}</strong>
       </p>
       <Link to="/" className="text-[12.5px] font-[500] text-accent hover:text-accent-hover">
         ← Back

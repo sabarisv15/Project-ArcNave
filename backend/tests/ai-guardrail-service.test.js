@@ -178,8 +178,7 @@ test('screenOutput leaves phone numbers and email addresses alone (legitimate RB
 });
 
 test('screenOutput leaves ordinary ERP identifiers alone (roll numbers, UUIDs, years)', () => {
-  const text =
-    'Student 21CSE045 in batch 2021-2025 has document 3f2b1a7c-9d4e-4f88-b0c2-1a2b3c4d5e6f pending.';
+  const text = 'Student 21CSE045 in batch 2021-2025 has document 3f2b1a7c-9d4e-4f88-b0c2-1a2b3c4d5e6f pending.';
   assert.equal(screenOutput(text).text, text);
 });
 

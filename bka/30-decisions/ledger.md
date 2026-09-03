@@ -7793,3 +7793,87 @@ condition. Both fixes pushed to `p0-modernization-foundation`;
 PR #2's own CI run is the authoritative next check — watch it, don't
 assume clean from local verification alone this time, since that's
 exactly the gap this whole entry exists to close.
+
+---
+
+## ADL-095
+
+### Second real CI run — 5.13's npm workspaces broke frontend's tsc install; 26 more backend files had real Prettier debt
+
+**What prompted this.** ADL-094's fixes were pushed and PR #2's CI
+re-ran — this entry covers what THAT run found, since it surfaced two
+more real, previously-invisible problems.
+
+**1. `backend`: 26 MORE files (beyond ADL-088/ADL-093's four and
+ADL-094's frontend eleven) genuinely fail `prettier --check` on the
+real Linux runner.** Confirmed real (not this Windows checkout's CRLF
+noise) the same way as every prior fix in this thread: extracted each
+file's true git blob, formatted it inside a `node:22-slim` container
+with the pinned Prettier version, confirmed every diff is cosmetic
+(re-wrapped long lines/object literals — spot-checked
+`aiGuardrailService.js` and `claude.js` directly) before applying.
+**Two files in this same failing list were deliberately left
+unfixed**: `src/services/aiProviders/gemini.js` and
+`tests/ai-providers.test.js` are mid-edit, uncommitted, by a concurrent
+session (a real Gemini model swap, "owner direction 2026-09-03",
+discovered live in the shared working tree — `git status` showed
+modifications to files this session never touched). Reformatting a
+file someone else is actively editing risks corrupting their
+in-progress work; left for that session (or a future pass) to fix
+alongside its own commit. `backend/src/routes/ai.js` and two untracked
+scratch files (`scripts/tmp-excel-export-probe.js`,
+`tmp-excel-probe-attachment.pdf`) were also found modified/created by
+that same concurrent session and were likewise left completely
+untouched, never staged.
+
+**2. A real regression, introduced by this session's OWN earlier work:
+5.13 (npm workspaces, [ADL-090](#adl-090)) broke the frontend CI job's
+`tsc` install.** The `frontend` job's `Typecheck` step failed with
+`Error: Unable to resolve @typescript/typescript-linux-x64` —
+TypeScript 7's native per-platform binary (an `optionalDependency`,
+`os`/`cpu`-gated) never got installed. Root-caused, not guessed: the
+root `package.json` 5.13 added declares `frontend`/`backend` as npm
+workspace members; running `npm ci` from INSIDE `frontend/` (exactly
+what `ci.yml`'s `working-directory: frontend` does, unchanged since
+before 5.13) now auto-infers `--workspace=frontend` from that ancestor
+file, and npm's workspace-hoisted install silently drops this specific
+class of `os`/`cpu`-gated optional dependency — a real, reproducible
+npm behavior, not flaky CI. **This is exactly the kind of regression
+ADL-090 explicitly claimed couldn't happen** ("zero risk to Docker/CI,
+confirmed via `git status`... only root files changed") — that claim
+was true for the FILES touched, but not for npm's own runtime
+behavior change once those files existed; a real gap in that earlier
+verification, worth naming plainly rather than glossing over.
+
+**Diagnosed and fixed with real evidence, not the first plausible
+guess:** tried (a) a nested `frontend/.npmrc` with `workspaces=false` —
+npm explicitly ignores it (`npm warn config ignoring workspace config
+at .../frontend/.npmrc`); (b) `npm_config_workspaces=false` as an env
+var — conflicts with npm's own auto-inferred `--workspace=frontend`
+(`Can not use --no-workspaces and --workspace at the same time`); (c)
+running `npm ci` from the monorepo ROOT instead of `frontend/` (with a
+COMPLETE, correct 3-lockfile repro — an earlier attempt at this was
+invalidated by a missing `backend/package-lock.json` and discarded, not
+reported as evidence) — still no `@typescript/typescript-linux-x64`,
+so moving the install location doesn't fix it either; (d) **the
+explicit CLI flag `--workspaces=false`, still run from inside
+`frontend/`** — this one worked, confirmed live in a clean container.
+`.github/workflows/ci.yml`'s frontend install step is now `npm ci
+--legacy-peer-deps --workspaces=false` — the minimal possible change
+(one flag, same command, same working directory), restoring this
+step's exact pre-5.13 standalone-install behavior. Documented as a
+real gotcha in root `package.json`'s own description, since a
+developer running a bare `npm ci` inside `frontend/` locally (the
+natural "reinstall this one package" instinct) would hit the identical
+failure.
+
+**Verified:** all 26 backend files pass `prettier --check` against
+their true blobs. Full Docker backend suite (with the concurrent
+session's own uncommitted `ai.js`/`gemini.js` changes still present,
+untouched) re-confirmed: **2994/2994**, `npm run lint` 0 errors/123
+warnings (unchanged). The `--workspaces=false` fix itself confirmed
+live in a clean `node:22-slim` container reproducing CI's exact
+`working-directory: frontend` + full workspace-root context — the
+platform TypeScript binary installs correctly. PR #2's next CI run is
+the authoritative confirmation this thread has been building toward —
+watch that, not this local verification, as the final signal.

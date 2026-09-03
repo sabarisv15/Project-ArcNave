@@ -4,6 +4,16 @@ _Last updated: 2026-09-03._
 
 ---
 
+# ⛔ NEWEST BANNER — PR #2's second CI run found 2 more real problems: 26 more backend Prettier files, and a real regression from 5.13 (npm workspaces broke frontend's tsc install). Both fixed. 2026-09-03.
+
+[ADL-095](../30-decisions/ledger.md#adl-095). The Prettier fix follows the exact same true-blob verification method as every prior fix in this thread — 26 backend files fixed, 2 deliberately skipped (`aiProviders/gemini.js`, `tests/ai-providers.test.js`) because a **concurrent session is actively mid-edit on them, uncommitted, in the same shared working tree** (a real Gemini model swap, found live via `git status` showing files this session never touched — left completely alone, never staged, never reformatted). The workspace regression is a real gap in ADL-090's own "zero CI risk" claim: `frontend`'s `npm ci` (run from inside `frontend/`, unchanged since before 5.13) started auto-inferring workspace mode once the root `package.json` existed, silently dropping TypeScript 7's platform-specific optional dependency. Fixed with `--workspaces=false` on that one `npm ci` line — the minimal possible change, found only after ruling out 3 other approaches with real evidence (see ADL-095 for all four attempts).
+
+**Exact next action:** watch PR #2's next CI run (fixes just pushed) — this is now the second real-world check of this whole thread; don't declare victory from local Docker/container approximations alone again.
+
+**Committed:** not yet as of this banner — only files this session actually touched are staged; the concurrent session's own uncommitted changes (`aiProviders/gemini.js`, `tests/ai-providers.test.js`, `routes/ai.js`, `.env.example`, `vertexCapabilityRegistry.js`, 5 more test files, 2 untracked scratch files) are deliberately left alone in the working tree.
+
+---
+
 # ⛔ NEWEST BANNER — CI's first-ever real GitHub Actions run found and fixed 2 genuine bugs. 2026-09-03.
 
 [ADL-094](../30-decisions/ledger.md#adl-094). Opened [PR #2](https://github.com/sabarisv15/Project-ArcNave/pull/2) (`p0-modernization-foundation` → `master`, explicitly not for merge) to get `ci.yml` its first real trigger — it had never run because it only ever existed on this branch, never `master` (the default branch, required for GitHub to even discover a `workflow_dispatch`-eligible workflow), and its own `push`/`pull_request` triggers are scoped to `branches: [master]`.

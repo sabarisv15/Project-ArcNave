@@ -13,7 +13,7 @@
 
 const BASE_URL = process.env.SMOKE_TEST_BASE_URL;
 if (!BASE_URL) {
-  console.error('SMOKE_TEST_BASE_URL is required — see this script\'s own top comment for usage.');
+  console.error("SMOKE_TEST_BASE_URL is required — see this script's own top comment for usage.");
   process.exit(1);
 }
 

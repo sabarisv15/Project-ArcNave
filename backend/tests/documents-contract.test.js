@@ -99,7 +99,9 @@ async function seedTenant(adminPool) {
 async function cleanupTenant(adminPool, college) {
   await adminPool.query('DELETE FROM audit_log WHERE college_id = $1', [college.collegeId]);
   await cleanupPositionRows(adminPool, college.collegeId);
-  await adminPool.query('DELETE FROM personal_document_folders WHERE college_id = $1', [college.collegeId]).catch(() => {});
+  await adminPool
+    .query('DELETE FROM personal_document_folders WHERE college_id = $1', [college.collegeId])
+    .catch(() => {});
   await adminPool.query('DELETE FROM documents WHERE college_id = $1', [college.collegeId]);
   await adminPool.query('DELETE FROM staff WHERE college_id = $1', [college.collegeId]);
   await adminPool.query('DELETE FROM refresh_tokens WHERE college_id = $1', [college.collegeId]);
@@ -138,23 +140,26 @@ test('documents.js contract', async (t) => {
     return { host: hostFor(college.subdomain), authorization: `Bearer ${token}` };
   }
 
-  await t.test('GET /api/v1/openapi.json lists a representative sample of documents.js paths, sourced from the same schemas validate() enforces', async () => {
-    const resp = await get(baseUrl, '/api/v1/openapi.json', { host: hostFor(college.subdomain) });
-    assert.equal(resp.status, 200);
-    for (const [path, methods] of [
-      ['/documents', ['post', 'get']],
-      ['/documents/personal', ['post']],
-      ['/documents/personal/folders', ['post']],
-      ['/documents/{id}', ['get', 'delete']],
-      ['/documents/{id}/review', ['post']],
-      ['/documents/institutional', ['post', 'get']],
-    ]) {
-      assert.ok(resp.body.paths[path], `${path} documented`);
-      for (const method of methods) {
-        assert.ok(resp.body.paths[path][method], `${method.toUpperCase()} ${path} documented`);
+  await t.test(
+    'GET /api/v1/openapi.json lists a representative sample of documents.js paths, sourced from the same schemas validate() enforces',
+    async () => {
+      const resp = await get(baseUrl, '/api/v1/openapi.json', { host: hostFor(college.subdomain) });
+      assert.equal(resp.status, 200);
+      for (const [path, methods] of [
+        ['/documents', ['post', 'get']],
+        ['/documents/personal', ['post']],
+        ['/documents/personal/folders', ['post']],
+        ['/documents/{id}', ['get', 'delete']],
+        ['/documents/{id}/review', ['post']],
+        ['/documents/institutional', ['post', 'get']],
+      ]) {
+        assert.ok(resp.body.paths[path], `${path} documented`);
+        for (const method of methods) {
+          assert.ok(resp.body.paths[path][method], `${method.toUpperCase()} ${path} documented`);
+        }
       }
-    }
-  });
+    },
+  );
 
   await t.test('POST /documents with a wrong-typed non-file field gets a clean 400 from validate()', async () => {
     const token = await loginPrincipal();
@@ -166,12 +171,15 @@ test('documents.js contract', async (t) => {
     assert.equal(resp.body.detail, 'Invalid request');
   });
 
-  await t.test('POST /documents with file_base64 sent as the wrong type is NOT intercepted by validate() — the route\'s own "file_base64 is required" message is unchanged', async () => {
-    const token = await loginPrincipal();
-    const resp = await post(baseUrl, '/api/v1/documents', headers(token), { file_base64: 12345 });
-    assert.equal(resp.status, 400);
-    assert.equal(resp.body.detail, 'file_base64 is required');
-  });
+  await t.test(
+    'POST /documents with file_base64 sent as the wrong type is NOT intercepted by validate() — the route\'s own "file_base64 is required" message is unchanged',
+    async () => {
+      const token = await loginPrincipal();
+      const resp = await post(baseUrl, '/api/v1/documents', headers(token), { file_base64: 12345 });
+      assert.equal(resp.status, 400);
+      assert.equal(resp.body.detail, 'file_base64 is required');
+    },
+  );
 
   await t.test('POST /documents/personal with a well-formed body is unaffected by validate()', async () => {
     const token = await loginPrincipal();
@@ -232,10 +240,13 @@ test('documents.js contract', async (t) => {
     assert.equal(resp.body.detail, 'Invalid request');
   });
 
-  await t.test('GET /documents with student_id omitted is NOT rejected by validate() — the route\'s own message is unchanged', async () => {
-    const token = await loginPrincipal();
-    const resp = await get(baseUrl, '/api/v1/documents', headers(token));
-    assert.equal(resp.status, 400);
-    assert.equal(resp.body.detail, 'student_id query parameter is required');
-  });
+  await t.test(
+    "GET /documents with student_id omitted is NOT rejected by validate() — the route's own message is unchanged",
+    async () => {
+      const token = await loginPrincipal();
+      const resp = await get(baseUrl, '/api/v1/documents', headers(token));
+      assert.equal(resp.status, 400);
+      assert.equal(resp.body.detail, 'student_id query parameter is required');
+    },
+  );
 });

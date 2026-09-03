@@ -79,7 +79,7 @@ function mockAnswerResponse(text) {
 // — ordinary phrasing a real user could plausibly type, not a contrived
 // string; screenInput's own comment: FLAG signals are individually
 // ambiguous enough that blocking would catch legitimate use.
-const FLAG_QUESTION = 'Pretend to be a strict class tutor and summarize this term\'s attendance for me.';
+const FLAG_QUESTION = "Pretend to be a strict class tutor and summarize this term's attendance for me.";
 // A question that matches neither BLOCK_PATTERNS nor FLAG_PATTERNS.
 const ORDINARY_QUESTION = 'What is the attendance rate for CSE-A this term?';
 

@@ -167,7 +167,9 @@ test('retrieveRelevantTools: semantic path only backfills tools missing an embed
                       // just an absolute ceiling), 0.6 (excluded by the
                       // ceiling too, moot since the margin already stopped
                       // the scan before reaching it).
-                      toolNames.slice(0, 4).map((name, i) => ({ tool_name: name, distance: [0.1, 0.18, 0.35, 0.6][i] })),
+                      toolNames
+                        .slice(0, 4)
+                        .map((name, i) => ({ tool_name: name, distance: [0.1, 0.18, 0.35, 0.6][i] })),
                     async () => {
                       const result = await aiToolRetrievalService.retrieveRelevantTools(client, {
                         roleTools: tools,
@@ -392,10 +394,7 @@ test('reciprocalRankFusion: a tool only in the lexical list still surfaces (mean
   const a = tool('a');
   const b = tool('b');
   const result = aiToolRetrievalService.reciprocalRankFusion([a], [b]);
-  assert.deepEqual(
-    result.map((t) => t.name).sort(),
-    ['a', 'b'],
-  );
+  assert.deepEqual(result.map((t) => t.name).sort(), ['a', 'b']);
 });
 
 test('reciprocalRankFusion: preserves rank order within a single list when the other is empty', () => {

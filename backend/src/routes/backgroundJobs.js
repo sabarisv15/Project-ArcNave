@@ -111,8 +111,7 @@ function createBackgroundJobsRouter() {
       await req.dbClient.pauseForExternalCall();
 
       const isTerminal = (job) => job.status === 'completed' || job.status === 'failed';
-      const changed = (job) =>
-        !lastSent || lastSent.status !== job.status || lastSent.progress !== job.progress;
+      const changed = (job) => !lastSent || lastSent.status !== job.status || lastSent.progress !== job.progress;
 
       const sendIfChanged = (job) => {
         if (changed(job)) {

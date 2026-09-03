@@ -2,7 +2,7 @@
   "name": "arcnave",
   "private": true,
   "packageManager": "npm@11.17.0",
-  "description": "ARCNAVE monorepo root -- npm workspaces + Turborepo (ARCNAVE modernization P5, 5.13: \"no multi-package tooling -> workspace + build cache tools\"). See infra/terraform/README.md and the two workspace packages (backend/, frontend/) for everything specific to each. This root package.json is a local-dev/DX convenience layer ONLY -- .github/workflows/ci.yml's own Docker-based backend job and per-package frontend job are UNCHANGED and stay the source of truth for what actually gates a merge; nothing here replaces that.",
+  "description": "ARCNAVE monorepo root -- npm workspaces + Turborepo (ARCNAVE modernization P5, 5.13: \"no multi-package tooling -> workspace + build cache tools\"). See infra/terraform/README.md and the two workspace packages (backend/, frontend/) for everything specific to each. This root package.json is a local-dev/DX convenience layer ONLY -- .github/workflows/ci.yml's own Docker-based backend job and per-package frontend job are UNCHANGED and stay the source of truth for what actually gates a merge; nothing here replaces that. GOTCHA (ADL-094): running `npm ci`/`npm install` from inside frontend/ or backend/ alone now auto-infers workspace mode from this file, which silently skips installing platform-specific optionalDependencies (e.g. TypeScript 7's native binary) -- pass --workspaces=false for a genuinely standalone install of one package (see .github/workflows/ci.yml's own frontend install step for the exact working example), or run `npm ci` at this root instead.",
   "workspaces": [
     "backend",
     "frontend"

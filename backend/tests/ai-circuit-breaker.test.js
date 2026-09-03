@@ -14,10 +14,7 @@ const {
   AiProviderCapabilityError,
 } = require('../src/services/aiProviders/errors');
 const circuitBreaker = require('../src/services/aiProviders/circuitBreaker');
-const {
-  buildResilientAdapter,
-  buildFallbackTracker,
-} = require('../src/services/aiProviderFallbackService');
+const { buildResilientAdapter, buildFallbackTracker } = require('../src/services/aiProviderFallbackService');
 
 const {
   shouldAttemptPrimary,

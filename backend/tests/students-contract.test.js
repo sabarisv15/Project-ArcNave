@@ -113,7 +113,12 @@ async function seedTenant(adminPool) {
     passwordHash,
   });
   college.classTutorEmail = officialEmail;
-  await seedHodPosition(adminPool, { collegeId: college.collegeId, userId: principalUserId, departmentId: college.departmentId, passwordHash });
+  await seedHodPosition(adminPool, {
+    collegeId: college.collegeId,
+    userId: principalUserId,
+    departmentId: college.departmentId,
+    passwordHash,
+  });
 
   // A real student row, needed as the target for every /students/{id}/...
   // sub-resource route below — created directly against the repository
@@ -132,9 +137,15 @@ async function seedTenant(adminPool) {
 
 async function cleanupTenant(adminPool, college) {
   await adminPool.query('DELETE FROM student_flags WHERE college_id = $1', [college.collegeId]);
-  await adminPool.query('DELETE FROM student_semester_results WHERE college_id = $1', [college.collegeId]).catch(() => {});
-  await adminPool.query('DELETE FROM student_transfer_requests WHERE college_id = $1', [college.collegeId]).catch(() => {});
-  await adminPool.query('DELETE FROM student_lifecycle_events WHERE college_id = $1', [college.collegeId]).catch(() => {});
+  await adminPool
+    .query('DELETE FROM student_semester_results WHERE college_id = $1', [college.collegeId])
+    .catch(() => {});
+  await adminPool
+    .query('DELETE FROM student_transfer_requests WHERE college_id = $1', [college.collegeId])
+    .catch(() => {});
+  await adminPool
+    .query('DELETE FROM student_lifecycle_events WHERE college_id = $1', [college.collegeId])
+    .catch(() => {});
   await adminPool.query('DELETE FROM audit_log WHERE college_id = $1', [college.collegeId]);
   await adminPool.query('DELETE FROM students WHERE college_id = $1', [college.collegeId]);
   // Must run before deleting `classes` — position_class_assignments
@@ -186,50 +197,59 @@ test('students.js contract', async (t) => {
     return { host: hostFor(college.subdomain), authorization: `Bearer ${token}` };
   }
 
-  await t.test('GET /api/v1/openapi.json lists every students.js path, sourced from the same schemas validate() enforces', async () => {
-    const resp = await get(baseUrl, '/api/v1/openapi.json', { host: hostFor(college.subdomain) });
-    assert.equal(resp.status, 200);
-    for (const [path, methods] of [
-      ['/students', ['post', 'get']],
-      ['/students/{id}', ['get', 'put', 'delete']],
-      ['/students/{id}/transfer-requests', ['post', 'get']],
-      ['/students/{id}/transfer-requests/{transferRequestId}/approve', ['post']],
-      ['/students/{id}/flag', ['post', 'get']],
-      ['/students/{id}/semester-results', ['post', 'get']],
-      ['/students/{id}/lifecycle-status', ['post']],
-      ['/students/{id}/phone-verification/otp', ['post']],
-    ]) {
-      assert.ok(resp.body.paths[path], `${path} documented`);
-      for (const method of methods) {
-        assert.ok(resp.body.paths[path][method], `${method.toUpperCase()} ${path} documented`);
+  await t.test(
+    'GET /api/v1/openapi.json lists every students.js path, sourced from the same schemas validate() enforces',
+    async () => {
+      const resp = await get(baseUrl, '/api/v1/openapi.json', { host: hostFor(college.subdomain) });
+      assert.equal(resp.status, 200);
+      for (const [path, methods] of [
+        ['/students', ['post', 'get']],
+        ['/students/{id}', ['get', 'put', 'delete']],
+        ['/students/{id}/transfer-requests', ['post', 'get']],
+        ['/students/{id}/transfer-requests/{transferRequestId}/approve', ['post']],
+        ['/students/{id}/flag', ['post', 'get']],
+        ['/students/{id}/semester-results', ['post', 'get']],
+        ['/students/{id}/lifecycle-status', ['post']],
+        ['/students/{id}/phone-verification/otp', ['post']],
+      ]) {
+        assert.ok(resp.body.paths[path], `${path} documented`);
+        for (const method of methods) {
+          assert.ok(resp.body.paths[path][method], `${method.toUpperCase()} ${path} documented`);
+        }
       }
-    }
-  });
+    },
+  );
 
-  await t.test('POST /students (class-tutor login) with a well-formed body reaches studentService, unaffected by validate()', async () => {
-    const token = await loginTutor();
-    const resp = await post(baseUrl, '/api/v1/students', headers(token), {
-      roll_no: `NEW${crypto.randomUUID().slice(0, 6)}`,
-      full_name: 'New Contract Student',
-      class_id: college.classId,
-    });
-    assert.equal(resp.status, 201);
-    assert.equal(resp.body.full_name, 'New Contract Student');
-  });
+  await t.test(
+    'POST /students (class-tutor login) with a well-formed body reaches studentService, unaffected by validate()',
+    async () => {
+      const token = await loginTutor();
+      const resp = await post(baseUrl, '/api/v1/students', headers(token), {
+        roll_no: `NEW${crypto.randomUUID().slice(0, 6)}`,
+        full_name: 'New Contract Student',
+        class_id: college.classId,
+      });
+      assert.equal(resp.status, 201);
+      assert.equal(resp.body.full_name, 'New Contract Student');
+    },
+  );
 
-  await t.test('POST /students with an array body gets a clean 400 from validate(), never a downstream crash', async () => {
-    const token = await loginTutor();
-    // A bare JSON array is valid strict-mode JSON (body-parser accepts
-    // it, unlike a bare string/number/boolean primitive, which
-    // express.json()'s own `strict: true` default rejects before this
-    // app's request pipeline ever sees it — a separate, pre-existing
-    // gap this file does not attempt to fix, see the session's own
-    // spawned follow-up task) — so this genuinely exercises z.record's
-    // own object-shape rejection, not body-parser's.
-    const resp = await post(baseUrl, '/api/v1/students', headers(token), ['not', 'an', 'object']);
-    assert.equal(resp.status, 400);
-    assert.equal(resp.body.detail, 'Invalid request');
-  });
+  await t.test(
+    'POST /students with an array body gets a clean 400 from validate(), never a downstream crash',
+    async () => {
+      const token = await loginTutor();
+      // A bare JSON array is valid strict-mode JSON (body-parser accepts
+      // it, unlike a bare string/number/boolean primitive, which
+      // express.json()'s own `strict: true` default rejects before this
+      // app's request pipeline ever sees it — a separate, pre-existing
+      // gap this file does not attempt to fix, see the session's own
+      // spawned follow-up task) — so this genuinely exercises z.record's
+      // own object-shape rejection, not body-parser's.
+      const resp = await post(baseUrl, '/api/v1/students', headers(token), ['not', 'an', 'object']);
+      assert.equal(resp.status, 400);
+      assert.equal(resp.body.detail, 'Invalid request');
+    },
+  );
 
   await t.test('PUT /students/{id} with an array body gets a clean 400', async () => {
     const token = await loginPrincipal();

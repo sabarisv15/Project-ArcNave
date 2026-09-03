@@ -88,10 +88,10 @@ async function seedTenant(adminPool) {
     [college.collegeId, passwordHash],
   );
   const userId = userResult.rows[0].id;
-  await adminPool.query(`INSERT INTO staff (college_id, user_id, full_name) VALUES ($1, $2, 'Contract Test Principal')`, [
-    college.collegeId,
-    userId,
-  ]);
+  await adminPool.query(
+    `INSERT INTO staff (college_id, user_id, full_name) VALUES ($1, $2, 'Contract Test Principal')`,
+    [college.collegeId, userId],
+  );
   await seedPrincipalPosition(adminPool, { collegeId: college.collegeId, userId });
   return { ...college, userId };
 }
@@ -139,21 +139,23 @@ test('ai.js contract', async (t) => {
     return { host: hostFor(college.subdomain), authorization: `Bearer ${token}` };
   }
 
-  await t.test('GET /api/v1/openapi.json lists ai.js paths, sourced from the same schema validate() enforces', async () => {
-    const resp = await get(baseUrl, '/api/v1/openapi.json', { host: hostFor(college.subdomain) });
-    assert.equal(resp.status, 200);
-    assert.ok(resp.body.paths['/ai/ask'], '/ai/ask documented');
-    assert.ok(resp.body.paths['/ai/ask'].post, 'POST /ai/ask documented');
-    assert.ok(resp.body.paths['/ai/ask/stream'].post, 'POST /ai/ask/stream documented');
-    assert.ok(resp.body.paths['/ai/workflow/execute'].post, 'POST /ai/workflow/execute documented');
-    assert.ok(resp.body.paths['/ai/tools/{name}/invoke'].post, 'POST /ai/tools/{name}/invoke documented');
-    // The generated requestBody schema for /ai/ask really is askSchema's
-    // own shape, not a hand-copied description — question is listed as
-    // a string-typed property.
-    const askRequestSchema =
-      resp.body.paths['/ai/ask'].post.requestBody.content['application/json'].schema;
-    assert.equal(askRequestSchema.properties.question.type, 'string');
-  });
+  await t.test(
+    'GET /api/v1/openapi.json lists ai.js paths, sourced from the same schema validate() enforces',
+    async () => {
+      const resp = await get(baseUrl, '/api/v1/openapi.json', { host: hostFor(college.subdomain) });
+      assert.equal(resp.status, 200);
+      assert.ok(resp.body.paths['/ai/ask'], '/ai/ask documented');
+      assert.ok(resp.body.paths['/ai/ask'].post, 'POST /ai/ask documented');
+      assert.ok(resp.body.paths['/ai/ask/stream'].post, 'POST /ai/ask/stream documented');
+      assert.ok(resp.body.paths['/ai/workflow/execute'].post, 'POST /ai/workflow/execute documented');
+      assert.ok(resp.body.paths['/ai/tools/{name}/invoke'].post, 'POST /ai/tools/{name}/invoke documented');
+      // The generated requestBody schema for /ai/ask really is askSchema's
+      // own shape, not a hand-copied description — question is listed as
+      // a string-typed property.
+      const askRequestSchema = resp.body.paths['/ai/ask'].post.requestBody.content['application/json'].schema;
+      assert.equal(askRequestSchema.properties.question.type, 'string');
+    },
+  );
 
   await t.test('POST /ai/ask with a well-formed body is unaffected by the new validate() middleware', async () => {
     const token = await login();
@@ -169,14 +171,17 @@ test('ai.js contract', async (t) => {
     assert.notEqual(resp.status, 400);
   });
 
-  await t.test('POST /ai/ask with question sent as the wrong type gets a clean 400 from validate(), never a 500', async () => {
-    const token = await login();
-    const resp = await post(baseUrl, '/api/v1/ai/ask', headers(token), { question: 12345 });
-    assert.equal(resp.status, 400);
-    assert.equal(resp.body.detail, 'Invalid request');
-    assert.ok(Array.isArray(resp.body.errors));
-    assert.ok(resp.body.errors.some((e) => e.path === 'body.question'));
-  });
+  await t.test(
+    'POST /ai/ask with question sent as the wrong type gets a clean 400 from validate(), never a 500',
+    async () => {
+      const token = await login();
+      const resp = await post(baseUrl, '/api/v1/ai/ask', headers(token), { question: 12345 });
+      assert.equal(resp.status, 400);
+      assert.equal(resp.body.detail, 'Invalid request');
+      assert.ok(Array.isArray(resp.body.errors));
+      assert.ok(resp.body.errors.some((e) => e.path === 'body.question'));
+    },
+  );
 
   await t.test('POST /ai/ask with attachment_ids sent as a non-array gets a clean 400', async () => {
     const token = await login();
@@ -188,17 +193,20 @@ test('ai.js contract', async (t) => {
     assert.equal(resp.body.detail, 'Invalid request');
   });
 
-  await t.test('POST /ai/ask with an empty body (no question at all) is NOT rejected by validate() — the existing aiService.askAgent business-validation message is unchanged', async () => {
-    const token = await login();
-    const resp = await post(baseUrl, '/api/v1/ai/ask', headers(token), {});
-    // Falls through to aiService.askAgent, which throws
-    // AiServiceValidationError -> mapAiToolError -> 400 with ITS OWN
-    // message — never validate()'s generic 'Invalid request' shape. This
-    // is the schema-permissiveness contract 4.9's own comment in ai.js
-    // documents: never duplicate business-layer requiredness.
-    assert.equal(resp.status, 400);
-    assert.equal(resp.body.detail, 'question is required and must be a non-empty string');
-  });
+  await t.test(
+    'POST /ai/ask with an empty body (no question at all) is NOT rejected by validate() — the existing aiService.askAgent business-validation message is unchanged',
+    async () => {
+      const token = await login();
+      const resp = await post(baseUrl, '/api/v1/ai/ask', headers(token), {});
+      // Falls through to aiService.askAgent, which throws
+      // AiServiceValidationError -> mapAiToolError -> 400 with ITS OWN
+      // message — never validate()'s generic 'Invalid request' shape. This
+      // is the schema-permissiveness contract 4.9's own comment in ai.js
+      // documents: never duplicate business-layer requiredness.
+      assert.equal(resp.status, 400);
+      assert.equal(resp.body.detail, 'question is required and must be a non-empty string');
+    },
+  );
 
   await t.test('POST /ai/tools/:name/invoke with a well-formed body is unaffected by validate()', async () => {
     const token = await login();
@@ -215,17 +223,23 @@ test('ai.js contract', async (t) => {
     assert.equal(resp.body.detail, 'Invalid request');
   });
 
-  await t.test('POST /ai/workflow/execute with steps sent as the wrong type gets a clean 400 from validate()', async () => {
-    const token = await login();
-    const resp = await post(baseUrl, '/api/v1/ai/workflow/execute', headers(token), { steps: 'not-an-array' });
-    assert.equal(resp.status, 400);
-    assert.equal(resp.body.detail, 'Invalid request');
-  });
+  await t.test(
+    'POST /ai/workflow/execute with steps sent as the wrong type gets a clean 400 from validate()',
+    async () => {
+      const token = await login();
+      const resp = await post(baseUrl, '/api/v1/ai/workflow/execute', headers(token), { steps: 'not-an-array' });
+      assert.equal(resp.status, 400);
+      assert.equal(resp.body.detail, 'Invalid request');
+    },
+  );
 
-  await t.test('POST /ai/workflow/execute with steps entirely omitted is NOT rejected by validate() — the route\'s own message is unchanged', async () => {
-    const token = await login();
-    const resp = await post(baseUrl, '/api/v1/ai/workflow/execute', headers(token), {});
-    assert.equal(resp.status, 400);
-    assert.equal(resp.body.detail, 'steps is required and must be a non-empty array');
-  });
+  await t.test(
+    "POST /ai/workflow/execute with steps entirely omitted is NOT rejected by validate() — the route's own message is unchanged",
+    async () => {
+      const token = await login();
+      const resp = await post(baseUrl, '/api/v1/ai/workflow/execute', headers(token), {});
+      assert.equal(resp.status, 400);
+      assert.equal(resp.body.detail, 'steps is required and must be a non-empty array');
+    },
+  );
 });

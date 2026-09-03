@@ -91,7 +91,11 @@ async function seedTenant(adminPool) {
     college.principalUserId,
     'Contract Principal',
   ]);
-  await seedPrincipalPosition(adminPool, { collegeId: college.collegeId, userId: college.principalUserId, passwordHash });
+  await seedPrincipalPosition(adminPool, {
+    collegeId: college.collegeId,
+    userId: college.principalUserId,
+    passwordHash,
+  });
 
   const targetStaffResult = await adminPool.query(
     'INSERT INTO staff (college_id, user_id, full_name) VALUES ($1, $2, $3) RETURNING id',
@@ -150,32 +154,38 @@ test('staff.js contract', async (t) => {
     return { host: hostFor(college.subdomain), authorization: `Bearer ${token}` };
   }
 
-  await t.test('GET /api/v1/openapi.json lists every staff.js path, sourced from the same schemas validate() enforces', async () => {
-    const resp = await get(baseUrl, '/api/v1/openapi.json', { host: hostFor(college.subdomain) });
-    assert.equal(resp.status, 200);
-    for (const [path, methods] of [
-      ['/staff', ['post', 'get']],
-      ['/staff/invitations', ['post']],
-      ['/staff/hod-accounts', ['post']],
-      ['/staff/me', ['put']],
-      ['/staff/me/work-history', ['post']],
-      ['/staff/{id}', ['get', 'put', 'delete']],
-      ['/staff/{id}/submit-registration', ['post']],
-      ['/staff/{id}/deactivate', ['post']],
-    ]) {
-      assert.ok(resp.body.paths[path], `${path} documented`);
-      for (const method of methods) {
-        assert.ok(resp.body.paths[path][method], `${method.toUpperCase()} ${path} documented`);
+  await t.test(
+    'GET /api/v1/openapi.json lists every staff.js path, sourced from the same schemas validate() enforces',
+    async () => {
+      const resp = await get(baseUrl, '/api/v1/openapi.json', { host: hostFor(college.subdomain) });
+      assert.equal(resp.status, 200);
+      for (const [path, methods] of [
+        ['/staff', ['post', 'get']],
+        ['/staff/invitations', ['post']],
+        ['/staff/hod-accounts', ['post']],
+        ['/staff/me', ['put']],
+        ['/staff/me/work-history', ['post']],
+        ['/staff/{id}', ['get', 'put', 'delete']],
+        ['/staff/{id}/submit-registration', ['post']],
+        ['/staff/{id}/deactivate', ['post']],
+      ]) {
+        assert.ok(resp.body.paths[path], `${path} documented`);
+        for (const method of methods) {
+          assert.ok(resp.body.paths[path][method], `${method.toUpperCase()} ${path} documented`);
+        }
       }
-    }
-  });
+    },
+  );
 
-  await t.test('POST /staff with an array body gets a clean 400 from validate(), never a downstream crash', async () => {
-    const token = await loginPrincipal();
-    const resp = await post(baseUrl, '/api/v1/staff', headers(token), ['not', 'an', 'object']);
-    assert.equal(resp.status, 400);
-    assert.equal(resp.body.detail, 'Invalid request');
-  });
+  await t.test(
+    'POST /staff with an array body gets a clean 400 from validate(), never a downstream crash',
+    async () => {
+      const token = await loginPrincipal();
+      const resp = await post(baseUrl, '/api/v1/staff', headers(token), ['not', 'an', 'object']);
+      assert.equal(resp.status, 400);
+      assert.equal(resp.body.detail, 'Invalid request');
+    },
+  );
 
   await t.test('POST /staff/invitations with a wrong-typed email gets a clean 400', async () => {
     const token = await loginPrincipal();
@@ -223,13 +233,16 @@ test('staff.js contract', async (t) => {
     assert.equal(resp.status, 201);
   });
 
-  await t.test('DELETE /staff/me/work-history/{entryId} with a well-formed params is unaffected by validate() (404 from the service, not a validate() 400)', async () => {
-    const token = await loginTarget();
-    const resp = await requestJson(baseUrl, `/api/v1/staff/me/work-history/${crypto.randomUUID()}`, 'DELETE', {
-      headers: headers(token),
-    });
-    assert.notEqual(resp.status, 400);
-  });
+  await t.test(
+    'DELETE /staff/me/work-history/{entryId} with a well-formed params is unaffected by validate() (404 from the service, not a validate() 400)',
+    async () => {
+      const token = await loginTarget();
+      const resp = await requestJson(baseUrl, `/api/v1/staff/me/work-history/${crypto.randomUUID()}`, 'DELETE', {
+        headers: headers(token),
+      });
+      assert.notEqual(resp.status, 400);
+    },
+  );
 
   await t.test('PUT /staff/{id} with an array body gets a clean 400', async () => {
     const token = await loginPrincipal();

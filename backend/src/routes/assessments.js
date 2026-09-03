@@ -181,7 +181,11 @@ const submitAssessmentSubmissionSchema = lockAssessmentSubmissionSchema;
 const assessmentSubmissionStatusSchema = z.object({
   params: classIdParams,
   query: z
-    .object({ academic_year: z.string().optional(), subject: z.string().optional(), assessment_type_id: z.string().optional() })
+    .object({
+      academic_year: z.string().optional(),
+      subject: z.string().optional(),
+      assessment_type_id: z.string().optional(),
+    })
     .optional(),
 });
 const listMarksForFiltersSchema = z.object({

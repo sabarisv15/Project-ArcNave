@@ -95,7 +95,9 @@ async function seedTenant(adminPool) {
 
 async function cleanupTenant(adminPool, college) {
   await adminPool.query('DELETE FROM audit_log WHERE college_id = $1', [college.collegeId]);
-  await adminPool.query('DELETE FROM attendance_corrections WHERE college_id = $1', [college.collegeId]).catch(() => {});
+  await adminPool
+    .query('DELETE FROM attendance_corrections WHERE college_id = $1', [college.collegeId])
+    .catch(() => {});
   await adminPool.query('DELETE FROM attendance_sessions WHERE college_id = $1', [college.collegeId]);
   await cleanupPositionRows(adminPool, college.collegeId);
   await adminPool.query('DELETE FROM classes WHERE college_id = $1', [college.collegeId]);
@@ -134,29 +136,35 @@ test('attendance.js contract', async (t) => {
     return { host: hostFor(college.subdomain), authorization: `Bearer ${token}` };
   }
 
-  await t.test('GET /api/v1/openapi.json lists every attendance.js path, sourced from the same schemas validate() enforces', async () => {
-    const resp = await get(baseUrl, '/api/v1/openapi.json', { host: hostFor(college.subdomain) });
-    assert.equal(resp.status, 200);
-    for (const [path, methods] of [
-      ['/attendance', ['post', 'get']],
-      ['/attendance/{id}', ['get']],
-      ['/attendance/{id}/lock', ['post']],
-      ['/attendance/{id}/corrections', ['post', 'get']],
-      ['/attendance/corrections/{correctionId}/approve', ['post']],
-    ]) {
-      assert.ok(resp.body.paths[path], `${path} documented`);
-      for (const method of methods) {
-        assert.ok(resp.body.paths[path][method], `${method.toUpperCase()} ${path} documented`);
+  await t.test(
+    'GET /api/v1/openapi.json lists every attendance.js path, sourced from the same schemas validate() enforces',
+    async () => {
+      const resp = await get(baseUrl, '/api/v1/openapi.json', { host: hostFor(college.subdomain) });
+      assert.equal(resp.status, 200);
+      for (const [path, methods] of [
+        ['/attendance', ['post', 'get']],
+        ['/attendance/{id}', ['get']],
+        ['/attendance/{id}/lock', ['post']],
+        ['/attendance/{id}/corrections', ['post', 'get']],
+        ['/attendance/corrections/{correctionId}/approve', ['post']],
+      ]) {
+        assert.ok(resp.body.paths[path], `${path} documented`);
+        for (const method of methods) {
+          assert.ok(resp.body.paths[path][method], `${method.toUpperCase()} ${path} documented`);
+        }
       }
-    }
-  });
+    },
+  );
 
-  await t.test('POST /attendance with an array body gets a clean 400 from validate(), never a downstream crash', async () => {
-    const token = await loginTutor();
-    const resp = await post(baseUrl, '/api/v1/attendance', headers(token), ['not', 'an', 'object']);
-    assert.equal(resp.status, 400);
-    assert.equal(resp.body.detail, 'Invalid request');
-  });
+  await t.test(
+    'POST /attendance with an array body gets a clean 400 from validate(), never a downstream crash',
+    async () => {
+      const token = await loginTutor();
+      const resp = await post(baseUrl, '/api/v1/attendance', headers(token), ['not', 'an', 'object']);
+      assert.equal(resp.status, 400);
+      assert.equal(resp.body.detail, 'Invalid request');
+    },
+  );
 
   await t.test('POST /attendance with a well-formed body is unaffected by validate()', async () => {
     const token = await loginTutor();
@@ -172,16 +180,23 @@ test('attendance.js contract', async (t) => {
     sessionId = resp.body.id;
   });
 
-  await t.test('GET /attendance with class_id omitted is NOT rejected by validate() — the route\'s own message is unchanged', async () => {
-    const token = await loginTutor();
-    const resp = await get(baseUrl, '/api/v1/attendance', headers(token));
-    assert.equal(resp.status, 400);
-    assert.equal(resp.body.detail, 'class_id query parameter is required');
-  });
+  await t.test(
+    "GET /attendance with class_id omitted is NOT rejected by validate() — the route's own message is unchanged",
+    async () => {
+      const token = await loginTutor();
+      const resp = await get(baseUrl, '/api/v1/attendance', headers(token));
+      assert.equal(resp.status, 400);
+      assert.equal(resp.body.detail, 'class_id query parameter is required');
+    },
+  );
 
   await t.test('GET /attendance with a well-formed query is unaffected by validate()', async () => {
     const token = await loginTutor();
-    const resp = await get(baseUrl, `/api/v1/attendance?class_id=${college.classId}&session_date=2026-01-10`, headers(token));
+    const resp = await get(
+      baseUrl,
+      `/api/v1/attendance?class_id=${college.classId}&session_date=2026-01-10`,
+      headers(token),
+    );
     assert.equal(resp.status, 200);
     assert.ok(Array.isArray(resp.body));
   });

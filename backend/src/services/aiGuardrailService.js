@@ -98,9 +98,19 @@ const BLOCK_PATTERNS = [
 // These are recorded for audit visibility and reinforce the framing;
 // they never refuse the turn.
 const FLAG_PATTERNS = [
-  { id: 'role_reassignment', pattern: /\b(you\s+are\s+now|from\s+now\s+on\s+you|pretend\s+(to\s+be|you\s+are)|act\s+as\s+(if|though))\b/i },
-  { id: 'refusal_pressure', pattern: /\b(you\s+must\s+not\s+refuse|do\s+not\s+refuse|never\s+say\s+you\s+(can'?t|cannot))\b/i },
-  { id: 'hypothetical_framing', pattern: /\b(hypothetically|in\s+a\s+fictional\s+scenario|for\s+educational\s+purposes\s+only)\b[^.!?\n]{0,60}?\b(ignore|bypass|without\s+restriction)\b/i },
+  {
+    id: 'role_reassignment',
+    pattern: /\b(you\s+are\s+now|from\s+now\s+on\s+you|pretend\s+(to\s+be|you\s+are)|act\s+as\s+(if|though))\b/i,
+  },
+  {
+    id: 'refusal_pressure',
+    pattern: /\b(you\s+must\s+not\s+refuse|do\s+not\s+refuse|never\s+say\s+you\s+(can'?t|cannot))\b/i,
+  },
+  {
+    id: 'hypothetical_framing',
+    pattern:
+      /\b(hypothetically|in\s+a\s+fictional\s+scenario|for\s+educational\s+purposes\s+only)\b[^.!?\n]{0,60}?\b(ignore|bypass|without\s+restriction)\b/i,
+  },
 ];
 
 // A short, fixed reinforcement appended to the system prompt when a FLAG

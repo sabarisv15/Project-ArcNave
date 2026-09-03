@@ -141,23 +141,26 @@ test('assessments.js contract', async (t) => {
     return { host: hostFor(college.subdomain), authorization: `Bearer ${token}` };
   }
 
-  await t.test('GET /api/v1/openapi.json lists a representative sample of assessments.js paths, sourced from the same schemas validate() enforces', async () => {
-    const resp = await get(baseUrl, '/api/v1/openapi.json', { host: hostFor(college.subdomain) });
-    assert.equal(resp.status, 200);
-    for (const [path, methods] of [
-      ['/assessment-types', ['post', 'get']],
-      ['/assessment-types/{id}', ['put']],
-      ['/classes/{id}/assessment-marks', ['post']],
-      ['/assessment-marks/{id}', ['put', 'delete']],
-      ['/assessment-marks', ['get']],
-      ['/assessment-marks/{id}/corrections', ['post', 'get']],
-    ]) {
-      assert.ok(resp.body.paths[path], `${path} documented`);
-      for (const method of methods) {
-        assert.ok(resp.body.paths[path][method], `${method.toUpperCase()} ${path} documented`);
+  await t.test(
+    'GET /api/v1/openapi.json lists a representative sample of assessments.js paths, sourced from the same schemas validate() enforces',
+    async () => {
+      const resp = await get(baseUrl, '/api/v1/openapi.json', { host: hostFor(college.subdomain) });
+      assert.equal(resp.status, 200);
+      for (const [path, methods] of [
+        ['/assessment-types', ['post', 'get']],
+        ['/assessment-types/{id}', ['put']],
+        ['/classes/{id}/assessment-marks', ['post']],
+        ['/assessment-marks/{id}', ['put', 'delete']],
+        ['/assessment-marks', ['get']],
+        ['/assessment-marks/{id}/corrections', ['post', 'get']],
+      ]) {
+        assert.ok(resp.body.paths[path], `${path} documented`);
+        for (const method of methods) {
+          assert.ok(resp.body.paths[path][method], `${method.toUpperCase()} ${path} documented`);
+        }
       }
-    }
-  });
+    },
+  );
 
   await t.test('POST /assessment-types with a wrong-typed max_marks gets a clean 400', async () => {
     const token = await loginPrincipal();
@@ -197,33 +200,39 @@ test('assessments.js contract', async (t) => {
     assert.equal(resp.body.max_marks, '75');
   });
 
-  await t.test('POST /classes/{id}/assessment-marks with a wrong-typed marks_obtained gets a clean 400 — the real pre-existing crash class this schema fixes', async () => {
-    const token = await loginPrincipal();
-    const resp = await post(baseUrl, `/api/v1/classes/${fakeClassId}/assessment-marks`, headers(token), {
-      academic_year: '2026-2027',
-      subject: 'Mathematics',
-      assessment_type_id: assessmentTypeId,
-      student_id: crypto.randomUUID(),
-      marks_obtained: 'forty-five',
-    });
-    assert.equal(resp.status, 400);
-    assert.equal(resp.body.detail, 'Invalid request');
-  });
+  await t.test(
+    'POST /classes/{id}/assessment-marks with a wrong-typed marks_obtained gets a clean 400 — the real pre-existing crash class this schema fixes',
+    async () => {
+      const token = await loginPrincipal();
+      const resp = await post(baseUrl, `/api/v1/classes/${fakeClassId}/assessment-marks`, headers(token), {
+        academic_year: '2026-2027',
+        subject: 'Mathematics',
+        assessment_type_id: assessmentTypeId,
+        student_id: crypto.randomUUID(),
+        marks_obtained: 'forty-five',
+      });
+      assert.equal(resp.status, 400);
+      assert.equal(resp.body.detail, 'Invalid request');
+    },
+  );
 
-  await t.test('POST /classes/{id}/assessment-marks with marks_obtained omitted is NOT rejected by validate() — the service\'s own combined requiredness message is unchanged', async () => {
-    const token = await loginPrincipal();
-    const resp = await post(baseUrl, `/api/v1/classes/${fakeClassId}/assessment-marks`, headers(token), {
-      academic_year: '2026-2027',
-      subject: 'Mathematics',
-      assessment_type_id: assessmentTypeId,
-      student_id: crypto.randomUUID(),
-    });
-    assert.equal(resp.status, 400);
-    assert.equal(
-      resp.body.detail,
-      'academicYear, classId, subject, assessmentTypeId, studentId, and marksObtained are required',
-    );
-  });
+  await t.test(
+    "POST /classes/{id}/assessment-marks with marks_obtained omitted is NOT rejected by validate() — the service's own combined requiredness message is unchanged",
+    async () => {
+      const token = await loginPrincipal();
+      const resp = await post(baseUrl, `/api/v1/classes/${fakeClassId}/assessment-marks`, headers(token), {
+        academic_year: '2026-2027',
+        subject: 'Mathematics',
+        assessment_type_id: assessmentTypeId,
+        student_id: crypto.randomUUID(),
+      });
+      assert.equal(resp.status, 400);
+      assert.equal(
+        resp.body.detail,
+        'academicYear, classId, subject, assessmentTypeId, studentId, and marksObtained are required',
+      );
+    },
+  );
 
   await t.test('PUT /assessment-marks/{id} with a wrong-typed marks_obtained gets a clean 400', async () => {
     const token = await loginPrincipal();
@@ -236,7 +245,11 @@ test('assessments.js contract', async (t) => {
 
   await t.test('GET /assessment-marks with a well-formed query is unaffected by validate()', async () => {
     const token = await loginPrincipal();
-    const resp = await get(baseUrl, `/api/v1/assessment-marks?academic_year=2026-2027&subject=Mathematics`, headers(token));
+    const resp = await get(
+      baseUrl,
+      `/api/v1/assessment-marks?academic_year=2026-2027&subject=Mathematics`,
+      headers(token),
+    );
     assert.equal(resp.status, 200);
     assert.ok(Array.isArray(resp.body));
   });

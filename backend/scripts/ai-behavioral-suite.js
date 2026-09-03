@@ -638,7 +638,10 @@ function buildScenarios({ artifactId, notificationId }) {
     expect: (r) => {
       const used = r.toolsUsed || [];
       if (used.includes('list_skills') || used.includes('describe_skill')) {
-        return { ok: false, reason: `unnecessary skill lookup for a plain-data question, toolsUsed=${JSON.stringify(used)}` };
+        return {
+          ok: false,
+          reason: `unnecessary skill lookup for a plain-data question, toolsUsed=${JSON.stringify(used)}`,
+        };
       }
       return { ok: true, reason: 'no unnecessary skill lookup, as expected' };
     },
@@ -683,7 +686,11 @@ function buildScenarios({ artifactId, notificationId }) {
     ['m1', "what does this year's fee circular say about late payment penalties?", 'search_documents'],
     ['m2', 'show me every circular filed under the ECE department', 'list_institutional_documents'],
     ['m3', 'remind myself to follow up with the vendor tomorrow', 'personal_notes_create'],
-    ['m4', 'find the examination policy document, then show me its version history so far', 'get_document_version_history'],
+    [
+      'm4',
+      'find the examination policy document, then show me its version history so far',
+      'get_document_version_history',
+    ],
   ];
   for (const [id, question, expectedTool] of documentPathScenarios) {
     scenarios.push({

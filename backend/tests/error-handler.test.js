@@ -18,26 +18,30 @@ const createApp = require('../src/app');
 function postRaw(baseUrl, path, rawBody) {
   return new Promise((resolve, reject) => {
     const url = new URL(path, baseUrl);
-    const req = http.request(url, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'content-length': Buffer.byteLength(rawBody),
+    const req = http.request(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'content-length': Buffer.byteLength(rawBody),
+        },
       },
-    }, (res) => {
-      const chunks = [];
-      res.on('data', (chunk) => chunks.push(chunk));
-      res.on('end', () => {
-        const text = Buffer.concat(chunks).toString('utf8');
-        let body = null;
-        try {
-          body = text ? JSON.parse(text) : null;
-        } catch {
-          body = text;
-        }
-        resolve({ status: res.statusCode, body });
-      });
-    });
+      (res) => {
+        const chunks = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8');
+          let body = null;
+          try {
+            body = text ? JSON.parse(text) : null;
+          } catch {
+            body = text;
+          }
+          resolve({ status: res.statusCode, body });
+        });
+      },
+    );
     req.on('error', reject);
     req.write(rawBody);
     req.end();

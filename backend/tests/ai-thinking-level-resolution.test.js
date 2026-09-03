@@ -26,10 +26,7 @@ test('resolveThinkingLevel: a missing label auto-classifies from the question (P
   assert.equal(resolveThinkingLevel(undefined, 'hi'), 'LOW');
   assert.equal(resolveThinkingLevel(null, 'hi'), 'LOW');
   assert.equal(
-    resolveThinkingLevel(
-      undefined,
-      'Compare this term and last term, why the drop? What strategy do you recommend?',
-    ),
+    resolveThinkingLevel(undefined, 'Compare this term and last term, why the drop? What strategy do you recommend?'),
     'HIGH',
   );
 });

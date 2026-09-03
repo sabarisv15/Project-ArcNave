@@ -315,7 +315,10 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
       model: cfg.model,
       max_tokens: MAX_TOKENS,
       system: systemPrompt,
-      messages: [...buildHistoryMessages(historyTurns), { role: 'user', content: buildUserContent(userPrompt, images) }],
+      messages: [
+        ...buildHistoryMessages(historyTurns),
+        { role: 'user', content: buildUserContent(userPrompt, images) },
+      ],
       stream: true,
     },
     'stream',

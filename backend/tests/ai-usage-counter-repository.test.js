@@ -48,11 +48,14 @@ test('aiUsageCounterRepository', async (t) => {
     assert.deepEqual(usage, { tokensUsed: 150, callCount: 1 });
   });
 
-  await t.test('a second incrementUsage on the SAME (college, period) adds to the existing row, never replaces it', async () => {
-    await aiUsageCounterRepository.incrementUsage(pool, collegeId, periodMonth, { tokensDelta: 50, callsDelta: 1 });
-    const usage = await aiUsageCounterRepository.getUsage(pool, collegeId, periodMonth);
-    assert.deepEqual(usage, { tokensUsed: 200, callCount: 2 });
-  });
+  await t.test(
+    'a second incrementUsage on the SAME (college, period) adds to the existing row, never replaces it',
+    async () => {
+      await aiUsageCounterRepository.incrementUsage(pool, collegeId, periodMonth, { tokensDelta: 50, callsDelta: 1 });
+      const usage = await aiUsageCounterRepository.getUsage(pool, collegeId, periodMonth);
+      assert.deepEqual(usage, { tokensUsed: 200, callCount: 2 });
+    },
+  );
 
   await t.test('a different period_month for the same college is a fully independent row', async () => {
     await aiUsageCounterRepository.incrementUsage(pool, collegeId, otherPeriodMonth, {
@@ -65,11 +68,14 @@ test('aiUsageCounterRepository', async (t) => {
     assert.deepEqual(otherMonth, { tokensUsed: 999, callCount: 3 });
   });
 
-  await t.test('a zero-token increment (usage genuinely unknown for that call) still increments call_count', async () => {
-    const before = await aiUsageCounterRepository.getUsage(pool, collegeId, periodMonth);
-    await aiUsageCounterRepository.incrementUsage(pool, collegeId, periodMonth, { tokensDelta: 0, callsDelta: 1 });
-    const after = await aiUsageCounterRepository.getUsage(pool, collegeId, periodMonth);
-    assert.equal(after.tokensUsed, before.tokensUsed);
-    assert.equal(after.callCount, before.callCount + 1);
-  });
+  await t.test(
+    'a zero-token increment (usage genuinely unknown for that call) still increments call_count',
+    async () => {
+      const before = await aiUsageCounterRepository.getUsage(pool, collegeId, periodMonth);
+      await aiUsageCounterRepository.incrementUsage(pool, collegeId, periodMonth, { tokensDelta: 0, callsDelta: 1 });
+      const after = await aiUsageCounterRepository.getUsage(pool, collegeId, periodMonth);
+      assert.equal(after.tokensUsed, before.tokensUsed);
+      assert.equal(after.callCount, before.callCount + 1);
+    },
+  );
 });

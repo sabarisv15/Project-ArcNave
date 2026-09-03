@@ -91,7 +91,10 @@ async function main() {
 
     console.log(`--- ${probe.label}: "${probe.question}" ---`);
     printRanking('today (margin cutoff, pure semantic)', marginCutoffTools);
-    printRanking('lexical only', lexicalTools.map((t) => t.name));
+    printRanking(
+      'lexical only',
+      lexicalTools.map((t) => t.name),
+    );
     printRanking('hybrid (RRF fusion)', hybridTools);
     const recovered = hybridTools.filter((n) => !marginCutoffTools.includes(n));
     const dropped = marginCutoffTools.filter((n) => !hybridTools.includes(n));
@@ -102,7 +105,7 @@ async function main() {
 
   console.log(
     'Review each "RECOVERED"/"DROPPED" line above against what the real correct answer for that question should be ' +
-      'before deciding whether to set AI_HYBRID_TOOL_RETRIEVAL=true — same standard tool-retrieval-margin-probe.js\'s ' +
+      "before deciding whether to set AI_HYBRID_TOOL_RETRIEVAL=true — same standard tool-retrieval-margin-probe.js's " +
       'own numbers were held to before ABSOLUTE_CEILING/MARGIN were finalized.',
   );
 }

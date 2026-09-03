@@ -90,32 +90,35 @@ test('backgroundJobWorker.runPollCycle', async (t) => {
     await adminPool.end();
   });
 
-  await t.test('a queued job whose job_type has a registered handler is claimed, run, and marked completed', async () => {
-    const jobType = `test_worker_${crypto.randomUUID().slice(0, 8)}`;
-    let handlerCalledWith;
-    backgroundJobHandlers.registerHandler(jobType, async (job) => {
-      handlerCalledWith = job;
-      return { echoed: job.payload };
-    });
+  await t.test(
+    'a queued job whose job_type has a registered handler is claimed, run, and marked completed',
+    async () => {
+      const jobType = `test_worker_${crypto.randomUUID().slice(0, 8)}`;
+      let handlerCalledWith;
+      backgroundJobHandlers.registerHandler(jobType, async (job) => {
+        handlerCalledWith = job;
+        return { echoed: job.payload };
+      });
 
-    const job = await insertQueuedJob(adminPool, {
-      collegeId: tenant.collegeId,
-      userId: tenant.userId,
-      jobType,
-      payload: { hello: 'world' },
-    });
-    assert.equal(job.status, 'queued');
+      const job = await insertQueuedJob(adminPool, {
+        collegeId: tenant.collegeId,
+        userId: tenant.userId,
+        jobType,
+        payload: { hello: 'world' },
+      });
+      assert.equal(job.status, 'queued');
 
-    await backgroundJobWorker.runPollCycle();
+      await backgroundJobWorker.runPollCycle();
 
-    const finished = await readJob(adminPool, tenant.collegeId, job.id);
-    assert.equal(finished.status, 'completed');
-    assert.equal(finished.progress, 100);
-    assert.deepEqual(finished.result, { echoed: { hello: 'world' } });
-    assert.ok(handlerCalledWith, 'the registered handler was actually invoked');
-    assert.equal(handlerCalledWith.id, job.id);
-    assert.deepEqual(handlerCalledWith.payload, { hello: 'world' });
-  });
+      const finished = await readJob(adminPool, tenant.collegeId, job.id);
+      assert.equal(finished.status, 'completed');
+      assert.equal(finished.progress, 100);
+      assert.deepEqual(finished.result, { echoed: { hello: 'world' } });
+      assert.ok(handlerCalledWith, 'the registered handler was actually invoked');
+      assert.equal(handlerCalledWith.id, job.id);
+      assert.deepEqual(handlerCalledWith.payload, { hello: 'world' });
+    },
+  );
 
   await t.test('a queued job whose handler throws is marked failed, not left running forever', async () => {
     const jobType = `test_worker_fail_${crypto.randomUUID().slice(0, 8)}`;

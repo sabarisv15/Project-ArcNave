@@ -95,7 +95,12 @@ test('platform.js contract', async (t) => {
   });
 
   async function platformToken() {
-    const resp = await post(baseUrl, '/api/v1/platform/auth/login', {}, { username: adminUsername, password: PLATFORM_PASSWORD });
+    const resp = await post(
+      baseUrl,
+      '/api/v1/platform/auth/login',
+      {},
+      { username: adminUsername, password: PLATFORM_PASSWORD },
+    );
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -110,23 +115,26 @@ test('platform.js contract', async (t) => {
     return cid;
   }
 
-  await t.test('GET /api/v1/openapi.json lists a representative sample of platform.js paths, sourced from the same schemas validate() enforces', async () => {
-    const resp = await get(baseUrl, '/api/v1/openapi.json', {});
-    assert.equal(resp.status, 200);
-    for (const [path, methods] of [
-      ['/platform/colleges', ['post', 'get']],
-      ['/platform/colleges/{college_id}', ['patch']],
-      ['/platform/colleges/{college_id}/invite-principal', ['post']],
-      ['/platform/invitations', ['get']],
-      ['/platform/settings', ['put']],
-      ['/platform/structural-authorization-keys/redeem', ['post']],
-    ]) {
-      assert.ok(resp.body.paths[path], `${path} documented`);
-      for (const method of methods) {
-        assert.ok(resp.body.paths[path][method], `${method.toUpperCase()} ${path} documented`);
+  await t.test(
+    'GET /api/v1/openapi.json lists a representative sample of platform.js paths, sourced from the same schemas validate() enforces',
+    async () => {
+      const resp = await get(baseUrl, '/api/v1/openapi.json', {});
+      assert.equal(resp.status, 200);
+      for (const [path, methods] of [
+        ['/platform/colleges', ['post', 'get']],
+        ['/platform/colleges/{college_id}', ['patch']],
+        ['/platform/colleges/{college_id}/invite-principal', ['post']],
+        ['/platform/invitations', ['get']],
+        ['/platform/settings', ['put']],
+        ['/platform/structural-authorization-keys/redeem', ['post']],
+      ]) {
+        assert.ok(resp.body.paths[path], `${path} documented`);
+        for (const method of methods) {
+          assert.ok(resp.body.paths[path][method], `${method.toUpperCase()} ${path} documented`);
+        }
       }
-    }
-  });
+    },
+  );
 
   await t.test('POST /platform/colleges with a well-formed body is unaffected by validate()', async () => {
     const token = await platformToken();
@@ -147,66 +155,81 @@ test('platform.js contract', async (t) => {
     assert.equal(resp.body.detail, 'Invalid request');
   });
 
-  await t.test('PATCH /platform/colleges/{college_id} with a wrong-typed subscription_status gets a clean 400', async () => {
-    const token = await platformToken();
-    const collegeId = collegeIdFactory();
-    await post(baseUrl, '/api/v1/platform/colleges', headers(token), {
-      college_id: collegeId,
-      name: 'Contract Test College 2',
-      subdomain: collegeId,
-    });
-    const resp = await patch(baseUrl, `/api/v1/platform/colleges/${collegeId}`, headers(token), {
-      subscription_status: 12345,
-    });
-    assert.equal(resp.status, 400);
-    assert.equal(resp.body.detail, 'Invalid request');
-  });
+  await t.test(
+    'PATCH /platform/colleges/{college_id} with a wrong-typed subscription_status gets a clean 400',
+    async () => {
+      const token = await platformToken();
+      const collegeId = collegeIdFactory();
+      await post(baseUrl, '/api/v1/platform/colleges', headers(token), {
+        college_id: collegeId,
+        name: 'Contract Test College 2',
+        subdomain: collegeId,
+      });
+      const resp = await patch(baseUrl, `/api/v1/platform/colleges/${collegeId}`, headers(token), {
+        subscription_status: 12345,
+      });
+      assert.equal(resp.status, 400);
+      assert.equal(resp.body.detail, 'Invalid request');
+    },
+  );
 
-  await t.test('PATCH /platform/colleges/{college_id} with a well-formed body is unaffected by validate()', async () => {
-    const token = await platformToken();
-    const collegeId = collegeIdFactory();
-    await post(baseUrl, '/api/v1/platform/colleges', headers(token), {
-      college_id: collegeId,
-      name: 'Contract Test College 3',
-      subdomain: collegeId,
-    });
-    const resp = await patch(baseUrl, `/api/v1/platform/colleges/${collegeId}`, headers(token), {
-      subscription_status: 'full',
-    });
-    assert.equal(resp.status, 200);
-    assert.equal(resp.body.subscription_status, 'full');
-  });
+  await t.test(
+    'PATCH /platform/colleges/{college_id} with a well-formed body is unaffected by validate()',
+    async () => {
+      const token = await platformToken();
+      const collegeId = collegeIdFactory();
+      await post(baseUrl, '/api/v1/platform/colleges', headers(token), {
+        college_id: collegeId,
+        name: 'Contract Test College 3',
+        subdomain: collegeId,
+      });
+      const resp = await patch(baseUrl, `/api/v1/platform/colleges/${collegeId}`, headers(token), {
+        subscription_status: 'full',
+      });
+      assert.equal(resp.status, 200);
+      assert.equal(resp.body.subscription_status, 'full');
+    },
+  );
 
-  await t.test('POST /platform/colleges/{college_id}/invite-principal with a wrong-typed email gets a clean 400', async () => {
-    const token = await platformToken();
-    const collegeId = collegeIdFactory();
-    await post(baseUrl, '/api/v1/platform/colleges', headers(token), {
-      college_id: collegeId,
-      name: 'Contract Test College 4',
-      subdomain: collegeId,
-    });
-    const resp = await post(baseUrl, `/api/v1/platform/colleges/${collegeId}/invite-principal`, headers(token), {
-      email: 12345,
-    });
-    assert.equal(resp.status, 400);
-    assert.equal(resp.body.detail, 'Invalid request');
-  });
+  await t.test(
+    'POST /platform/colleges/{college_id}/invite-principal with a wrong-typed email gets a clean 400',
+    async () => {
+      const token = await platformToken();
+      const collegeId = collegeIdFactory();
+      await post(baseUrl, '/api/v1/platform/colleges', headers(token), {
+        college_id: collegeId,
+        name: 'Contract Test College 4',
+        subdomain: collegeId,
+      });
+      const resp = await post(baseUrl, `/api/v1/platform/colleges/${collegeId}/invite-principal`, headers(token), {
+        email: 12345,
+      });
+      assert.equal(resp.status, 400);
+      assert.equal(resp.body.detail, 'Invalid request');
+    },
+  );
 
-  await t.test('POST /platform/onboarding/verify-email/send-code with email omitted is NOT rejected by validate() — the route\'s own message is unchanged', async () => {
-    const token = await platformToken();
-    const resp = await post(baseUrl, '/api/v1/platform/onboarding/verify-email/send-code', headers(token), {});
-    assert.equal(resp.status, 400);
-    assert.equal(resp.body.detail, 'email is required');
-  });
+  await t.test(
+    "POST /platform/onboarding/verify-email/send-code with email omitted is NOT rejected by validate() — the route's own message is unchanged",
+    async () => {
+      const token = await platformToken();
+      const resp = await post(baseUrl, '/api/v1/platform/onboarding/verify-email/send-code', headers(token), {});
+      assert.equal(resp.status, 400);
+      assert.equal(resp.body.detail, 'email is required');
+    },
+  );
 
-  await t.test('POST /platform/onboarding/verify-email/verify-code with code omitted is NOT rejected by validate() — the route\'s own message is unchanged', async () => {
-    const token = await platformToken();
-    const resp = await post(baseUrl, '/api/v1/platform/onboarding/verify-email/verify-code', headers(token), {
-      email: 'someone@example.com',
-    });
-    assert.equal(resp.status, 400);
-    assert.equal(resp.body.detail, 'email and code are required');
-  });
+  await t.test(
+    "POST /platform/onboarding/verify-email/verify-code with code omitted is NOT rejected by validate() — the route's own message is unchanged",
+    async () => {
+      const token = await platformToken();
+      const resp = await post(baseUrl, '/api/v1/platform/onboarding/verify-email/verify-code', headers(token), {
+        email: 'someone@example.com',
+      });
+      assert.equal(resp.status, 400);
+      assert.equal(resp.body.detail, 'email and code are required');
+    },
+  );
 
   await t.test('PUT /platform/settings with a non-object body gets a clean 400', async () => {
     const token = await platformToken();
@@ -225,12 +248,18 @@ test('platform.js contract', async (t) => {
     assert.ok(Array.isArray(resp.body));
   });
 
-  await t.test('POST /platform/structural-authorization-keys/redeem with sections omitted is NOT rejected by validate() — the route\'s own message is unchanged', async () => {
-    const token = await platformToken();
-    const resp = await post(baseUrl, '/api/v1/platform/structural-authorization-keys/redeem', headers(token), {
-      token: 'some-token',
-    });
-    assert.equal(resp.status, 400);
-    assert.equal(resp.body.detail, 'sections is required — at least one of l2Config/affiliation/accreditation/campus/department');
-  });
+  await t.test(
+    "POST /platform/structural-authorization-keys/redeem with sections omitted is NOT rejected by validate() — the route's own message is unchanged",
+    async () => {
+      const token = await platformToken();
+      const resp = await post(baseUrl, '/api/v1/platform/structural-authorization-keys/redeem', headers(token), {
+        token: 'some-token',
+      });
+      assert.equal(resp.status, 400);
+      assert.equal(
+        resp.body.detail,
+        'sections is required — at least one of l2Config/affiliation/accreditation/campus/department',
+      );
+    },
+  );
 });

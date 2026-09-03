@@ -138,23 +138,26 @@ test('classes.js contract', async (t) => {
     return { host: hostFor(college.subdomain), authorization: `Bearer ${token}` };
   }
 
-  await t.test('GET /api/v1/openapi.json lists a representative sample of classes.js paths, sourced from the same schemas validate() enforces', async () => {
-    const resp = await get(baseUrl, '/api/v1/openapi.json', { host: hostFor(college.subdomain) });
-    assert.equal(resp.status, 200);
-    for (const [path, methods] of [
-      ['/classes', ['post', 'get']],
-      ['/classes/{id}', ['get', 'put', 'delete']],
-      ['/classes/{id}/tutor', ['post', 'put']],
-      ['/classes/{id}/generate-timetable', ['post']],
-      ['/classes/{id}/revise-timetable', ['post']],
-      ['/classes/{id}/send-alert', ['post']],
-    ]) {
-      assert.ok(resp.body.paths[path], `${path} documented`);
-      for (const method of methods) {
-        assert.ok(resp.body.paths[path][method], `${method.toUpperCase()} ${path} documented`);
+  await t.test(
+    'GET /api/v1/openapi.json lists a representative sample of classes.js paths, sourced from the same schemas validate() enforces',
+    async () => {
+      const resp = await get(baseUrl, '/api/v1/openapi.json', { host: hostFor(college.subdomain) });
+      assert.equal(resp.status, 200);
+      for (const [path, methods] of [
+        ['/classes', ['post', 'get']],
+        ['/classes/{id}', ['get', 'put', 'delete']],
+        ['/classes/{id}/tutor', ['post', 'put']],
+        ['/classes/{id}/generate-timetable', ['post']],
+        ['/classes/{id}/revise-timetable', ['post']],
+        ['/classes/{id}/send-alert', ['post']],
+      ]) {
+        assert.ok(resp.body.paths[path], `${path} documented`);
+        for (const method of methods) {
+          assert.ok(resp.body.paths[path][method], `${method.toUpperCase()} ${path} documented`);
+        }
       }
-    }
-  });
+    },
+  );
 
   await t.test('POST /classes with a non-object body gets a clean 400', async () => {
     const token = await loginPrincipal();
@@ -196,14 +199,17 @@ test('classes.js contract', async (t) => {
     assert.equal(resp.status, 200);
   });
 
-  await t.test('POST /classes/{id}/generate-timetable with a wrong-typed requirements gets a clean 400 — the real pre-existing crash class this schema fixes', async () => {
-    const token = await loginPrincipal();
-    const resp = await post(baseUrl, `/api/v1/classes/${classId}/generate-timetable`, headers(token), {
-      requirements: 'not-an-array',
-    });
-    assert.equal(resp.status, 400);
-    assert.equal(resp.body.detail, 'Invalid request');
-  });
+  await t.test(
+    'POST /classes/{id}/generate-timetable with a wrong-typed requirements gets a clean 400 — the real pre-existing crash class this schema fixes',
+    async () => {
+      const token = await loginPrincipal();
+      const resp = await post(baseUrl, `/api/v1/classes/${classId}/generate-timetable`, headers(token), {
+        requirements: 'not-an-array',
+      });
+      assert.equal(resp.status, 400);
+      assert.equal(resp.body.detail, 'Invalid request');
+    },
+  );
 
   await t.test('POST /classes/{id}/revise-timetable with a wrong-typed requirements gets a clean 400', async () => {
     const token = await loginPrincipal();
@@ -214,12 +220,15 @@ test('classes.js contract', async (t) => {
     assert.equal(resp.body.detail, 'Invalid request');
   });
 
-  await t.test('POST /classes/{id}/send-alert with body omitted is NOT rejected by validate() — the service\'s own message is unchanged', async () => {
-    const token = await loginPrincipal();
-    const resp = await post(baseUrl, `/api/v1/classes/${classId}/send-alert`, headers(token), {});
-    assert.equal(resp.status, 400);
-    assert.equal(resp.body.detail, 'body is required');
-  });
+  await t.test(
+    "POST /classes/{id}/send-alert with body omitted is NOT rejected by validate() — the service's own message is unchanged",
+    async () => {
+      const token = await loginPrincipal();
+      const resp = await post(baseUrl, `/api/v1/classes/${classId}/send-alert`, headers(token), {});
+      assert.equal(resp.status, 400);
+      assert.equal(resp.body.detail, 'body is required');
+    },
+  );
 
   await t.test('DELETE /classes/{id} (params-only schema) is unaffected by validate()', async () => {
     const token = await loginPrincipal();

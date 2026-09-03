@@ -142,7 +142,19 @@ jobs:
       # conflict in this project's own dependency tree (react19 vs.
       # next-themes/@radix-ui's stated peer ranges), not introduced by
       # this pipeline — tracked as a dependency-scan follow-up.
-      - run: npm ci --legacy-peer-deps
+      # --workspaces=false: P5's 5.13 (npm workspaces, ADL-090) added a
+      # root package.json declaring this directory a workspace member —
+      # npm then auto-infers `--workspace=frontend` for any `npm ci` run
+      # from inside here, which silently skips installing platform-
+      # specific optionalDependencies (confirmed live: TypeScript 7's
+      # `@typescript/typescript-linux-x64` native binary never installs
+      # under that auto-inferred workspace mode, breaking `tsc` outright
+      # — this is what broke CI's first-ever real run, ADL-094). This
+      # flag restores the exact standalone-install behavior this step
+      # had before 5.13 existed; confirmed live (a clean container, this
+      # exact flag combination) that the platform binary installs
+      # correctly again.
+      - run: npm ci --legacy-peer-deps --workspaces=false
       - name: Lint
         run: npm run lint
       - name: Format check

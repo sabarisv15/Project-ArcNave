@@ -4780,9 +4780,15 @@ test('buildHistoryTurns: over-budget history keeps the most recent turns, drops 
   ];
   const turns = aiService.buildHistoryTurns(history, 100);
   assert.ok(!turns.some((t) => t.content.includes('A'.repeat(40))), 'oldest turn should be dropped');
-  assert.ok(turns.some((t) => t.content.includes('D'.repeat(40))), 'most recent turn must survive');
+  assert.ok(
+    turns.some((t) => t.content.includes('D'.repeat(40))),
+    'most recent turn must survive',
+  );
   assert.match(turns[0].content, /earlier turn\(s\) omitted/);
-  assert.ok(!turns[turns.length - 1].content.includes('omitted'), 'the note belongs on the earliest surviving turn only');
+  assert.ok(
+    !turns[turns.length - 1].content.includes('omitted'),
+    'the note belongs on the earliest surviving turn only',
+  );
 });
 
 test('buildHistoryTurns: always keeps at least the single most recent turn even if it alone exceeds the budget', () => {

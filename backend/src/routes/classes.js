@@ -782,7 +782,10 @@ module.exports.schemas = {
   '/classes/{id}': { get: getClassSchema, put: updateClassSchema, delete: removeClassSchema },
   '/classes/{id}/tutor': { post: assignTutorSchema, put: assignTutorSchema },
   '/classes/{id}/submit-for-approval': { post: submitForApprovalSchema },
-  '/classes/{id}/substitute-assignments': { post: requestSubstituteAssignmentSchema, get: listSubstituteAssignmentsSchema },
+  '/classes/{id}/substitute-assignments': {
+    post: requestSubstituteAssignmentSchema,
+    get: listSubstituteAssignmentsSchema,
+  },
   '/substitute-assignments/{id}/acknowledge': { post: acknowledgeSubstituteAssignmentSchema },
   '/classes/{id}/generate-timetable': { post: generateTimetableSchema },
   '/classes/{id}/revise-timetable': { post: reviseTimetableSchema },

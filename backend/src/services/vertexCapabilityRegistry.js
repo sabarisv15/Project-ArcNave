@@ -182,7 +182,7 @@ const KNOWN_MODEL_PROFILES = {
     },
     supportedMimeTypes: ['audio/wav'], // carried over from gemini-3.7-flash (owner direction 2026-09-03)
     notes: [
-      'Carried over verbatim from gemini-3.7-flash on explicit owner direction (2026-09-03), not independently re-verified per field — see this entry\'s header comment. multimodal_text/image/pdf/audio/video are the one exception, doc-cited against 3.8 directly.',
+      "Carried over verbatim from gemini-3.7-flash on explicit owner direction (2026-09-03), not independently re-verified per field — see this entry's header comment. multimodal_text/image/pdf/audio/video are the one exception, doc-cited against 3.8 directly.",
       'multimodal_video is attempted (matches gemini.js supportsAudioVideo) but not independently live-verified per codec — see CURRENT-STATE.md 2026-08-30 banner (inherited caveat from 3.7).',
       'thinking_budget is not exposed by this model/API surface; only thinking_level is real here — do not configure both for this model (inherited caveat from 3.7).',
     ],

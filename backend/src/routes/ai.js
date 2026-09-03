@@ -421,7 +421,12 @@ const askSchema = z.object({
       conversation_id: z.string().optional(),
       attachment_ids: z.array(z.string()).optional(),
       mode: z.string().optional(),
-      thinkingLevel: z.string().optional(),
+      // .nullable() alongside .optional(): the chat composer's
+      // EMPTY_COMPOSER default (ComposerProvider.jsx) is `null`, not
+      // `undefined`, and is sent as-is until a user actually picks a
+      // level via ThinkingLevelToggle — reject only a genuinely wrong
+      // type, not the untouched-default shape.
+      thinkingLevel: z.string().optional().nullable(),
     })
     .optional(),
 });

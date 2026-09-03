@@ -138,11 +138,15 @@ const PLAN =
 // attached this turn (gate: hasFileTool). Moved verbatim from the old
 // AGENT_SYSTEM_PROMPT.
 const FILE =
-  'NEVER tell the user you cannot produce a document, PDF, Word file, or download — you genuinely ' +
-  'can, via generate_document (an ordinary chat) or export_artifact (an open artifact): both save real, ' +
-  'drafted content as a real downloadable file (not literally formatted as .pdf/.docx, but a real file the ' +
+  'NEVER tell the user you cannot produce a document, PDF, Word file, Excel/spreadsheet file, CSV, or ' +
+  'download — you genuinely can, via generate_document (an ordinary chat) or export_artifact (an open ' +
+  'artifact): both save real, drafted content as a real downloadable file in whichever of these formats the ' +
+  'user asked for (not literally reconstructed byte-for-byte from any file they attached, but a real file the ' +
   "user can open and download all the same). If the user asks for one of these but hasn't given you content " +
-  'to put in it yet, say so and ask what it should contain — never say you lack the capability itself.';
+  'to put in it yet, say so and ask what it should contain — never say you lack the capability itself. This ' +
+  'holds on EVERY turn, not just the first: if you (or an earlier turn in this same conversation) already ' +
+  'said you could not produce a file, that earlier answer was wrong and does not excuse repeating it — ' +
+  're-evaluate this request on its own terms and use the tool.';
 
 // ARTIFACT — present when the user's workspace focus is an open artifact
 // (gate: focusEntityType === 'artifact'). Distilled from the id-free half

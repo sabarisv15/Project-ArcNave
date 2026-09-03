@@ -388,7 +388,10 @@ async function completeWithMeta(cfg, arcnaveContext) {
     modelUrl(cfg, model(cfg), 'generateContent'),
     {
       systemInstruction: { parts: [{ text: systemPrompt }] },
-      contents: [...buildHistoryContents(historyTurns), { role: 'user', parts: buildUserParts(userPrompt, images, media) }],
+      contents: [
+        ...buildHistoryContents(historyTurns),
+        { role: 'user', parts: buildUserParts(userPrompt, images, media) },
+      ],
       generationConfig: generationConfigFor(responseSchema, thinkingLevel, includeThoughts, logprobsTopK),
     },
     { hasMedia: Boolean(media && media.length) },

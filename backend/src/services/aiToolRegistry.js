@@ -3844,15 +3844,23 @@ registerTool({
     'For any count/sum/average/comparison/filter/grouping your code computes, print exactly one final ' +
     '`FINAL_RESULT_JSON:{...}` line (see file-reading skill for the exact shapes) so your narrated answer can ' +
     'be checked against what the code actually produced — without it, the number you state cannot be verified.\n\n' +
-    'To produce a downloadable Excel workbook (e.g. a category/month breakdown), write it with openpyxl to ' +
-    'the exact filename given in saveAs, and pass expectFormulasIn naming every cell/range that must contain a ' +
-    'live formula (e.g. "Summary!B2:B9"). Write REAL formulas (=SUMIFS(...), =SUM(...)) into those cells — ' +
-    'never compute the total in Python and write it as a plain number. A workbook is verified by actually ' +
-    'recalculating it and re-inspecting every cell: a declared cell holding a literal number INSTEAD of a ' +
-    'formula is REJECTED even when that number is correct, and a formula that evaluates to an error ' +
-    '(#REF!, #DIV/0!, etc.) is REJECTED too. Only a workbook that passes this check is attached to a new ' +
-    'artifact and made available to the user — a failed or unverified one is reported back to you with the ' +
-    'exact reason so you can fix the code and try again; its bytes are never returned to you or the user.',
+    'NOT the tool for "give me this as an Excel/CSV file" when the data is already fully known (already ' +
+    'extracted from an attachment, already computed earlier in this conversation, or simply listed by the ' +
+    'user) and needs no NEW calculation — use generate_document(format: "xlsx" or "csv") for that instead: it ' +
+    'converts a markdown table straight to a real workbook, no code, no formula-verification gate, nothing to ' +
+    'fail. Reach for THIS tool\'s saveAs/expectFormulasIn path only when the workbook itself must report a ' +
+    'value derived from a computation over the data (a sum, average, count, etc.) that has to stay correct if ' +
+    'the underlying numbers change later — e.g. a per-category total the reader might reasonably expect to ' +
+    'recalculate. In that case, write the workbook with openpyxl to the exact filename given in saveAs, and ' +
+    'pass expectFormulasIn naming every cell/range holding one of those derived values (e.g. "Summary!B2:B9"). ' +
+    'Write REAL formulas (=SUMIFS(...), =SUM(...)) into those cells — never compute the total in Python and ' +
+    'write it as a plain number. A workbook is verified by actually recalculating it and re-inspecting every ' +
+    'declared cell: one holding a literal number INSTEAD of a formula is REJECTED even when that number is ' +
+    'correct, and a formula that evaluates to an error (#REF!, #DIV/0!, etc.) is REJECTED too — expectFormulasIn ' +
+    'is never something to pass "just in case" for a plain data dump with nothing to recalculate. Only a ' +
+    'workbook that passes this check is attached to a new artifact and made available to the user — a failed ' +
+    'or unverified one is reported back to you with the exact reason so you can fix the code and try again; ' +
+    'its bytes are never returned to you or the user.',
   allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
   params: {
     type: 'object',
@@ -3871,7 +3879,11 @@ registerTool({
         type: 'array',
         items: { type: 'string' },
         description:
-          'Required when saveAs ends in .xlsx — every cell/range (e.g. "Summary!B2:B9") that must hold a live formula, not a literal value.',
+          'Only when this .xlsx workbook reports a value derived from a calculation over the data (a sum/' +
+          'average/count that should stay correct if the numbers change) — every cell/range (e.g. ' +
+          '"Summary!B2:B9") that must hold a live formula for that, not a literal value. Omit entirely for a ' +
+          'plain data dump with nothing to recalculate; a plain dump does not need this tool at all — see this ' +
+          "tool's own description for when generate_document is the right call instead.",
       },
     },
     required: ['code'],
@@ -4296,10 +4308,17 @@ registerTool({
   dataClassification: 'Internal',
   description:
     "Saves markdown content as a real, downloadable document in the acting user's own Documents — " +
-    'the actual mechanism behind a request like "give me this as a document/Word file/PDF/download" made in an ' +
-    'ordinary chat. Pass `format` when the user names one (e.g. "as a docx report", "as a PDF") — defaults to ' +
-    'markdown otherwise. Use what was already discussed in this conversation as the content when the user is ' +
-    'asking to save something already written, rather than re-asking them to restate it.',
+    'the actual mechanism behind a request like "give me this as a document/Word file/PDF/Excel/spreadsheet/' +
+    'CSV/download" made in an ordinary chat. This IS the right tool for "convert this into Excel/CSV" whenever ' +
+    'the data itself is already fully known — already extracted from an attachment, already computed earlier ' +
+    'in this conversation, or simply given by the user — and needs no new calculation: pass `format: "xlsx"` ' +
+    'or `format: "csv"` with the data written as a markdown table in `content`, and it converts straight to a ' +
+    'real workbook, no code and no formula-verification step to fail. Reach for execute_code instead only when ' +
+    'the file itself must contain a LIVE formula (e.g. a total that should recalculate if the source numbers ' +
+    'change) — see that tool\'s own description. Pass `format` when the user names one (e.g. "as a docx ' +
+    'report", "as a PDF", "as Excel") — defaults to markdown otherwise. Use what was already discussed in this ' +
+    'conversation as the content when the user is asking to save something already written, rather than ' +
+    're-asking them to restate it.',
   allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
   params: {
     type: 'object',

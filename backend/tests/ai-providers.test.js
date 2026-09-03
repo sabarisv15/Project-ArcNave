@@ -708,7 +708,10 @@ test('selfHosted/vertexMaas adapters (OpenAI-compatible): no responseSchema mean
   const selfHostedBody = await capturedRequestBody(() =>
     aiProviders
       .getAdapter('self_hosted')
-      .completeWithMeta({ baseUrl: 'http://x', model: 'm' }, contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }))
+      .completeWithMeta(
+        { baseUrl: 'http://x', model: 'm' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+      )
       .catch(() => {}),
   );
   assert.equal('response_format' in selfHostedBody, false);
@@ -750,7 +753,10 @@ test('claude adapter.completeWithMeta: no responseSchema means no tools/tool_cho
   const body = await capturedRequestBody(() =>
     aiProviders
       .getAdapter('claude')
-      .completeWithMeta({ apiKey: 'k', model: 'claude-x' }, contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }))
+      .completeWithMeta(
+        { apiKey: 'k', model: 'claude-x' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+      )
       .catch(() => {}),
   );
   assert.equal('tools' in body, false);

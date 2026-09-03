@@ -6698,3 +6698,90 @@ typecheck` (clean), `npm test` (45/45 files, 552/552 tests passing).
 by this change (confirmed by filename, none are files this slice
 edited) — a pre-existing baseline issue, not a regression introduced
 here.
+
+
+---
+
+## ADL-079
+
+### 5.12 (modernization P4) -- isolated error boundaries: two layers, a mid-plan target correction, hand-rolled to protect the just-landed bundle budget
+
+**What prompted this.** 5.5/5.6 (ADL-078) landed; next P4 item. 5.12's
+own gap: "No layered error boundaries -- one broken widget can crash the
+whole app." Confirmed by grep: zero existing boundaries anywhere in
+`frontend/src/` before this session.
+
+**Design, approved before implementation.** Two layers, not one per
+route file -- `frontend/src/components/AppShell.jsx:275` already
+renders every route's content through a single `<Outlet />` while
+`AppShell` itself stays mounted across navigations, so wrapping that
+one `Outlet` isolates "this page crashed" from the persistent sidebar
+for all 31+ routes uniformly, without 31 near-identical wrappers.
+Hand-rolled (`getDerivedStateFromError`/`componentDidCatch`, no hook
+equivalent exists), not `react-error-boundary` as a dependency -- this
+session had just added a strict bundle-size CI gate (ADL-078)
+specifically to guard the existing bundle shape; adding a runtime
+dependency for a ~20-line class component the very next slice would be
+an odd first withdrawal from that new budget.
+
+**Reset mechanism deliberately left to inspection, not prescribed
+up front -- owner's own correction to the first plan draft.** The
+first draft specified `key={location.pathname}` and "keyed by `code`"
+before any code had been read. Owner required stating the *behavior*
+(navigating away must clear a caught error; a different Mermaid source
+must get a fresh attempt) and inspecting the real component structure
+before committing to a mechanism. Inspection confirmed `key` remounting
+was in fact the right fit both times, but for a reason only visible
+from the real code: `AppShell.jsx:75` already destructures `const {
+pathname } = useLocation()` in the same function scope the `Outlet` is
+rendered in -- the value was already there, not something to newly wire
+up.
+
+**Real target correction found during inspection, not assumed.** The
+original plan's widget-level candidate was `MermaidDiagram` (wrapping
+`frontend/src/components/Markdown.jsx:170-171`'s `<MermaidDiagram
+code={code} />` call). Reading `MermaidDiagram.jsx` in full first
+(the same discipline O3 established) showed it already catches its own
+`mermaid.render()` failures in a `.catch()` and falls back to showing
+the raw source text -- it can never throw during React's render phase,
+so a boundary around it would be dead code. The actually-fragile
+surface, found by reading `Markdown.jsx` completely rather than
+stopping at the first plausible-looking `dangerouslySetInnerHTML`
+match: `remark-math`/`rehype-katex` (both already dependencies,
+wired at `Markdown.jsx:4-5,211-212`) parse arbitrary AI- or
+user-authored markdown/LaTeX synchronously inside `<ReactMarkdown>`'s
+own render call and can throw on malformed input -- a real "untrusted
+input crashes a widget" shape CLAUDE.md rule 9 already names. Retargeted
+the widget-level boundary to wrap `<ReactMarkdown>` itself rather than
+`MermaidDiagram` specifically; `MermaidDiagram` sits inside that same
+tree, so it's still covered as a bonus, not left unguarded.
+
+**What shipped, real code, local-verified.**
+- `frontend/src/components/ErrorBoundary.jsx` (new) -- class component,
+  `fallback`/`label` props, logs via `console.error` (no new logging
+  abstraction). No built-in retry-counter state -- resets purely via the
+  caller's own `key` change, documented in the component's own comment
+  so a future reader doesn't wonder where "reset" logic went.
+- `frontend/src/components/AppShell.jsx` -- `<Outlet />` wrapped in
+  `<ErrorBoundary key={pathname} label="page">`.
+- `frontend/src/components/Markdown.jsx` -- `<ReactMarkdown>` wrapped in
+  `<ErrorBoundary key={children} label="content">` (`children` is the
+  raw markdown source string at every real call site, confirmed by
+  grep across `ArtifactEditor.jsx`/`ChatMessage.jsx`/
+  `CollapsibleContent.jsx` before using it as a `key`).
+- 3 new test files: `ErrorBoundary.test.jsx` (fallback on throw,
+  normal children unaffected, key-change clears a caught error);
+  `AppShell.test.jsx` (a custom `<Routes>` tree with a throwing test
+  route, reusing `renderApp.jsx`'s own provider stack -- sidebar-equivalent
+  nav stays mounted and clickable when the routed page throws, and
+  navigating away recovers); `Markdown.test.jsx` (`react-markdown`
+  mocked to throw on a specific input -- proves the wiring directly
+  rather than depending on a specific real malformed-LaTeX string
+  reliably throwing in whatever KaTeX version is installed today).
+
+**Verification.** `npm run lint` (0 errors, 88 warnings, unchanged
+baseline), `npm run typecheck` (clean), `npm test` (48/48 files,
+560/560 tests -- 552 pre-existing + 8 new, all passing), `npm run build
+&& npm run size` (all 5 ADL-078 budgets still pass; entry chunk grew
+206.32kB->206.59kB gzip, comfortably inside the 248KB budget -- the two
+new small components did not meaningfully move it).

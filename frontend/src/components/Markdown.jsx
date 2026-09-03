@@ -6,6 +6,7 @@ import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { CopyButton } from './ui/CopyButton';
 import { MermaidDiagram } from './MermaidDiagram';
+import { ErrorBoundary } from './ErrorBoundary';
 import { cn } from '../lib/utils';
 import { isSafeHref } from '../lib/richPaste';
 import { highlightCode, languageFromClassName } from '../lib/codeHighlight';
@@ -207,13 +208,21 @@ export function Markdown({ children, className }) {
     // change, and DM Sans at this size reads better with the extra half-point
     // than the gain of two more visible lines is worth.
     <div className={cn('text-[14.5px] leading-[1.48] font-[400] text-ink-soft', className)}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex]}
-        components={markdownComponents}
-      >
-        {children}
-      </ReactMarkdown>
+      {/* P4 5.12 — remark-math/rehype-katex parse arbitrary AI- or
+          user-authored content synchronously during render and can throw on
+          malformed LaTeX; this keeps a bad message from blanking the whole
+          chat/document pane around it. Keyed on the source itself so a
+          different message always gets a fresh render attempt rather than
+          staying stuck on a previous one's error. */}
+      <ErrorBoundary key={children} label="content">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[rehypeKatex]}
+          components={markdownComponents}
+        >
+          {children}
+        </ReactMarkdown>
+      </ErrorBoundary>
     </div>
   );
 }

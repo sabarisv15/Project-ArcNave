@@ -6,6 +6,7 @@ import { Sidebar } from './Sidebar';
 import { ScheduleDrawer } from './ScheduleDrawer';
 import { ProfileDrawer } from './ProfileDrawer';
 import { SidebarRevealHint, hasAcknowledgedRevealHint } from './SidebarRevealHint';
+import { ErrorBoundary } from './ErrorBoundary';
 import { isCurriculumPath } from './SidebarNavigation';
 import { CurriculumFullscreenHint, hasSeenCurriculumHintToday } from './CurriculumFullscreenHint';
 import { useWorkspace } from '../store/WorkspaceProvider';
@@ -272,7 +273,13 @@ export function AppShell() {
           <PanelLeftOpen size={17} strokeWidth={1.8} />
         </button>
 
-        <Outlet />
+        {/* P4 5.12 — keyed on the route path: a crash on one page must not
+            keep showing its fallback after the user navigates elsewhere.
+            React remounts (clearing any caught error) whenever this key
+            changes; `pathname` is already read above for the sidebar. */}
+        <ErrorBoundary key={pathname} label="page">
+          <Outlet />
+        </ErrorBoundary>
         <ScheduleDrawer />
       </main>
 

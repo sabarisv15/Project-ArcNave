@@ -98,7 +98,7 @@ test('extractPlainText: an ordinary text-layer PDF is extracted via the fast tex
   assert.equal(runOcrMock.mock.calls.length, 0);
 });
 
-test('extractPlainText: correction 1 — a PDF with an empty/near-empty text layer (e.g. scanned) falls back to OCR, mocked here to avoid a real Tesseract run', async (t) => {
+test('extractPlainText: correction 1 — a scanned PDF with no client/collegeId (vision unavailable) falls back to Tesseract, mocked here to avoid a real Tesseract run', async (t) => {
   t.mock.method(documentExtractionService, 'runOcr', async () => ({ text: 'OCR-recovered text.', ocrConfidence: 91 }));
   const blankBuffer = await buildPdfBuffer(null); // no .text() call -> empty embedded text layer
   const result = await documentTextExtractionService.extractPlainText(
@@ -107,6 +107,50 @@ test('extractPlainText: correction 1 — a PDF with an empty/near-empty text lay
   );
   assert.equal(result.method, 'ocr_fallback');
   assert.equal(result.text, 'OCR-recovered text.');
+});
+
+// ADL-074 (modernization P3 2.4) — vision is the DEFAULT for a genuinely
+// scanned PDF when client/collegeId are available (a real chat turn
+// always has both — see aiService.resolveChatAttachments' own call
+// site), not a confidence-gated fallback behind Tesseract. Decided
+// explicitly by the owner, not to be re-opened on cost grounds alone.
+test('extractPlainText: a scanned PDF with client+collegeId available uses vision by DEFAULT, never touching Tesseract', async (t) => {
+  const visionMock = t.mock.method(documentExtractionService, 'transcribeWithVision', async () => ({
+    text: 'Vision-transcribed text.',
+    method: 'vision_transcription',
+  }));
+  const runOcrMock = t.mock.method(documentExtractionService, 'runOcr', async () => {
+    throw new Error('Tesseract must not be called when vision is available and succeeds');
+  });
+  const blankBuffer = await buildPdfBuffer(null);
+  const result = await documentTextExtractionService.extractPlainText(
+    blankBuffer,
+    documentTextExtractionService.PDF_MIME_TYPE,
+    { client: {}, collegeId: 'c1' },
+  );
+  assert.equal(result.method, 'vision_transcription');
+  assert.equal(result.text, 'Vision-transcribed text.');
+  assert.equal(visionMock.mock.calls.length, 1);
+  assert.equal(visionMock.mock.calls[0].arguments[1].collegeId, 'c1');
+  assert.equal(runOcrMock.mock.calls.length, 0);
+});
+
+test('extractPlainText: a scanned PDF falls back to Tesseract when vision itself fails (capability or network), even with client+collegeId', async (t) => {
+  t.mock.method(documentExtractionService, 'transcribeWithVision', async () => {
+    throw new documentExtractionService.DocumentExtractionVisionTranscriptionUnsupportedError('no vision capability');
+  });
+  t.mock.method(documentExtractionService, 'runOcr', async () => ({
+    text: 'Tesseract fallback text.',
+    ocrConfidence: 40,
+  }));
+  const blankBuffer = await buildPdfBuffer(null);
+  const result = await documentTextExtractionService.extractPlainText(
+    blankBuffer,
+    documentTextExtractionService.PDF_MIME_TYPE,
+    { client: {}, collegeId: 'c1' },
+  );
+  assert.equal(result.method, 'ocr_fallback');
+  assert.equal(result.text, 'Tesseract fallback text.');
 });
 
 test('extractPlainText: a corrupt/non-PDF buffer claimed as application/pdf degrades to corrupt_or_unreadable, never throws', async () => {

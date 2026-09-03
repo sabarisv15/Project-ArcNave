@@ -696,6 +696,104 @@ test('documentExtractionService.runOcr', async (t) => {
   });
 });
 
+// ADL-074 (modernization P3 2.4) — vision is the DEFAULT transcription
+// path for a genuinely scanned document, not a confidence-gated
+// fallback behind Tesseract, per the owner's explicit decision recorded
+// in the ledger. mockAiConfigWithVision (defined above the
+// extractFieldsWithSpatialGrounding tests) is reused here — same
+// adapter shape.
+test('documentExtractionService.transcribeWithVision', async (t) => {
+  await t.test('an image mimeType sends a single image, no rasterization', async () => {
+    const rasterMock = t.mock.method(pdfRasterizer, 'rasterizePdfToImages', async () => {
+      throw new Error('must not be called');
+    });
+    let capturedImages;
+    mockAiConfigWithVision(t, async (cfg, arcnaveContext) => {
+      capturedImages = flattenToPrompts(arcnaveContext).images;
+      return 'transcribed text';
+    });
+    t.after(() => rasterMock.mock.restore());
+
+    const result = await documentExtractionService.transcribeWithVision(
+      {},
+      { collegeId: 'c1', fileBuffer: Buffer.from('img-bytes'), mimeType: 'image/png' },
+    );
+    assert.equal(rasterMock.mock.callCount(), 0);
+    assert.equal(capturedImages.length, 1);
+    assert.equal(capturedImages[0].mimeType, 'image/png');
+    assert.equal(capturedImages[0].base64, Buffer.from('img-bytes').toString('base64'));
+    assert.equal(result.text, 'transcribed text');
+    assert.equal(result.method, 'vision_transcription');
+    assert.equal(result.aiModel, 'gemini');
+    assert.equal(result.aiModelVersion, 'test-model-v1');
+  });
+
+  await t.test('a PDF rasterizes to pages first, sends EVERY page in ONE call (not one call per page)', async () => {
+    const rasterMock = t.mock.method(pdfRasterizer, 'rasterizePdfToImages', async () => [
+      Buffer.from('page1'),
+      Buffer.from('page2'),
+      Buffer.from('page3'),
+    ]);
+    let capturedImages;
+    let callCount = 0;
+    mockAiConfigWithVision(t, async (cfg, arcnaveContext) => {
+      callCount += 1;
+      capturedImages = flattenToPrompts(arcnaveContext).images;
+      return '--- Page 1 ---\nfoo\n--- Page 2 ---\nbar\n--- Page 3 ---\nbaz';
+    });
+    t.after(() => rasterMock.mock.restore());
+
+    const result = await documentExtractionService.transcribeWithVision(
+      {},
+      { collegeId: 'c1', fileBuffer: Buffer.from('pdf-bytes'), mimeType: 'application/pdf' },
+    );
+    assert.equal(callCount, 1); // one batched call for all 3 pages, not 3 separate calls
+    assert.equal(capturedImages.length, 3);
+    assert.equal(capturedImages[1].mimeType, 'image/png'); // pdfRasterizer's own output format
+    assert.equal(capturedImages[1].base64, Buffer.from('page2').toString('base64'));
+    assert.match(result.text, /Page 2.*bar/s);
+  });
+
+  await t.test('rejects when the configured provider/model has no vision capability', async () => {
+    const aiMock = mockAiConfig(t, async () => {
+      throw new Error('must not be called');
+    }); // no supportsVision -> capability gate fails first
+
+    await assert.rejects(
+      () =>
+        documentExtractionService.transcribeWithVision(
+          {},
+          { collegeId: 'c1', fileBuffer: Buffer.from('img'), mimeType: 'image/png' },
+        ),
+      documentExtractionService.DocumentExtractionVisionTranscriptionUnsupportedError,
+    );
+    assert.equal(aiMock.mock.callCount(), 1); // the gate reads its adapter, just never calls .complete
+  });
+
+  await t.test('an unsupported mimeType is a validation error, never reaches getAiConfig', async () => {
+    const aiMock = mockAiConfig(t, async () => {
+      throw new Error('must not be called');
+    });
+
+    await assert.rejects(
+      () =>
+        documentExtractionService.transcribeWithVision(
+          {},
+          { collegeId: 'c1', fileBuffer: Buffer.from('x'), mimeType: 'application/zip' },
+        ),
+      documentExtractionService.DocumentExtractionValidationError,
+    );
+    assert.equal(aiMock.mock.callCount(), 0);
+  });
+
+  await t.test('missing collegeId/fileBuffer/mimeType is a validation error', async () => {
+    await assert.rejects(
+      () => documentExtractionService.transcribeWithVision({}, { fileBuffer: Buffer.from('x'), mimeType: 'image/png' }),
+      documentExtractionService.DocumentExtractionValidationError,
+    );
+  });
+});
+
 test('documentExtractionService.overallConfidence / needsReview', async (t) => {
   await t.test('overallConfidence weights AI confidence higher than OCR confidence (0.6 vs 0.4)', () => {
     assert.equal(documentExtractionService.overallConfidence(90, 90), 90);

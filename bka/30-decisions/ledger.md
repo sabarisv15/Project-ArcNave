@@ -6341,3 +6341,12 @@ pages of `C:\Users\HAI\Downloads\Analog Electronics EE(www.gatenotes.in).pdf`
 (not committed, neither the source PDF nor the rasterized pages). Not a
 unit test — these are one-off measurement scripts, same category as
 `native-pdf-scale-probe.js`/`pdf-geometry-probe.js`.
+
+**Update — built, same day.** The decision above was implemented:
+`documentExtractionService.transcribeWithVision` (new) + wiring into
+`documentTextExtractionService.extractPdfText`/`extractPlainText` +
+the one call-site change needed in `aiService.resolveChatAttachments`.
+7 new unit tests, full Docker suite **2873/2873**, lint 0 errors. Full
+implementation detail in `CURRENT-STATE.md`'s own banner for this
+build — not restated here per this file's own scope (decisions and
+their reasoning, not ongoing task/build state).

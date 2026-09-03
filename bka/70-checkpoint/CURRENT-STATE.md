@@ -4,7 +4,74 @@ _Last updated: 2026-09-02._
 
 ---
 
-# ⛔ NEWEST BANNER — 2.4 DECIDED (vision is DEFAULT, not fallback), measured twice, 2026-09-03. NOT yet built. Same session as the banner below (that one committed as `729be0c`, pushed; the first 2.4 measurement as `60df5f0`, pushed).
+# ⛔ NEWEST BANNER — 2.4 BUILT and Docker-verified, 2026-09-03. Same session as the two banners below.
+
+**The vision-as-default OCR path is implemented, tested, and full-suite
+verified in Docker.** Full decision context:
+[ADL-074](../30-decisions/ledger.md#adl-074).
+
+**What shipped, real code:**
+- `documentExtractionService.js`: new `transcribeWithVision(client,
+  {collegeId, fileBuffer, mimeType})` — rasterizes a PDF to page images
+  (reusing `pdfRasterizer.rasterizePdfToImages`, same `withOcrSlot`
+  concurrency bound `runOcr` uses) or takes a single image buffer
+  directly, then sends **every page in ONE batched vision call**
+  (ADL-074's own cost/latency finding), same
+  `configurationService.getAiConfig` / `adapter.complete` /
+  `contextFromFlatPrompts({images: [...]})` pattern
+  `extractFieldsWithSpatialGrounding` already established. New error
+  class `DocumentExtractionVisionTranscriptionUnsupportedError`
+  (capability gate — kept separate from
+  `DocumentExtractionSpatialGroundingUnsupportedError` since this isn't
+  spatial grounding). `runOcr` itself is UNCHANGED — still used by
+  `classifyDocument` (admission wizard), untouched by this decision.
+- `documentTextExtractionService.js`: `extractPdfText`/`extractPlainText`
+  now accept optional `client`/`collegeId`. When both are present (a
+  real chat turn always has both), a scanned PDF tries
+  `transcribeWithVision` FIRST — vision is the default, not a
+  confidence-gated fallback, per the owner's explicit decision. Tesseract
+  (`runOcr`) is reached only when vision itself throws (unsupported
+  capability OR a real network/API failure) — a resilience fallback, not
+  a cost one — or when `client`/`collegeId` aren't supplied at all.
+- `aiService.js`'s `resolveChatAttachments` now passes
+  `{client, collegeId: identityContext.collegeId}` into
+  `extractPlainText` — the only call-site change needed; every other
+  branch of `extractPlainText` (DOCX/XLSX/PPTX/ODT/ODS/CSV/plain-text)
+  is unaffected since only the PDF branch reads these two new params.
+- CLAUDE.md rule 9 boundary-wrapping needed NO changes — confirmed
+  `buildAttachmentHint` wraps extracted text uniformly regardless of
+  `extraction.method`, so `vision_transcription` gets the same
+  untrusted-content wrapping `ocr_fallback`/`text_layer` already did.
+
+**Tests, all new, all passing:** 5 new tests in
+`document-extraction-service.test.js` for `transcribeWithVision`
+(single image no rasterization; PDF batches ALL pages into ONE call,
+not one per page; capability-gate rejection; unsupported-mimeType
+validation; missing-args validation). 2 new tests in
+`document-text-extraction.test.js` (vision used by default when
+client+collegeId present, Tesseract never touched; Tesseract fallback
+when vision throws even with client+collegeId present) plus the
+pre-existing "no client/collegeId" test renamed for clarity, still
+green unchanged.
+
+**Verified — the FULL Docker suite, not a partial run** (per this
+project's own "full tests run in Docker" discipline):
+`docker compose up -d --build` → `docker compose exec app npm test` →
+**2873/2873 passing**. `docker compose exec app npm run lint` → 0
+errors (123 pre-existing warnings, same baseline). Containers stopped
+after (`docker compose down`) — nothing left running.
+
+**Exact next action:** commit + push this (uncommitted as of this
+banner). 2.4 is now fully closed — measured, decided, built, tested. Next
+priority items, same as recorded two banners down: **1.16** (agent
+rewrite, standing highest-value item), **academicService.js**-first
+read for 4.6's actual file-split (still only surveyed), or the
+remaining frontend-provider taxonomy decision (5 providers left flat by
+deliberate owner choice, not oversight).
+
+---
+
+# ⛔ Previous banner — 2.4 DECIDED (vision is DEFAULT, not fallback), measured twice, 2026-09-03. NOT yet built. Same session as the banner below (that one committed as `729be0c`, pushed; the first 2.4 measurement as `60df5f0`, pushed).
 
 **2.4 now has a settled decision, not just a measurement.** Full
 writeup: [ADL-074](../30-decisions/ledger.md#adl-074) (updated in

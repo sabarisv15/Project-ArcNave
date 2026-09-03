@@ -768,7 +768,10 @@ async function resolveChatAttachments(client, attachmentIds, identityContext) {
     // for why the router exists at all).
     // eslint-disable-next-line no-await-in-loop
     const extraction = await documentTextExtractionCache.getOrExtract(attachmentId, () =>
-      documentTextExtractionService.extractPlainText(downloaded.buffer, document.mime_type),
+      documentTextExtractionService.extractPlainText(downloaded.buffer, document.mime_type, {
+        client,
+        collegeId: identityContext.collegeId,
+      }),
     );
     if (extraction.text === null) {
       const reason = describeExtractionFailureReason(extraction.failureReason);

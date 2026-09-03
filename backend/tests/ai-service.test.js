@@ -5041,7 +5041,7 @@ test("aiService.askAgent: mode 'general' offers NO tool at all to a role outside
   assert.equal(
     capturedBody.tools,
     undefined,
-    "an unpermitted role gets byte-identical behavior to before this change — no tools field at all",
+    'an unpermitted role gets byte-identical behavior to before this change — no tools field at all',
   );
   assert.equal(capturedBody.tool_choice, undefined);
 });

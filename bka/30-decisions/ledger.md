@@ -7216,3 +7216,40 @@ own); the weaker, fixture-limited `m1` double-tool-call observation from
 the first run did not reproduce on the second (LLM run-to-run variance,
 same category this project's other behavioral scenarios already
 document) — not chased further as a separate finding.
+
+
+---
+
+## ADL-085
+
+### O2/O3 (modernization P4) — deferred indefinitely, owner decision — Resolved
+
+**What prompted this.** Every P4 banner since O3's own code-complete
+checkpoint (ADL-077) has repeated the same unresolved flag: O2 (gradual
+rollout) and O3 (staging environment)'s real GCP infra — Cloud SQL,
+Cloud Run, Secret Manager — was never provisioned, deliberately, and
+`STAGING-DEPLOY-RUNBOOK.md` was written for a human to run those
+`gcloud` commands themselves, not for an agent to run unattended. Owner
+asked to "check O2/O3 status with owner" — asked directly, in chat, per
+the standing P0-P5 mandate's own new-investment stop condition (real
+infra spend is exactly the class of decision that mandate does not let
+an agent make unilaterally).
+
+**Decision: defer O2/O3 indefinitely, not a gap to keep re-flagging.**
+ARCNAVE is still pre-launch — real staging infra is an ongoing cost with
+no live users yet to justify it. This is a deliberate, recorded
+deferral, the same status this project already gives other declined-
+for-now infra (off-host backup storage, a Langfuse tracing stack — both
+cited by O2/O3's own earlier banner text as the same "no deploy target
+exists" reasoning).
+
+**What this changes going forward.** O2/O3 stay code-complete
+(`backend/Dockerfile.prod`, `bootstrap-cloud-sql-roles.js`,
+`smoke-test.js`, `deploy-staging.yml`, `STAGING-DEPLOY-RUNBOOK.md`, all
+already committed per ADL-077) and infra-not-provisioned, by design —
+future sessions should NOT re-ask about O2/O3 status each time P4 comes
+up; the runbook is ready whenever the owner decides to run it
+themselves (or asks for it again explicitly), but this is not a standing
+open question to surface unprompted.
+
+**No code changed this pass** — decision-only.

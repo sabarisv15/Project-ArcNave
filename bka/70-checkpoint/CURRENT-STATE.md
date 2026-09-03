@@ -4,7 +4,7 @@ _Last updated: 2026-09-03._
 
 ---
 
-# ⛔ NEWEST BANNER — P4 thread effectively closed: O3, 5.5/5.6, 5.12, 5.10, 5.11, 5.4, and 3.4 done and pushed; 5.3 scaffolded only (real cutover is its own future pass); O2/O8/"internal-use loop"/"score live traffic" still genuinely blocked/deferred per earlier banners. 2026-09-03.
+# ⛔ NEWEST BANNER — P4 thread CLOSED: everything concretely buildable is done; O2/O3 deliberately deferred (owner decision, ADL-085) — stop re-asking about them. 2026-09-03.
 
 Same session as the O3 banner below, continued. Owner asked to work
 through the rest of P4 after O3. Triaged: O2 and O8 are genuinely
@@ -27,19 +27,32 @@ uncommitted):
 
 - **3.4 (document tool robustness fix)** — [ADL-084](../30-decisions/ledger.md#adl-084). The earlier interpretation ("Documents Institutional/Personal tab-merge") was WRONG — verified against code: `DocumentsView.jsx` already has that merge, built and working. Re-read the plan doc's own placement (Part 3 — AI "skills", under a "several overlapping ways to handle a document" flowchart) and correctly re-scoped to the AI's document-tool paths. Static read of every document tool found no real ambiguity; owner asked to check live AI behavior before deciding. **Docker is available on this host now** (was not, per every earlier banner this session — re-verify at the start of any future session, don't trust this claim blindly either). Added category M to `scripts/ai-behavioral-suite.js` (4 scenarios, real Vertex/Gemini calls, owner-approved before running) — found a real, live bug: `list_institutional_documents` crashed the WHOLE agent turn (`answer: null`) on a category/department/year name that doesn't resolve, unlike its sibling `resolve_document_destination` which was already built safe (`resolveOptionalField`, never throws). Fixed `aiToolRegistry.js`'s handler to use the same safe pattern. **Caught and avoided a real regression before shipping:** a first draft wrapped the result in `{ documents, filterErrors }`, which would have silently broken `aiExperience/sectionBuilder.js`'s generic `Array.isArray(data)`-keyed table rendering for this tool in the chat UI — reverted to a bare array on every path. Also fixed the suite's own `cleanupTenant` (missing `personal_notes` in delete order, broke teardown after `m3` passed). Verified live before/after (crash → `status: "ok"`) and via full backend suite in Docker: **2979/2979, clean, no regressions.** Known, undecided, out-of-scope gap: the suite's tenant seeds zero institutional documents, so `m2`/`m4`'s own pass/fail signal stays fixture-limited — not this fix's job to close.
 
-**P4 thread status:** every item that was concretely scoped and buildable
-this thread is done. What's left is either genuinely blocked (O2/O3/O8 —
-no staging/deploy target exists, a new-investment question for the
-owner), process not code ("internal-use loop," "score live traffic"), or
-its own future pass by design (5.3's real router cutover — see ADL-083's
-own "not decided" section, needs a coexistence-strategy decision before
-any real route is touched).
+- **O2/O3 (staging + gradual rollout)** — [ADL-085](../30-decisions/ledger.md#adl-085). Asked the owner directly, as every prior banner flagged needed to happen. **Deferred indefinitely, owner's own decision** — ARCNAVE is pre-launch, real GCP infra cost isn't justified without live users yet. Code stays as ADL-077 left it (complete, unprovisioned, `STAGING-DEPLOY-RUNBOOK.md` ready whenever the owner wants to run it themselves). **This is now resolved, not an open question — do not re-ask about O2/O3 status in a future P4 banner unless the owner raises it again.**
+
+**P4 thread status: CLOSED.** Every item that was concretely scoped and
+buildable this thread is done (O3 code, 5.5/5.6, 5.12, 5.10, 5.11, 5.4,
+3.4). What remains is either a deliberate, recorded deferral (O2/O3,
+above), process not code ("internal-use loop," "score live traffic" —
+still genuinely unscoped, not decided against, just never picked up),
+or its own future pass by design (5.3's real router cutover — see
+ADL-083's own "not decided" section, needs a coexistence-strategy
+decision before any real route is touched; O8's "auto rollback on
+breach" half is blocked on the same infra O2/O3 just deferred, its
+"define targets" half is doc-only and still genuinely open if picked up
+later).
+
+**If starting fresh next session:** P4 is done. Move to whatever the
+owner names next — there is no more auto-pilot "next P4 item" to pick
+from a list; the standing P0-P5 modernization plan itself
+(`ARCNAVE-modernization-english.md`) has no further phase queued unless
+the owner opens P5 (Enterprise polish) or names something else.
 
 **Committed and pushed:** the four earlier slices (`ae2b9fe`, `f6bc6e8`,
-`bde756b`, `55772c3`), 5.11 (`6eb8e75`), 5.4 (`1121bf0`), and 5.3
-(`b1b1934`) are on `origin/p0-modernization-foundation`. 3.4 (this
-checkpoint) is committed in the same pass as this file — see git log for
-the exact commit.
+`bde756b`, `55772c3`), 5.11 (`6eb8e75`), 5.4 (`1121bf0`), 5.3
+(`b1b1934`), and 3.4 (`878047c`) are on
+`origin/p0-modernization-foundation`. O2/O3's deferral (this checkpoint)
+is committed in the same pass as this file — see git log for the exact
+commit.
 
 ---
 

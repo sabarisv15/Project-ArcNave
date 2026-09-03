@@ -4,7 +4,7 @@ _Last updated: 2026-09-03._
 
 ---
 
-# ⛔ NEWEST BANNER — P4 in progress: O3, 5.5/5.6, 5.12, 5.10, and 5.11 done and pushed; 5.4/5.3/3.4 remain, 2026-09-03.
+# ⛔ NEWEST BANNER — P4 in progress: O3, 5.5/5.6, 5.12, 5.10, 5.11, and 5.4 done and pushed; 5.3/3.4 remain, 2026-09-03.
 
 Same session as the O3 banner below, continued. Owner asked to work
 through the rest of P4 after O3. Triaged: O2 and O8 are genuinely
@@ -21,18 +21,20 @@ uncommitted):
 - **5.12 (isolated error boundaries)** — commit `bde756b`, [ADL-079](../30-decisions/ledger.md#adl-079). Hand-rolled `ErrorBoundary` wraps `AppShell`'s `<Outlet/>` (page-level, keyed on route) and `Markdown`'s `<ReactMarkdown/>` (keyed on source). Plan originally targeted `MermaidDiagram` for the widget-level boundary; reading it in full showed it already self-heals its own render failures (dead-code boundary), so this retargeted to the actually-fragile `remark-math`/`rehype-katex` parse path instead — a real correction found during required inspection, not assumed going in.
 - **5.10 (accessibility audit)** — commit `55772c3`, [ADL-080](../30-decisions/ledger.md#adl-080). Real count at start: 57 `jsx-a11y` warnings. Found the root cause before touching any component: `eslint.config.js`'s blanket rule-enablement transform read only rule NAMES from jsx-a11y's recommended config, discarding severity/options — silently re-enabling the deprecated `label-has-for` (upstream default: off) and stripping `control-has-associated-label`'s own `ignoreElements: ['input','textarea',...]` list. Fixing that transform alone dropped 57→9 with zero markup changes; the remaining 9 got individual per-site fixes (never a fake role/handler where a real alternative existed). Final: 0 `jsx-a11y` warnings.
 - **5.11 (design-system doc)** — [ADL-081](../30-decisions/ledger.md#adl-081). New `bka/50-frontend/DESIGN-SYSTEM.md`: distilled the real `frontend/src/index.css`/`tailwind.config.js` token system (ground plane, tinted fields incl. `tint`/`mist`/`active`'s distinct jobs kept separate not flattened, text ramp, accent, warm, lines, status families, typography, shadows) into a scannable reference, and documented the 3 real `components/ui/` primitives (`CopyButton.jsx`, `Drawer.jsx`, `IconButton.jsx`) exactly as they are — no invented `Button`/`Badge` primitive, since none exists (4 separate feature-specific badge components stand in for it; `cva()` confirmed unused via `grep -rn "cva(" frontend/src` — zero matches). Named the `FIELD`/`MENU_ITEM`/`TOOL_BTN` duplication across 14 files as a documented "Known gap," not fixed (separate multi-file refactor). Also fixed the stale `CLAUDE.md` citation of a nonexistent `components/ui/badge.test.jsx` → repointed to the real `components/AppShell.test.jsx`. Documentation-only, so no `npm test`/build gate applies — every claim (file counts, grep results) was re-verified against current code in this session rather than trusted from the prior session's unwritten plan.
+- **5.4 (notifications live feed, sidebar bell)** — [ADL-082](../30-decisions/ledger.md#adl-082). Owner asked to "start 5.4"; found the checkpoint's own "remaining" claim was stale — both SSE backend routes (job-progress, notifications) were already shipped `0fc6cda`/`899c738`, but genuinely unconsumed (zero frontend references to either). Ran a real Product Reasoning pass (no mockup existed): owner narrowed scope to notifications-only (background-job SSE has no job-creating UI to attach to yet, stays unwired) and picked a sidebar bell + popover for placement (the redesigned shell has no header bar). Page contract + Approved Spec: `bka/60-product-reasoning/notification-bell(-approved-spec).md`. Built `frontend/src/api/notifications.js` (GET-based fetch SSE reader — `EventSource` can't carry the required Bearer header, so this is a new GET variant of `ai.js`'s existing POST `streamRequest` pattern) and `frontend/src/components/NotificationBell.jsx`, wired into `Sidebar.jsx` beside `SidebarUtilityCluster`, gated by `useAuth().can('notifications.read')` (principal/hod only). Real constraint found while spec'ing: the `notifications` table has no `read_at`/per-recipient row (it's a college-wide announcement ledger, not a personal inbox) — the "unread" badge is therefore explicitly a client-side, session-local `localStorage` "changed since last opened" affordance, not a claim about server state. Caught and fixed one real bug before it shipped: a first draft used template-literal Tailwind classes (`` `bg-${token}-soft` ``) for the status pill, which Tailwind's JIT content-scanner can't see — replaced with a static `STATUS_TONE` map (same pattern `SeatStateBadge.jsx`'s own `seat.tone` already uses). 4 new tests (permission gating, list render, empty state, live-badge-then-clear-on-open). `npm run lint` 0 errors (no new warnings), `npm run typecheck` clean, `npm test` 49/49 files, 564/564 tests (560 prior + 4 new), `npm run format:check` clean on all new/changed files, `npm run build && npm run size` — entry chunk 208.6kB gzip, still inside the 248kB ADL-078 budget.
 
-**After 5.11, remaining P4 items:** 5.4 (live updates, notifications
-currently polled), 5.3 (newer type-safe router — flagged as high blast
-radius, touches every route), 3.4 (merge the document paths into one
-clear route) — one slice at a time, same plan→inspect→verify→commit→push
-discipline as the five done so far. None of these are blocked on O3's
-infra existing.
+**After 5.4, remaining P4 items:** 5.3 (newer type-safe router —
+flagged as high blast radius, touches every route), 3.4 (merge the
+document paths into one clear route — already flagged earlier this
+thread as needing its own `/product-reasoning` pass, it's the Documents
+Institutional/Personal tab-merge) — one slice at a time, same
+plan→inspect→verify→commit→push discipline as the six done so far. None
+of these are blocked on O3's infra existing.
 
 **Committed and pushed:** the four earlier slices (`ae2b9fe`, `f6bc6e8`,
-`bde756b`, `55772c3`) are on `origin/p0-modernization-foundation`. 5.11
-(this checkpoint) is committed in the same pass as this file — see git
-log for the exact commit.
+`bde756b`, `55772c3`) plus 5.11 (`6eb8e75`) are on
+`origin/p0-modernization-foundation`. 5.4 (this checkpoint) is committed
+in the same pass as this file — see git log for the exact commit.
 
 ---
 

@@ -6956,3 +6956,73 @@ applicable to this slice; every specific claim in the new doc (file
 counts, grep results, file lists) was verified directly against
 current code before being written, not carried over from the prior
 session's unwritten plan.
+
+
+---
+
+## ADL-082
+
+### 5.4 (modernization P4) — scope narrowed to notifications-only; sidebar bell placement — Resolved, pending implementation
+
+**What prompted this.** Owner asked to "start 5.4." Checkpoint's newest
+banner (2026-09-03) listed 5.4 as still remaining; an earlier banner
+(2026-09-01) said "5.4 BOTH HALVES SHIPPED." Verified against code, not
+docs, before acting on either claim: both SSE backend routes
+(`GET /background-jobs/:id/stream`, `GET /notifications/stream`) exist
+and are committed (`0fc6cda`/`899c738`), confirming the backend half is
+genuinely done — but `grep -rn "/notifications" frontend/src` and
+`grep -rn "background-jobs" frontend/src` both return nothing: no
+frontend feature consumes either stream, and no frontend feature even
+creates a background job. The checkpoint's "remaining" framing and the
+plan's own "notifications are polled today" wording (`ARCNAVE-
+modernization-english.md` row 5.4) don't match what's actually in the
+frontend — there's no polling to replace because there's no
+notifications UI at all.
+
+**Decision 1 — scope.** Asked the owner via `AskUserQuestion` whether to
+build a notifications UI (the only one of the two SSE routes with a real
+data-producing feature already using it — AI tools already draft/submit
+notifications) and leave background-job SSE as unwired backend capacity
+until something actually creates a background job to watch, or to
+attempt both. **Owner chose notifications-only.**
+
+**Decision 2 — placement.** The redesigned shell deliberately has no top
+header bar (`FRONTEND-REDESIGN-HANDOFF.md` §1: "no top header bar... old
+`TopBar.jsx`'s omnibox/notifications/settings" was separate legacy
+chrome, since removed — confirmed via `find` returning zero `TopBar*`
+files today). No locked pattern determines where a live notification
+affordance goes. Asked the owner; **chose a sidebar bell icon with an
+unread-since-last-open badge, opening a popover** — closest fit to the
+locked Claude-style sidebar shell, reusing `SourcesPopover.jsx`'s
+existing Radix `Popover` + token-class convention rather than inventing
+new chrome.
+
+**Ran a full Product Reasoning pass before implementing** (per
+`CLAUDE.md`'s "new feature touching frontend+backend" rule) — no visual
+mockup exists for this, so Source A was "none supplied," reasoned from
+Sources B/C/D instead. Page contract:
+[`60-product-reasoning/notification-bell.md`](../60-product-reasoning/notification-bell.md).
+Approved Spec:
+[`60-product-reasoning/notification-bell-approved-spec.md`](../60-product-reasoning/notification-bell-approved-spec.md)
+— OUT OF SCOPE there records background-job UI, a manual draft-
+notification compose form, the Settings/Notifications tab, server-
+tracked read state, and a full-page notification history view, all
+`EXISTING CAPABILITY / RELATED / UNWIRED` or `FUTURE`, none built here.
+
+**Real constraint found during spec-writing, not assumed:** the
+`notifications` table (`backend/migrations/1753100000000_module-8-
+notification-ledger.js`) has no `read_at` or per-recipient row — it is a
+college-wide outbound-announcement ledger (Draft → Approved → Rejected →
+Dispatched), not a personal inbox. The Approved Spec's "unread" badge is
+therefore explicitly scoped as a client-side, session-local
+"changed-since-I-last-opened-this" affordance (`localStorage`,
+per-user-id), not a claim about server-tracked read state — avoids
+inventing a read-state contract the schema doesn't have.
+
+**Status:** Resolved — pending implementation. Next: build
+`frontend/src/api/notifications.js` (list + fetch-based SSE reader, GET
+variant of `ai.js`'s existing `streamRequest` pattern — native
+`EventSource` can't carry the required Bearer `Authorization` header)
+and `frontend/src/components/NotificationBell.jsx`, wired into
+`Sidebar.jsx` beside `SidebarUtilityCluster`, gated by
+`useAuth().can('notifications.read')`.

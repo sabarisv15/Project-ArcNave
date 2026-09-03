@@ -41,6 +41,7 @@ const artifactService = require('./artifactService');
 const aiCostControlService = require('./aiCostControlService');
 const aiModelVersionService = require('./aiModelVersionService');
 const aiNumericClaimLocaleSupport = require('./aiNumericClaimLocaleSupport');
+const aiGuardrailService = require('./aiGuardrailService');
 const { logWarn, logError } = require('../logging/logger');
 // AI Experience Layer (AIX) — presentation only, added after the real
 // pipeline above has already produced its final, authorized result.
@@ -3025,6 +3026,21 @@ async function askGeneralChat(
               }),
             ]
           : []),
+      // P3 1.16 — same FLAG-tier guardrail reinforcement wiring as
+      // askAgent's buildDecisionContext (see that segment's own comment
+      // for the full rationale). This mode never loops/continues — one
+      // completeMaybeStreaming call below — so `screenInput(question)` is
+      // trivially "exactly once per request" here.
+      ...(aiGuardrailService.screenInput(question).verdict === 'flag'
+        ? [
+            aiContextAssembly.segment({
+              source: 'guardrail-reinforcement-note',
+              stability: aiContextAssembly.STABILITY.TURN,
+              target: 'system',
+              content: aiGuardrailService.REINFORCEMENT_NOTE,
+            }),
+          ]
+        : []),
       aiContextAssembly.segment({
         source: 'identity',
         stability: aiContextAssembly.STABILITY.CONVERSATION,
@@ -3132,27 +3148,31 @@ async function askGeneralChat(
 // configurationService.getAiConfig call site (askAboutTool, etc.) is
 // untouched and structurally cannot be affected by this flag.
 
-async function askAgent(
-  client,
-  question,
-  { identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel } = {},
-  onDelta,
-  onStep = () => {},
-) {
-  if (!question || typeof question !== 'string') {
-    throw new AiServiceValidationError('question is required and must be a non-empty string');
-  }
+// ARCNAVE modernization P3 1.16 / clash C10 — askAgent rewritten as a
+// step-by-step machine: route, fetch tools, decide, act, verify, write up.
+// Structural change only — every phase below is the same logic that used
+// to live inline in one ~1,100-line function, moved into named functions
+// with explicit inputs/outputs. See each phase's own comment for what it
+// owns. The one invariant every phase must respect (ADL-050): the system
+// segments built once in buildDecisionContext are reused BY REFERENCE for
+// every completeWithTools call in the turn — decide, and every iteration
+// of act's loop — never independently reconstructed.
 
+// Phase 1 — ROUTE (inputs). Resolves everything about this turn that is
+// independent of which mode/pipeline the question ends up in: quota,
+// attachments, and every hint/promptQuestion variant. Returns only what
+// later phases need — not a single "turn state" object.
+async function resolveTurnContext(client, question, { identityContext, focusContext, projectContext, history, attachmentIds }) {
   // CEO Vertex/Gemini audit #42/C20/C21 (2026-08-30) — Per-Tenant Cost/
   // Quota Control and Rate Limits, both real, "urgent" gaps ADL-066
   // found with zero mitigation today. Checked first, before any other
   // work (attachment resolution, memory hints, config resolution) — an
   // over-quota/rate-limited college is refused as cheaply as possible,
-  // never after already paying for the rest of this function's own
-  // setup. Covers BOTH modes (askGeneralChat is only ever reached
-  // through this function, see its own call site below) with one check,
-  // not two. AiQuotaExceededError/AiRateLimitExceededError propagate
-  // unchanged to routes/ai.js, which maps both to a clean HTTP 429.
+  // never after already paying for the rest of this turn's own setup.
+  // Covers BOTH modes (askGeneralChat is only ever reached through
+  // askAgent, see its call site) with one check, not two.
+  // AiQuotaExceededError/AiRateLimitExceededError propagate unchanged to
+  // routes/ai.js, which maps both to a clean HTTP 429.
   await aiCostControlService.checkUsageLimits(client, identityContext.collegeId);
 
   // Chat attachments (resolveChatAttachments' own comment for the full
@@ -3160,24 +3180,16 @@ async function askAgent(
   // join the others below, and so the provider-capability check further
   // down and the decision call itself can use the same
   // already-validated images array. buildAttachmentHint is called with no
-  // providerName here (query order/call-count for the two mode branches'
-  // own getAiConfig calls below is an existing, test-asserted contract
-  // not worth disturbing just to learn the provider a few lines earlier)
-  // — it always applies the conservative DEFAULT_ATTACHMENT_TOTAL_CHAR_BUDGET,
-  // which safely fits every configured provider including Gemini's much
-  // larger one; a Gemini-configured college simply doesn't get its full
-  // 1,000,000-char allowance automatically here (ATTACHMENT_BUDGET_BY_PROVIDER
-  // stays available for a caller that already knows its adapter).
+  // providerName here — it always applies the conservative
+  // DEFAULT_ATTACHMENT_TOTAL_CHAR_BUDGET, which safely fits every
+  // configured provider including Gemini's much larger one.
   const { images, documents, media } = await resolveChatAttachments(client, attachmentIds, identityContext);
   const attachmentHint = buildAttachmentHint(documents);
   // ARCNAVE modernization P2 / 1.6 — history no longer joins the
-  // hints/promptQuestion text blobs below (buildHistoryHint is kept for
-  // its own existing callers/tests, just no longer called here): real
-  // prior turns now travel structurally via historyTurns, computed once
-  // per turn and passed unchanged to every buildContext call below and in
-  // every function this turn calls, mirroring how attachmentHint/priorTurns
-  // are each computed once and reused. See aiContextAssembly.js's own
-  // historyTurns comment for the full "why a separate field" reasoning.
+  // hints/promptQuestion text blobs below: real prior turns now travel
+  // structurally via historyTurns, computed once per turn and passed
+  // unchanged to every buildContext call this turn and in every function
+  // this turn calls.
   const historyTurns = buildHistoryTurns(history);
   const focusHint = await buildFocusHint(focusContext, client, identityContext);
   const projectHint = buildProjectContextHint(projectContext);
@@ -3186,122 +3198,48 @@ async function askAgent(
   const promptQuestion = hints ? `${hints}\n\nQuestion: ${question}` : question;
   // Review Finding #2 — same hints as promptQuestion above, minus the raw
   // attachment text (buildAttachmentMetadataHint instead of
-  // buildAttachmentHint): used below for every completeWithTools call in
-  // the CURRICULUM decision loop after the first one (schema-fetch
-  // retries, budget-exempt-lookup retries, post-tool continuations),
-  // which otherwise resent the full document on every iteration of the
-  // same turn — the initial call already delivers it once, and whatever
-  // the model actually needed from it flows forward through priorTurns'
-  // own tool results instead. Not used for the answer/answerPromptQuestion
-  // path below, which already drops the attachment hint entirely.
+  // buildAttachmentHint): used for every completeWithTools call in the
+  // CURRICULUM decision loop after the first one (schema-fetch retries,
+  // budget-exempt-lookup retries, post-tool continuations), which
+  // otherwise resent the full document on every iteration of the same
+  // turn.
   const attachmentMetadataHint = buildAttachmentMetadataHint(documents);
   const compactHints = [projectHint, focusHint, memoryHint, attachmentMetadataHint].filter(Boolean).join('\n\n');
   const compactPromptQuestion = compactHints ? `${compactHints}\n\nQuestion: ${question}` : question;
   // The ANSWER-call variant: identical, minus the attachment hint. Once a
   // deterministic tool has run, its bounded result is already present as
   // boundary-wrapped evidence, and leaving the raw document text beside it
-  // re-opens the exact failure the routing slice closed — the model can
-  // narrate from raw text instead of the computed result. That failure was
-  // measured, not theorised: the pre-routing answer to "How many arrears
-  // are there in the ECE Sandwich section?" claimed 14 students when the
-  // tool computes 77 arrears across 21. Correctness is the reason; the
-  // ~124.5k tokens saved (about 95% of that call) is the side effect.
-  //
-  // Every other hint is kept — history/project/focus/memory are small and
-  // carry continuity the answer step genuinely needs. The decision call
-  // still gets the full hint above, which is what keeps "summarise this
-  // document" working and supplies the verbatim attachmentId (see
-  // buildAttachmentHint's own comment).
-  //
-  // Safety framing is unaffected: summarizeToolResult/executeWorkflowPlan
-  // build their own boundary-wrapped context via renderForLlm, which owns
-  // the preamble and markers independently of buildAttachmentHint. This
-  // drops document text, never rule-9 framing.
-  // See ai-chat-attachment-hint-answer-call-approved-spec.md.
+  // re-opens the exact failure the routing slice closed. See
+  // ai-chat-attachment-hint-answer-call-approved-spec.md.
   const answerHints = [projectHint, focusHint, memoryHint].filter(Boolean).join('\n\n');
   const answerPromptQuestion = answerHints ? `${answerHints}\n\nQuestion: ${question}` : question;
 
-  // Research mode short-circuits before a single ARCNAVE tool is even
-  // listed — see askGeneralChat's own comment above it. Anything
-  // other than the literal 'general' string (missing, 'curriculum',
-  // a stale/unrecognized value) falls through to the unchanged
-  // Curriculum path below — never the other way around, so an old
-  // caller that never sends `mode` at all keeps today's exact
-  // behavior.
-  if (mode === 'general') {
-    const identityBlock = await aiActorContext.describeIdentityContext(client, identityContext);
-    const { adapter, config: aiConfig } = await configurationService.resolveAiConfig(
-      client,
-      identityContext.collegeId,
-      { allowExperimentalFallback: true },
-    );
-    logAttachmentTokenPreflight({
-      adapter,
-      aiConfig,
-      identityContext,
-      attachmentHint,
-      images,
-      media,
-    });
-    return askGeneralChat(
-      client,
-      question,
-      promptQuestion,
-      {
-        identityContext,
-        identityBlock,
-        adapter,
-        aiConfig,
-        images,
-        media,
-        hasHistory: historyTurns.length > 0,
-        historyTurns,
-        hasAttachedDocuments: documents.length > 0,
-        thinkingLevel,
-      },
-      onDelta,
-      onStep,
-    );
-  }
+  return {
+    images,
+    documents,
+    media,
+    historyTurns,
+    attachmentHint,
+    promptQuestion,
+    compactPromptQuestion,
+    answerPromptQuestion,
+  };
+}
 
+// Phase 2 — FETCH TOOLS. Role-permitted tools, semantic shortlisting,
+// the greeting fast-path, and the two config/identity promises kicked off
+// early because neither depends on the other (Review Finding #16).
+async function fetchTools(client, identityContext, question, { images, documents, media, focusContext, projectContext }) {
   // excludeHumanOnly: true — upload_institutional_document is
-  // deliberately never in this list (see its own registry comment):
-  // the LLM may propose+resolve a destination (resolve_document_
-  // destination, a normal L1 tool, stays in this list) but must never
-  // autonomously execute the actual write in the same turn. The human
-  // confirms via an explicit POST /ai/tools/upload_institutional_document/invoke
-  // call the frontend makes only after a user click — a real gate, not
-  // just registry metadata a handler could ignore.
+  // deliberately never in this list: the LLM may propose+resolve a
+  // destination (resolve_document_destination, a normal L1 tool, stays in
+  // this list) but must never autonomously execute the actual write in
+  // the same turn.
   const roleTools = aiToolRegistry.listTools({ excludeHumanOnly: true, role: identityContext.role });
-  // Round 32 — provider-independent semantic shortlisting (see
-  // aiToolRetrievalService.js's own file comment) on top of the role
-  // filter above (a broad role like principal keeps ~56 of 69 tools
-  // from role filtering alone). Falls back to the old keyword filter
-  // only when the shared embedding service is unavailable.
-  //
-  // Priority 1 Phase 1 — aiToolSearchService.discoverRelevantTools wraps
-  // this exact call as its own disabled/failure fallback, so this is
-  // the ONE call site: when TOOL_SEARCH_ENABLED is unset/false (the
-  // shipped default), the result is byte-identical to calling
-  // aiToolRetrievalService.retrieveRelevantTools directly, viaToolSearch
-  // is always false, and nothing below this line changes behavior. Only
-  // when a dedicated Tool Search model actually answers is viaToolSearch
-  // true, which is what lets the tool-catalogue segment below be
-  // omitted — the actual point of this architecture (see aiService.js's
-  // buildToolCatalogue's own comment on catalogue token cost).
-  //
   // Review Finding #16 — this call, describeIdentityContext, and
   // resolveAiConfig below are all started here, back to back, before any
-  // of the three is awaited. None depends on either of the others'
-  // results: discoverRelevantTools only ever needs roleTools/question
-  // (both already computed above from identityContext.role and the
-  // caller's own question string), describeIdentityContext only needs
-  // identityContext itself, and resolveAiConfig only needs
-  // identityContext.collegeId — a plain field, not a promise. Each is
-  // still awaited at the exact point its result was already being
-  // consumed before this change (discoverRelevantTools's result
-  // immediately below for the tool_search audit row and tool list;
-  // identityBlock/aiConfig further down, unchanged), so call order,
+  // of the three is awaited. Each is still awaited at the exact point its
+  // result was already being consumed before this change, so call order,
   // call count, and error propagation for each individual operation are
   // unchanged — only the wall-clock overlap between them is new.
   const identityBlockPromise = aiActorContext.describeIdentityContext(client, identityContext);
@@ -3309,24 +3247,17 @@ async function askAgent(
     allowExperimentalFallback: true,
   });
   // A rejection here is only ever surfaced via the real `await` further
-  // down, once discoverRelevantTools/logLlmCall have run — this empty
-  // handler exists solely so Node never logs an
+  // down — this empty handler exists solely so Node never logs an
   // "unhandled rejection" warning for the window between creating these
-  // two promises and actually awaiting them; it does not change what
-  // either promise resolves/rejects with, or swallow the real error the
-  // later `await` still throws.
+  // two promises and actually awaiting them.
   identityBlockPromise.catch(() => {});
   aiConfigPromise.catch(() => {});
   // ARCNAVE modernization P2 (PDF 1.3 / 1.10 / clash C1) — greeting /
   // small-talk fast path. A deterministic whitelist match (no model
   // call), and only when this turn carries nothing that could need a
-  // tool: no attachment, no focused entity, no project context. When it
-  // fires, the per-turn embedding tool-shortlist call below is skipped
-  // entirely (PDF 1.10) and the turn takes the same structural no-tool
-  // path experimentalZeroToolFastPath already builds. Clash C1: this
-  // decides TOOLS ONLY — decisionPolicy/buildPolicy below is untouched,
-  // so rule/instruction-chunk selection is byte-identical to any other
-  // turn.
+  // tool. Clash C1: this decides TOOLS ONLY — decisionPolicy/buildPolicy
+  // is untouched, so rule/instruction-chunk selection is byte-identical
+  // to any other turn.
   const conversationalTurn =
     config.aiGreetingFastPath &&
     !images.length &&
@@ -3358,19 +3289,8 @@ async function askAgent(
         completed: false,
       }
     : await aiToolSearchService.discoverRelevantTools(client, { roleTools, question });
-  // ADR-030 P0/P1 telemetry, same convention every other LLM call in
-  // this turn already gets (see logLlmCall's own comment) — a no-op
-  // when toolSearchAttempted is false (Tool Search disabled, or no call
-  // was ever attempted), so this line changes nothing on the default
-  // path. When a real Tool Search call did happen, its real cost is
-  // recorded under purpose: 'tool_search' EVEN if this service then
-  // distrusted the response and fell back — a distrusted answer still
-  // cost real tokens (Section 19 of this session's plan). Review Finding
-  // #13: `attempted` (not `usage`) is what keeps this row alive now, so a
-  // completed call with no usage block is still recorded instead of
-  // silently vanishing — provider/model/toolSearchAttempted/
-  // toolSearchCompleted all come from discoverRelevantTools's own single
-  // resolved config, never re-resolved here for logging.
+  // ADR-030 P0/P1 telemetry — a no-op when toolSearchAttempted is false
+  // (Tool Search disabled, or no call was ever attempted).
   await logLlmCall(client, {
     identityContext,
     adapter: { name: toolSearchProvider },
@@ -3382,49 +3302,64 @@ async function askAgent(
     fallbackTriggered: toolSearchAttempted ? !viaToolSearch : undefined,
   });
   const tools = retrievedTools;
-  // ADR-030 P3 follow-up, config.experimentalZeroToolFastPath's own
-  // comment has the full rationale/risk — computed once, here, and reused
-  // by both the tool-catalogue segment below and offeredTools further
-  // down, so the two can never disagree about whether this turn is in
-  // the fast path. `!viaToolSearch` deliberately excludes the Tool Search
-  // path: that branch already has its own honest-note handling and this
-  // flag's "genuinely nothing scored close" reasoning doesn't apply to a
-  // dedicated retrieval model's own empty result the same way.
-  // conversationalTurn (PDF 1.3) reaches the exact same structural no-tool
-  // state experimentalZeroToolFastPath produces — folded in here so the
-  // catalogue-omitted segment and the empty offeredTools list below both
-  // follow from one flag, never disagree.
+  // ADR-030 P3 follow-up — computed once, here, and reused by both the
+  // tool-catalogue segment and offeredTools, so the two can never
+  // disagree about whether this turn is in the fast path.
   const zeroToolFastPathActive =
     (config.experimentalZeroToolFastPath || conversationalTurn) && !viaToolSearch && tools.length === 0;
-  // The bounded-plan meta-tool (P0.3) is never subject to relevance
-  // filtering — it's a structural capability ("you may chain the tools
-  // above"), not a domain-specific tool a keyword match could reasonably
-  // include/exclude. But it IS gated on tools.length >= 2 (ADR-030 P0):
-  // its own params schema requires >= 2 steps and validatePlanSteps
-  // rejects any step naming a tool outside `tools`, so with 0 or 1 tools
-  // retrieved it is structurally unusable — offering it anyway just adds
-  // ~180 tokens of a tempting, unusable option (worse for a small/
-  // tool-happy model, the exact failure aiPolicyAssembly's TOOL_SELECTION
-  // module's own tightened wording already had to correct for once).
+  // The bounded-plan meta-tool (P0.3) is gated on tools.length >= 2
+  // (ADR-030 P0): its own params schema requires >= 2 steps and
+  // validatePlanSteps rejects any step naming a tool outside `tools`.
   const toolsWithPlan = tools.length >= 2 ? [...tools, buildPlanMetaTool()] : tools;
   const identityBlock = await identityBlockPromise;
   const { adapter, config: aiConfig, fallbackState } = await aiConfigPromise;
 
+  return {
+    roleTools,
+    tools,
+    toolsWithPlan,
+    viaToolSearch,
+    zeroToolFastPathActive,
+    toolCoverageStatus,
+    toolUncoveredRequirements,
+    identityBlock,
+    adapter,
+    aiConfig,
+    fallbackState,
+  };
+}
+
+// Phase 3 — BUILD DECISION CONTEXT. The most sensitive phase: builds the
+// system segments exactly once and the two context variants
+// (decisionContext for the first call, continuationContext for every call
+// after it) that both reuse those same segment objects by reference. See
+// this file's own top comment and ADL-050
+// (bka/30-decisions/ledger.md#adl-050).
+async function buildDecisionContext({
+  identityContext,
+  identityBlock,
+  focusContext,
+  question,
+  promptQuestion,
+  compactPromptQuestion,
+  images,
+  documents,
+  media,
+  historyTurns,
+  roleTools,
+  tools,
+  toolsWithPlan,
+  viaToolSearch,
+  zeroToolFastPathActive,
+  toolCoverageStatus,
+  toolUncoveredRequirements,
+  adapter,
+  aiConfig,
+  attachmentHint,
+  thinkingLevel,
+}) {
   // Honest degradation (never a blanket ignore-flag): the deterministic
-  // capability check happens here, once, and the LLM can never bypass
-  // it — images/media are only ever included in the outbound request
-  // when the resolved adapter/model actually supports that modality
-  // (resolveMediaSupport above — a real per-project/region/model
-  // registry lookup for Vertex-backed adapters, Phase 8). When
-  // unsupported, the SAME decision call still runs (no second/classifier
-  // call), but with an explicit note telling the model plainly that it
-  // cannot see the attachment(s) — so its own answer naturally reads as
-  // a normal continuation when the attachment was irrelevant to the
-  // question, and as an honest "I can't see it" when it wasn't, rather
-  // than ever guessing. *AnalysisUnavailable is also surfaced as a
-  // deterministic field on every return path below regardless of what
-  // the model's text says — a safe backstop, not reliant on the model
-  // remembering the instruction.
+  // capability check happens here, once, and the LLM can never bypass it.
   const { imagesSupported, imageAnalysisUnavailable, mediaSupported, mediaAnalysisUnavailable } = resolveMediaSupport(
     adapter,
     aiConfig,
@@ -3439,30 +3374,11 @@ async function askAgent(
     images,
     media,
   });
-  // ADR-030 P2(a): builds an ARCNAVE Context instead of flat strings —
-  // representation change only, byte-identical output. identityBlock
-  // stays last — ADR-030 P0 (see executeWorkflowPlan's own comment). No
-  // safety-preamble segment here either — nothing to sanitize before a
-  // tool has run.
-  //
   // Correctness fix (2026-08-30) — gated on `roleTools` (this role's full
   // permitted set, fixed for the process lifetime) instead of `tools`
-  // (this turn's semantic-retrieval SHORTLIST). The shortlist is exactly
-  // as unstable as aiToolRetrievalService.js's own header describes
-  // (embedding-similarity, re-run every turn, no stickiness). Gating the
-  // FILE guidance on it meant a turn whose retrieval happened to miss the
-  // file tool ALSO lost the FILE guidance, compounding the miss instead
-  // of just leaving the tool uncallable until describe_tools recovers it.
-  // `roleTools` never changes without a role change (which nothing in
-  // this turn does), so the FILE module's presence now tracks the role,
-  // not retrieval luck. NOTE: an earlier version of this comment also
-  // claimed a Vertex implicit-cache benefit from this change — that claim
-  // is withdrawn. ADL-055 Finding 1 is a controlled experiment (0 cache
-  // hits across every arm, including no-tools-at-all), so tool/segment
-  // declaration variance is NOT a demonstrated cache-miss cause. This
-  // edit stands on the correctness gap above alone. `documents.length`
-  // stays turn-scoped on purpose — an attachment present THIS turn is
-  // real turn content, not retrieval noise.
+  // (this turn's semantic-retrieval SHORTLIST). `documents.length` stays
+  // turn-scoped on purpose — an attachment present THIS turn is real turn
+  // content, not retrieval noise.
   const hasFileTool = roleTools.some((t) => FILE_TOOL_NAMES.has(t.name)) || documents.length > 0;
   const decisionPolicy = aiPolicyAssembly.buildPolicy({
     mode: 'curriculum',
@@ -3474,15 +3390,14 @@ async function askAgent(
   // Review Finding #2 — built once and shared, unmodified, by BOTH
   // decisionSegments (the initial call) and continuationSegments (every
   // call after it): the two context variants must never differ in their
-  // system content, only in which user 'question' segment they carry
-  // (full text vs. attachment-metadata-only, below). Held in a const and
-  // REUSED by identity on every rebuild below. ADL-050 measured that
-  // re-packaging this governance-bearing system content weakened a hard
-  // rule's live compliance 3/3 -> 2/7, so the constraint is absolute:
-  // across every iteration of a turn the system segments stay
-  // byte-identical, and only the `tools` array may grow. Reusing the same
-  // segment objects (not equivalent copies) is what makes that guarantee
-  // structural rather than a promise.
+  // system content, only in which user 'question' segment they carry.
+  // Held in a const and REUSED by identity on every rebuild below. ADL-050
+  // measured that re-packaging this governance-bearing system content
+  // weakened a hard rule's live compliance 3/3 -> 2/7, so the constraint
+  // is absolute: across every iteration of a turn the system segments
+  // stay byte-identical, and only the `tools` array may grow. Reusing the
+  // same segment objects (not equivalent copies) is what makes that
+  // guarantee structural rather than a promise.
   const sharedSystemSegments = [
     aiContextAssembly.segment({
       source: 'mode-prefix',
@@ -3497,36 +3412,11 @@ async function askAgent(
       content: decisionPolicy,
     }),
     // Role-scoped for the shipped 'keywords' default, so it can never name
-    // a tool this actor may not use — the 'hybrid' opt-in is the one
-    // documented exception (see buildToolCatalogueHybrid's own comment).
-    // The Policy Gate re-checks on invocation regardless either way
-    // (CLAUDE.md rule 1). CONVERSATION, not STATIC: stable for a role, not
-    // across roles.
-    //
-    // Priority 1 Phase 1: omitted entirely when viaToolSearch is true —
-    // sending the full ~101-name catalogue to Gemini after a dedicated
-    // Tool Search model already discovered the relevant subset is exactly
-    // the cost this architecture exists to remove (buildToolCatalogueForExperiment
-    // measured at ~75-80% of the current decision-call token cost).
-    // Replaced by a short honesty note instead of nothing, so the model
-    // still says so rather than guessing when the discovered set
-    // genuinely doesn't fit — the ADL-055 failure mode this substitution
-    // has to avoid reopening. Decided once, here, before any part of
-    // decisionSegments is built — never re-decided mid-turn, same
-    // ADL-050 "system segments stay byte-identical across the whole
-    // turn" guarantee every other segment in this list already holds.
-    //
-    // config.experimentalZeroToolFastPath (off by default, see that
-    // flag's own comment): a THIRD case, omitting the catalogue entirely
-    // rather than replacing it — only when semantic retrieval considered
-    // every role-permitted tool and scored none of them close enough
-    // (`tools.length === 0`, and not the viaToolSearch branch above,
-    // which already has its own honest-note handling). Structural, same
-    // as Research mode's own "no tool exists to call" posture: no
-    // catalogue segment AND (below, offeredTools) no describe_tools
-    // meta-tool either, so there is genuinely nothing recovery-shaped for
-    // the model to reach for — never a half-state where the note claims
-    // "no tools fit" but a recovery tool is still offered anyway.
+    // a tool this actor may not use. CONVERSATION, not STATIC: stable for
+    // a role, not across roles. Omitted entirely when viaToolSearch is
+    // true — replaced by a short honesty note instead of nothing.
+    // config.experimentalZeroToolFastPath: a THIRD case, omitting the
+    // catalogue entirely rather than replacing it.
     ...(viaToolSearch
       ? [
           aiContextAssembly.segment({
@@ -3546,14 +3436,10 @@ async function askAgent(
               content: buildToolCatalogueForExperiment(roleTools, identityContext.role),
             }),
           ]),
-    // Priority 3 follow-up (config.experimentalAttachmentDiscipline,
-    // off by default) — live session trial only, per explicit user
-    // instruction. Adds nothing when no attachment is present this turn;
-    // does not change which tools exist or how analyze_document_table
-    // itself computes anything. Superseded by the full raw document
-    // (config.experimentalFullInstructionsDocument, testing-phase only,
-    // per explicit user instruction) when that flag is on — that
-    // variant applies on every turn, not just attachment turns.
+    // Priority 3 follow-up (config.experimentalAttachmentDiscipline, off
+    // by default). Superseded by the full raw document
+    // (config.experimentalFullInstructionsDocument, testing-phase only)
+    // when that flag is on.
     ...(config.experimentalFullInstructionsDocument
       ? [
           aiContextAssembly.segment({
@@ -3579,6 +3465,31 @@ async function askAgent(
             }),
           ]
         : []),
+    // P3 1.16 — the FLAG-tier guardrail reinforcement note
+    // (aiGuardrailService.js's own comment on REINFORCEMENT_NOTE).
+    // screenInput(question) is called exactly once per request, here,
+    // before any provider call — never re-screened on a continuation —
+    // so this segment (present or absent) is decided once and then part
+    // of sharedSystemSegments for the rest of the turn, same ADL-050
+    // construction-once/reuse-by-reference guarantee every other segment
+    // in this array already holds. The BLOCK tier is enforced at the
+    // route layer (routes/ai.js) before aiService.js is ever reached;
+    // only the FLAG tier's additive note is this file's job, since it
+    // means touching this segment list. STABILITY.TURN, not
+    // CONVERSATION: it's a function of this question, not the whole
+    // conversation — same precedent as the attachment-discipline segment
+    // above. Ordinary (non-FLAG) questions add nothing here — byte-
+    // identical to before this note existed.
+    ...(aiGuardrailService.screenInput(question).verdict === 'flag'
+      ? [
+          aiContextAssembly.segment({
+            source: 'guardrail-reinforcement-note',
+            stability: aiContextAssembly.STABILITY.TURN,
+            target: 'system',
+            content: aiGuardrailService.REINFORCEMENT_NOTE,
+          }),
+        ]
+      : []),
     aiContextAssembly.segment({
       source: 'identity',
       stability: aiContextAssembly.STABILITY.CONVERSATION,
@@ -3587,9 +3498,7 @@ async function askAgent(
     }),
   ];
   // Shared by both variants below — an image-unavailable note is not
-  // attachment-text-sized and carries no per-call cost concern, so it is
-  // not part of what Review Finding #2 trims; the same segment object is
-  // simply reused in both user-segment lists.
+  // attachment-text-sized and carries no per-call cost concern.
   const imageUnavailableSegment = imageAnalysisUnavailable
     ? aiContextAssembly.segment({
         source: 'image-unavailable-note',
@@ -3598,8 +3507,6 @@ async function askAgent(
         content: buildImageUnavailableNote(images.length),
       })
     : null;
-  // Same "shared by both variants" reasoning as imageUnavailableSegment
-  // above, for audio/video.
   const mediaUnavailableSegment = mediaAnalysisUnavailable
     ? aiContextAssembly.segment({
         source: 'media-unavailable-note',
@@ -3618,11 +3525,11 @@ async function askAgent(
     ...(imageUnavailableSegment ? [imageUnavailableSegment] : []),
     ...(mediaUnavailableSegment ? [mediaUnavailableSegment] : []),
   ];
-  // Review Finding #2 — the ONLY difference from decisionSegments below
-  // is this list's 'question' segment (compactPromptQuestion instead of
+  // Review Finding #2 — the ONLY difference from decisionUserSegments is
+  // this list's 'question' segment (compactPromptQuestion instead of
   // promptQuestion): every system segment above is shared by reference,
-  // so the ADL-050 guarantee (system segments byte-identical across a
-  // turn) holds automatically, by construction, for this variant too.
+  // so the ADL-050 guarantee holds automatically, by construction, for
+  // this variant too.
   const continuationUserSegments = [
     aiContextAssembly.segment({
       source: 'question',
@@ -3637,37 +3544,19 @@ async function askAgent(
   const continuationSegments = [...sharedSystemSegments, ...continuationUserSegments];
   const decisionImages = imagesSupported ? images : undefined;
   const decisionMedia = mediaSupported ? media : undefined;
-  // decisionContext is used for exactly ONE call — the initial decision
-  // below — and never rebuilt or reused after it: every later
-  // completeWithTools call in the loop (schema-fetch retries,
-  // budget-exempt-lookup retries, post-tool continuations) reads
-  // continuationContext instead, which carries the same tool list but the
-  // compact (no-raw-attachment-text) user segments above. The offered set
-  // still grows the same way when the model fetches a schema — only
-  // continuationContext gets rebuilt for that, since decisionContext's one
-  // consumer has already run by the time the loop can reach that point.
-  // zeroToolFastPathActive: no catalogue segment above means no names for
-  // describe_tools to resolve against — offering it anyway would be a
-  // recovery tool with nothing to recover into, so it's dropped too
-  // (toolsWithPlan is already [] here, tools.length being 0 is exactly
-  // this branch's own gate).
+  // decisionContext is used for exactly ONE call — the initial decision —
+  // and never rebuilt or reused after it. zeroToolFastPathActive: no
+  // catalogue segment above means no names for describe_tools to resolve
+  // against.
   let offeredTools = zeroToolFastPathActive ? [] : [...toolsWithPlan, buildSchemaMetaTool()];
-  // CEO Vertex/Gemini audit #27 (2026-08-30) — config.experimentalThinkingTraceVisibility's
-  // own comment explains why this is a process-level flag, not a
-  // per-college DB read: a DB-backed version of this exact line broke 3
-  // exact-query-count tests by adding a query to every single askAgent
-  // call, caught during this same session's own second pass.
+  // CEO Vertex/Gemini audit #27 (2026-08-30) — process-level flag, not a
+  // per-college DB read.
   const includeThoughts = config.experimentalThinkingTraceVisibility;
-  // ARCNAVE modernization P2 / clash C2 — explicit Vertex prompt caching
-  // (config.aiExplicitCache, off by default). Resolved ONCE here, from
-  // this turn's stable system prefix (mode prefix + policy + catalogue —
-  // every system-targeted shared segment), and handed to every
-  // completeWithTools call in the loop below, so the ADL-050 "system
-  // prefix byte-identical across the whole turn" guarantee holds
-  // structurally. Gemini/Vertex only; a non-empty catalogue prefix only
-  // (the greeting/zero-tool path's short prefix is below aiExplicitCache's
-  // own size floor and returns null). Never throws — a cache failure
-  // degrades to the inline system prompt.
+  // ARCNAVE modernization P2 / clash C2 — explicit Vertex prompt caching.
+  // Resolved ONCE here, from this turn's stable system prefix, and handed
+  // to every completeWithTools call in the loop below, so the ADL-050
+  // "system prefix byte-identical across the whole turn" guarantee holds
+  // structurally.
   const cachedSystemInstructionName =
     adapter.name === 'gemini'
       ? await aiExplicitCache.resolveCachedSystemInstruction(
@@ -3697,44 +3586,56 @@ async function askAgent(
     historyTurns,
   });
 
+  return {
+    decisionContext,
+    continuationSegments,
+    // A small mutable holder for values that genuinely evolve during the
+    // act loop (schema-fetch tool grants) — not a god-object for the
+    // whole request, just these two.
+    holder: { offeredTools, continuationContext },
+    decisionImages,
+    decisionMedia,
+    includeThoughts,
+    cachedSystemInstructionName,
+    imagesSupported,
+    imageAnalysisUnavailable,
+  };
+}
+
+// Phase 4 — DECIDE. The single initial completeWithTools call plus its
+// telemetry.
+async function decide({
+  client,
+  identityContext,
+  adapter,
+  aiConfig,
+  decisionContext,
+  tools,
+  fallbackState,
+  imagesSupported,
+  images,
+  imageAnalysisUnavailable,
+  onStep,
+}) {
   const decisionStartedAt = Date.now();
   // Real progress signal (P1) for the one call in this path that
-  // previously fired no onStep event at all — a slow tool-selection
-  // decision left the UI on its initial default status with nothing
-  // telling the user ArcNave was actually working on it.
+  // previously fired no onStep event at all.
   onStep({ phase: 'deciding' });
-  let decision = await adapter.completeWithTools(aiConfig, decisionContext);
+  const decision = await adapter.completeWithTools(aiConfig, decisionContext);
   logThoughtSummaryIfPresent(identityContext, decision.thoughtSummary);
-  // CEO Vertex/Gemini audit #41 (2026-08-30) — see aiModelVersionService.js's
-  // own header for why this is a drift DETECTOR, not a pin. `provider`
-  // is only defined once configurationService.resolveAiConfig's own
-  // destructure runs — read from `adapter.name` here instead, since
-  // that's already the real resolved provider name regardless of which
-  // branch (fallback-wrapped or not) produced this adapter.
+  // CEO Vertex/Gemini audit #41 (2026-08-30) — a drift DETECTOR, not a
+  // pin. `provider` is read from `adapter.name` here since that's already
+  // the real resolved provider name regardless of which branch produced
+  // this adapter.
   aiModelVersionService.recordObservedVersion(
     identityContext.collegeId,
     adapter.name,
     aiConfig.model,
     decision.modelVersion,
   );
-  // imageCount reflects images actually included in the request sent
-  // to the provider — never the raw attachmentIds count — so a
-  // rejected/unauthorized/unsupported-mime attachment (already thrown
-  // above) or a provider without vision support is never miscounted as
-  // "seen."
+  // imageCount reflects images actually included in the request sent to
+  // the provider — never the raw attachmentIds count.
   const imageCount = imagesSupported ? images.length : 0;
-  // ADR-030 P0 telemetry: decision.usage is now populated for a
-  // tool_call response too (each adapter's own completeWithTools
-  // tool_call branch — see e.g. gemini.js's comment), not only the
-  // 'answer' branch as before — a genuine tool-use turn's decision call
-  // is a real request cost, the same shape the architecture review found
-  // most expensive (duplicated context across the decision + answer
-  // calls), and was previously invisible here entirely. systemPromptChars/
-  // toolCount are the other half of P0's "what did this call actually
-  // cost, in context, not just tokens" telemetry — cheap now (no policy
-  // module split yet, so this is the whole assembled string), and the
-  // baseline P1/P2's module-split and P3's caching work will be measured
-  // against.
   await logLlmCall(client, {
     identityContext,
     adapter,
@@ -3750,72 +3651,81 @@ async function askAgent(
   });
   const imageMeta = { imageCount, imageAnalysisUnavailable };
 
-  // ADR-030 P2(c): bounded tool-use loop. Every completeWithTools call
-  // below reads `continuationContext`, never `decisionContext` (that one
-  // consumer already ran above) — same system segments either way
-  // (sharedSystemSegments is reused by reference in both, so the ADL-050
-  // guarantee — the governance-bearing system segments are packaged once,
-  // identically, every call — holds automatically), only the user
-  // 'question' segment differs (Review Finding #2: compact, no raw
-  // attachment text, once the initial call above has already delivered
-  // it once). continuationContext already carries {tools: offeredTools}
-  // via buildContext's own second argument, so this also still guarantees
-  // every continuation offers the exact same tool list as the previous
-  // iteration (grown, never narrowed) — the model can still pick a
-  // different tool on a later iteration.
+  return { decision, imageMeta };
+}
+
+// Phase 5 — ACT. The bounded tool-use loop: schema lookups, the bounded
+// plan meta-tool, L3/bulk-guard confirmation, tool invocation, and
+// continuation decision calls. May return early (pending confirmation, or
+// full delegation to executeWorkflowPlan) — same shapes as before this
+// refactor. Every completeWithTools call here reads
+// `holder.continuationContext`, never `decisionContext` (that one
+// consumer already ran in decide()) — same system segments either way
+// (sharedSystemSegments is reused by reference in both, via
+// continuationSegments), only the user 'question' segment differs.
+async function act({
+  client,
+  identityContext,
+  question,
+  roleTools,
+  tools,
+  adapter,
+  aiConfig,
+  historyTurns,
+  identityBlock,
+  answerPromptQuestion,
+  imageMeta,
+  contextInputs,
+  holder,
+  initialDecision,
+  onStep,
+  onDelta,
+}) {
   const priorTurns = [];
   const mergedEntries = [];
   const invokedTools = []; // aiToolRegistry tool objects, in call order
-  let usageTotal = decision.usage ? { ...decision.usage } : undefined;
+  let usageTotal = initialDecision.usage ? { ...initialDecision.usage } : undefined;
   let blockedActionNote;
+  let decision = initialDecision;
 
   let schemaFetches = 0;
   // Tool calls that actually spent the turn's budget. Distinct from
-  // invokedTools.length, which also counts BUDGET_EXEMPT_LOOKUP_TOOLS —
-  // those are real, audited tool uses (so they belong in invokedTools and
-  // in toolsUsed) that simply do not consume the budget. See that set's
-  // own comment.
+  // invokedTools.length, which also counts BUDGET_EXEMPT_LOOKUP_TOOLS.
   let budgetedCalls = 0;
   let lookupCalls = 0;
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    // Schema lookup, not a business action: it runs no handler, touches no
-    // Business Service and changes nothing. It therefore does NOT push to
-    // invokedTools and does NOT consume config.maxToolCallsPerTurn — at the
-    // default of 1, a fetch that ate the turn's only tool call would leave
-    // the model unable to call the very tool it just looked up, and the
-    // feature would be worse than useless. Same exemption, same reasoning,
-    // as the bounded-plan meta-tool. See ai-tool-catalogue-approved-spec.md.
+    // Schema lookup, not a business action: runs no handler, touches no
+    // Business Service. Does NOT push to invokedTools and does NOT
+    // consume config.maxToolCallsPerTurn. See ai-tool-catalogue-approved-spec.md.
     if (decision.type === 'tool_call' && decision.toolName === SCHEMA_TOOL_NAME) {
       schemaFetches += 1;
       const requested = ((decision.arguments && decision.arguments.names) || []).filter((n) => typeof n === 'string');
       let resultText;
       if (schemaFetches > MAX_SCHEMA_FETCHES) {
-        // A plain refusal, never a throw — a loop backstop must not end the
-        // user's turn in an error.
+        // A plain refusal, never a throw — a loop backstop must not end
+        // the user's turn in an error.
         resultText =
           `No more tool lookups are available this turn (limit ${MAX_SCHEMA_FETCHES}). ` +
           'Answer with the tools you already have, or say plainly what you would need.';
       } else {
         // Resolved against roleTools only. An unpermitted name and a
-        // nonexistent one return the SAME message — never a response that
-        // reveals a tool exists but is out of reach for this actor.
+        // nonexistent one return the SAME message.
         const resolvedTools = requested.map((n) => roleTools.find((t) => t.name === n)).filter(Boolean);
-        const added = resolvedTools.filter((t) => !offeredTools.some((o) => o.name === t.name));
+        const added = resolvedTools.filter((t) => !holder.offeredTools.some((o) => o.name === t.name));
         if (added.length > 0) {
-          offeredTools = [...offeredTools, ...added];
+          holder.offeredTools = [...holder.offeredTools, ...added];
           // Same segment objects, larger tools array — the ADL-050
           // constraint holds by construction, not by convention. Only
           // continuationContext needs rebuilding here — decisionContext's
-          // one consumer (the initial completeWithTools call above) has
-          // already run.
-          continuationContext = aiContextAssembly.buildContext(continuationSegments, {
-            tools: offeredTools,
-            images: decisionImages,
-            media: decisionMedia,
-            thinkingLevel,
-            cachedSystemInstructionName,
+          // one consumer has already run.
+          holder.continuationContext = aiContextAssembly.buildContext(contextInputs.continuationSegments, {
+            tools: holder.offeredTools,
+            images: contextInputs.decisionImages,
+            media: contextInputs.decisionMedia,
+            thinkingLevel: contextInputs.thinkingLevel,
+            cachedSystemInstructionName: contextInputs.cachedSystemInstructionName,
             historyTurns,
           });
         }
@@ -3838,7 +3748,7 @@ async function askAgent(
       });
       onStep({ phase: 'deciding' });
       // eslint-disable-next-line no-await-in-loop
-      decision = await adapter.completeWithTools(aiConfig, continuationContext, priorTurns);
+      decision = await adapter.completeWithTools(aiConfig, holder.continuationContext, priorTurns);
       usageTotal = addUsage(usageTotal, decision.usage);
       // eslint-disable-next-line no-continue
       continue;
@@ -3864,61 +3774,57 @@ async function askAgent(
           actorRole: identityContext.role,
         });
         return {
-          ...sanitizedContext,
-          ...imageMeta,
-          question,
-          toolUsed: null,
-          answer: confirmationQuestion,
-          presentation,
-          pendingConfirmation: { steps: resolved },
+          earlyReturn: true,
+          response: {
+            ...sanitizedContext,
+            ...imageMeta,
+            question,
+            toolUsed: null,
+            answer: confirmationQuestion,
+            presentation,
+            pendingConfirmation: { steps: resolved },
+          },
         };
       }
 
       // answerPromptQuestion, not promptQuestion: plan_synthesis is the
-      // same "compose an answer from tool results" step as the single-tool
-      // path below, reached by a different route, so it gets the same
-      // treatment — otherwise an identical raw-text fallback survives here.
-      return executeWorkflowPlan(
-        client,
-        resolved,
-        answerPromptQuestion,
-        {
-          identityContext,
-          identityBlock,
-          adapter,
-          aiConfig,
-          hasHistory: historyTurns.length > 0,
-          historyTurns,
-        },
-        onDelta,
-        onStep,
-      );
+      // same "compose an answer from tool results" step as the
+      // single-tool path below, reached by a different route.
+      // Not awaited here (same as the pre-refactor bare `return
+      // executeWorkflowPlan(...)`) — `response` carries the promise, and
+      // askAgent's own `return actResult.response` auto-flattens it, same
+      // as returning a promise directly from any async function.
+      return {
+        earlyReturn: true,
+        response: executeWorkflowPlan(
+          client,
+          resolved,
+          answerPromptQuestion,
+          {
+            identityContext,
+            identityBlock,
+            adapter,
+            aiConfig,
+            hasHistory: historyTurns.length > 0,
+            historyTurns,
+          },
+          onDelta,
+          onStep,
+        ),
+      };
     }
 
     if (decision.type !== 'tool_call') break;
 
     // RS-AIG-005: before filing any WorkflowService submission, the AI
     // must ask for explicit confirmation and only a clear affirmative
-    // reply may trigger it — no request may be created off a single
-    // conversational turn. An L3 tool's handler is always a submit-only
-    // wrapper (AiToolL3BypassError backstop), so gating here at the
-    // decision point (before the handler ever runs) is enough to cover
-    // every current and future L3 tool with one check, not a per-tool
-    // one. Policy/param validation still runs up front (checkToolPreconditions
-    // — the same checks invokeTool itself would do) so a request that would
-    // be denied or malformed never even reaches the confirmation question.
-    // Runs on EVERY iteration, not just the first — no loop iteration may
-    // ever bypass this gate.
+    // reply may trigger it. Runs on EVERY iteration, not just the first.
     const tool = aiToolRegistry.getTool(decision.toolName);
 
     // Lookup backstop, checked BEFORE the handler runs so the limit is
-    // real (a post-hoc counter reset would just let the model loop in
-    // batches of MAX_LOOKUP_CALLS forever). Budget-exempt does not mean
-    // cost-free: each one still spends a completeWithTools round-trip,
-    // and F13 measured that call already running near its 45s ceiling.
-    // A plain refusal fed back as a tool result, never a throw — same
-    // shape as the schema-fetch limit, and ADL-056's own lesson that a
-    // loop backstop must not end the user's turn in an error.
+    // real. Budget-exempt does not mean cost-free: each one still spends
+    // a completeWithTools round-trip. A plain refusal fed back as a tool
+    // result, never a throw.
     if (BUDGET_EXEMPT_LOOKUP_TOOLS.has(decision.toolName) && lookupCalls >= MAX_LOOKUP_CALLS) {
       priorTurns.push({
         toolName: decision.toolName,
@@ -3931,21 +3837,17 @@ async function askAgent(
       });
       onStep({ phase: 'deciding' });
       // eslint-disable-next-line no-await-in-loop
-      decision = await adapter.completeWithTools(aiConfig, continuationContext, priorTurns);
+      decision = await adapter.completeWithTools(aiConfig, holder.continuationContext, priorTurns);
       usageTotal = addUsage(usageTotal, decision.usage);
       // eslint-disable-next-line no-continue
       continue;
     }
 
     const isL3 = Boolean(tool && tool.level === 'L3');
-    // Second optimization pass, finding #4: a bulk-capable L1/L2 tool
-    // (mark_attendance_nl, academic_generate_timetable/reviseTimetable,
-    // departments_create) reuses this exact same pause-and-ask flow —
-    // never a new mechanism — once its estimated affected-row count
-    // crosses its own confirmAt threshold. checkToolPreconditions
-    // already enforces the hard rejectAt ceiling regardless of whether
-    // this branch runs at all, so a request too large to ever confirm
-    // is rejected here before a confirmation question is even asked.
+    // A bulk-capable L1/L2 tool reuses this exact same pause-and-ask flow
+    // once its estimated affected-row count crosses its own confirmAt
+    // threshold. checkToolPreconditions already enforces the hard
+    // rejectAt ceiling regardless of whether this branch runs at all.
     const hasBulkGuard = Boolean(tool && tool.maxAffectedRows && !isL3);
     if (isL3 || hasBulkGuard) {
       const { safeParams, estimatedAffectedRows } = await aiToolRegistry.checkToolPreconditions(decision.toolName, {
@@ -3971,37 +3873,31 @@ async function askAgent(
             actorRole: identityContext.role,
           });
           return {
-            ...sanitizedContext,
-            ...imageMeta,
-            question,
-            toolUsed: null,
-            answer: confirmationQuestion,
-            presentation,
-            pendingConfirmation: { toolName: decision.toolName, params: safeParams },
+            earlyReturn: true,
+            response: {
+              ...sanitizedContext,
+              ...imageMeta,
+              question,
+              toolUsed: null,
+              answer: confirmationQuestion,
+              presentation,
+              pendingConfirmation: { toolName: decision.toolName, params: safeParams },
+            },
           };
         }
         // Mid-loop (iteration > 0): a tool already ran earlier this turn.
         // Do NOT run this one and do NOT silently drop it — stop the loop
-        // and let the fallback synthesis below say so plainly, same idiom
-        // executeWorkflowPlan's own failureText already uses for a failed
-        // step.
+        // and let the fallback synthesis in writeUp say so plainly.
         blockedActionNote = `A further action was identified but NOT taken because it needs explicit user confirmation first — say so plainly in the answer, never silently omit it: ${tool.description}`;
         break;
       }
-      // hasBulkGuard but below confirmAt: preconditions (including the
-      // rejectAt ceiling) are already checked above — falls through to
-      // the normal invoke path below with no pause.
+      // hasBulkGuard but below confirmAt: falls through to the normal
+      // invoke path below with no pause.
     }
 
     onStep({
-      // totalSteps is the turn's own ceiling (MAX_TOOL_CALLS_PER_TURN), not
-      // a pre-planned exact count — this loop is adaptive, unlike
-      // executeWorkflowPlan's own pre-planned totalSteps. In compatibility
-      // mode (cap 1) this is always 1, matching pre-loop behavior exactly.
-      // stepIndex counts BUDGETED calls, not invokedTools.length: a
-      // budget-exempt lookup must not advance a progress indicator whose
-      // denominator it does not consume (otherwise the UI shows "step 3
-      // of 2"). Unchanged on any turn without a lookup in it.
+      // totalSteps is the turn's own ceiling (MAX_TOOL_CALLS_PER_TURN),
+      // not a pre-planned exact count — this loop is adaptive.
       phase: 'running_tool',
       toolName: decision.toolName,
       stepIndex: budgetedCalls,
@@ -4029,10 +3925,9 @@ async function askAgent(
     });
 
     // Budget is spent by real work only. A lookup answered "how should I
-    // do this" and left the turn's actual capability untouched — see
-    // BUDGET_EXEMPT_LOOKUP_TOOLS.
+    // do this" and left the turn's actual capability untouched.
     if (budgetedCalls >= config.maxToolCallsPerTurn) {
-      // Cap reached — fall through to the synthesis fallback below
+      // Cap reached — fall through to the synthesis fallback in writeUp
       // without another completeWithTools call.
       break;
     }
@@ -4040,12 +3935,9 @@ async function askAgent(
     onStep({ phase: 'deciding' });
     const continuationStartedAt = Date.now();
     // No model switching across continuation calls — same raw aiConfig
-    // every time (never selectModelForPurpose'd here). A mid-loop model
-    // swap would ask a DIFFERENT model to continue a conversation
-    // containing a tool-call turn it did not itself generate — a
-    // semantic-compatibility problem, not just a caching inefficiency.
+    // every time.
     // eslint-disable-next-line no-await-in-loop
-    decision = await adapter.completeWithTools(aiConfig, continuationContext, priorTurns);
+    decision = await adapter.completeWithTools(aiConfig, holder.continuationContext, priorTurns);
     usageTotal = addUsage(usageTotal, decision.usage);
     // eslint-disable-next-line no-await-in-loop
     await logLlmCall(client, {
@@ -4055,38 +3947,36 @@ async function askAgent(
       purpose: 'tool_select_continue',
       usage: decision.usage,
       latencyMs: Date.now() - continuationStartedAt,
-      imageCount,
-      systemPromptChars: aiContextAssembly.flattenToPrompts(continuationContext).systemPrompt.length,
+      imageCount: imageMeta.imageCount,
+      systemPromptChars: aiContextAssembly.flattenToPrompts(holder.continuationContext).systemPrompt.length,
       toolCount: tools.length,
     });
   }
 
-  // ai-chat-document-coverage-refusal-approved-spec.md / ADL-055.
-  // Deterministic capability check, computed from what the tools were
-  // ACTUALLY invoked with — never from the model's own sense of how much it
-  // covered. Same posture (and same reason) as imageAnalysisUnavailable
-  // above: a backstop the LLM cannot bypass, not an instruction it has to
-  // remember. Two separate prompt instructions already failed to prevent
-  // the exact turn this exists for.
-  // The tool the ANSWER is about, which is not always the first one called
-  // once BUDGET_EXEMPT_LOOKUP_TOOLS can precede it: a turn that calls
-  // describe_skill and then analyze_document_table is an
-  // analyze_document_table answer, and anchoring presentation or numeric
-  // verification on the lookup would render the wrong shape and check the
-  // wrong result. Falls back to the first tool when every call was a
-  // lookup (nothing else to be about). Identical to invokedTools[0] on
-  // every turn with no lookup in it — which is every turn that existed
-  // before this exemption.
+  return {
+    earlyReturn: false,
+    decision,
+    priorTurns,
+    mergedEntries,
+    invokedTools,
+    usageTotal,
+    blockedActionNote,
+  };
+}
+
+// Phase 6 — VERIFY. Deterministic document-coverage check, computed from
+// what the tools were ACTUALLY invoked with — never from the model's own
+// sense of how much it covered. ai-chat-document-coverage-refusal-approved-spec.md / ADL-055.
+function verify({ invokedTools, documents, priorTurns, mergedEntries, imageMeta, question, usageTotal }) {
+  // The tool the ANSWER is about, which is not always the first one
+  // called once BUDGET_EXEMPT_LOOKUP_TOOLS can precede it. Falls back to
+  // the first tool when every call was a lookup.
   const primaryTool = invokedTools.find((t) => !BUDGET_EXEMPT_LOOKUP_TOOLS.has(t.name)) || invokedTools[0];
 
   const coverageGap = invokedTools.length > 0 ? detectDocumentCoverageGap(documents, priorTurns) : null;
   if (coverageGap) {
-    // The answer call is SKIPPED, not merely overridden. Asking the model
-    // to narrate an answer it cannot support is what produced the
-    // fabrication this check exists for: two documents attached, one
-    // analysed, and a student-group breakdown invented to sum to the known
-    // total. Nothing computed is lost — evidence still carries the real
-    // tool result, so the UI keeps the figures.
+    // The answer call is SKIPPED, not merely overridden. Nothing computed
+    // is lost — evidence still carries the real tool result.
     const mergedSanitizedContext = {
       preamble: aiPromptSafetyLayer.SAFETY_PREAMBLE,
       boundaryStart: aiPromptSafetyLayer.BOUNDARY_START,
@@ -4095,26 +3985,55 @@ async function askAgent(
     };
     const evidence = buildEvidence(mergedSanitizedContext);
     return {
-      ...mergedSanitizedContext,
-      ...imageMeta,
-      question,
-      // From invokedTools, never priorTurns: priorTurns also carries
-      // describe_tools schema lookups, which run no handler and are not a
-      // tool USE (ai-tool-catalogue-approved-spec.md).
-      toolUsed: primaryTool.name,
-      toolsUsed: invokedTools.map((t) => t.name),
-      answer: buildCoverageRefusal(coverageGap),
-      documentCoverageIncomplete: true,
-      usage: usageTotal,
-      presentation: null,
-      evidence,
-      evidenceTrail: buildEvidenceTrail(evidence),
-      // No model-authored numeric claim exists to check — this text is
-      // composed here, from the coverage facts.
-      verification: { status: 'INSUFFICIENT_EVIDENCE' },
+      earlyReturn: true,
+      response: {
+        ...mergedSanitizedContext,
+        ...imageMeta,
+        question,
+        // From invokedTools, never priorTurns: priorTurns also carries
+        // describe_tools schema lookups, which run no handler and are not
+        // a tool USE.
+        toolUsed: primaryTool.name,
+        toolsUsed: invokedTools.map((t) => t.name),
+        answer: buildCoverageRefusal(coverageGap),
+        documentCoverageIncomplete: true,
+        usage: usageTotal,
+        presentation: null,
+        evidence,
+        evidenceTrail: buildEvidenceTrail(evidence),
+        // No model-authored numeric claim exists to check — this text is
+        // composed here, from the coverage facts.
+        verification: { status: 'INSUFFICIENT_EVIDENCE' },
+      },
     };
   }
 
+  return { earlyReturn: false, primaryTool };
+}
+
+// Phase 7 — WRITE UP. The three existing response branches: no tool
+// picked (falls through to a plain answer below), a merged in-turn
+// answer, or a synthesis fallback via summarizeToolResult.
+async function writeUp({
+  client,
+  identityContext,
+  question,
+  decision,
+  invokedTools,
+  primaryTool,
+  mergedEntries,
+  priorTurns,
+  usageTotal,
+  answerPromptQuestion,
+  identityBlock,
+  adapter,
+  aiConfig,
+  historyTurns,
+  imageMeta,
+  blockedActionNote,
+  onDelta,
+  onStep,
+}) {
   if (invokedTools.length === 0) {
     // No tool was ever picked, iteration 0 — falls through to the
     // plain-answer path below, unchanged.
@@ -4165,8 +4084,7 @@ async function askAgent(
     // The tool(s) themselves are done — summarizeToolResult below is a
     // SEPARATE LLM call turning the result(s) into the answer. Without
     // this, the frontend kept showing "Running <tool>…" for that whole
-    // second call too, which reads as stuck once the tool has actually
-    // finished.
+    // second call too.
     onStep({ phase: 'synthesizing', toolName: priorTurns[priorTurns.length - 1].toolName });
     const { text: answer, usage: synthUsage } = await summarizeToolResult(
       client,
@@ -4182,7 +4100,7 @@ async function askAgent(
       onDelta,
       blockedActionNote,
     );
-    usageTotal = addUsage(usageTotal, synthUsage);
+    const finalUsageTotal = addUsage(usageTotal, synthUsage);
     const presentation = aiExperienceLayer.buildPresentation({
       sanitizedContext: mergedSanitizedContext,
       question,
@@ -4199,7 +4117,7 @@ async function askAgent(
       toolUsed: firstToolName,
       toolsUsed: invokedTools.map((t) => t.name),
       answer,
-      usage: usageTotal,
+      usage: finalUsageTotal,
       presentation,
       evidence,
       evidenceTrail: buildEvidenceTrail(evidence),
@@ -4208,13 +4126,9 @@ async function askAgent(
   }
 
   // No tool was picked. The direct answer still passes through the
-  // Prompt Safety Layer's own envelope (preamble/boundary markers)
-  // before reaching the caller, so every /ai/ask response has the same
-  // shape regardless of which path executed — not because the LLM's
-  // own generated text is "untrusted tool data" in rule 9's sense (it
-  // isn't retrieved/tool content, so it doesn't need the boundary-
-  // wrapping that content does), but so a caller never has to branch
-  // on response shape to know whether a tool ran.
+  // Prompt Safety Layer's own envelope (preamble/boundary markers) before
+  // reaching the caller, so every /ai/ask response has the same shape
+  // regardless of which path executed.
   const sanitizedContext = aiPromptSafetyLayer.buildSanitizedContext([]);
   const presentation = aiExperienceLayer.buildPresentation({
     sanitizedContext,
@@ -4233,6 +4147,184 @@ async function askAgent(
     presentation,
     usage: decision.usage,
   };
+}
+
+// The orchestrator. Reads top-to-bottom as the pipeline it is: route,
+// fetch tools, decide, act, verify, write up. Research mode (mode ===
+// 'general') is a different pipeline entirely — an early return to
+// askGeneralChat, never folded into the Curriculum state machine below.
+async function askAgent(
+  client,
+  question,
+  { identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel } = {},
+  onDelta,
+  onStep = () => {},
+) {
+  if (!question || typeof question !== 'string') {
+    throw new AiServiceValidationError('question is required and must be a non-empty string');
+  }
+
+  // ROUTE (inputs).
+  const turnContext = await resolveTurnContext(client, question, {
+    identityContext,
+    focusContext,
+    projectContext,
+    history,
+    attachmentIds,
+  });
+  const { images, documents, media, historyTurns, attachmentHint, promptQuestion, compactPromptQuestion, answerPromptQuestion } =
+    turnContext;
+
+  // Research mode short-circuits before a single ARCNAVE tool is even
+  // listed — see askGeneralChat's own comment above it. Anything other
+  // than the literal 'general' string falls through to the unchanged
+  // Curriculum path below.
+  if (mode === 'general') {
+    const identityBlock = await aiActorContext.describeIdentityContext(client, identityContext);
+    const { adapter, config: aiConfig } = await configurationService.resolveAiConfig(
+      client,
+      identityContext.collegeId,
+      { allowExperimentalFallback: true },
+    );
+    logAttachmentTokenPreflight({
+      adapter,
+      aiConfig,
+      identityContext,
+      attachmentHint,
+      images,
+      media,
+    });
+    return askGeneralChat(
+      client,
+      question,
+      promptQuestion,
+      {
+        identityContext,
+        identityBlock,
+        adapter,
+        aiConfig,
+        images,
+        media,
+        hasHistory: historyTurns.length > 0,
+        historyTurns,
+        hasAttachedDocuments: documents.length > 0,
+        thinkingLevel,
+      },
+      onDelta,
+      onStep,
+    );
+  }
+
+  // FETCH TOOLS.
+  const toolCtx = await fetchTools(client, identityContext, question, {
+    images,
+    documents,
+    media,
+    focusContext,
+    projectContext,
+  });
+
+  // Build the decision context — see buildDecisionContext's own comment
+  // for the ADL-050 invariant this phase owns.
+  const decisionCtx = await buildDecisionContext({
+    identityContext,
+    identityBlock: toolCtx.identityBlock,
+    focusContext,
+    question,
+    promptQuestion,
+    compactPromptQuestion,
+    images,
+    documents,
+    media,
+    historyTurns,
+    roleTools: toolCtx.roleTools,
+    tools: toolCtx.tools,
+    toolsWithPlan: toolCtx.toolsWithPlan,
+    viaToolSearch: toolCtx.viaToolSearch,
+    zeroToolFastPathActive: toolCtx.zeroToolFastPathActive,
+    toolCoverageStatus: toolCtx.toolCoverageStatus,
+    toolUncoveredRequirements: toolCtx.toolUncoveredRequirements,
+    adapter: toolCtx.adapter,
+    aiConfig: toolCtx.aiConfig,
+    attachmentHint,
+    thinkingLevel,
+  });
+
+  // DECIDE.
+  const { decision: initialDecision, imageMeta } = await decide({
+    client,
+    identityContext,
+    adapter: toolCtx.adapter,
+    aiConfig: toolCtx.aiConfig,
+    decisionContext: decisionCtx.decisionContext,
+    tools: toolCtx.tools,
+    fallbackState: toolCtx.fallbackState,
+    imagesSupported: decisionCtx.imagesSupported,
+    images,
+    imageAnalysisUnavailable: decisionCtx.imageAnalysisUnavailable,
+    onStep,
+  });
+
+  // ACT.
+  const actResult = await act({
+    client,
+    identityContext,
+    question,
+    roleTools: toolCtx.roleTools,
+    tools: toolCtx.tools,
+    adapter: toolCtx.adapter,
+    aiConfig: toolCtx.aiConfig,
+    historyTurns,
+    identityBlock: toolCtx.identityBlock,
+    answerPromptQuestion,
+    imageMeta,
+    contextInputs: {
+      continuationSegments: decisionCtx.continuationSegments,
+      decisionImages: decisionCtx.decisionImages,
+      decisionMedia: decisionCtx.decisionMedia,
+      thinkingLevel,
+      cachedSystemInstructionName: decisionCtx.cachedSystemInstructionName,
+    },
+    holder: decisionCtx.holder,
+    initialDecision,
+    onStep,
+    onDelta,
+  });
+  if (actResult.earlyReturn) return actResult.response;
+
+  // VERIFY.
+  const verifyResult = verify({
+    invokedTools: actResult.invokedTools,
+    documents,
+    priorTurns: actResult.priorTurns,
+    mergedEntries: actResult.mergedEntries,
+    imageMeta,
+    question,
+    usageTotal: actResult.usageTotal,
+  });
+  if (verifyResult.earlyReturn) return verifyResult.response;
+
+  // WRITE UP.
+  return writeUp({
+    client,
+    identityContext,
+    question,
+    decision: actResult.decision,
+    invokedTools: actResult.invokedTools,
+    primaryTool: verifyResult.primaryTool,
+    mergedEntries: actResult.mergedEntries,
+    priorTurns: actResult.priorTurns,
+    usageTotal: actResult.usageTotal,
+    answerPromptQuestion,
+    identityBlock: toolCtx.identityBlock,
+    adapter: toolCtx.adapter,
+    aiConfig: toolCtx.aiConfig,
+    historyTurns,
+    imageMeta,
+    blockedActionNote: actResult.blockedActionNote,
+    onDelta,
+    onStep,
+  });
 }
 
 module.exports = {

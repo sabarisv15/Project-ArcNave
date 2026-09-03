@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const { createUserScopedRateLimiter } = require('../middleware/rateLimit');
 const studentService = require('../services/studentService');
@@ -240,6 +242,92 @@ function mapPhoneVerificationServiceError(err, res) {
   return false;
 }
 
+// P3 4.9 — contract schemas, same permissive discipline ai.js's own
+// schema block established: never re-assert a requiredness/format
+// check the route/service already owns (studentService's own
+// createStudent/updateStudent/assertCanModifyStudent etc. are the real
+// validators — see mapStudentServiceError above), only describe the
+// real accepted wire shape so a genuinely wrong-typed field gets a
+// clean 400 instead of an unhandled crash downstream.
+//
+// POST/PUT /students bodies use a permissive z.record, not one entry
+// per STUDENT_BODY_FIELDS key (~50 fields, several of them numeric
+// (mark_10th/12th/iti, annual_income, current_semester, admission_year,
+// passing_year) or boolean (phone_verified, parent_phone_verified)
+// without a definitive type source at the route layer — studentService
+// itself is the real authority on shape, matching bodyToServiceFields'
+// own "pass whatever's present" posture). A record still rejects a
+// non-object body (e.g. an array or a bare string), the actual crash
+// class this schema exists to prevent.
+const studentIdParams = z.object({ id: z.string() });
+const studentTransferParams = z.object({ id: z.string(), transferRequestId: z.string() });
+const studentBodyRecordSchema = z.record(z.string(), z.any()).optional();
+
+const createStudentSchema = z.object({ body: studentBodyRecordSchema });
+const getStudentSchema = z.object({ params: studentIdParams });
+const listStudentsSchema = z.object({
+  query: z.object({ limit: z.string().optional(), offset: z.string().optional() }).optional(),
+});
+const updateStudentSchema = z.object({ params: studentIdParams, body: studentBodyRecordSchema });
+const deleteStudentSchema = z.object({ params: studentIdParams });
+const transferRequestSchema = z.object({
+  params: studentIdParams,
+  body: z
+    .object({
+      transfer_type: z.string().optional(),
+      destination_class_id: z.string().optional(),
+      destination_college_id: z.string().optional(),
+      reason: z.string().optional(),
+    })
+    .optional(),
+});
+const listTransferRequestsSchema = z.object({ params: studentIdParams });
+const transferDecisionSchema = z.object({ params: studentTransferParams });
+const flagSchema = z.object({
+  params: studentIdParams,
+  body: z.object({ remark: z.string().optional() }).optional(),
+});
+const flagClearSchema = z.object({ params: studentIdParams });
+const getFlagSchema = z.object({ params: studentIdParams });
+const flagHistorySchema = z.object({ params: studentIdParams });
+const semesterResultCreateSchema = z.object({
+  params: studentIdParams,
+  body: z
+    .object({
+      academic_year: z.string().optional(),
+      semester: z.string().optional(),
+      subject: z.string().optional(),
+      result_status: z.string().optional(),
+      document_id: z.string().optional(),
+    })
+    .optional(),
+});
+const semesterResultListSchema = z.object({ params: studentIdParams });
+const lifecycleStatusBodySchema = z
+  .object({
+    new_status: z.string().optional(),
+    reason: z.string().optional(),
+    effective_date: z.string().optional(),
+  })
+  .optional();
+const lifecycleStatusSchema = z.object({ params: studentIdParams, body: lifecycleStatusBodySchema });
+const lifecycleStatusRequestSchema = z.object({ params: studentIdParams, body: lifecycleStatusBodySchema });
+const lifecycleStatusApproveSchema = z.object({
+  params: studentIdParams,
+  body: z.object({ effective_date: z.string().optional() }).optional(),
+});
+const lifecycleStatusRejectSchema = z.object({ params: studentIdParams });
+const lifecycleEventsSchema = z.object({ params: studentIdParams });
+const timelineSchema = z.object({ params: studentIdParams });
+const phoneOtpRequestSchema = z.object({
+  params: studentIdParams,
+  body: z.object({ target: z.string().optional() }).optional(),
+});
+const phoneOtpVerifySchema = z.object({
+  params: studentIdParams,
+  body: z.object({ target: z.string().optional(), code: z.string().optional() }).optional(),
+});
+
 function createStudentsRouter() {
   const router = express.Router();
 
@@ -265,6 +353,7 @@ function createStudentsRouter() {
   router.post(
     '/students',
     requirePermission('students.create'),
+    validate(createStudentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -290,6 +379,7 @@ function createStudentsRouter() {
   router.get(
     '/students/:id',
     requireAuth,
+    validate(getStudentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -315,6 +405,7 @@ function createStudentsRouter() {
   router.get(
     '/students',
     requireAuth,
+    validate(listStudentsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { limit: rawLimit, offset: rawOffset } = req.query;
@@ -360,6 +451,7 @@ function createStudentsRouter() {
   router.put(
     '/students/:id',
     requirePermission('students.update'),
+    validate(updateStudentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -387,6 +479,7 @@ function createStudentsRouter() {
   router.delete(
     '/students/:id',
     requirePermission('students.delete'),
+    validate(deleteStudentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -417,6 +510,7 @@ function createStudentsRouter() {
   router.post(
     '/students/:id/transfer-requests',
     requireAuth,
+    validate(transferRequestSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const {
@@ -453,6 +547,7 @@ function createStudentsRouter() {
   router.get(
     '/students/:id/transfer-requests',
     requireAuth,
+    validate(listTransferRequestsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const requests = await studentService.listTransferRequestsForStudent(req.dbClient, req.params.id);
@@ -463,6 +558,7 @@ function createStudentsRouter() {
   router.post(
     '/students/:id/transfer-requests/:transferRequestId/approve',
     requireAuth,
+    validate(transferDecisionSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -483,6 +579,7 @@ function createStudentsRouter() {
   router.post(
     '/students/:id/transfer-requests/:transferRequestId/reject',
     requireAuth,
+    validate(transferDecisionSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -508,6 +605,7 @@ function createStudentsRouter() {
   router.post(
     '/students/:id/flag',
     requireAuth,
+    validate(flagSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -531,6 +629,7 @@ function createStudentsRouter() {
   router.post(
     '/students/:id/flag/clear',
     requireAuth,
+    validate(flagClearSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -549,6 +648,7 @@ function createStudentsRouter() {
   router.get(
     '/students/:id/flag',
     requireAuth,
+    validate(getFlagSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -567,6 +667,7 @@ function createStudentsRouter() {
   router.get(
     '/students/:id/flag-history',
     requireAuth,
+    validate(flagHistorySchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -589,6 +690,7 @@ function createStudentsRouter() {
   router.post(
     '/students/:id/semester-results',
     requireAuth,
+    validate(semesterResultCreateSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -619,6 +721,7 @@ function createStudentsRouter() {
   router.get(
     '/students/:id/semester-results',
     requireAuth,
+    validate(semesterResultListSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -644,6 +747,7 @@ function createStudentsRouter() {
   router.post(
     '/students/:id/lifecycle-status',
     requireAuth,
+    validate(lifecycleStatusSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { new_status: newStatus, reason, effective_date: effectiveDate } = req.body || {};
@@ -665,6 +769,7 @@ function createStudentsRouter() {
   router.post(
     '/students/:id/lifecycle-status/request',
     requireAuth,
+    validate(lifecycleStatusRequestSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { new_status: newStatus, reason, effective_date: effectiveDate } = req.body || {};
@@ -686,6 +791,7 @@ function createStudentsRouter() {
   router.post(
     '/students/:id/lifecycle-status/approve',
     requireAuth,
+    validate(lifecycleStatusApproveSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { effective_date: effectiveDate } = req.body || {};
@@ -705,6 +811,7 @@ function createStudentsRouter() {
   router.post(
     '/students/:id/lifecycle-status/reject',
     requireAuth,
+    validate(lifecycleStatusRejectSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -722,6 +829,7 @@ function createStudentsRouter() {
   router.get(
     '/students/:id/lifecycle-events',
     requireAuth,
+    validate(lifecycleEventsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const events = await studentService.listLifecycleEventsForStudent(req.dbClient, req.params.id);
@@ -732,6 +840,7 @@ function createStudentsRouter() {
   router.get(
     '/students/:id/timeline',
     requireAuth,
+    validate(timelineSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const entries = await studentService.listTimelineForStudent(req.dbClient, req.params.id);
@@ -747,6 +856,7 @@ function createStudentsRouter() {
     '/students/:id/phone-verification/otp',
     requireAuth,
     otpRequestLimiter,
+    validate(phoneOtpRequestSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -765,6 +875,7 @@ function createStudentsRouter() {
   router.post(
     '/students/:id/phone-verification/verify',
     requireAuth,
+    validate(phoneOtpVerifySchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -790,3 +901,24 @@ function createStudentsRouter() {
 }
 
 module.exports = createStudentsRouter;
+// P3 4.9 — same "attached to the factory function" convention as
+// routes/auth.js's own `.schemas`, read by routes/openapi.js.
+module.exports.schemas = {
+  '/students': { post: createStudentSchema, get: listStudentsSchema },
+  '/students/{id}': { get: getStudentSchema, put: updateStudentSchema, delete: deleteStudentSchema },
+  '/students/{id}/transfer-requests': { post: transferRequestSchema, get: listTransferRequestsSchema },
+  '/students/{id}/transfer-requests/{transferRequestId}/approve': { post: transferDecisionSchema },
+  '/students/{id}/transfer-requests/{transferRequestId}/reject': { post: transferDecisionSchema },
+  '/students/{id}/flag': { post: flagSchema, get: getFlagSchema },
+  '/students/{id}/flag/clear': { post: flagClearSchema },
+  '/students/{id}/flag-history': { get: flagHistorySchema },
+  '/students/{id}/semester-results': { post: semesterResultCreateSchema, get: semesterResultListSchema },
+  '/students/{id}/lifecycle-status': { post: lifecycleStatusSchema },
+  '/students/{id}/lifecycle-status/request': { post: lifecycleStatusRequestSchema },
+  '/students/{id}/lifecycle-status/approve': { post: lifecycleStatusApproveSchema },
+  '/students/{id}/lifecycle-status/reject': { post: lifecycleStatusRejectSchema },
+  '/students/{id}/lifecycle-events': { get: lifecycleEventsSchema },
+  '/students/{id}/timeline': { get: timelineSchema },
+  '/students/{id}/phone-verification/otp': { post: phoneOtpRequestSchema },
+  '/students/{id}/phone-verification/verify': { post: phoneOtpVerifySchema },
+};

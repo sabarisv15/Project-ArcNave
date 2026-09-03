@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const attendanceService = require('../services/attendanceService');
 const visibilityService = require('../services/visibilityService');
@@ -143,6 +145,54 @@ function mapAttendanceServiceError(err, res) {
   return false;
 }
 
+// P3 4.9 — contract schemas, same permissive discipline
+// students.js/staff.js's own schema blocks established. markAttendance's
+// own body (ATTENDANCE_BODY_FIELDS above) is z.record-permissive:
+// attendanceService.markAttendance itself never type-checks
+// hourIndex/totalStudents beyond presence (see that file's own
+// required-fields check) — no definitive number-vs-numeric-string
+// contract to assert at this layer without risking a currently-valid
+// request.
+const attendanceIdParams = z.object({ id: z.string() });
+const correctionIdParams = z.object({ correctionId: z.string() });
+const attendanceBodyRecordSchema = z.record(z.string(), z.any()).optional();
+
+const markAttendanceSchema = z.object({ body: attendanceBodyRecordSchema });
+const closeAbsenceFlagSchema = z.object({
+  params: attendanceIdParams,
+  body: z.object({ remarks: z.string().optional() }).optional(),
+});
+const getAttendanceSessionSchema = z.object({ params: attendanceIdParams });
+const listAttendanceSchema = z.object({
+  query: z
+    .object({
+      class_id: z.string().optional(),
+      session_date: z.string().optional(),
+      start_date: z.string().optional(),
+      end_date: z.string().optional(),
+    })
+    .optional(),
+});
+const lockAttendanceSchema = z.object({ params: attendanceIdParams });
+const getEffectiveAttendanceSchema = z.object({ params: attendanceIdParams });
+const requestCorrectionSchema = z.object({
+  params: attendanceIdParams,
+  body: z
+    .object({
+      proposed_absent_student_ids: z.array(z.any()).optional(),
+      proposed_total_students: z.any().optional(),
+      reason: z.string().optional(),
+    })
+    .optional(),
+});
+const listCorrectionsSchema = z.object({ params: attendanceIdParams });
+const approveCorrectionSchema = z.object({ params: correctionIdParams });
+const escalateCorrectionSchema = z.object({
+  params: correctionIdParams,
+  body: z.object({ escalate_to_role: z.string().optional(), remarks: z.string().optional() }).optional(),
+});
+const rejectCorrectionSchema = z.object({ params: correctionIdParams });
+
 function createAttendanceRouter() {
   const router = express.Router();
 
@@ -165,6 +215,7 @@ function createAttendanceRouter() {
   router.post(
     '/attendance',
     requireAuth,
+    validate(markAttendanceSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -214,6 +265,7 @@ function createAttendanceRouter() {
   router.post(
     '/attendance/absence-flags/:id/close',
     requireAuth,
+    validate(closeAbsenceFlagSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { remarks } = req.body || {};
@@ -240,6 +292,7 @@ function createAttendanceRouter() {
   router.get(
     '/attendance/:id',
     requireAuth,
+    validate(getAttendanceSessionSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const session = await attendanceService.getAttendanceSession(req.dbClient, req.params.id);
@@ -270,6 +323,7 @@ function createAttendanceRouter() {
   router.get(
     '/attendance',
     requireAuth,
+    validate(listAttendanceSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { class_id: classId, session_date: sessionDate, start_date: startDate, end_date: endDate } = req.query;
@@ -307,6 +361,7 @@ function createAttendanceRouter() {
   router.post(
     '/attendance/:id/lock',
     requirePermission('attendance.lock'),
+    validate(lockAttendanceSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -324,6 +379,7 @@ function createAttendanceRouter() {
   router.get(
     '/attendance/:id/effective',
     requireAuth,
+    validate(getEffectiveAttendanceSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const session = await attendanceService.getEffectiveAttendanceSession(req.dbClient, req.params.id);
@@ -344,6 +400,7 @@ function createAttendanceRouter() {
   router.post(
     '/attendance/:id/corrections',
     requireAuth,
+    validate(requestCorrectionSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const {
@@ -369,6 +426,7 @@ function createAttendanceRouter() {
   router.get(
     '/attendance/:id/corrections',
     requireAuth,
+    validate(listCorrectionsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const corrections = await attendanceService.listAttendanceCorrectionsForSession(req.dbClient, req.params.id);
@@ -379,6 +437,7 @@ function createAttendanceRouter() {
   router.post(
     '/attendance/corrections/:correctionId/approve',
     requireAuth,
+    validate(approveCorrectionSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -402,6 +461,7 @@ function createAttendanceRouter() {
   router.post(
     '/attendance/corrections/:correctionId/escalate',
     requireAuth,
+    validate(escalateCorrectionSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { escalate_to_role: escalateToRole, remarks } = req.body || {};
@@ -423,6 +483,7 @@ function createAttendanceRouter() {
   router.post(
     '/attendance/corrections/:correctionId/reject',
     requireAuth,
+    validate(rejectCorrectionSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -450,3 +511,16 @@ function createAttendanceRouter() {
 }
 
 module.exports = createAttendanceRouter;
+// P3 4.9 — same "attached to the factory function" convention as
+// routes/auth.js's own `.schemas`, read by routes/openapi.js.
+module.exports.schemas = {
+  '/attendance': { post: markAttendanceSchema, get: listAttendanceSchema },
+  '/attendance/absence-flags/{id}/close': { post: closeAbsenceFlagSchema },
+  '/attendance/{id}': { get: getAttendanceSessionSchema },
+  '/attendance/{id}/lock': { post: lockAttendanceSchema },
+  '/attendance/{id}/effective': { get: getEffectiveAttendanceSchema },
+  '/attendance/{id}/corrections': { post: requestCorrectionSchema, get: listCorrectionsSchema },
+  '/attendance/corrections/{correctionId}/approve': { post: approveCorrectionSchema },
+  '/attendance/corrections/{correctionId}/escalate': { post: escalateCorrectionSchema },
+  '/attendance/corrections/{correctionId}/reject': { post: rejectCorrectionSchema },
+};

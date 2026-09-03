@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const { createUserScopedRateLimiter } = require('../middleware/rateLimit');
 const staffService = require('../services/staffService');
@@ -250,6 +252,47 @@ function mapStaffWorkHistoryServiceError(err, res) {
   return false;
 }
 
+// P3 4.9 — contract schemas, same permissive discipline students.js's
+// own schema block established: never re-assert a requiredness/format
+// check the route/service already owns (staffService's own
+// createStaff/updateStaff/deactivateStaff etc. are the real
+// validators — see mapStaffServiceError above). Bodies driven by
+// STAFF_BODY_FIELDS/SELF_SERVICE_BODY_FIELDS (~28/~17 fields, several
+// without a definitive type at the route layer) use a permissive
+// z.record, same reasoning students.js's own createStudentSchema
+// comment gives — still rejects a non-object body (array/primitive),
+// the actual crash class this schema exists to prevent. GET routes
+// with no body/params/query worth describing (/staff/me,
+// /staff/me/work-history, /staff/me/phone-verification/otp) get no
+// validate() call, same precedent GET /ai/tools already set.
+const staffIdParams = z.object({ id: z.string() });
+const staffBodyRecordSchema = z.record(z.string(), z.any()).optional();
+
+const createStaffSchema = z.object({ body: staffBodyRecordSchema });
+const inviteStaffSchema = z.object({ body: z.object({ email: z.string().optional() }).optional() });
+const hodAccountSchema = z.object({ body: staffBodyRecordSchema });
+const updateOwnProfileSchema = z.object({ body: staffBodyRecordSchema });
+const verifyOwnPhoneSchema = z.object({ body: z.object({ code: z.string().optional() }).optional() });
+const addWorkHistorySchema = z.object({
+  body: z
+    .object({
+      institution_name: z.string().optional(),
+      designation_held: z.string().optional(),
+      from_date: z.string().optional(),
+      to_date: z.string().optional(),
+    })
+    .optional(),
+});
+const removeWorkHistorySchema = z.object({ params: z.object({ entryId: z.string() }) });
+const getStaffSchema = z.object({ params: staffIdParams });
+const listStaffSchema = z.object({
+  query: z.object({ limit: z.string().optional(), offset: z.string().optional() }).optional(),
+});
+const updateStaffSchema = z.object({ params: staffIdParams, body: staffBodyRecordSchema });
+const submitRegistrationSchema = z.object({ params: staffIdParams });
+const deactivateStaffSchema = z.object({ params: staffIdParams });
+const deleteStaffSchema = z.object({ params: staffIdParams });
+
 function createStaffRouter() {
   const router = express.Router();
 
@@ -282,6 +325,7 @@ function createStaffRouter() {
   router.post(
     '/staff',
     requirePermission('staff.create'),
+    validate(createStaffSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -310,6 +354,7 @@ function createStaffRouter() {
   router.post(
     '/staff/invitations',
     requireAuth,
+    validate(inviteStaffSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -335,6 +380,7 @@ function createStaffRouter() {
   router.post(
     '/staff/hod-accounts',
     requirePermission('staff.hod_accounts.create'),
+    validate(hodAccountSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -390,6 +436,7 @@ function createStaffRouter() {
   router.put(
     '/staff/me',
     requireAuth,
+    validate(updateOwnProfileSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -430,6 +477,7 @@ function createStaffRouter() {
   router.post(
     '/staff/me/phone-verification/verify',
     requireAuth,
+    validate(verifyOwnPhoneSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -469,6 +517,7 @@ function createStaffRouter() {
   router.post(
     '/staff/me/work-history',
     requireAuth,
+    validate(addWorkHistorySchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -494,6 +543,7 @@ function createStaffRouter() {
   router.delete(
     '/staff/me/work-history/:entryId',
     requireAuth,
+    validate(removeWorkHistorySchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -514,6 +564,7 @@ function createStaffRouter() {
   router.get(
     '/staff/:id',
     requireAuth,
+    validate(getStaffSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       let staff;
@@ -548,6 +599,7 @@ function createStaffRouter() {
   router.get(
     '/staff',
     requireAuth,
+    validate(listStaffSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { limit: rawLimit, offset: rawOffset } = req.query;
@@ -583,6 +635,7 @@ function createStaffRouter() {
   router.put(
     '/staff/:id',
     requirePermission('staff.update'),
+    validate(updateStaffSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -623,6 +676,7 @@ function createStaffRouter() {
   router.post(
     '/staff/:id/submit-registration',
     requireAuth,
+    validate(submitRegistrationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -649,6 +703,7 @@ function createStaffRouter() {
   router.post(
     '/staff/:id/deactivate',
     requireAuth,
+    validate(deactivateStaffSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -666,6 +721,7 @@ function createStaffRouter() {
   router.delete(
     '/staff/:id',
     requirePermission('staff.delete'),
+    validate(deleteStaffSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const staff = await staffService.removeStaff(req.dbClient, req.params.id, {
@@ -683,3 +739,17 @@ function createStaffRouter() {
 }
 
 module.exports = createStaffRouter;
+// P3 4.9 — same "attached to the factory function" convention as
+// routes/auth.js's own `.schemas`, read by routes/openapi.js.
+module.exports.schemas = {
+  '/staff': { post: createStaffSchema, get: listStaffSchema },
+  '/staff/invitations': { post: inviteStaffSchema },
+  '/staff/hod-accounts': { post: hodAccountSchema },
+  '/staff/me': { put: updateOwnProfileSchema },
+  '/staff/me/phone-verification/verify': { post: verifyOwnPhoneSchema },
+  '/staff/me/work-history': { post: addWorkHistorySchema },
+  '/staff/me/work-history/{entryId}': { delete: removeWorkHistorySchema },
+  '/staff/{id}': { get: getStaffSchema, put: updateStaffSchema, delete: deleteStaffSchema },
+  '/staff/{id}/submit-registration': { post: submitRegistrationSchema },
+  '/staff/{id}/deactivate': { post: deactivateStaffSchema },
+};

@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth } = require('../middleware/rbac');
 const aiToolRegistry = require('../services/aiToolRegistry');
 const aiService = require('../services/aiService');
@@ -392,6 +394,59 @@ function mapAiToolError(err, res) {
   return false;
 }
 
+// P3 4.9 — contract tests / schemas, same middleware/validate.js pattern
+// routes/auth.js's /auth/login established. Every field below is
+// deliberately OPTIONAL/permissive at this layer, never re-asserting a
+// requiredness or format check the route/service already owns (e.g.
+// `question` here vs. aiService.askAgent's own AiServiceValidationError
+// message) — validate.js's own comment is explicit that duplicating
+// business validation risks changing an already-tested error shape.
+// These schemas exist to (a) document the real accepted wire shape in
+// generated OpenAPI (routes/openapi.js) and (b) turn a genuinely
+// wrong-typed field (e.g. `question` sent as a number) into a clean 400
+// instead of whatever undefined behavior a raw type mismatch produces
+// downstream — never to narrow what a currently-valid request already
+// gets accepted.
+const invokeToolParamsSchema = z.object({
+  params: z.object({ name: z.string() }),
+  body: z.object({ params: z.record(z.string(), z.any()).optional(), question: z.string().optional() }).optional(),
+});
+
+const askSchema = z.object({
+  body: z
+    .object({
+      question: z.string().optional(),
+      focusContext: z.object({ entityType: z.string().optional(), id: z.string().optional() }).optional(),
+      project_id: z.string().optional(),
+      conversation_id: z.string().optional(),
+      attachment_ids: z.array(z.string()).optional(),
+      mode: z.string().optional(),
+      thinkingLevel: z.string().optional(),
+    })
+    .optional(),
+});
+
+const workflowExecuteSchema = z.object({
+  body: z
+    .object({
+      question: z.string().optional(),
+      // Not `.min(1)`/required here — the route's own explicit
+      // `!Array.isArray(steps) || steps.length === 0` check (below)
+      // owns that exact 400 message; this schema only rejects `steps`
+      // when it's present but the WRONG type.
+      steps: z
+        .array(
+          z.object({
+            toolName: z.string().optional(),
+            tool_name: z.string().optional(),
+            params: z.record(z.string(), z.any()).optional(),
+          }),
+        )
+        .optional(),
+    })
+    .optional(),
+});
+
 function createAiRouter() {
   const router = express.Router();
 
@@ -418,6 +473,7 @@ function createAiRouter() {
   router.post(
     '/ai/tools/:name/invoke',
     requireAuth,
+    validate(invokeToolParamsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const identityContext = buildAiIdentityContext(req);
@@ -589,6 +645,7 @@ function createAiRouter() {
   router.post(
     '/ai/ask',
     requireAuth,
+    validate(askSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { question, identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel } =
@@ -642,6 +699,7 @@ function createAiRouter() {
   router.post(
     '/ai/ask/stream',
     requireAuth,
+    validate(askSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { question, identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel } =
@@ -736,6 +794,7 @@ function createAiRouter() {
   router.post(
     '/ai/workflow/execute',
     requireAuth,
+    validate(workflowExecuteSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const identityContext = buildAiIdentityContext(req);
@@ -767,3 +826,11 @@ module.exports = createAiRouter;
 // so a unit test can exercise the label/auto-classify boundary without
 // spinning up a real Express app + DB.
 module.exports.resolveThinkingLevel = resolveThinkingLevel;
+// P3 4.9 — same "attached to the factory function" convention as
+// routes/auth.js's own `.schemas`, read by routes/openapi.js.
+module.exports.schemas = {
+  '/ai/tools/{name}/invoke': { post: invokeToolParamsSchema },
+  '/ai/ask': { post: askSchema },
+  '/ai/ask/stream': { post: askSchema },
+  '/ai/workflow/execute': { post: workflowExecuteSchema },
+};

@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const assessmentService = require('../services/assessmentService');
 const workflowService = require('../services/workflowService');
@@ -118,6 +120,102 @@ function mapAssessmentServiceError(err, res) {
   return false;
 }
 
+// P3 4.9 — contract schemas, same permissive discipline the other 7
+// route files' own schema blocks established: never re-assert a
+// requiredness check the service already owns and returns its OWN
+// specific message for (e.g. `createAssessmentType`'s "collegeId and
+// name are required", `recordMark`'s multi-field requiredness
+// message, `updateMark`/`requestMarkCorrection`/
+// `requestMarkReevaluation`'s own "marksObtained"/
+// "proposedMarksObtained is required") — those fields stay untyped
+// (`z.any()`) here. One genuine gap this file DOES have that the
+// presence-only checks above don't cover: `assessment_types.max_marks`/
+// `assessment_marks.marks_obtained` are NUMERIC columns with no
+// type check anywhere in assessmentService — a non-numeric
+// `max_marks`/`marks_obtained`/`proposed_marks_obtained` passes every
+// existing check and then fails as a raw, unhandled Postgres
+// "invalid input syntax for type numeric" 500. Typed as `z.number()`
+// here — the actual fix, same class of gap as classes.js's
+// `requirements` array fix. `:id`/`:correctionId`/`:reevaluationId`
+// path params stay `z.string()` (no format assertion), same reasoning
+// as every other file.
+const assessmentTypeIdParams = z.object({ id: z.string() });
+const classIdParams = z.object({ id: z.string() });
+const correctionIdParams = z.object({ correctionId: z.string() });
+const reevaluationIdParams = z.object({ reevaluationId: z.string() });
+
+const createAssessmentTypeSchema = z.object({
+  body: z.object({ name: z.any().optional(), max_marks: z.number().optional() }).optional(),
+});
+const listAssessmentTypesSchema = z.object({
+  query: z.object({ limit: z.string().optional(), offset: z.string().optional() }).optional(),
+});
+const updateAssessmentTypeSchema = z.object({
+  params: assessmentTypeIdParams,
+  body: z.object({ name: z.any().optional(), max_marks: z.number().optional() }).optional(),
+});
+const recordMarkSchema = z.object({
+  params: classIdParams,
+  body: z
+    .object({
+      academic_year: z.any().optional(),
+      subject: z.any().optional(),
+      assessment_type_id: z.any().optional(),
+      student_id: z.any().optional(),
+      marks_obtained: z.number().optional(),
+    })
+    .optional(),
+});
+const updateMarkSchema = z.object({
+  params: z.object({ id: z.string() }),
+  body: z.object({ marks_obtained: z.number().optional() }).optional(),
+});
+const lockAssessmentSubmissionSchema = z.object({
+  params: classIdParams,
+  body: z
+    .object({ academic_year: z.any().optional(), subject: z.any().optional(), assessment_type_id: z.any().optional() })
+    .optional(),
+});
+const unlockAssessmentSubmissionSchema = lockAssessmentSubmissionSchema;
+const submitAssessmentSubmissionSchema = lockAssessmentSubmissionSchema;
+const assessmentSubmissionStatusSchema = z.object({
+  params: classIdParams,
+  query: z
+    .object({ academic_year: z.string().optional(), subject: z.string().optional(), assessment_type_id: z.string().optional() })
+    .optional(),
+});
+const listMarksForFiltersSchema = z.object({
+  query: z
+    .object({
+      academic_year: z.string().optional(),
+      department_id: z.string().optional(),
+      class_id: z.string().optional(),
+      subject: z.string().optional(),
+      assessment_type_id: z.string().optional(),
+    })
+    .optional(),
+});
+const effectiveMarkSchema = z.object({ params: z.object({ id: z.string() }) });
+const requestMarkCorrectionSchema = z.object({
+  params: z.object({ id: z.string() }),
+  body: z.object({ proposed_marks_obtained: z.number().optional(), reason: z.any().optional() }).optional(),
+});
+const listMarkCorrectionsSchema = z.object({ params: z.object({ id: z.string() }) });
+const approveMarkCorrectionSchema = z.object({ params: correctionIdParams });
+const rejectMarkCorrectionSchema = z.object({ params: correctionIdParams });
+const escalateMarkCorrectionSchema = z.object({
+  params: correctionIdParams,
+  body: z.object({ escalate_to_role: z.any().optional(), remarks: z.any().optional() }).optional(),
+});
+const requestMarkReevaluationSchema = z.object({
+  params: z.object({ id: z.string() }),
+  body: z.object({ proposed_marks_obtained: z.number().optional(), reason: z.any().optional() }).optional(),
+});
+const listMarkReevaluationsSchema = z.object({ params: z.object({ id: z.string() }) });
+const approveMarkReevaluationSchema = z.object({ params: reevaluationIdParams });
+const rejectMarkReevaluationSchema = z.object({ params: reevaluationIdParams });
+const removeMarkSchema = z.object({ params: z.object({ id: z.string() }) });
+
 function createAssessmentsRouter() {
   const router = express.Router();
 
@@ -130,6 +228,7 @@ function createAssessmentsRouter() {
   router.post(
     '/assessment-types',
     requirePermission('assessment_types.create'),
+    validate(createAssessmentTypeSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { name, max_marks: maxMarks } = req.body || {};
@@ -153,6 +252,7 @@ function createAssessmentsRouter() {
   router.get(
     '/assessment-types',
     requireAuth,
+    validate(listAssessmentTypesSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { limit: rawLimit, offset: rawOffset } = req.query;
@@ -167,6 +267,7 @@ function createAssessmentsRouter() {
   router.put(
     '/assessment-types/:id',
     requirePermission('assessment_types.update'),
+    validate(updateAssessmentTypeSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { name, max_marks: maxMarks } = req.body || {};
@@ -201,6 +302,7 @@ function createAssessmentsRouter() {
   router.post(
     '/classes/:id/assessment-marks',
     requireAuth,
+    validate(recordMarkSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const {
@@ -237,6 +339,7 @@ function createAssessmentsRouter() {
   router.put(
     '/assessment-marks/:id',
     requireAuth,
+    validate(updateMarkSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { marks_obtained: marksObtained } = req.body || {};
@@ -265,6 +368,7 @@ function createAssessmentsRouter() {
   router.post(
     '/classes/:id/assessment-submissions/lock',
     requireAuth,
+    validate(lockAssessmentSubmissionSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { academic_year: academicYear, subject, assessment_type_id: assessmentTypeId } = req.body || {};
@@ -285,6 +389,7 @@ function createAssessmentsRouter() {
   router.post(
     '/classes/:id/assessment-submissions/unlock',
     requireAuth,
+    validate(unlockAssessmentSubmissionSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { academic_year: academicYear, subject, assessment_type_id: assessmentTypeId } = req.body || {};
@@ -305,6 +410,7 @@ function createAssessmentsRouter() {
   router.post(
     '/classes/:id/assessment-submissions/submit',
     requireAuth,
+    validate(submitAssessmentSubmissionSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { academic_year: academicYear, subject, assessment_type_id: assessmentTypeId } = req.body || {};
@@ -325,6 +431,7 @@ function createAssessmentsRouter() {
   router.get(
     '/classes/:id/assessment-submissions/status',
     requireAuth,
+    validate(assessmentSubmissionStatusSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { academic_year: academicYear, subject, assessment_type_id: assessmentTypeId } = req.query;
@@ -343,6 +450,7 @@ function createAssessmentsRouter() {
   router.get(
     '/assessment-marks',
     requireAuth,
+    validate(listMarksForFiltersSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const {
@@ -366,6 +474,7 @@ function createAssessmentsRouter() {
   router.get(
     '/assessment-marks/:id/effective',
     requireAuth,
+    validate(effectiveMarkSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const mark = await assessmentService.getEffectiveMark(req.dbClient, req.params.id);
@@ -386,6 +495,7 @@ function createAssessmentsRouter() {
   router.post(
     '/assessment-marks/:id/corrections',
     requireAuth,
+    validate(requestMarkCorrectionSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { proposed_marks_obtained: proposedMarksObtained, reason } = req.body || {};
@@ -407,6 +517,7 @@ function createAssessmentsRouter() {
   router.get(
     '/assessment-marks/:id/corrections',
     requireAuth,
+    validate(listMarkCorrectionsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const corrections = await assessmentService.listMarkCorrectionsForMark(req.dbClient, req.params.id);
@@ -417,6 +528,7 @@ function createAssessmentsRouter() {
   router.post(
     '/assessment-marks/corrections/:correctionId/approve',
     requireAuth,
+    validate(approveMarkCorrectionSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -435,6 +547,7 @@ function createAssessmentsRouter() {
   router.post(
     '/assessment-marks/corrections/:correctionId/reject',
     requireAuth,
+    validate(rejectMarkCorrectionSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -453,6 +566,7 @@ function createAssessmentsRouter() {
   router.post(
     '/assessment-marks/corrections/:correctionId/escalate',
     requireAuth,
+    validate(escalateMarkCorrectionSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { escalate_to_role: escalateToRole, remarks } = req.body || {};
@@ -479,6 +593,7 @@ function createAssessmentsRouter() {
   router.post(
     '/assessment-marks/:id/reevaluations',
     requireAuth,
+    validate(requestMarkReevaluationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { proposed_marks_obtained: proposedMarksObtained, reason } = req.body || {};
@@ -500,6 +615,7 @@ function createAssessmentsRouter() {
   router.get(
     '/assessment-marks/:id/reevaluations',
     requireAuth,
+    validate(listMarkReevaluationsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const reevaluations = await assessmentService.listMarkReevaluationsForMark(req.dbClient, req.params.id);
@@ -510,6 +626,7 @@ function createAssessmentsRouter() {
   router.post(
     '/assessment-marks/reevaluations/:reevaluationId/approve',
     requireAuth,
+    validate(approveMarkReevaluationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -527,6 +644,7 @@ function createAssessmentsRouter() {
   router.post(
     '/assessment-marks/reevaluations/:reevaluationId/reject',
     requireAuth,
+    validate(rejectMarkReevaluationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -544,6 +662,7 @@ function createAssessmentsRouter() {
   router.delete(
     '/assessment-marks/:id',
     requireAuth,
+    validate(removeMarkSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const mark = await assessmentService.removeMark(req.dbClient, req.params.id, {
@@ -561,3 +680,24 @@ function createAssessmentsRouter() {
 }
 
 module.exports = createAssessmentsRouter;
+// P3 4.9 — same "attached to the factory function" convention as
+// routes/auth.js's own `.schemas`, read by routes/openapi.js.
+module.exports.schemas = {
+  '/assessment-types': { post: createAssessmentTypeSchema, get: listAssessmentTypesSchema },
+  '/assessment-types/{id}': { put: updateAssessmentTypeSchema },
+  '/classes/{id}/assessment-marks': { post: recordMarkSchema },
+  '/assessment-marks/{id}': { put: updateMarkSchema, delete: removeMarkSchema },
+  '/classes/{id}/assessment-submissions/lock': { post: lockAssessmentSubmissionSchema },
+  '/classes/{id}/assessment-submissions/unlock': { post: unlockAssessmentSubmissionSchema },
+  '/classes/{id}/assessment-submissions/submit': { post: submitAssessmentSubmissionSchema },
+  '/classes/{id}/assessment-submissions/status': { get: assessmentSubmissionStatusSchema },
+  '/assessment-marks': { get: listMarksForFiltersSchema },
+  '/assessment-marks/{id}/effective': { get: effectiveMarkSchema },
+  '/assessment-marks/{id}/corrections': { post: requestMarkCorrectionSchema, get: listMarkCorrectionsSchema },
+  '/assessment-marks/corrections/{correctionId}/approve': { post: approveMarkCorrectionSchema },
+  '/assessment-marks/corrections/{correctionId}/reject': { post: rejectMarkCorrectionSchema },
+  '/assessment-marks/corrections/{correctionId}/escalate': { post: escalateMarkCorrectionSchema },
+  '/assessment-marks/{id}/reevaluations': { post: requestMarkReevaluationSchema, get: listMarkReevaluationsSchema },
+  '/assessment-marks/reevaluations/{reevaluationId}/approve': { post: approveMarkReevaluationSchema },
+  '/assessment-marks/reevaluations/{reevaluationId}/reject': { post: rejectMarkReevaluationSchema },
+};

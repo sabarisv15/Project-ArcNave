@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const { roleHasPermission } = require('../middleware/permissions');
 const documentService = require('../services/documentService');
@@ -187,6 +189,131 @@ function mapOcrServiceError(err, res) {
   return false;
 }
 
+// P3 4.9 — contract schemas, same permissive discipline every other
+// routes/*.js schema block in this pass established. `file_base64` is
+// deliberately `z.any().optional()` everywhere it appears, never
+// `z.string()`: several routes below (POST /documents,
+// /documents/templates, /documents/institutional, /documents/personal,
+// /documents/chat-attachments) already run their own explicit
+// `typeof fileBase64 !== 'string'` check and return a specific,
+// tested `{detail: 'file_base64 is required'}` message for BOTH a
+// missing and a wrong-typed value — typing it here would intercept the
+// wrong-typed case at validate() instead, changing that message for a
+// case the route already handles on its own. Every other field is
+// typed for real, since none of them have an equivalent existing
+// business-layer type check to preserve.
+const documentIdParams = z.object({ id: z.string() });
+
+const uploadDocumentSchema = z.object({
+  body: z
+    .object({
+      student_id: z.string().optional(),
+      doc_type: z.string().optional(),
+      file_name: z.string().optional(),
+      mime_type: z.string().optional(),
+      file_base64: z.any().optional(),
+    })
+    .optional(),
+});
+const uploadTemplateSchema = z.object({
+  body: z
+    .object({
+      file_name: z.string().optional(),
+      mime_type: z.string().optional(),
+      file_base64: z.any().optional(),
+    })
+    .optional(),
+});
+const uploadInstitutionalSchema = z.object({
+  body: z
+    .object({
+      title: z.string().optional(),
+      category_id: z.string().optional(),
+      academic_year_id: z.string().optional(),
+      department_id: z.string().optional(),
+      class_id: z.string().optional(),
+      file_name: z.string().optional(),
+      mime_type: z.string().optional(),
+      document_group_id: z.string().optional(),
+      confirm_upload: z.boolean().optional(),
+      file_base64: z.any().optional(),
+    })
+    .optional(),
+});
+const listInstitutionalSchema = z.object({
+  query: z
+    .object({
+      doc_type: z.string().optional(),
+      class_id: z.string().optional(),
+      category_id: z.string().optional(),
+      academic_year_id: z.string().optional(),
+      department_id: z.string().optional(),
+      search: z.string().optional(),
+    })
+    .optional(),
+});
+const uploadPersonalSchema = z.object({
+  body: z
+    .object({
+      title: z.string().optional(),
+      folder_name: z.string().optional(),
+      file_name: z.string().optional(),
+      mime_type: z.string().optional(),
+      file_base64: z.any().optional(),
+    })
+    .optional(),
+});
+const uploadChatAttachmentSchema = z.object({
+  body: z.object({ file_name: z.string().optional(), file_base64: z.any().optional() }).optional(),
+});
+const chatAttachmentIntelligenceSchema = z.object({ params: documentIdParams });
+const patchPersonalDocumentSchema = z.object({
+  params: documentIdParams,
+  body: z
+    .object({ file_name: z.string().optional(), title: z.string().optional(), folder_name: z.string().optional() })
+    .optional(),
+});
+const duplicatePersonalDocumentSchema = z.object({ params: documentIdParams });
+const createFolderSchema = z.object({
+  body: z.object({ name: z.string().optional(), parent_id: z.string().optional() }).optional(),
+});
+const patchFolderSchema = z.object({
+  params: documentIdParams,
+  body: z.object({ name: z.string().optional(), parent_id: z.string().nullable().optional() }).optional(),
+});
+const deleteFolderSchema = z.object({ params: documentIdParams });
+const compareVersionsSchema = z.object({
+  query: z.object({ a: z.string().optional(), b: z.string().optional() }).optional(),
+});
+const versionHistorySchema = z.object({ params: z.object({ groupId: z.string() }) });
+const linkLineageSchema = z.object({
+  params: documentIdParams,
+  body: z.object({ previous_year_document_id: z.string().optional() }).optional(),
+});
+const getLineageSchema = z.object({ params: documentIdParams });
+const publishSchema = z.object({ params: documentIdParams });
+const supersedeSchema = z.object({
+  params: documentIdParams,
+  body: z.object({ reason: z.string().optional() }).optional(),
+});
+const archiveSchema = z.object({ params: documentIdParams });
+const mergeTemplateSchema = z.object({
+  params: documentIdParams,
+  body: z.object({ fields: z.record(z.string(), z.any()).optional() }).optional(),
+});
+const getDocumentSchema = z.object({ params: documentIdParams });
+const downloadDocumentSchema = z.object({ params: documentIdParams });
+const runOcrSchema = z.object({ params: documentIdParams });
+const listOcrSchema = z.object({ params: documentIdParams });
+const listDocumentsForStudentSchema = z.object({
+  query: z.object({ student_id: z.string().optional() }).optional(),
+});
+const reviewDocumentSchema = z.object({
+  params: documentIdParams,
+  body: z.object({ status: z.string().optional(), remarks: z.string().optional() }).optional(),
+});
+const deleteDocumentSchema = z.object({ params: documentIdParams });
+
 function createDocumentsRouter() {
   const router = express.Router();
 
@@ -211,6 +338,7 @@ function createDocumentsRouter() {
   router.post(
     '/documents',
     requirePermission('documents.upload'),
+    validate(uploadDocumentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { file_base64: fileBase64 } = req.body || {};
@@ -254,6 +382,7 @@ function createDocumentsRouter() {
   router.post(
     '/documents/templates',
     requirePermission('documents.templates.upload'),
+    validate(uploadTemplateSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { file_base64: fileBase64, file_name: fileName, mime_type: mimeType } = req.body || {};
@@ -316,6 +445,7 @@ function createDocumentsRouter() {
   router.post(
     '/documents/institutional',
     requirePermission('documents.institutional.upload'),
+    validate(uploadInstitutionalSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const {
@@ -371,6 +501,7 @@ function createDocumentsRouter() {
   router.get(
     '/documents/institutional',
     requireAuth,
+    validate(listInstitutionalSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const {
@@ -408,6 +539,7 @@ function createDocumentsRouter() {
   router.post(
     '/documents/personal',
     requireAuth,
+    validate(uploadPersonalSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const {
@@ -461,6 +593,7 @@ function createDocumentsRouter() {
   router.post(
     '/documents/chat-attachments',
     requireAuth,
+    validate(uploadChatAttachmentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { file_base64: fileBase64, file_name: fileName } = req.body || {};
@@ -553,6 +686,7 @@ function createDocumentsRouter() {
   router.get(
     '/documents/chat-attachments/:id/intelligence',
     requireAuth,
+    validate(chatAttachmentIntelligenceSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -605,6 +739,7 @@ function createDocumentsRouter() {
   router.patch(
     '/documents/personal/:id',
     requireAuth,
+    validate(patchPersonalDocumentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { file_name: fileName, title, folder_name: folderName } = req.body || {};
@@ -646,6 +781,7 @@ function createDocumentsRouter() {
   router.post(
     '/documents/personal/:id/duplicate',
     requireAuth,
+    validate(duplicatePersonalDocumentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -671,6 +807,7 @@ function createDocumentsRouter() {
   router.post(
     '/documents/personal/folders',
     requireAuth,
+    validate(createFolderSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -707,6 +844,7 @@ function createDocumentsRouter() {
   router.patch(
     '/documents/personal/folders/:id',
     requireAuth,
+    validate(patchFolderSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { name, parent_id: parentId } = req.body || {};
@@ -728,6 +866,7 @@ function createDocumentsRouter() {
   router.delete(
     '/documents/personal/folders/:id',
     requireAuth,
+    validate(deleteFolderSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -752,6 +891,7 @@ function createDocumentsRouter() {
   router.get(
     '/documents/institutional/versions/compare',
     requireAuth,
+    validate(compareVersionsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { a, b } = req.query;
@@ -781,6 +921,7 @@ function createDocumentsRouter() {
   router.get(
     '/documents/institutional/versions/:groupId',
     requireAuth,
+    validate(versionHistorySchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const versions = await documentService.getVersionHistory(req.dbClient, req.params.groupId);
@@ -796,6 +937,7 @@ function createDocumentsRouter() {
   router.post(
     '/documents/institutional/:id/lineage',
     requirePermission('documents.institutional.upload'),
+    validate(linkLineageSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -815,6 +957,7 @@ function createDocumentsRouter() {
   router.get(
     '/documents/institutional/:id/lineage',
     requireAuth,
+    validate(getLineageSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -839,6 +982,7 @@ function createDocumentsRouter() {
   router.post(
     '/documents/institutional/:id/publish',
     requirePermission('documents.institutional.upload'),
+    validate(publishSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -856,6 +1000,7 @@ function createDocumentsRouter() {
   router.post(
     '/documents/institutional/:id/supersede',
     requirePermission('documents.institutional.upload'),
+    validate(supersedeSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -876,6 +1021,7 @@ function createDocumentsRouter() {
   router.post(
     '/documents/institutional/:id/archive',
     requirePermission('documents.institutional.upload'),
+    validate(archiveSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -925,6 +1071,7 @@ function createDocumentsRouter() {
   router.post(
     '/documents/:id/merge',
     requireAuth,
+    validate(mergeTemplateSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -951,6 +1098,7 @@ function createDocumentsRouter() {
   router.get(
     '/documents/:id',
     requireAuth,
+    validate(getDocumentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const document = await documentService.getDocument(req.dbClient, req.params.id);
@@ -981,6 +1129,7 @@ function createDocumentsRouter() {
   router.get(
     '/documents/:id/download',
     requireAuth,
+    validate(downloadDocumentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const document = await documentService.getDocument(req.dbClient, req.params.id);
@@ -1011,6 +1160,7 @@ function createDocumentsRouter() {
   router.post(
     '/documents/:id/ocr',
     requirePermission('documents.ocr.run'),
+    validate(runOcrSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -1028,6 +1178,7 @@ function createDocumentsRouter() {
   router.get(
     '/documents/:id/ocr',
     requireAuth,
+    validate(listOcrSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const document = await documentService.getDocument(req.dbClient, req.params.id);
@@ -1060,6 +1211,7 @@ function createDocumentsRouter() {
   router.get(
     '/documents',
     requireAuth,
+    validate(listDocumentsForStudentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { student_id: studentId } = req.query;
@@ -1087,6 +1239,7 @@ function createDocumentsRouter() {
   router.post(
     '/documents/:id/review',
     requirePermission('documents.review'),
+    validate(reviewDocumentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -1121,6 +1274,7 @@ function createDocumentsRouter() {
   router.delete(
     '/documents/:id',
     requireAuth,
+    validate(deleteDocumentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const document = await documentService.getDocument(req.dbClient, req.params.id);
@@ -1149,3 +1303,28 @@ function createDocumentsRouter() {
 }
 
 module.exports = createDocumentsRouter;
+// P3 4.9 — same "attached to the factory function" convention as
+// routes/auth.js's own `.schemas`, read by routes/openapi.js.
+module.exports.schemas = {
+  '/documents': { post: uploadDocumentSchema, get: listDocumentsForStudentSchema },
+  '/documents/templates': { post: uploadTemplateSchema },
+  '/documents/institutional': { post: uploadInstitutionalSchema, get: listInstitutionalSchema },
+  '/documents/personal': { post: uploadPersonalSchema },
+  '/documents/chat-attachments': { post: uploadChatAttachmentSchema },
+  '/documents/chat-attachments/{id}/intelligence': { get: chatAttachmentIntelligenceSchema },
+  '/documents/personal/{id}': { patch: patchPersonalDocumentSchema },
+  '/documents/personal/{id}/duplicate': { post: duplicatePersonalDocumentSchema },
+  '/documents/personal/folders': { post: createFolderSchema },
+  '/documents/personal/folders/{id}': { patch: patchFolderSchema, delete: deleteFolderSchema },
+  '/documents/institutional/versions/compare': { get: compareVersionsSchema },
+  '/documents/institutional/versions/{groupId}': { get: versionHistorySchema },
+  '/documents/institutional/{id}/lineage': { post: linkLineageSchema, get: getLineageSchema },
+  '/documents/institutional/{id}/publish': { post: publishSchema },
+  '/documents/institutional/{id}/supersede': { post: supersedeSchema },
+  '/documents/institutional/{id}/archive': { post: archiveSchema },
+  '/documents/{id}/merge': { post: mergeTemplateSchema },
+  '/documents/{id}': { get: getDocumentSchema, delete: deleteDocumentSchema },
+  '/documents/{id}/download': { get: downloadDocumentSchema },
+  '/documents/{id}/ocr': { post: runOcrSchema, get: listOcrSchema },
+  '/documents/{id}/review': { post: reviewDocumentSchema },
+};

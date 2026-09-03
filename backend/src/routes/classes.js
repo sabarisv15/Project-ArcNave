@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const academicService = require('../services/academicService');
 const classTutorService = require('../services/classTutorService');
@@ -193,6 +195,83 @@ function mapAcademicServiceError(err, res) {
   return false;
 }
 
+// P3 4.9 — contract schemas, same permissive discipline the other 6
+// route files' own schema blocks established: never re-assert a
+// requiredness check the route/service already owns and returns its
+// OWN specific message for (e.g. `classTutorService`'s "newTutorUserId
+// is required", `requestSubstituteAssignment`'s own multi-field
+// requiredness message, `sendClassAlert`'s "body is required") — those
+// fields stay untyped (`z.any()`) here. The one genuine crash class
+// this file has that the others didn't: generate-timetable/
+// revise-timetable's `requirements` is `.map()`-ed unconditionally
+// (`((req.body || {}).requirements || []).map(...)`) — a non-array
+// `requirements` (e.g. a string or object) throws a raw
+// `TypeError: r.map is not a function`-style 500 today, so
+// `requirements` is typed as `z.array(z.any()).optional()` here, the
+// actual fix for that gap. `:id` path params stay `z.string()` (no
+// format assertion), same reasoning as every other file. `/classes`
+// create/update bodies (driven by CLASS_BODY_FIELDS) use one shared
+// permissive `z.record` — still rejects a non-object top-level body.
+// GET routes with nothing worth describing (`/substitute-assignments/mine`)
+// get no `validate()` call, same precedent `GET /ai/tools` set.
+const classIdParams = z.object({ id: z.string() });
+const classBodyRecordSchema = z.record(z.string(), z.any()).optional();
+
+const createClassSchema = z.object({ body: classBodyRecordSchema });
+const getClassSchema = z.object({ params: classIdParams });
+const listClassesSchema = z.object({
+  query: z.object({ limit: z.string().optional(), offset: z.string().optional() }).optional(),
+});
+const updateClassSchema = z.object({ params: classIdParams, body: classBodyRecordSchema });
+const assignTutorSchema = z.object({
+  params: classIdParams,
+  body: z.object({ new_tutor_user_id: z.any().optional() }).optional(),
+});
+const submitForApprovalSchema = z.object({ params: classIdParams });
+const requestSubstituteAssignmentSchema = z.object({
+  params: classIdParams,
+  body: z
+    .object({
+      timetable_period_id: z.any().optional(),
+      assignment_date: z.any().optional(),
+      original_staff_user_id: z.any().optional(),
+      substitute_staff_user_id: z.any().optional(),
+      reason: z.any().optional(),
+    })
+    .optional(),
+});
+const listSubstituteAssignmentsSchema = z.object({ params: classIdParams });
+const acknowledgeSubstituteAssignmentSchema = z.object({ params: z.object({ id: z.string() }) });
+const generateTimetableSchema = z.object({
+  params: classIdParams,
+  body: z
+    .object({
+      requirements: z.array(z.any()).optional(),
+      max_hours_per_day: z.any().optional(),
+    })
+    .optional(),
+});
+const reviseTimetableSchema = z.object({
+  params: classIdParams,
+  body: z
+    .object({
+      requirements: z.array(z.any()).optional(),
+      max_hours_per_day: z.any().optional(),
+    })
+    .optional(),
+});
+const promoteSemesterSchema = z.object({ params: classIdParams });
+const listTimetableRevisionsSchema = z.object({ params: classIdParams });
+const effectiveTimetableRevisionSchema = z.object({
+  params: classIdParams,
+  query: z.object({ date: z.string().optional() }).optional(),
+});
+const sendClassAlertSchema = z.object({
+  params: classIdParams,
+  body: z.object({ body: z.any().optional() }).optional(),
+});
+const removeClassSchema = z.object({ params: classIdParams });
+
 function createClassesRouter() {
   const router = express.Router();
 
@@ -214,6 +293,7 @@ function createClassesRouter() {
   router.post(
     '/classes',
     requirePermission('classes.create'),
+    validate(createClassSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -233,6 +313,7 @@ function createClassesRouter() {
   router.get(
     '/classes/:id',
     requireAuth,
+    validate(getClassSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const cls = await academicService.getClass(req.dbClient, req.params.id);
@@ -267,6 +348,7 @@ function createClassesRouter() {
   router.get(
     '/classes',
     requireAuth,
+    validate(listClassesSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { limit: rawLimit, offset: rawOffset } = req.query;
@@ -298,6 +380,7 @@ function createClassesRouter() {
   router.put(
     '/classes/:id',
     requirePermission('classes.update'),
+    validate(updateClassSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -329,6 +412,7 @@ function createClassesRouter() {
   router.post(
     '/classes/:id/tutor',
     requirePermission('classes.assign_tutor'),
+    validate(assignTutorSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -347,6 +431,7 @@ function createClassesRouter() {
   router.put(
     '/classes/:id/tutor',
     requirePermission('classes.assign_tutor'),
+    validate(assignTutorSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -371,6 +456,7 @@ function createClassesRouter() {
   router.post(
     '/classes/:id/submit-for-approval',
     requireAuth,
+    validate(submitForApprovalSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -395,6 +481,7 @@ function createClassesRouter() {
   router.post(
     '/classes/:id/substitute-assignments',
     requireAuth,
+    validate(requestSubstituteAssignmentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const {
@@ -435,6 +522,7 @@ function createClassesRouter() {
   router.get(
     '/classes/:id/substitute-assignments',
     requireAuth,
+    validate(listSubstituteAssignmentsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const assignments = await attendanceService.listSubstituteAssignmentsWithMarkingStatus(
@@ -467,6 +555,7 @@ function createClassesRouter() {
   router.post(
     '/substitute-assignments/:id/acknowledge',
     requireAuth,
+    validate(acknowledgeSubstituteAssignmentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -503,6 +592,7 @@ function createClassesRouter() {
   router.post(
     '/classes/:id/generate-timetable',
     requireAuth,
+    validate(generateTimetableSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const requirements = ((req.body || {}).requirements || []).map((r) => ({
@@ -552,6 +642,7 @@ function createClassesRouter() {
   router.post(
     '/classes/:id/revise-timetable',
     requireAuth,
+    validate(reviseTimetableSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const changedRequirements = ((req.body || {}).requirements || []).map((r) => ({
@@ -589,6 +680,7 @@ function createClassesRouter() {
   router.post(
     '/classes/:id/promote-semester',
     requirePermission('classes.promote_semester'),
+    validate(promoteSemesterSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const result = await studentService.promoteSemesterForClass(req.dbClient, req.params.id, {
@@ -604,6 +696,7 @@ function createClassesRouter() {
   router.get(
     '/classes/:id/timetable-revisions',
     requireAuth,
+    validate(listTimetableRevisionsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const revisions = await academicService.listTimetableRevisions(req.dbClient, req.params.id);
@@ -618,6 +711,7 @@ function createClassesRouter() {
   router.get(
     '/classes/:id/timetable-revisions/effective',
     requireAuth,
+    validate(effectiveTimetableRevisionSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const date = req.query.date || new Date().toISOString().slice(0, 10);
@@ -644,6 +738,7 @@ function createClassesRouter() {
   router.post(
     '/classes/:id/send-alert',
     requireAuth,
+    validate(sendClassAlertSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -662,6 +757,7 @@ function createClassesRouter() {
   router.delete(
     '/classes/:id',
     requirePermission('classes.delete'),
+    validate(removeClassSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const cls = await academicService.removeClass(req.dbClient, req.params.id, {
@@ -679,3 +775,19 @@ function createClassesRouter() {
 }
 
 module.exports = createClassesRouter;
+// P3 4.9 — same "attached to the factory function" convention as
+// routes/auth.js's own `.schemas`, read by routes/openapi.js.
+module.exports.schemas = {
+  '/classes': { post: createClassSchema, get: listClassesSchema },
+  '/classes/{id}': { get: getClassSchema, put: updateClassSchema, delete: removeClassSchema },
+  '/classes/{id}/tutor': { post: assignTutorSchema, put: assignTutorSchema },
+  '/classes/{id}/submit-for-approval': { post: submitForApprovalSchema },
+  '/classes/{id}/substitute-assignments': { post: requestSubstituteAssignmentSchema, get: listSubstituteAssignmentsSchema },
+  '/substitute-assignments/{id}/acknowledge': { post: acknowledgeSubstituteAssignmentSchema },
+  '/classes/{id}/generate-timetable': { post: generateTimetableSchema },
+  '/classes/{id}/revise-timetable': { post: reviseTimetableSchema },
+  '/classes/{id}/promote-semester': { post: promoteSemesterSchema },
+  '/classes/{id}/timetable-revisions': { get: listTimetableRevisionsSchema },
+  '/classes/{id}/timetable-revisions/effective': { get: effectiveTimetableRevisionSchema },
+  '/classes/{id}/send-alert': { post: sendClassAlertSchema },
+};

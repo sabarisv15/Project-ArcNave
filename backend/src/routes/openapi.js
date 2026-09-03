@@ -10,15 +10,25 @@
 //
 // Scope, stated plainly (same as middleware/validate.js's own
 // comment): this covers only the routes that have actually been
-// migrated to a zod schema so far (one, today — /auth/login).
-// Converting the rest of ~336 routes is its own separate, larger
-// pass; this route's own output is honest about that (only lists
-// what it actually knows about, never a placeholder for the rest).
+// migrated to a zod schema so far — P3 4.9 (contract tests on the
+// noisiest routes) is extending this file-by-file (ai.js first, see
+// CURRENT-STATE.md for the rest of the order). Converting every route
+// is its own separate, larger pass; this route's own output is honest
+// about that (only lists what it actually knows about, never a
+// placeholder for the rest).
 
 const express = require('express');
 const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
 const createAuthRouter = require('./auth');
+const createAiRouter = require('./ai');
+const createStudentsRouter = require('./students');
+const createStaffRouter = require('./staff');
+const createAttendanceRouter = require('./attendance');
+const createDocumentsRouter = require('./documents');
+const createPlatformRouter = require('./platform');
+const createClassesRouter = require('./classes');
+const createAssessmentsRouter = require('./assessments');
 
 function buildOpenApiDocument() {
   const paths = {};
@@ -29,7 +39,17 @@ function buildOpenApiDocument() {
   // middleware/validate.js's `validate()` expects, so this reads the
   // exact same schema that actually enforces the route, never a
   // second, driftable copy.
-  const contributors = [createAuthRouter];
+  const contributors = [
+    createAuthRouter,
+    createAiRouter,
+    createStudentsRouter,
+    createStaffRouter,
+    createAttendanceRouter,
+    createDocumentsRouter,
+    createPlatformRouter,
+    createClassesRouter,
+    createAssessmentsRouter,
+  ];
   for (const router of contributors) {
     const schemas = router.schemas || {};
     for (const [routePath, methods] of Object.entries(schemas)) {

@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requirePlatformAdmin } = require('../middleware/platformAuth');
 const { createCredentialRateLimiter } = require('../middleware/rateLimit');
 const platformService = require('../services/platformService');
@@ -11,6 +13,125 @@ const academicService = require('../services/academicService');
 const departmentRepository = require('../repositories/departmentRepository');
 const { platformPool } = require('../db/pool');
 const { openTenantTransaction } = require('../db/tenantTransaction');
+
+// P3 4.9 — contract schemas, same permissive discipline the other 5
+// route files' own schema blocks established: never re-assert a
+// requiredness/format check the route or service already owns and
+// returns its OWN specific message for (e.g. `bootstrap`'s
+// PlatformAdminValidationError, `send-code`'s own "email is required",
+// `redeem`'s own "sections is required..." message) — those fields
+// stay `.optional()`/untyped (`z.any()`) here. `:college_id`/
+// `:invitation_id` path params stay `z.string()` (no format
+// assertion), same reasoning as every other file. Wide, many-field,
+// uncertain-typed bodies (`/colleges` create, `/settings` update) use
+// one shared permissive `z.record` — still rejects a non-object
+// top-level body. GET routes with nothing worth describing
+// (`/invitations-summary`, `/settings` GET, `/dashboard-summary`,
+// `/organizations-summary`) get no `validate()` call, same precedent
+// `GET /ai/tools` set.
+const collegeIdParams = z.object({ college_id: z.string() });
+const invitationIdParams = z.object({ invitation_id: z.string() });
+const platformRecordSchema = z.record(z.string(), z.any()).optional();
+
+const bootstrapSchema = z.object({
+  body: z.object({ username: z.any().optional(), email: z.any().optional(), password: z.any().optional() }).optional(),
+});
+const loginSchema = z.object({
+  body: z.object({ username: z.any().optional(), password: z.any().optional() }).optional(),
+});
+const createCollegeSchema = z.object({ body: platformRecordSchema });
+const updateCollegeSchema = z.object({
+  params: collegeIdParams,
+  body: z.object({ subscription_status: z.string().optional() }).optional(),
+});
+const listCollegesSchema = z.object({
+  query: z
+    .object({ limit: z.string().optional(), offset: z.string().optional(), search: z.string().optional() })
+    .optional(),
+});
+const invitePrincipalSchema = z.object({
+  params: collegeIdParams,
+  body: z.object({ email: z.string().optional() }).optional(),
+});
+const sendPrincipalInviteCodeSchema = z.object({
+  params: collegeIdParams,
+  body: z.object({ email: z.any().optional() }).optional(),
+});
+const verifyPrincipalInviteCodeSchema = z.object({
+  params: collegeIdParams,
+  body: z.object({ email: z.any().optional(), code: z.any().optional() }).optional(),
+});
+const onboardingSendCodeSchema = z.object({
+  body: z.object({ email: z.any().optional() }).optional(),
+});
+const onboardingVerifyCodeSchema = z.object({
+  body: z.object({ email: z.any().optional(), code: z.any().optional() }).optional(),
+});
+const resendInvitationSchema = z.object({
+  params: invitationIdParams,
+  body: z.object({ email: z.any().optional() }).optional(),
+});
+const revokeInvitationSchema = z.object({ params: invitationIdParams });
+const listInvitationsSchema = z.object({
+  query: z
+    .object({
+      limit: z.string().optional(),
+      offset: z.string().optional(),
+      status: z.string().optional(),
+      search: z.string().optional(),
+    })
+    .optional(),
+});
+const listAuditLogsSchema = z.object({
+  query: z
+    .object({
+      limit: z.string().optional(),
+      offset: z.string().optional(),
+      action: z.string().optional(),
+      actor_admin_id: z.string().optional(),
+      from_date: z.string().optional(),
+      to_date: z.string().optional(),
+      search: z.string().optional(),
+    })
+    .optional(),
+});
+const updateSettingsSchema = z.object({ body: platformRecordSchema });
+const positionAccountInviteSchema = z.object({
+  params: collegeIdParams,
+  body: z.object({ level: z.any().optional(), email: z.any().optional(), title: z.any().optional() }).optional(),
+});
+const createDepartmentAtOnboardingSchema = z.object({
+  params: collegeIdParams,
+  body: z
+    .object({
+      name: z.any().optional(),
+      approved_intake: z.any().optional(),
+      course_duration: z.any().optional(),
+      default_sections: z.any().optional(),
+    })
+    .optional(),
+});
+const createTemplateAtOnboardingSchema = z.object({
+  params: collegeIdParams,
+  body: z.object({ name: z.any().optional(), file_type: z.any().optional() }).optional(),
+});
+const markReadySchema = z.object({ params: collegeIdParams });
+const cancelOnboardingSchema = z.object({ params: collegeIdParams });
+const activateCollegeSchema = z.object({ params: collegeIdParams });
+const suspendCollegeSchema = z.object({ params: collegeIdParams });
+const reactivateCollegeSchema = z.object({
+  params: collegeIdParams,
+  body: z.object({ license: z.any().optional() }).optional(),
+});
+const archiveCollegeSchema = z.object({ params: collegeIdParams });
+const restoreCollegeSchema = z.object({
+  params: collegeIdParams,
+  body: z.object({ license: z.any().optional() }).optional(),
+});
+const redeemStructuralKeySchema = z.object({
+  body: z.object({ token: z.any().optional(), sections: z.any().optional() }).optional(),
+});
+const listDepartmentsForCollegeSchema = z.object({ params: collegeIdParams });
 
 function createPlatformRouter() {
   const router = express.Router();
@@ -30,6 +151,7 @@ function createPlatformRouter() {
   // this route could race); every call after the first is a clean 409.
   router.post(
     '/bootstrap',
+    validate(bootstrapSchema),
     asyncHandler(async (req, res) => {
       const { username, email, password } = req.body || {};
       try {
@@ -58,6 +180,7 @@ function createPlatformRouter() {
   router.post(
     '/auth/login',
     loginLimiter,
+    validate(loginSchema),
     asyncHandler(async (req, res) => {
       const { username, password } = req.body || {};
       try {
@@ -109,6 +232,7 @@ function createPlatformRouter() {
   router.post(
     '/colleges',
     requirePlatformAdmin,
+    validate(createCollegeSchema),
     asyncHandler(async (req, res) => {
       const {
         college_id: collegeId,
@@ -213,6 +337,7 @@ function createPlatformRouter() {
   router.patch(
     '/colleges/:college_id',
     requirePlatformAdmin,
+    validate(updateCollegeSchema),
     asyncHandler(async (req, res) => {
       const { subscription_status: subscriptionStatus } = req.body || {};
       try {
@@ -241,6 +366,7 @@ function createPlatformRouter() {
   router.get(
     '/colleges',
     requirePlatformAdmin,
+    validate(listCollegesSchema),
     asyncHandler(async (req, res) => {
       const { limit, offset, search } = req.query;
       const colleges = await platformService.listColleges(platformPool, {
@@ -259,6 +385,7 @@ function createPlatformRouter() {
   router.post(
     '/colleges/:college_id/invite-principal',
     requirePlatformAdmin,
+    validate(invitePrincipalSchema),
     asyncHandler(async (req, res) => {
       const { email } = req.body || {};
       try {
@@ -291,6 +418,7 @@ function createPlatformRouter() {
   router.post(
     '/colleges/:college_id/invite-principal/send-code',
     requirePlatformAdmin,
+    validate(sendPrincipalInviteCodeSchema),
     asyncHandler(async (req, res) => {
       const { email } = req.body || {};
       if (!email) {
@@ -317,6 +445,7 @@ function createPlatformRouter() {
   router.post(
     '/colleges/:college_id/invite-principal/verify-code',
     requirePlatformAdmin,
+    validate(verifyPrincipalInviteCodeSchema),
     asyncHandler(async (req, res) => {
       const { email, code } = req.body || {};
       if (!email || !code) {
@@ -353,6 +482,7 @@ function createPlatformRouter() {
   router.post(
     '/onboarding/verify-email/send-code',
     requirePlatformAdmin,
+    validate(onboardingSendCodeSchema),
     asyncHandler(async (req, res) => {
       const { email } = req.body || {};
       if (!email) {
@@ -371,6 +501,7 @@ function createPlatformRouter() {
   router.post(
     '/onboarding/verify-email/verify-code',
     requirePlatformAdmin,
+    validate(onboardingVerifyCodeSchema),
     asyncHandler(async (req, res) => {
       const { email, code } = req.body || {};
       if (!email || !code) {
@@ -414,6 +545,7 @@ function createPlatformRouter() {
   router.post(
     '/invitations/:invitation_id/resend',
     requirePlatformAdmin,
+    validate(resendInvitationSchema),
     asyncHandler(async (req, res) => {
       const { email } = req.body || {};
       try {
@@ -438,6 +570,7 @@ function createPlatformRouter() {
   router.post(
     '/invitations/:invitation_id/revoke',
     requirePlatformAdmin,
+    validate(revokeInvitationSchema),
     asyncHandler(async (req, res) => {
       try {
         const invitation = await platformService.revokePrincipalInvitation(platformPool, req.params.invitation_id, {
@@ -460,6 +593,7 @@ function createPlatformRouter() {
   router.get(
     '/invitations',
     requirePlatformAdmin,
+    validate(listInvitationsSchema),
     asyncHandler(async (req, res) => {
       const { limit, offset, status, search } = req.query;
       const invitations = await platformService.listInvitations(platformPool, {
@@ -485,6 +619,7 @@ function createPlatformRouter() {
   router.get(
     '/audit-logs',
     requirePlatformAdmin,
+    validate(listAuditLogsSchema),
     asyncHandler(async (req, res) => {
       const {
         limit,
@@ -520,6 +655,7 @@ function createPlatformRouter() {
   router.put(
     '/settings',
     requirePlatformAdmin,
+    validate(updateSettingsSchema),
     asyncHandler(async (req, res) => {
       const {
         platform_name: platformName,
@@ -580,6 +716,7 @@ function createPlatformRouter() {
   router.post(
     '/colleges/:college_id/position-accounts/invite',
     requirePlatformAdmin,
+    validate(positionAccountInviteSchema),
     asyncHandler(async (req, res) => {
       const { level, email, title } = req.body || {};
       await openTenantTransaction(req, res, req.params.college_id);
@@ -682,6 +819,7 @@ function createPlatformRouter() {
   router.post(
     '/colleges/:college_id/departments',
     requirePlatformAdmin,
+    validate(createDepartmentAtOnboardingSchema),
     asyncHandler(async (req, res) => {
       const {
         name,
@@ -715,6 +853,7 @@ function createPlatformRouter() {
   router.post(
     '/colleges/:college_id/templates',
     requirePlatformAdmin,
+    validate(createTemplateAtOnboardingSchema),
     asyncHandler(async (req, res) => {
       const { name, file_type: fileType } = req.body || {};
       await openTenantTransaction(req, res, req.params.college_id);
@@ -741,6 +880,7 @@ function createPlatformRouter() {
   router.post(
     '/colleges/:college_id/mark-ready',
     requirePlatformAdmin,
+    validate(markReadySchema),
     asyncHandler(async (req, res) => {
       try {
         const college = await platformService.markCollegeReady(platformPool, req.params.college_id, {
@@ -758,6 +898,7 @@ function createPlatformRouter() {
   router.post(
     '/colleges/:college_id/cancel-onboarding',
     requirePlatformAdmin,
+    validate(cancelOnboardingSchema),
     asyncHandler(async (req, res) => {
       try {
         const college = await platformService.cancelOnboarding(platformPool, req.params.college_id, {
@@ -775,6 +916,7 @@ function createPlatformRouter() {
   router.post(
     '/colleges/:college_id/activate',
     requirePlatformAdmin,
+    validate(activateCollegeSchema),
     asyncHandler(async (req, res) => {
       await openTenantTransaction(req, res, req.params.college_id);
       try {
@@ -794,6 +936,7 @@ function createPlatformRouter() {
   router.post(
     '/colleges/:college_id/suspend',
     requirePlatformAdmin,
+    validate(suspendCollegeSchema),
     asyncHandler(async (req, res) => {
       try {
         const college = await platformService.suspendCollege(platformPool, req.params.college_id, {
@@ -811,6 +954,7 @@ function createPlatformRouter() {
   router.post(
     '/colleges/:college_id/reactivate',
     requirePlatformAdmin,
+    validate(reactivateCollegeSchema),
     asyncHandler(async (req, res) => {
       const { license } = req.body || {};
       try {
@@ -834,6 +978,7 @@ function createPlatformRouter() {
   router.post(
     '/colleges/:college_id/archive',
     requirePlatformAdmin,
+    validate(archiveCollegeSchema),
     asyncHandler(async (req, res) => {
       try {
         const college = await platformService.archiveCollege(platformPool, req.params.college_id, {
@@ -851,6 +996,7 @@ function createPlatformRouter() {
   router.post(
     '/colleges/:college_id/restore',
     requirePlatformAdmin,
+    validate(restoreCollegeSchema),
     asyncHandler(async (req, res) => {
       const { license } = req.body || {};
       try {
@@ -918,6 +1064,7 @@ function createPlatformRouter() {
   router.post(
     '/structural-authorization-keys/redeem',
     requirePlatformAdmin,
+    validate(redeemStructuralKeySchema),
     asyncHandler(async (req, res) => {
       const { token, sections } = req.body || {};
       if (!token) {
@@ -979,6 +1126,7 @@ function createPlatformRouter() {
   router.get(
     '/colleges/:college_id/departments',
     requirePlatformAdmin,
+    validate(listDepartmentsForCollegeSchema),
     asyncHandler(async (req, res) => {
       await openTenantTransaction(req, res, req.params.college_id);
       try {
@@ -996,3 +1144,35 @@ function createPlatformRouter() {
 }
 
 module.exports = createPlatformRouter;
+// P3 4.9 — same "attached to the factory function" convention as
+// routes/auth.js's own `.schemas`, read by routes/openapi.js.
+module.exports.schemas = {
+  '/platform/bootstrap': { post: bootstrapSchema },
+  '/platform/auth/login': { post: loginSchema },
+  '/platform/colleges': { post: createCollegeSchema, get: listCollegesSchema },
+  '/platform/colleges/{college_id}': { patch: updateCollegeSchema },
+  '/platform/colleges/{college_id}/invite-principal': { post: invitePrincipalSchema },
+  '/platform/colleges/{college_id}/invite-principal/send-code': { post: sendPrincipalInviteCodeSchema },
+  '/platform/colleges/{college_id}/invite-principal/verify-code': { post: verifyPrincipalInviteCodeSchema },
+  '/platform/onboarding/verify-email/send-code': { post: onboardingSendCodeSchema },
+  '/platform/onboarding/verify-email/verify-code': { post: onboardingVerifyCodeSchema },
+  '/platform/invitations/{invitation_id}/resend': { post: resendInvitationSchema },
+  '/platform/invitations/{invitation_id}/revoke': { post: revokeInvitationSchema },
+  '/platform/invitations': { get: listInvitationsSchema },
+  '/platform/audit-logs': { get: listAuditLogsSchema },
+  '/platform/settings': { put: updateSettingsSchema },
+  '/platform/colleges/{college_id}/position-accounts/invite': { post: positionAccountInviteSchema },
+  '/platform/colleges/{college_id}/departments': {
+    post: createDepartmentAtOnboardingSchema,
+    get: listDepartmentsForCollegeSchema,
+  },
+  '/platform/colleges/{college_id}/templates': { post: createTemplateAtOnboardingSchema },
+  '/platform/colleges/{college_id}/mark-ready': { post: markReadySchema },
+  '/platform/colleges/{college_id}/cancel-onboarding': { post: cancelOnboardingSchema },
+  '/platform/colleges/{college_id}/activate': { post: activateCollegeSchema },
+  '/platform/colleges/{college_id}/suspend': { post: suspendCollegeSchema },
+  '/platform/colleges/{college_id}/reactivate': { post: reactivateCollegeSchema },
+  '/platform/colleges/{college_id}/archive': { post: archiveCollegeSchema },
+  '/platform/colleges/{college_id}/restore': { post: restoreCollegeSchema },
+  '/platform/structural-authorization-keys/redeem': { post: redeemStructuralKeySchema },
+};

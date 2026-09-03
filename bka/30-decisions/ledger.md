@@ -7495,3 +7495,59 @@ output). Full Docker backend suite: **2994/2994** (2979 + 15 new).
 `npm run lint`: 0 errors, 123 warnings (unchanged baseline).
 `npm run typecheck`: clean. Migrate up/down not applicable (no schema
 change — every new field is additive JS, no migration).
+
+---
+
+## ADL-089
+
+### O7 (modernization P5) — Infrastructure-as-code (Terraform) — Resolved, code-only
+
+**What prompted this.** Fourth P5 item this session, picked next after
+O5/4.10/the prompt-model-registry item — code/config-only, same
+"provable without new investment" bar the earlier items used, and a
+natural fit given `STAGING-DEPLOY-RUNBOOK.md` (O3, ADL-077) already
+documents the exact resources needed as manual `gcloud` commands.
+
+**Built: `infra/terraform/`** — the same resources
+`STAGING-DEPLOY-RUNBOOK.md` already names, as Terraform instead of
+prose-plus-commands: 2 GCS buckets (`storage.tf`), a Cloud SQL Postgres
+16 instance + database with the same pgvector/pg_stat_statements flags
+and point-in-time recovery enabled (`cloud_sql.tf`), 6 Secret Manager
+secret **containers only, never a value** (`secrets.tf` — committing
+real secret material into a `.tf` file would defeat the entire point
+O6 exists to solve), and a deploy service account + 5 least-privilege
+IAM role bindings + Workload Identity Federation scoped to this exact
+GitHub repo, no downloaded JSON key ever (`iam.tf`).
+
+**Deliberately not duplicated into Terraform:** the three DB roles
+(`arcnave_admin`/`arcnave_app`/`arcnave_platform`, ADR-015) —
+`backend/scripts/bootstrap-cloud-sql-roles.js` already owns that
+idempotently; recreating it in HCL would create two sources of truth
+for the same three-role separation. The Artifact Registry repo — reused
+from `sandbox-service`'s existing one, no new repo needed (matches the
+runbook's own section 1).
+
+**Code-only, not applied — same status as O3 itself.** ARCNAVE is
+pre-launch (ADL-085's own reasoning: real GCP infra cost isn't
+justified without live users yet). Nothing here was run against real
+GCP. **Stronger verification than O3 had, though**: this session
+downloaded the Terraform CLI (`terraform_1.9.8_windows_amd64`, network
+access only, no GCP credentials) and ran `terraform fmt`/`terraform
+init -backend=false`/`terraform validate` — the last of these actually
+checks every resource argument against the real `hashicorp/google`
+provider's schema (v6.50.0), catching a real typo class (wrong
+attribute name, wrong type) that a human proofreading `gcloud` commands
+alone cannot. `terraform validate`: **Success.** Still not a
+`terraform plan` against a live project — no credentials for
+`project-8bcf740a-a7bd-4aea-974` exist in this environment, the same
+honest limitation O3's own scripts already carried.
+
+**No `.terraform/` state or provider binaries committed** — new
+`infra/terraform/.gitignore` excludes them; `.terraform.lock.hcl` (the
+provider version pin) IS committed, standard Terraform practice. Full
+apply instructions, and the explicit reminder to keep this in sync with
+`STAGING-DEPLOY-RUNBOOK.md` if either changes: `infra/terraform/README.md`.
+
+**Verified:** `terraform fmt -check` clean, `terraform validate`
+Success. No backend test suite applies — no backend/frontend code
+touched this pass.

@@ -4,6 +4,16 @@ _Last updated: 2026-09-03._
 
 ---
 
+# ⛔ NEWEST BANNER — P5 continues: O7 (infrastructure-as-code, Terraform) shipped, code-only. 2026-09-03.
+
+Same session, continuing "go ahead for remaining." [ADL-089](../30-decisions/ledger.md#adl-089). New `infra/terraform/` — the exact same resources `STAGING-DEPLOY-RUNBOOK.md` (O3) already documents as manual `gcloud` commands, now as Terraform: 2 GCS buckets, the Cloud SQL instance/database, 6 Secret Manager secret containers (never a value), and a deploy service account + IAM bindings + Workload Identity Federation (no downloaded JSON key). `terraform validate` passed against the real `hashicorp/google` provider schema (stronger check than O3's own manual-command review got) — still code-only, nothing applied against real GCP, same ADL-085 pre-launch-cost reasoning.
+
+**Exact next action:** remaining P5 items, none started: **O6** (secrets manager — ask owner before provisioning; note O7 already built the Secret Manager *containers*, so O6's own remaining scope may just be "populate real values + wire the app to read from Secret Manager instead of `.env`," not a whole new mechanism), **D8** (partition the biggest growing tables — no new cost, pure DB migration), **D1's remaining "read replica" half** (real new investment, must ask), **5.13** (multi-package workspace tooling — no cost). All independently startable.
+
+**Committed:** not yet as of this banner.
+
+---
+
 # ⛔ NEWEST BANNER — P5 continues: 4.10 (API version/retirement policy, decision-only) + prompt/model version registry + gradual-rollout primitive, both shipped. 2026-09-03.
 
 Same session as the O5 banner below, continuing through P5 at the

@@ -4,7 +4,91 @@ _Last updated: 2026-09-03._
 
 ---
 
-# ⛔ NEWEST BANNER — 2.4 BUILT and Docker-verified, 2026-09-03. Same session as the two banners below.
+# ⛔ NEWEST BANNER — 4.6 BUILT and Docker-verified; WorkspaceProvider P3 item CLOSED, 2026-09-03. New session, after the 2.4/5.9 banner below.
+
+**4.6 (`academicService.js` split, 2,501 lines) is done, Docker-verified,
+committed.** `academicService.js` is now a ~138-line thin facade over 9
+new submodules under `backend/src/services/academic/` — same
+split-file pattern `identityService.js` already established for
+`services/identity/*`. Pure code motion: no function signature, export
+name, or behavior changed; all 15 external call sites and
+`tests/academic-service.test.js` needed zero edits.
+
+**New files, with line counts:**
+- `errors.js` — 263 lines (all ~34 domain error classes)
+- `timeHelpers.js` — 58 lines (`WEEKDAY_ORDER`/`DAY_NAMES`/
+  `timeToMinutes`/`minutesToTime`/`periodDurationHours` — shared by
+  `timetableGeneration.js` and `staffSchedule.js`)
+- `classes.js` — 322 lines (class CRUD + department generation)
+- `timetableApproval.js` — 156 lines (submit/approve/reject + revision
+  history)
+- `substituteAssignment.js` — 339 lines (the request/approve/reject/
+  acknowledge flow)
+- `timetableGeneration.js` — 710 lines (the generation/revision engine,
+  the single biggest chunk, unchanged internal logic)
+- `staffSchedule.js` — 209 lines (a staff member's current/next/weekly
+  session)
+- `facultyAllocation.js` — 177 lines (assign/list/remove + the two
+  attendanceService lookups)
+- `timetablePeriods.js` — 249 lines (period CRUD + CSV import)
+- `classAlerts.js` — 198 lines (`sendClassAlert` +
+  `getClassTimetableForActor`)
+
+A few real cross-submodule calls exist, all verified acyclic:
+`timetableGeneration.reviseTimetable` reuses
+`timetableApproval.submitTimetableForApproval`; `timetablePeriods`'s
+CSV import reuses `facultyAllocation.assignFacultyAllocation`;
+`classAlerts` reuses both `facultyAllocation.listFacultyAllocationsForClass`
+and `classes.listClasses`. The facade re-exports by explicit named
+mapping, not a wildcard spread of each submodule's own
+`module.exports` — several submodules export extra internal helpers
+for their own unit testability (e.g. `classes.js`'s `pickClassFields`,
+`timetableGeneration.js`'s `normalizeRequirement`) that
+`academicService.js` never publicly exported before this split, and a
+wildcard spread would have silently leaked them.
+
+**Verified — the FULL Docker suite:** `docker compose up -d --build` →
+`docker compose exec app npm test` → **2873/2873 passing** (same count
+as the previous banner's own last full run). `docker compose exec app
+npm run lint` → 0 errors, 123 warnings (identical pre-existing
+baseline — confirmed the same 5 `timetableGeneration.js` `no-continue`
+unused-directive warnings the original file already had, just moved
+with the code, not new). Containers stopped after (`docker compose
+down`) — nothing left running.
+
+**Committed, not pushed:** `600d25a` — "P3 4.6: split academicService.js
+(2,501 lines) into services/academic/ submodules".
+
+**The `WorkspaceProvider` P3 item (5.9's one remaining flat piece,
+named in the previous banner's "Exact next action" #3) is now CLOSED —
+owner confirmed 2026-09-03 that the Zustand wiring already shipped in
+commit `b1fe910` fully satisfies it.** No further code change is
+needed: the previous banner's "stays flat by design" note was about
+`WorkspaceProvider`'s *file location* (cross-feature shared plumbing,
+deliberately not moved into `features/`), not about the
+useState-to-Zustand state-management migration, which was a separate,
+already-completed piece of work. Do not reopen this item.
+
+**With both 4.6 and WorkspaceProvider closed, only one item remains on
+P3's list: 1.16 (clash C10 — rewrite the agent as a step-by-step
+machine).**
+
+**Exact next action — 1.16 is the only remaining P3 item, and it needs
+its OWN dedicated session, not combined with anything else.** Read
+`docs/bka/10-specification/` for clash C10/C11 before touching
+`aiService.js`'s core loop: a past incident (recorded in the plan)
+showed re-packaging system-instruction rule text mid-turn measurably
+weakened rule-following (3/3 → 2/7) — any rewrite must keep the rule
+text byte-identical across a turn.
+
+**If starting fresh next session:** read this banner, then
+`ARCNAVE-modernization-english.md` (repo root) for the full P0-P5 plan
+if 1.16's context is needed beyond what's summarized here — do not
+re-read the whole `bka/` estate.
+
+---
+
+# ⛔ Previous banner — 2.4 BUILT and Docker-verified, 2026-09-03. Same session as the two banners below.
 
 **The vision-as-default OCR path is implemented, tested, and full-suite
 verified in Docker.** Full decision context:

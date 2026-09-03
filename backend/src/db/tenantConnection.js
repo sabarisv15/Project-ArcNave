@@ -1,6 +1,7 @@
 'use strict';
 
 const { appPool } = require('./pool');
+const { logWarn } = require('../logging/logger');
 
 // ARCNAVE modernization P0 (bka/70-checkpoint/CURRENT-STATE.md's
 // ARCNAVE-modernization mandate; PDF finding 4.1, clash C5): the AI
@@ -50,6 +51,30 @@ class TenantConnection {
   }
 
   async _begin() {
+    // ARCNAVE modernization P3 (D1) — connection-pool exhaustion
+    // visibility. `pg.Pool` already IS the connection pooler for this
+    // single-process deployment (pool.js's own header) — a separate
+    // pooler process (pgbouncer) would only earn its keep once multiple
+    // app instances exist, same "do not build multi-instance
+    // coordination ahead of actually running multiple app processes"
+    // reasoning circuitBreaker.js's own comment already applies
+    // elsewhere in this codebase. The real gap was observability, not a
+    // missing pooler: nothing recorded when a request had to queue
+    // behind config.dbPool.max already-checked-out connections.
+    // `waitingCount` is a live gauge, not an event — read it right
+    // before connect() so a logged wait reflects contention AT the
+    // moment THIS checkout queued, not a stale sample from elsewhere.
+    // Every request opens exactly one connection per BEGIN/COMMIT
+    // segment (this method is the sole `appPool.connect()` call site),
+    // so this is a per-request check, not a per-query hot path.
+    if (appPool.waitingCount > 0) {
+      logWarn('db_pool_contention', {
+        pool: 'app',
+        waitingCount: appPool.waitingCount,
+        totalCount: appPool.totalCount,
+        idleCount: appPool.idleCount,
+      });
+    }
     const client = await appPool.connect();
     if (this._errorListener) client.on('error', this._errorListener);
     try {

@@ -144,7 +144,15 @@ function createTenantApp({ registerExtraRoutes } = {}) {
     '/health',
     asyncHandler(async (req, res) => {
       await appPool.query('SELECT 1');
-      res.json({ status: 'ok' });
+      // ARCNAVE modernization P3 (D1) — pull-based pool-exhaustion
+      // visibility, same live gauges tenantConnection.js's own
+      // db_pool_contention warning reads. Cheap (property reads, no
+      // extra query) and additive — `status: 'ok'` is unchanged for
+      // every existing caller of this endpoint.
+      res.json({
+        status: 'ok',
+        pool: { total: appPool.totalCount, idle: appPool.idleCount, waiting: appPool.waitingCount },
+      });
     }),
   );
 

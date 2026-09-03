@@ -86,15 +86,29 @@ test('getWebSearchConfig — on by default, off only when explicitly opted out',
   });
 
   await t.test('an opted-out college is refused with a message that does not tell it to opt in', async () => {
-    await withStoredRow({ configuration: { enabled: false } }, async () => {
-      await assert.rejects(
-        webSearchService.search(null, 'college-1', 'AICTE new rules'),
-        (err) =>
-          err instanceof webSearchService.WebSearchNotEnabledError &&
-          /opted out/.test(err.message) &&
-          !/opt in/.test(err.message),
-      );
-    });
+    // assertSearchable checks "is a provider configured at all" before
+    // "is this college opted in" (cheapest-gate-first, this file's own
+    // module comment) — this subtest is asserting the SECOND gate, so it
+    // must satisfy the first itself rather than assume the ambient
+    // environment already has a real GEMINI_PROJECT_ID (true on a local
+    // dev machine with .env, false in CI — this file's own header
+    // comment already states every other test in this suite follows
+    // this exact discipline; this one was the one gap).
+    const originalProjectId = config.gemini.projectId;
+    config.gemini.projectId = 'test-project';
+    try {
+      await withStoredRow({ configuration: { enabled: false } }, async () => {
+        await assert.rejects(
+          webSearchService.search(null, 'college-1', 'AICTE new rules'),
+          (err) =>
+            err instanceof webSearchService.WebSearchNotEnabledError &&
+            /opted out/.test(err.message) &&
+            !/opt in/.test(err.message),
+        );
+      });
+    } finally {
+      config.gemini.projectId = originalProjectId;
+    }
   });
 });
 

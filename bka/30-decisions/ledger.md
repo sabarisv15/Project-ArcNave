@@ -6228,3 +6228,75 @@ run standalone (dummy env vars, no Docker on this host) —
 `ai-tool-retrieval-service.test.js`. `node --check` + eslint clean (0
 errors) on every touched file. NOT re-run through the full Docker suite
 this pass — due at the next Docker checkpoint.
+
+## ADL-074
+
+### 2.4 (modernization P3) — Tesseract vs. Gemini vision on a real handwritten scan: measured, mechanism NOT yet built
+
+**What prompted this.** Plan item 2.4 ("Scanned-page reading uses a weak
+in-app engine, 30-page cap — poor on tables and handwriting — use a
+vision model") had been flagged pending in every P3 checkpoint banner
+since 2026-09-01, each time deferred for lack of GCP/Vertex access.
+Before spending anything, the codebase was read first: `2.5`'s sibling
+concern (complex-PDF fallback) turned out to already be fully decided
+and shipped — see `ADL-058`'s CORE-replacement entry above (pdfplumber
+fallback, verified against `documentTableExtractionService.assessCoverage`,
+full trust). `documentExtractionService.js` also already has a live
+vision-model path, but only for the admission-wizard's structured
+field extraction (bounding boxes + confidence) — the **chat-attachment**
+path (`documentTextExtractionService.js` → `ocr/tesseractOcr.js`) still
+runs Tesseract only. That is 2.4's real, unresolved gap.
+
+**The experiment.** The owner supplied a real photo (not a synthetic
+test file) of a handwritten exam question paper — curved page, uneven
+lighting, cursive handwriting, the exact "poor on tables and
+handwriting" case the plan names, not the clean/illustrative sample
+tried first and rejected as unrepresentative. Free half run standalone
+(`backend/scripts/handwriting-ocr-quick-probe.js`, no `--vertex` flag):
+`ocr/tesseractOcr.js`'s own `extractTextFromImage`, the exact function
+`documentTextExtractionService.js` calls today, unmodified. Billable
+half (`--vertex`): one `gemini-3.7-flash` `generateContent` call, same
+`GoogleAuth`-ADC-discovery / `modelUrl()` pattern every other probe in
+this folder already uses (e.g. `native-pdf-vs-deterministic-probe.js`),
+temperature 0 (a single transcription call, not a self-consistency
+measurement — no need to vary the sample).
+
+**Result — decisive, one run, both sides real:**
+
+| engine | confidence / tokens | latency | output |
+|---|---|---|---|
+| Tesseract (current) | 29.0/100 | 4.4 s | unreadable garbage — e.g. `"ert (20 ran Tsne Rot 2025 [W026 / Aa peracc Lessons i Pd Cr ey iT..."` |
+| Gemini 3.7 Flash (vision) | 1,158 in / 317 out tokens | 10.5 s | a clean, correctly-numbered, essentially verbatim transcription of all 8 questions and their A–D options |
+
+Tesseract's output is not merely lower-quality — it is unusable for any
+downstream purpose (search, an AI answer grounded in it, a human
+reading it back). Gemini's transcription needed no correction to be
+usable; the one debatable word (option C of question 7, "staying" vs.
+the model's "stamina") is a plausible reading of ambiguous cursive, not
+a structural failure. Cost is trivial (well under a cent per image at
+published Vertex pricing for ~1,500 tokens) and latency (~10 s) is
+within what an interactive `/ai/ask` attachment turn already tolerates
+for other tool calls.
+
+**Decision: 2.4's premise is confirmed, real-cost-measured — but no
+production code changes yet.** This ADL is the measurement, not the
+build. Building a chat-attachment vision-model OCR fallback (mirroring
+`documentExtractionService.js`'s existing admission-wizard pattern, but
+for `documentTextExtractionService.js`'s OCR branch) is a separate,
+scoped implementation pass: it needs a real trigger condition (e.g.
+Tesseract confidence below some threshold — 29 clearly qualifies, but
+the cutoff itself is unmeasured), a decision on whether it always runs
+alongside Tesseract or only as a fallback, and the same untrusted-input
+boundary-wrapping (CLAUDE.md rule 9) every other extracted-text path
+already has.
+
+**Affected artefacts.** New: `backend/scripts/handwriting-ocr-quick-probe.js`
+(ad-hoc, not part of the tracked probe suite — kept for re-running
+against a different sample). No production code touched. No migration.
+
+**Verification.** Live-run twice this session (Tesseract-only, then
+Tesseract+Vertex) against the same real image
+(`C:\Users\HAI\Pictures\Screenshots\Screenshot 2026-09-03 080707.png`,
+not committed — a real person's exam paper, kept off the repo). Not a
+unit test — this is a one-off measurement script, same category as
+`native-pdf-scale-probe.js`/`pdf-geometry-probe.js`.

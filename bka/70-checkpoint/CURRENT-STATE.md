@@ -4,7 +4,61 @@ _Last updated: 2026-09-02._
 
 ---
 
-# ⛔ NEWEST BANNER — ComposerProvider + Projects + Artifacts + Institution-provider-bundle all moved into features/, 2026-09-02, same session as the banner below (uncommitted).
+# ⛔ NEWEST BANNER — 2.4 measured live (real Tesseract + real Vertex call), decisive result, 2026-09-03. NOT yet built. Same session as the banner below (that one now committed as `729be0c`, pushed).
+
+**2.4 ("scanned-page reading uses a weak in-app engine... use a vision
+model") is no longer an unscoped guess — it has a real measurement, on a
+real image, both sides live.** Full writeup:
+[ADL-074](../30-decisions/ledger.md#adl-074). Short version:
+
+- Read the codebase FIRST, before spending anything: 2.5 (complex-PDF
+  fallback) turned out to be already fully decided AND shipped —
+  ADL-058's CORE-replacement entry (pdfplumber fallback, full trust via
+  `assessCoverage`). 2.4's real gap is narrower than the plan implies:
+  `documentExtractionService.js` already has a vision-model path, but
+  only for the admission-wizard's structured field extraction — the
+  **chat-attachment** path (`documentTextExtractionService.js` →
+  `ocr/tesseractOcr.js`) still runs Tesseract only.
+- Owner supplied a REAL handwritten exam-paper photo (curved page,
+  uneven lighting, cursive) — not a synthetic/clean sample (one was
+  tried first, correctly rejected as unrepresentative before spending
+  anything on it).
+- **Free half:** `ocr/tesseractOcr.js`'s own `extractTextFromImage` (the
+  exact function the production chat-attachment path calls), run via
+  new `backend/scripts/handwriting-ocr-quick-probe.js` with no flag.
+  Result: **29.0/100 confidence, unreadable garbage output.**
+- **Billable half** (owner explicitly approved before running):
+  same script with `--vertex` — one real `gemini-3.7-flash`
+  `generateContent` vision call, same `GoogleAuth`/`modelUrl()` pattern
+  every other probe in `scripts/` already uses. Result: **1,158 in /
+  317 out tokens (well under a cent), 10.5s, a clean essentially-verbatim
+  transcription** of all 8 questions and their A-D options — one
+  debatable word out of the whole page.
+- **Decision: 2.4's premise is confirmed with real numbers. No
+  production code was changed** — this measurement answers "is there a
+  real gap, and is the fix affordable," not "build it now." Building
+  the actual chat-attachment vision-fallback (mirroring
+  `documentExtractionService.js`'s existing admission-wizard pattern,
+  applied to `documentTextExtractionService.js`'s OCR branch instead)
+  is its own scoped implementation pass — needs a real trigger
+  condition (a Tesseract-confidence threshold — 29 clearly qualifies,
+  the cutoff itself isn't measured), a decision on always-run-alongside
+  vs. fallback-only, and the untrusted-input boundary-wrapping
+  (CLAUDE.md rule 9) every other extracted-text path already has.
+
+**Exact next action:** either (a) scope and build the chat-attachment
+vision-fallback as its own pass (now that the measurement backs the
+decision), or (b) move to whichever of the still-open items is
+higher-value: **1.16** (agent rewrite, standing highest-value item) or
+**academicService.js**-first read for 4.6's actual file-split (still
+only surveyed, not attempted — see the banner two below). The frontend
+5.9 reorg (banner below) is now effectively done — only `WorkspaceProvider`
+and ~90 other files with no single-feature owner remain flat, by
+deliberate owner decision, not oversight.
+
+---
+
+# ⛔ Previous banner — ComposerProvider + Projects + Artifacts + Institution-provider-bundle all moved into features/, 2026-09-02, same session as the banner below (uncommitted).
 
 **Owner answered the taxonomy questions the banner below raised, then
 asked to also fold Projects and Artifacts into their own feature

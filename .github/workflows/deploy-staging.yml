@@ -1,0 +1,134 @@
+name: Deploy staging
+
+# P4 O3 — staging deploy pipeline. `workflow_dispatch` only, deliberately
+# NOT on every push to master, matching this repo's own existing
+# precedent for a real external cost/infra dependency staying manual
+# until proven (ci.yml's ai-behavioral-suite job — "measure before
+# enabling," same posture as ADL-073's hybrid-search rollout). Flip this
+# to `push: branches: [master]` once a human has run this manually at
+# least once and confirmed the smoke test passes against real infra.
+#
+# Requires real GCP resources this session deliberately did NOT
+# provision — see STAGING-DEPLOY-RUNBOOK.md for the exact one-time
+# gcloud setup this workflow assumes already exists (Artifact Registry
+# repo, Cloud SQL instance + bootstrapped roles, Secret Manager entries,
+# the deploy service account + Workload Identity Federation binding).
+# Every `# VERIFY:` comment below marks a value this session's research
+# did not directly confirm against current `gcloud`/GitHub Actions
+# syntax — confirm before the first real run.
+
+on:
+  workflow_dispatch:
+
+env:
+  # VERIFY: confirm this is still the correct region/project — taken
+  # from sandbox-service/build-log.txt:1298, the only existing Cloud
+  # Run deploy precedent in this repo.
+  GCP_PROJECT_ID: project-8bcf740a-a7bd-4aea-974
+  GCP_REGION: asia-south1
+  ARTIFACT_REGISTRY_REPO: asia-south1-docker.pkg.dev/project-8bcf740a-a7bd-4aea-974/arcnave
+  CLOUD_RUN_SERVICE: arcnave-backend-staging
+  CLOUD_RUN_JOB_MIGRATE: arcnave-backend-staging-migrate
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for Workload Identity Federation
+    steps:
+      - uses: actions/checkout@v4
+
+      # VERIFY: exact `workload_identity_provider`/`service_account`
+      # values depend on the WIF pool/provider created per
+      # STAGING-DEPLOY-RUNBOOK.md — placeholders below, not real values.
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev
+
+      - name: Build staging image
+        run: |
+          docker build -f backend/Dockerfile.prod \
+            -t ${{ env.ARTIFACT_REGISTRY_REPO }}/backend:${{ github.sha }} \
+            ./backend
+
+      - name: Push staging image
+        run: docker push ${{ env.ARTIFACT_REGISTRY_REPO }}/backend:${{ github.sha }}
+
+      # Migrations as a distinct release step, not baked into the
+      # served container's boot path — same "npm run migrate is
+      # separate from npm start" pattern ci.yml:71-78 already
+      # establishes for local/CI, packaged here as a one-off Cloud Run
+      # Job execution instead of `docker compose exec`.
+      # VERIFY: exact `gcloud run jobs deploy`/`execute` flags for
+      # --set-cloudsql-instances and --set-secrets against the current
+      # gcloud CLI version.
+      - name: Run migrations (Cloud Run Job)
+        run: |
+          gcloud run jobs deploy ${{ env.CLOUD_RUN_JOB_MIGRATE }} \
+            --image ${{ env.ARTIFACT_REGISTRY_REPO }}/backend:${{ github.sha }} \
+            --region ${{ env.GCP_REGION }} \
+            --command npm --args run,migrate \
+            --set-secrets MIGRATION_DATABASE_URL=arcnave-staging-migration-database-url:latest \
+            --execute-now \
+            --wait
+
+      # Single instance deliberately (--min-instances=1
+      # --max-instances=1) — same "don't build multi-instance
+      # coordination ahead of actually running multiple processes"
+      # reasoning D1/C8 already used (ADL-075). --execution-environment
+      # gen2 is required for Cloud Run Volume Mounts (GCS FUSE), which
+      # back DOCUMENT_STORAGE_ROOT/DOCUMENT_BACKUP_ROOT without any
+      # DocumentService code change — see the ledger entry for this
+      # session's own architecture note.
+      # VERIFY: exact --add-volume/--add-volume-mount and
+      # --add-cloudsql-instances syntax/values against current gcloud
+      # docs and the real bucket/instance names from
+      # STAGING-DEPLOY-RUNBOOK.md.
+      # --allow-unauthenticated (Cloud Run IAM layer), deliberately —
+      # smoke-test.js makes plain unauthenticated HTTP requests, same
+      # as a real user's browser would; the app's own authMiddleware
+      # (requireAuth) is what actually gates access to real data, same
+      # security boundary the deployed app already relies on. If this
+      # ever needs a second gate (e.g. blocking search-engine/public
+      # discovery of the staging URL), that's a separate decision, not
+      # a change to smoke-test.js's request shape.
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.CLOUD_RUN_SERVICE }} \
+            --image ${{ env.ARTIFACT_REGISTRY_REPO }}/backend:${{ github.sha }} \
+            --region ${{ env.GCP_REGION }} \
+            --execution-environment gen2 \
+            --min-instances 1 \
+            --max-instances 1 \
+            --add-cloudsql-instances "$GCP_PROJECT_ID:$GCP_REGION:arcnave-staging" \
+            --add-volume name=document-storage,type=cloud-storage,bucket=arcnave-staging-document-storage \
+            --add-volume-mount volume=document-storage,mount-path=/app/storage \
+            --add-volume name=document-storage-backups,type=cloud-storage,bucket=arcnave-staging-document-storage-backups \
+            --add-volume-mount volume=document-storage-backups,mount-path=/app/storage-backups \
+            --set-secrets DATABASE_URL=arcnave-staging-database-url:latest \
+            --set-secrets JWT_SECRET_KEY=arcnave-staging-jwt-secret-key:latest \
+            --set-secrets PLATFORM_JWT_SECRET_KEY=arcnave-staging-platform-jwt-secret-key:latest \
+            --set-secrets PLATFORM_DATABASE_URL=arcnave-staging-platform-database-url:latest \
+            --set-secrets DOCUMENT_STORAGE_ENCRYPTION_KEY=arcnave-staging-document-storage-encryption-key:latest \
+            --set-env-vars ENVIRONMENT=staging \
+            --set-env-vars DOCUMENT_STORAGE_ROOT=/app/storage \
+            --set-env-vars DOCUMENT_BACKUP_ROOT=/app/storage-backups \
+            --allow-unauthenticated
+
+      - name: Get deployed URL
+        id: url
+        run: |
+          echo "url=$(gcloud run services describe ${{ env.CLOUD_RUN_SERVICE }} --region ${{ env.GCP_REGION }} --format='value(status.url)')" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test
+        env:
+          SMOKE_TEST_BASE_URL: ${{ steps.url.outputs.url }}
+        run: node backend/scripts/smoke-test.js

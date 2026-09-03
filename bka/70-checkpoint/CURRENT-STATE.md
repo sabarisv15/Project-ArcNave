@@ -4,7 +4,21 @@ _Last updated: 2026-09-03._
 
 ---
 
-# ⛔ NEWEST BANNER — D1 AND 4.9 BOTH CLOSED; P3 (Structural cleanup) IS NOW FULLY CLOSED, 2026-09-03. Same session as the two banners below (D1, then 4.9 across 8 route files).
+# ⛔ NEWEST BANNER — P4 O3 (staging environment + smoke tests): code/config landed, real GCP infra deliberately NOT provisioned, 2026-09-03.
+
+**O3 (staging environment + smoke tests) is code-complete, not infra-complete.** First P4 item, per the previous banner's own "move to P4" pointer. User chose GCP Cloud Run as staging host and explicitly chose **code/config only this session** — no real Cloud SQL/Cloud Run/Secret Manager resources exist yet. Full decision writeup: [ADL-077](../30-decisions/ledger.md#adl-077).
+
+**What shipped, Docker-verified:** `backend/Dockerfile.prod` (new multi-stage Cloud Run image, builds clean, boots as non-root `arcnave` user, confirmed via a standalone `docker run` — crashes cleanly on a missing/unreachable DB exactly as expected with no real DB wired); `backend/.dockerignore` extended; `backend/scripts/bootstrap-cloud-sql-roles.js` (new, idempotent three-role + extension bootstrap for Cloud SQL — cannot be verified against real Cloud SQL yet, reviewed directly against `docker/postgres/init/*.sh` for parity instead); `backend/scripts/smoke-test.js` (new, ran successfully against the real local `docker compose` stack — all 3 checks pass); `.github/workflows/deploy-staging.yml` (new, `workflow_dispatch`-only, references real infra that doesn't exist yet — every unverified `gcloud` flag marked `# VERIFY:`); `STAGING-DEPLOY-RUNBOOK.md` (new, repo root — the exact one-time `gcloud` commands for a human to run separately).
+
+**Full Docker suite re-confirmed unaffected:** 2979/2979 passing, `npm run lint` 0 errors/123 warnings (one new `no-await-in-loop` warning from `smoke-test.js` was found and suppressed with the same `scripts/backup-database.js` precedent, restoring the exact baseline count — not silently left over), `npm run typecheck` clean.
+
+**Exact next action:** either (a) a human runs `STAGING-DEPLOY-RUNBOOK.md`'s `gcloud` commands to actually provision staging, then triggers `deploy-staging.yml` via `workflow_dispatch` and confirms the smoke test passes against real infra — only then does O3 count as fully closed; or (b) start a different P4 item instead (O2 gradual rollout, O8 reliability targets, or one of the frontend-cluster items — 5.4/5.11/5.12/5.5/5.6/5.10/5.3/3.4) since none of those are blocked on O3's infra actually existing. Either way, do not mark O3 "done" in a future banner without first confirming the runbook was actually run — this banner's own claim is code-only.
+
+**Committed:** not yet — every file this session touched (`backend/Dockerfile.prod`, `backend/.dockerignore`, `backend/scripts/bootstrap-cloud-sql-roles.js`, `backend/scripts/smoke-test.js`, `.github/workflows/deploy-staging.yml`, `STAGING-DEPLOY-RUNBOOK.md`, the ADL-077 ledger entry) is uncommitted working-tree state.
+
+---
+
+# ⛔ Previous banner — D1 AND 4.9 BOTH CLOSED; P3 (Structural cleanup) IS NOW FULLY CLOSED, 2026-09-03. Same session as the two banners below (D1, then 4.9 across 8 route files).
 
 **D1 (connection pooler) is closed.** `pg.Pool` (`backend/src/db/pool.js`) already WAS the real connection pooler for this single-process deployment — no pgbouncer needed (same "don't build multi-instance coordination ahead of actually running multiple processes" reasoning `circuitBreaker.js` already used for C8). The real gap was observability: `backend/src/db/tenantConnection.js`'s `_begin()` (the sole `appPool.connect()` call site) now logs `db_pool_contention` when `appPool.waitingCount > 0` at checkout time; `GET /api/v1/health` (`backend/src/tenantApp.js`) additively returns `pool: {total, idle, waiting}`. 3 new tests in `tests/db-pool-observability.test.js`. Full decision writeup: [ADL-075](../30-decisions/ledger.md#adl-075).
 

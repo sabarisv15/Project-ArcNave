@@ -6497,3 +6497,125 @@ was already re-verified against code in the 1.16 banner
 (`bka/70-checkpoint/CURRENT-STATE.md`). Next: P4 (Maturity — staging +
 gradual rollout) per `ARCNAVE-modernization-english.md`'s own P0-P5
 plan.
+
+---
+
+## ADL-077
+
+### O3 (modernization P4) — staging environment + smoke tests: GCP Cloud Run chosen, code/config landed, real infra deliberately not provisioned this session
+
+**What prompted this.** P3 closed (ADL-075/076); P4's first item per
+the plan's own build order. No hosting platform existed anywhere in
+the repo before this session — CI (`ci.yml`) lints/tests/migrates but
+has never deployed anywhere. Owner chose **GCP Cloud Run** (option
+presented alongside Fly.io/Render), consistent with the existing
+Vertex AI + `sandbox-service` GCP footprint — the only existing Cloud
+Run precedent in this repo (`sandbox-service/build-log.txt:1298`: built
+via Cloud Build, pushed to `asia-south1-docker.pkg.dev/project-8bcf740a-a7bd-4aea-974/arcnave`).
+Owner separately chose **code/config only this session** — real Cloud
+SQL/Cloud Run/Secret Manager resources are billed and hard to reverse;
+`STAGING-DEPLOY-RUNBOOK.md` documents the exact one-time `gcloud`
+commands for a human to run separately.
+
+**Architecture decision: Cloud Run Volume Mounts (GCS FUSE), not a
+`DocumentService` storage rewrite.** ADR-017's local-disk storage has a
+documented revisit trigger ("a second application instance is
+provisioned," `bka/30-decisions/adr-register.md`). Cloud Run containers
+are ephemeral on every fresh revision/cold restart regardless of
+instance count, so local-disk storage would silently lose uploaded
+files on the very first redeploy. Rather than rewriting
+`DocumentService`'s storage backend — a real architecture change, out
+of scope for a staging-environment slice — `deploy-staging.yml` mounts
+a GCS bucket at the exact same `DOCUMENT_STORAGE_ROOT`/
+`DOCUMENT_BACKUP_ROOT` paths the app already writes to
+(`--execution-environment=gen2`, `--add-volume type=cloud-storage`).
+`DocumentService`'s code and both env var semantics are byte-identical
+to dev; only the physical device backing those two paths changes, and
+only in Cloud Run deploy config. This satisfies ADR-017's revisit
+trigger for staging without touching `ArtifactService`/
+`DocumentService` code — the CLAUDE.md rule 2 boundary (DocumentService
+owns persistent binary storage) is unaffected.
+
+**`BYPASSRLS`, not literal `SUPERUSER`, is the property Cloud SQL
+bootstrap preserves for ADR-015.** In dev, `arcnave_admin` IS
+`$POSTGRES_USER` — the official postgres/pgvector image's own bootstrap
+superuser, named `arcnave_admin` only because `docker-compose.yml` sets
+`POSTGRES_USER` to that value. Cloud SQL's bootstrap user is always
+literally `postgres`, and even that is `cloudsqlsuperuser`, not a true
+Postgres `SUPERUSER`. Read `docker/postgres/init/01-app-role.sh`/
+`02-platform-role.sh` directly before writing the Cloud SQL equivalent
+(`backend/scripts/bootstrap-cloud-sql-roles.js`): both scripts do
+nothing beyond `CREATE ROLE ... LOGIN PASSWORD` — every GRANT
+(`arcnave_app`/`arcnave_platform`'s actual table privileges) lives in
+the Module 0 migration and runs later via `npm run migrate`, unchanged.
+The new bootstrap script mirrors that exactly and additionally grants
+`arcnave_admin` `BYPASSRLS CREATEDB` explicitly — per ADR-015's own
+reasoning, `BYPASSRLS` (not the `SUPERUSER` label) is the actual
+property that makes `FORCE ROW LEVEL SECURITY` meaningful, so this
+preserves the real security property regardless of Cloud SQL's
+superuser naming.
+
+**What shipped, real code (no real GCP resources created).**
+- `backend/Dockerfile.prod` (new) — multi-stage Cloud Run image
+  (`npm ci` deps stage, non-root `arcnave` user mirroring
+  `sandbox-service/Dockerfile:114-117`'s existing pattern, respects
+  `$PORT` already read in `backend/src/index.js:9`). Deliberately
+  separate from `backend/Dockerfile`, which CI's `docker compose exec
+  app npm run lint/typecheck/test` depends on having devDependencies
+  installed — untouched.
+- `backend/.dockerignore` — extended (`tests/`, `*.test.js`,
+  `coverage/`, `.env`) so `Dockerfile.prod`'s `COPY . .` doesn't ship
+  test files into the deploy image.
+- `backend/scripts/bootstrap-cloud-sql-roles.js` (new) — idempotent
+  (`DO $$ ... $$` catalog-check blocks, Postgres has no native `CREATE
+  ROLE IF NOT EXISTS`) three-role bootstrap + `CREATE EXTENSION IF NOT
+  EXISTS vector`/`pg_stat_statements`.
+- `backend/scripts/smoke-test.js` (new) — non-mutating, plain
+  unauthenticated `fetch` against a deployed `SMOKE_TEST_BASE_URL`:
+  `GET /api/v1/health` (`status: 'ok'` + pool stats,
+  `backend/src/tenantApp.js:143-157`), `GET /api/v1/openapi.json`
+  (routes registered, ADR-010), `GET /api/v1/students` with no token →
+  `401` not `500`/`502` (a verified concrete `requireAuth`-gated route,
+  `backend/src/routes/students.js:405-408` — catches boot
+  misconfiguration, e.g. a missing secret crashing a handler instead of
+  failing auth cleanly).
+- `.github/workflows/deploy-staging.yml` (new) — `workflow_dispatch`
+  only, **not** on every push, matching the existing
+  `ai-behavioral-suite` precedent (`ci.yml:129-148`) for a real
+  external-cost dependency staying manual until proven. Auth via
+  Workload Identity Federation (no long-lived JSON key). Migrations run
+  as a distinct Cloud Run Job execution, separate from the served
+  container's boot path — same "migrate is a distinct step from start"
+  pattern `ci.yml:71-78` already establishes locally/CI, packaged for
+  Cloud Run. `--min-instances=1 --max-instances=1` — same "don't build
+  multi-instance coordination ahead of actually running multiple
+  processes" reasoning D1/C8 already used (ADL-075). Cloud Run service
+  deployed `--allow-unauthenticated` (Cloud Run's own IAM layer is not
+  the access boundary here — `smoke-test.js` makes plain
+  unauthenticated requests, same as a real user's browser would; the
+  app's own `authMiddleware`/`requireAuth` is the real security
+  boundary, identical to what the deployed app will rely on in
+  production). Every value this session's research did not directly
+  verify against live `gcloud` output (Cloud SQL's pgvector/
+  pg_stat_statements flag names, WIF binding syntax) is marked
+  `# VERIFY:` rather than stated as settled fact.
+- `STAGING-DEPLOY-RUNBOOK.md` (new, repo root — same convention as
+  `dependency-scan-baseline.md`) — the exact one-time `gcloud` setup
+  this workflow assumes: Artifact Registry (reusing sandbox-service's
+  repo), 2 GCS buckets, Cloud SQL instance, the 6 Secret Manager
+  entries (verified names from `docker-compose.yml`'s `:?` required
+  vars, plus 3 full-connection-string secrets), deploy service account
+  + WIF binding.
+
+**Explicitly out of scope this slice** — separate P4 line items, not
+started: O2 (gradual rollout/feature switches, gated on multiple server
+processes actually running), O8 (reliability targets/error budget/auto
+rollback — this slice only gets a manual smoke-test signal, no
+auto-rollback). No `gcloud` provisioning command was run.
+
+**Verification.** `backend/Dockerfile.prod` builds locally
+(`docker build -f backend/Dockerfile.prod ./backend`); real Cloud SQL
+bootstrap/deploy verification is impossible until the runbook's
+`gcloud` steps are actually run — full Docker suite/lint confirmed
+unaffected since none of these changes touch `backend/Dockerfile` or
+any file the existing suite covers.

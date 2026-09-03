@@ -4,7 +4,7 @@ _Last updated: 2026-09-03._
 
 ---
 
-# ⛔ NEWEST BANNER — P4 in progress: O3, 5.5/5.6, 5.12, 5.10, 5.11, and 5.4 done and pushed; 5.3 scaffolded (real cutover NOT done, see below); 3.4 remains, 2026-09-03.
+# ⛔ NEWEST BANNER — P4 thread effectively closed: O3, 5.5/5.6, 5.12, 5.10, 5.11, 5.4, and 3.4 done and pushed; 5.3 scaffolded only (real cutover is its own future pass); O2/O8/"internal-use loop"/"score live traffic" still genuinely blocked/deferred per earlier banners. 2026-09-03.
 
 Same session as the O3 banner below, continued. Owner asked to work
 through the rest of P4 after O3. Triaged: O2 and O8 are genuinely
@@ -25,18 +25,21 @@ uncommitted):
 
 - **5.3 (TanStack Router scaffold)** — [ADL-083](../30-decisions/ledger.md#adl-083). Owner picked **TanStack Router** as the genuinely modern 2026 choice for this Vite SPA (RR v7 Framework mode — its only mode with real route typegen — pulls toward SSR, already rejected by 5.5's own "internal dashboard, no SSR" plan text) over a route-path-constants module or a full same-session migration. Scoped to a **scaffold**, not a cutover: real architectural risk found while building it — swapping the root provider from react-router-dom's `<BrowserRouter>` to TanStack's `<RouterProvider>` breaks all ~140 existing router-hook call-sites app-wide instantly, and running two independently-owned History-API listeners at once isn't a verified-safe pattern — so nothing in the real route tree was touched. Shipped: `frontend/src/router-preview/routeTree.tsx` (new, real `.tsx`, root + index + a typed `/students/$studentId` param route) + `RouterPreviewIsland.jsx`, mounted as its own isolated, unauthenticated top-level route (`/router-preview/*`, beside `/login`, outside `ProtectedRoute`) in `App.jsx`. Live-verified in the browser (Vite dev server, no Docker needed since unauthenticated): index route renders, `/router-preview/students/demo-001` resolves `studentId` correctly typed, `/login` unaffected, no console/network errors from the new files. `npm run typecheck`/`lint`/`test` all clean, no regressions (49/49 files, 564/564 tests). **The real cutover strategy (how the eventual root-provider swap + full call-site migration actually happens safely) is still an open, unscoped decision — the next 5.3 pass starts there, not by touching a real route.**
 
-**After this session, remaining P4 items:** 3.4 (merge the document
-paths into one clear route — already flagged earlier this thread as
-needing its own `/product-reasoning` pass, it's the Documents
-Institutional/Personal tab-merge), plus 5.3's own real cutover (see
-above — not startable blind, needs a cutover-strategy decision first).
-None of these are blocked on O3's infra existing.
+- **3.4 (document tool robustness fix)** — [ADL-084](../30-decisions/ledger.md#adl-084). The earlier interpretation ("Documents Institutional/Personal tab-merge") was WRONG — verified against code: `DocumentsView.jsx` already has that merge, built and working. Re-read the plan doc's own placement (Part 3 — AI "skills", under a "several overlapping ways to handle a document" flowchart) and correctly re-scoped to the AI's document-tool paths. Static read of every document tool found no real ambiguity; owner asked to check live AI behavior before deciding. **Docker is available on this host now** (was not, per every earlier banner this session — re-verify at the start of any future session, don't trust this claim blindly either). Added category M to `scripts/ai-behavioral-suite.js` (4 scenarios, real Vertex/Gemini calls, owner-approved before running) — found a real, live bug: `list_institutional_documents` crashed the WHOLE agent turn (`answer: null`) on a category/department/year name that doesn't resolve, unlike its sibling `resolve_document_destination` which was already built safe (`resolveOptionalField`, never throws). Fixed `aiToolRegistry.js`'s handler to use the same safe pattern. **Caught and avoided a real regression before shipping:** a first draft wrapped the result in `{ documents, filterErrors }`, which would have silently broken `aiExperience/sectionBuilder.js`'s generic `Array.isArray(data)`-keyed table rendering for this tool in the chat UI — reverted to a bare array on every path. Also fixed the suite's own `cleanupTenant` (missing `personal_notes` in delete order, broke teardown after `m3` passed). Verified live before/after (crash → `status: "ok"`) and via full backend suite in Docker: **2979/2979, clean, no regressions.** Known, undecided, out-of-scope gap: the suite's tenant seeds zero institutional documents, so `m2`/`m4`'s own pass/fail signal stays fixture-limited — not this fix's job to close.
+
+**P4 thread status:** every item that was concretely scoped and buildable
+this thread is done. What's left is either genuinely blocked (O2/O3/O8 —
+no staging/deploy target exists, a new-investment question for the
+owner), process not code ("internal-use loop," "score live traffic"), or
+its own future pass by design (5.3's real router cutover — see ADL-083's
+own "not decided" section, needs a coexistence-strategy decision before
+any real route is touched).
 
 **Committed and pushed:** the four earlier slices (`ae2b9fe`, `f6bc6e8`,
-`bde756b`, `55772c3`), 5.11 (`6eb8e75`), and 5.4 (`1121bf0`) are on
-`origin/p0-modernization-foundation`. 5.3's scaffold (this checkpoint)
-is committed in the same pass as this file — see git log for the exact
-commit.
+`bde756b`, `55772c3`), 5.11 (`6eb8e75`), 5.4 (`1121bf0`), and 5.3
+(`b1b1934`) are on `origin/p0-modernization-foundation`. 3.4 (this
+checkpoint) is committed in the same pass as this file — see git log for
+the exact commit.
 
 ---
 

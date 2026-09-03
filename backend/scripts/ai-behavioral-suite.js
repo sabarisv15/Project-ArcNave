@@ -131,6 +131,11 @@ async function cleanupTenant(adminPool, collegeId) {
   // as every other tenant table here.
   await adminPool.query('DELETE FROM ai_usage_counters WHERE college_id = $1', [collegeId]);
   await adminPool.query('DELETE FROM audit_log WHERE college_id = $1', [collegeId]);
+  // Category M's m3 (personal_notes_create) leaves a real row referencing
+  // drafted this run's user — same "before users" reasoning every other
+  // table here already follows. Missing before this fix: found live, this
+  // run, once m3 first passed.
+  await adminPool.query('DELETE FROM personal_notes WHERE college_id = $1', [collegeId]);
   await cleanupPositionRows(adminPool, collegeId);
   await adminPool.query('DELETE FROM staff WHERE college_id = $1', [collegeId]);
   await adminPool.query('DELETE FROM users WHERE college_id = $1', [collegeId]);
@@ -663,6 +668,41 @@ function buildScenarios({ artifactId, notificationId }) {
     },
   });
 
+  // M — Document-path selection (ARCNAVE modernization P4, PDF 3.4:
+  // "merge the document paths into one clear route" — Part 3's own
+  // flowchart frames this as "several overlapping ways to handle a
+  // document, so the AI gets confused"). Static reading of every
+  // document-related tool's own `description` found no ambiguity in the
+  // text — this category checks the thing static analysis can't: does a
+  // real model, given a request that could plausibly map to more than
+  // one document tool, actually pick the right one. Each scenario names
+  // the ONE tool a correct read of the request implies; a different
+  // real document tool being called (not just "any tool") is the
+  // regression this category exists to catch.
+  const documentPathScenarios = [
+    ['m1', "what does this year's fee circular say about late payment penalties?", 'search_documents'],
+    ['m2', 'show me every circular filed under the ECE department', 'list_institutional_documents'],
+    ['m3', 'remind myself to follow up with the vendor tomorrow', 'personal_notes_create'],
+    ['m4', 'find the examination policy document, then show me its version history so far', 'get_document_version_history'],
+  ];
+  for (const [id, question, expectedTool] of documentPathScenarios) {
+    scenarios.push({
+      id,
+      category: 'M: document-path selection',
+      question,
+      expect: (r) => {
+        const used = r.toolsUsed || (r.toolUsed ? [r.toolUsed] : []);
+        if (used.includes(expectedTool)) {
+          return { ok: true, reason: `correctly called ${expectedTool}` };
+        }
+        return {
+          ok: false,
+          reason: `expected ${expectedTool}, got ${JSON.stringify(used)} — answer: "${r.answer}"`,
+        };
+      },
+    });
+  }
+
   return scenarios;
 }
 
@@ -715,7 +755,10 @@ async function withRetry(fn, { retries = 4, baseDelayMs = 15000 } = {}) {
 // that had nothing to do with those categories' own established behavior.
 async function withScenarioToolCallCap(scenario, fn) {
   const original = config.maxToolCallsPerTurn;
-  config.maxToolCallsPerTurn = scenario.category.startsWith('K') ? 3 : 1;
+  // M's m4 needs the same chained-lookup allowance as K (see M's own
+  // category comment: resolve a document, then read its version history)
+  // — every other M scenario resolves in one real tool call regardless.
+  config.maxToolCallsPerTurn = scenario.category.startsWith('K') || scenario.category.startsWith('M') ? 3 : 1;
   try {
     return await fn();
   } finally {

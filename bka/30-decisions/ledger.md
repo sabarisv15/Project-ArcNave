@@ -7114,3 +7114,105 @@ real app. Console/network showed only the pre-existing, expected `/api/
 v1/auth/refresh` 500s (no backend running on this host, same standing
 constraint every other slice this session has hit) — nothing from the
 new files.
+
+
+---
+
+## ADL-084
+
+### 3.4 (modernization P4) — reinterpreted correctly, then fixed a real live-caught bug: list_institutional_documents crashed the whole agent turn on a bad filter name
+
+**What prompted this.** Owner asked to "start 3.4." An earlier session's
+own checkpoint claimed 3.4 = "the Documents Institutional/Personal
+tab-merge, still-mockup-only." Verified against code, not docs, before
+acting: `frontend/src/features/documents/routes/DocumentsView.jsx`
+already has that exact tab merge, built and working — one route
+(`/curriculum/documents`), Institutional/Personal as tabs in a single
+page. The earlier interpretation was simply wrong.
+
+**Re-read the plan doc's own placement, not just its one-line text.**
+`ARCNAVE-modernization-english.md` row 231 ("Merge the document paths
+into one clear route") sits inside **Part 3 — AI "skills"**, directly
+under a flowchart whose stated problem is "Several overlapping ways to
+handle a document, so the AI gets confused." That context — not a
+frontend nav merge — points at the AI's own document-handling tool
+paths (`search_documents`, `list_institutional_documents`,
+`personal_notes_*`, `manage_project_document`, `generate_document`,
+plus the separate chat-attachment extraction path items 2.1-2.5 already
+describe).
+
+**Static read found no real ambiguity in the tool definitions
+themselves** — each institutional-document tool's `description` already
+cross-references its siblings clearly (`get_document_version_history`:
+"use after list_institutional_documents/search_documents has already
+resolved a document id"). Reported this back to the owner rather than
+assuming the plan's complaint was baseless; owner asked to check real
+AI behavior before deciding, not settle for static analysis alone.
+
+**Docker is available on this host now** (was not, per every earlier
+banner's standing constraint this session — `docker version` confirmed
+a live Docker Desktop 4.82.0 daemon; flagged to the owner as a real
+environment change before using it, since a live run means real,
+billable Vertex/Gemini calls — owner approved).
+
+**Added category M (`scripts/ai-behavioral-suite.js`) — 4 scenarios
+checking which document tool a real model picks for a request that
+could plausibly map to more than one.** First live run surfaced a real,
+concrete bug, not fixture noise: `m2` ("show me every circular filed
+under ECE") correctly had the model call `list_institutional_documents`
+with `category: "Circulars"` — but that category doesn't exist in the
+suite's seeded tenant, and the tool's own resolver rejected, which
+propagated uncaught out of the whole agent turn (`answer: null`, no
+graceful message at all). Read the code to find why: this tool's own
+sibling, `resolve_document_destination` (registered directly above it
+in `aiToolRegistry.js`), was already built with `resolveOptionalField`
+— never throws, returns `{ value, error }` per field — specifically so
+a guessed/wrong destination name becomes a clear message the model can
+relay, not a crash. `list_institutional_documents` took the identical
+kind of category/department/academic_year params but never got that
+same treatment. Two tools doing the same conceptual thing, one safe one
+not, is exactly a real, live instance of "overlapping document paths"
+causing confusion — just at the code-robustness layer, not the tool-
+selection layer the plan's wording suggested.
+
+**Fix — `aiToolRegistry.js`'s `list_institutional_documents` handler.**
+Switched to the same `resolveOptionalField` pattern
+`resolve_document_destination` already uses; an unresolved filter now
+degrades to an empty result instead of throwing.
+
+**Real regression caught and avoided before shipping, not assumed
+safe.** First draft returned `{ documents, filterErrors }` on an
+unresolved filter — read `aiExperience/sectionBuilder.js` before
+shipping and found its table/chart rendering keys off
+`Array.isArray(data)` generically for every tool's result; wrapping
+this one tool's result in an object would have silently broken its
+rendered table into a raw key-value dump in the chat UI. Reverted to a
+bare array on every path (success or unresolved filter) — the contract
+every existing renderer already expects — and added one sentence to
+the tool's own `description` telling the model an empty result can mean
+a named filter didn't match, so it doesn't need the result shape itself
+to carry that.
+
+**Also fixed:** `scripts/ai-behavioral-suite.js`'s `cleanupTenant` was
+missing `personal_notes` in its delete order — `m3` (correctly calling
+`personal_notes_create`) left a row that broke teardown with a real FK
+violation, caught live on the first run.
+
+**Verified live, before and after.** Before the fix: `m2` — `[FAIL]
+unexpected error: no document category found named "Circulars" in this
+college`, `answer: null`. After: `m2`'s `list_institutional_documents`
+call shows `"status":"ok"` (no crash); the run's actual pass/fail outcome
+for `m2`/`m4` after the fix is limited by the suite's fixture seeding no
+real institutional documents at all (a separate, known, undecided gap —
+not this fix's job to close), not by the crash this fix targeted. Full
+backend suite in Docker: **2979/2979, clean, no regressions.**
+`npm run lint`/`typecheck` clean in both `backend/` and (unrelated to
+this specific fix but re-verified) `frontend/`.
+
+**Out of scope, not assumed:** seeding real institutional-document
+fixture data into the suite's tenant (would make M's own pass/fail
+signal fully clean, not attempted this pass — a scoped addition of its
+own); the weaker, fixture-limited `m1` double-tool-call observation from
+the first run did not reproduce on the second (LLM run-to-run variance,
+same category this project's other behavioral scenarios already
+document) — not chased further as a separate finding.

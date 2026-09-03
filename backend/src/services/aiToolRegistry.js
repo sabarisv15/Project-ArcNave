@@ -1113,7 +1113,10 @@ registerTool({
     'Lists Institutional Documents (Curriculum, Circulars, Academic Calendar, Examination, Policies, ' +
     'Forms, Notices) matching an optional category/department/academic-year/search filter — the AI-facing ' +
     'equivalent of browsing the Institutional Documents page with filters set. Most recent first, so "the ' +
-    'latest examination timetable" is simply the first row of a category="Examination" call.',
+    'latest examination timetable" is simply the first row of a category="Examination" call. If a named ' +
+    'category/department/academic_year does not match anything real for this college, this returns an empty ' +
+    'list rather than erroring — say plainly that nothing matched (and which filter looks off) rather than ' +
+    'assuming an empty result means no institutional documents exist at all.',
   allowedRoles: ['principal', 'hod', 'staff', 'class_tutor'],
   params: {
     type: 'object',
@@ -1126,20 +1129,45 @@ registerTool({
     additionalProperties: false,
   },
   handler: async (client, params, actor) => {
-    // undefined, not null, for an omitted hint — documentRepository.
-    // findInstitutional's own optional-filter checks are `!== undefined`
-    // (a real `null` would build a `column = NULL` condition, which
-    // SQL never matches, silently returning zero rows regardless of
-    // the other filters).
-    const [categoryId, departmentId, academicYearId] = await Promise.all([
-      params.category ? documentCategoryService.resolveCategoryId(client, actor.collegeId, params.category) : undefined,
-      params.department
-        ? collegeProfileService.resolveDepartmentId(client, actor.collegeId, params.department)
-        : undefined,
-      params.academic_year
-        ? academicYearService.resolveAcademicYearId(client, actor.collegeId, params.academic_year)
-        : undefined,
+    // P4 3.4 — this tool used to resolve category/department/academic_year
+    // with a bare `Promise.all` over resolver calls that reject on a name
+    // that doesn't exist (e.g. a guessed or slightly-off category), which
+    // crashed this tool's own invocation — and with it the whole agent
+    // turn — instead of giving the model something it could relay ("no
+    // such category"). Its own sibling tool, resolve_document_destination
+    // above, already got this right (resolveOptionalField: never throws,
+    // returns { value, error } per field); caught live via
+    // scripts/ai-behavioral-suite.js category M ("no document category
+    // found named \"Circulars\"" surfacing as `answer: null`, no answer
+    // at all, instead of a graceful "nothing matched").
+    //
+    // Deliberately still returns a bare array on every path (never an
+    // { documents, ... } wrapper) — aiExperience/sectionBuilder.js's
+    // table/chart rendering keys off `Array.isArray(data)` for every
+    // tool's result generically; wrapping this one tool's result in an
+    // object would silently turn its rendered table into a raw
+    // key-value dump. An unresolved filter degrades to the same empty
+    // array `search`/filters matching nothing real already produces —
+    // the model still knows which named field it guessed from the
+    // params it itself supplied, and the tool's own description says to
+    // name it, so nothing forces re-deriving that from the result shape.
+    const [category, department, academicYear] = await Promise.all([
+      resolveOptionalField(
+        (v) => documentCategoryService.resolveCategoryId(client, actor.collegeId, v),
+        params.category,
+      ),
+      resolveOptionalField(
+        (v) => collegeProfileService.resolveDepartmentId(client, actor.collegeId, v),
+        params.department,
+      ),
+      resolveOptionalField(
+        (v) => academicYearService.resolveAcademicYearId(client, actor.collegeId, v),
+        params.academic_year,
+      ),
     ]);
+    if (category.error || department.error || academicYear.error) {
+      return [];
+    }
     // limit: this tool's own description already frames its ordering
     // as "most recent first" — capping it here matches that stated
     // semantic rather than truncating something the tool promises to
@@ -1148,9 +1176,9 @@ registerTool({
     return documentService.listInstitutionalDocuments(
       client,
       {
-        categoryId,
-        departmentId,
-        academicYearId,
+        categoryId: category.value?.id,
+        departmentId: department.value?.id,
+        academicYearId: academicYear.value?.id,
         search: params.search,
         limit: 200,
       },

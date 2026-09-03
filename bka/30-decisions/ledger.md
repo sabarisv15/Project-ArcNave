@@ -6785,3 +6785,112 @@ baseline), `npm run typecheck` (clean), `npm test` (48/48 files,
 && npm run size` (all 5 ADL-078 budgets still pass; entry chunk grew
 206.32kB->206.59kB gzip, comfortably inside the 248KB budget -- the two
 new small components did not meaningfully move it).
+
+
+---
+
+## ADL-080
+
+### 5.10 (modernization P4) -- accessibility audit: root-cause config fix (57->9 warnings), then real per-site fixes for the rest
+
+**What prompted this.** 5.12 (ADL-079) landed; next P4 item. 5.10's own
+plan text: "P0 (lint), P4 (full)" -- P0 already turned
+`eslint-plugin-jsx-a11y`'s ruleset on in `frontend/eslint.config.js`,
+kept at `warn` with its own comment naming ~10 findings as deferred to
+this phase. Real count at start of this session, measured not
+guessed: 57 `jsx-a11y` warnings across 23 files.
+
+**Root cause found before fixing individual sites, not assumed.**
+`eslint.config.js:58`'s own transform was `Object.keys(jsxA11y.configs.recommended.rules).map((rule) => [rule, 'warn'])`
+-- reading every rule NAME from jsx-a11y's own recommended config but
+discarding the VALUE entirely. Confirmed by reading
+`node_modules/eslint-plugin-jsx-a11y/lib/index.js` directly (same
+verify-the-actual-installed-behavior discipline as O3/5.5-5.6/5.12):
+this threw away two things upstream deliberately set.
+1. `label-has-for` is `'off'` in the real recommended config
+   (superseded by `label-has-associated-control`) -- re-enabling it
+   picked up its unconfigured strict default, `required: { every:
+   ['nesting', 'id'] }`, which demands BOTH an htmlFor/id pair AND DOM
+   nesting on every label, stricter than real accessibility needs.
+   This alone accounted for 18 of the 57 warnings.
+2. `control-has-associated-label`'s real recommended entry is `['off',
+   { ignoreElements: ['input', 'textarea', 'audio', 'canvas', 'embed',
+   'tr', 'video'], ... }]` -- deliberately excluding `<input>`/
+   `<textarea>` because their labeling is `label-has-associated-
+   control`'s job, not this rule's (meant for icon-only buttons/custom
+   controls with no `<label>` available). Losing that option list made
+   this rule wrongly flag every properly `<label>`-associated `<input>`
+   in the app.
+
+**Fixed at the root, not per-symptom.** `eslint.config.js`'s transform
+now preserves each rule's own recommended severity AND options,
+downgrading `'error'`->`'warn'` (matching this file's stated intent —
+"kept at warn so CI is green") without ever upgrading a rule upstream
+deliberately left `'off'`. This single change dropped the count from
+57 to 9 with zero markup changes — confirmed by re-running the exact
+count command used to scope the session before touching a single
+component file.
+
+**The remaining 9 got individual, per-site judgment, not a mechanical
+pass** (matching the approved plan's explicit instruction: never
+manufacture a fake role/tabIndex/keyboard handler where a real
+alternative already exists).
+- `AppShell.jsx` (2 sites) — a hover-reveal panel (`onMouseEnter`/
+  `onMouseLeave` only) turned out to need NO change at all once the
+  config was fixed: upstream's own `no-static-element-interactions`
+  `handlers` option (`onClick`/`onMouseDown`/`onMouseUp`/`onKeyPress`/
+  `onKeyDown`/`onKeyUp`) never included hover events in the first
+  place — confirming the earlier reasoning (EdgeTrigger is the real
+  keyboard entry point) without needing a disable comment; one was
+  added then removed once this became clear. The mobile-drawer close
+  div (`onClick={() => setMobileNav(false)}`) kept a disable comment:
+  its `onClick` only ever fires via bubbling from Sidebar's own real,
+  keyboard-activatable links, and `Dialog.Root` already provides
+  Escape/focus-trap dismissal independently.
+- `ComposerAttachmentStrip.jsx` — a `tabIndex={0}` scrollable `<ul>`
+  is the WAI-ARIA APG's own recommended technique for keyboard-
+  operable horizontal scroll regions; disabled with that reasoning
+  rather than adding a role that would cost the list its real `list`
+  semantics.
+- `CorrectionRequestDrawer.jsx` — a `<label>` with no real associated
+  control (a section heading text, not describing any single input —
+  the search box and each student checkbox already carry their own
+  `aria-label`) was mislabeled semantically; changed to a plain
+  `<span>` rather than inventing a fake association.
+- `PersonalDocuments.jsx` (2 sites, list + grid view) —
+  `aria-selected` on `role="button"` is a real ARIA/role mismatch
+  (`aria-selected` is only valid on selection-modeling roles like
+  option/row/tab, not button); changed to `aria-pressed`, button's own
+  toggle-state attribute, matching what clicking these rows actually
+  does.
+- `StaffView.jsx`/`StudentsView.jsx` — an overlay backdrop div missing
+  `aria-hidden="true"`, the same pattern `AppShell.jsx`'s own backdrop
+  already used correctly one component over; added it.
+- `AdmissionWizard.jsx`/`BulkImportDrawer.jsx` — the two label sites
+  fixed mechanically (id/htmlFor pairing) before the root-cause
+  transform was found; left as-is since the extra explicit pairing is
+  still fully correct, just no longer strictly required by the fixed
+  config.
+
+**Verified by more than the linter.** `getByLabelText` (Testing
+Library's own DOM label-association algorithm, not jsx-a11y's static
+analysis) confirmed the id/htmlFor pattern actually resolves an
+accessible name in an isolated render; `getByRole('button', {
+pressed: true })` confirmed the `aria-pressed` fix produces a real,
+queryable pressed state.
+
+**Out of scope, as planned:** no manual screen-reader/keyboard-only
+testing (code can't self-certify that); `react-hooks/exhaustive-deps`
+and `no-unused-vars` warnings in the same files left untouched
+(different rule category); `jsx-a11y` rules left at `warn`, not
+promoted to `error` (a separate later decision once this baseline is
+proven clean over time).
+
+**Verification.** `npm run lint` — 0 `jsx-a11y` warnings (57→0), 31
+total warnings remaining (all pre-existing `react-hooks/exhaustive-
+deps`/`no-unused-vars`, untouched), 0 errors. `npm run typecheck`
+clean. `npm test` — 48/48 files, 560/560 tests, no regression. `npm
+run build && npm run size` — all 5 ADL-078 budgets still pass (entry
+206.59kB, unchanged from the 5.12 checkpoint — markup-only changes, no
+bundle growth). `npm run format:check` clean on every file this slice
+touched.

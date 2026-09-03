@@ -236,6 +236,7 @@ export function AppShell() {
             className="lg:hidden fixed inset-y-0 left-0 z-[81] w-[282px] outline-none data-[state=open]:animate-railIn motion-reduce:animate-none"
           >
             <Dialog.Title className="sr-only">Navigation</Dialog.Title>
+            {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- this onClick only ever fires via bubbling from Sidebar's own real links/buttons (native click events also fire when those are keyboard-activated), never as a direct interaction with this div; Dialog.Root also already provides Escape/focus-trap dismissal */}
             <div className="h-full" onClick={() => setMobileNav(false)}>
               <Sidebar floating />
             </div>

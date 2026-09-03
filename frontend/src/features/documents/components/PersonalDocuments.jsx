@@ -434,7 +434,12 @@ export function PersonalDocuments() {
               key={node.id}
               role="button"
               tabIndex={0}
-              aria-selected={selected.has(node.id)}
+              // `aria-pressed`, not `aria-selected` — this row is
+              // `role="button"`, and `aria-selected` is only valid on
+              // roles that model a selection (option/row/tab/gridcell),
+              // not button; `aria-pressed` is button's own toggle-state
+              // attribute and matches what clicking here actually does.
+              aria-pressed={selected.has(node.id)}
               onClick={(e) => toggleSelect(node.id, e.ctrlKey || e.metaKey)}
               onDoubleClick={() => openNode(node)}
               onKeyDown={(e) => {
@@ -483,7 +488,12 @@ export function PersonalDocuments() {
                 key={node.id}
                 role="button"
                 tabIndex={0}
-                aria-selected={selected.has(node.id)}
+                // `aria-pressed`, not `aria-selected` — this row is
+                // `role="button"`, and `aria-selected` is only valid on
+                // roles that model a selection (option/row/tab/gridcell),
+                // not button; `aria-pressed` is button's own toggle-state
+                // attribute and matches what clicking here actually does.
+                aria-pressed={selected.has(node.id)}
                 onClick={(e) => toggleSelect(node.id, e.ctrlKey || e.metaKey)}
                 onDoubleClick={() => openNode(node)}
                 onKeyDown={(e) => {

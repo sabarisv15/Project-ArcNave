@@ -189,12 +189,13 @@ export function AdmissionWizard({ open, onOpenChange, onAdmitted }) {
             {ADMISSION_FIELDS.map((f) => {
               const band = extraction ? confidenceBand(extraction.confidence?.[f.key]) : null;
               return (
-                <label key={f.key} className="block">
+                <label key={f.key} htmlFor={`admission-${f.key}`} className="block">
                   <span className="block mb-[5px] text-[11px] font-[500] tracking-[.05em] uppercase text-ink-muted">
                     {f.label}
                     {f.required && <span className="text-danger"> *</span>}
                   </span>
                   <input
+                    id={`admission-${f.key}`}
                     type={f.type}
                     className={FIELD}
                     value={values[f.key] ?? ''}

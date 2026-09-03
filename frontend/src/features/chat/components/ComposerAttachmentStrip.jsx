@@ -187,7 +187,13 @@ export function ComposerAttachmentStrip({ attachments, onRemove, onRetry }) {
           'animate-fadeUp motion-reduce:animate-none',
         )}
       >
+        {/* A focusable scrollable region is the WAI-ARIA APG's own
+            recommended technique for keyboard-operable horizontal
+            scrolling content; adding an interactive role instead would
+            lose this list's real `list` semantics for screen-reader
+            users browsing the tiles. */}
         <ul
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
           tabIndex={0}
           aria-label={countLabel}
           className="flex-1 min-w-0 flex items-center gap-[8px] m-0 p-0 list-none overflow-x-auto overflow-y-hidden scroll-quiet rounded-[8px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"

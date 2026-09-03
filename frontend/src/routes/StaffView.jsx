@@ -37,7 +37,7 @@ export function StaffView() {
         </div>
       </div>
 
-      {s.anyOverlayOpen && <div onClick={s.closeOverlays} className="fixed inset-0 z-[55]" />}
+      {s.anyOverlayOpen && <div aria-hidden="true" onClick={s.closeOverlays} className="fixed inset-0 z-[55]" />}
       <StaffDetailDrawer s={s} />
     </>
   );

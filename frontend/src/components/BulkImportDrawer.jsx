@@ -183,12 +183,17 @@ export function BulkImportDrawer({ open, onOpenChange, onImported }) {
               what your export calls things.
             </p>
             {IMPORT_FIELDS.map((f) => (
-              <label key={f.key} className="grid grid-cols-[150px_1fr] gap-x-[10px] items-center">
+              <label
+                key={f.key}
+                htmlFor={`bulk-import-${f.key}`}
+                className="grid grid-cols-[150px_1fr] gap-x-[10px] items-center"
+              >
                 <span className="text-[12px] text-ink-soft">
                   {f.label}
                   {f.required && <span className="text-danger"> *</span>}
                 </span>
                 <select
+                  id={`bulk-import-${f.key}`}
                   className="w-full font-sans text-[12.5px] text-ink bg-paper border border-line rounded-[9px] px-[9px] py-[6px] outline-none focus:border-accent-line"
                   value={mapping[f.key] ?? ''}
                   onChange={(e) =>

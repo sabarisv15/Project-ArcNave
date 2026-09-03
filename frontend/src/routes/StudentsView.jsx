@@ -38,7 +38,7 @@ export function StudentsView() {
         </div>
       </div>
 
-      {s.anyOverlayOpen && <div onClick={s.closeOverlays} className="fixed inset-0 z-[55]" />}
+      {s.anyOverlayOpen && <div aria-hidden="true" onClick={s.closeOverlays} className="fixed inset-0 z-[55]" />}
       {s.selectedCount > 0 && <StudentBulkTray s={s} />}
       <StudentDetailDrawer s={s} />
     </>

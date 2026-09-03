@@ -137,9 +137,12 @@ export function CorrectionRequestDrawer({ open, onOpenChange, period, session, o
 
           <form onSubmit={handleSubmit(submit)} className="flex-1 min-h-0 flex flex-col">
             <div className="px-[18px] pt-[14px]">
-              <label className="block text-[11.5px] font-[500] uppercase tracking-[.05em] text-ink-faint mb-[8px]">
+              {/* A section heading, not a form label — it doesn't describe any
+                  single control below (the search input and each student
+                  checkbox already carry their own aria-label). */}
+              <span className="block text-[11.5px] font-[500] uppercase tracking-[.05em] text-ink-faint mb-[8px]">
                 Select affected students
-              </label>
+              </span>
               <div className="relative mb-[10px]">
                 <input
                   value={query}

@@ -47,14 +47,14 @@ test('Phase 8: gemini/vertex_maas adapters expose getCapabilityProfile/supportsC
   const gemini = aiProviders.getAdapter('gemini');
   assert.equal(typeof gemini.getCapabilityProfile, 'function');
   assert.equal(typeof gemini.supportsCapability, 'function');
-  const profile = gemini.getCapabilityProfile({ projectId: 'p', location: 'global', model: 'gemini-3.7-flash' });
-  assert.equal(profile.modelId, 'gemini-3.7-flash');
+  const profile = gemini.getCapabilityProfile({ projectId: 'p', location: 'global', model: 'gemini-3.8-flash' });
+  assert.equal(profile.modelId, 'gemini-3.8-flash');
   assert.equal(
-    gemini.supportsCapability({ projectId: 'p', location: 'global', model: 'gemini-3.7-flash' }, 'multimodal_audio'),
+    gemini.supportsCapability({ projectId: 'p', location: 'global', model: 'gemini-3.8-flash' }, 'multimodal_audio'),
     true,
   );
   assert.equal(
-    gemini.supportsCapability({ projectId: 'p', location: 'global', model: 'gemini-3.7-flash' }, 'batch_prediction'),
+    gemini.supportsCapability({ projectId: 'p', location: 'global', model: 'gemini-3.8-flash' }, 'batch_prediction'),
     false,
   );
 
@@ -247,7 +247,7 @@ test('gemini adapter.completeWithTools: a cachedSystemInstructionName references
   };
   try {
     await gemini.completeWithTools(
-      { projectId: 'p', accessToken: 't', model: 'gemini-3.7-flash', location: 'global' },
+      { projectId: 'p', accessToken: 't', model: 'gemini-3.8-flash', location: 'global' },
       contextFromFlatPrompts({
         systemPrompt: 'the big stable policy + catalogue prefix',
         userPrompt: 'Question: attendance?',
@@ -276,7 +276,7 @@ test('gemini adapter.completeWithTools: a stale cachedContent (HTTP 404) is retr
   };
   try {
     const res = await gemini.completeWithTools(
-      { projectId: 'p', accessToken: 't', model: 'gemini-3.7-flash', location: 'global' },
+      { projectId: 'p', accessToken: 't', model: 'gemini-3.8-flash', location: 'global' },
       contextFromFlatPrompts({
         systemPrompt: 'the big stable policy + catalogue prefix',
         userPrompt: 'Question: attendance?',

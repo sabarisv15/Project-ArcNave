@@ -41,11 +41,15 @@ const MAX_TOTAL_LATENCY_MS = 30000;
 // regional location like us-central1 404s for these models. Verified
 // live against the real API, not assumed from docs alone.
 const DEFAULT_LOCATION = 'global';
-// Google's current agentic-workhorse Flash model (launched Aug 2026) —
+// Google's current agentic-workhorse Flash model (launched Sep 2026) —
 // the default whenever a config doesn't name a specific model, same
 // "sane default, never a hard requirement" treatment MAX_OUTPUT_TOKENS
-// already gets below.
-const DEFAULT_MODEL = 'gemini-3.7-flash';
+// already gets below. No curated vertexCapabilityRegistry.js entry exists
+// yet for this model id — every capability check against it falls back to
+// unknownModelProfile (conservative "nothing asserted") until someone
+// live-verifies and adds a KNOWN_MODEL_PROFILES entry the way
+// gemini-3.7-flash's was.
+const DEFAULT_MODEL = 'gemini-3.8-flash';
 // Gemini 3.7 Flash's own hard ceiling (Vertex rejects anything higher with
 // a 400) — raised here from the previous 1024 because large consolidated
 // reports (e.g. a multi-hundred-row arrear list spanning several serial

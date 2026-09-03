@@ -269,7 +269,7 @@ test('ai-config API', async (t) => {
       // GEMINI_MODEL this test environment might already have set (e.g.
       // via backend/.env.local.sh) — this test proves the capability
       // endpoint's shape, not which model a real deployment happens to run.
-      globalConfig.gemini.model = 'gemini-3.7-flash';
+      globalConfig.gemini.model = 'gemini-3.8-flash';
       globalConfig.defaultAiProvider = 'gemini';
       try {
         const token = await login(collegeB, 'principaluser');

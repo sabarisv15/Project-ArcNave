@@ -132,6 +132,61 @@ const KNOWN_MODEL_PROFILES = {
       'thinking_budget is not exposed by this model/API surface; only thinking_level is real here — do not configure both for this model.',
     ],
   },
+  // gemini.js's new DEFAULT_MODEL (2026-09-03, ADR-030-line model swap).
+  // multimodal_text/image/pdf/audio/video are documentation-verified
+  // (Google DeepMind's official model card,
+  // deepmind.google/models/model-cards/gemini-3-8-flash/ — text/image/
+  // audio/video accepted input, 1M-token context). Every other capability
+  // below is carried over verbatim from gemini-3.7-flash's own
+  // live-verified table on explicit owner direction (2026-09-03): 3.8 is
+  // a same-family benchmark upgrade over 3.7, not a different model
+  // surface, so 3.7's per-field verification is treated as applying to
+  // 3.8 too rather than re-run. This is a deliberate, recorded exception
+  // to this file's normal "only probe/doc-cited data" rule — NOT an
+  // independent re-verification. If 3.8 turns out to differ from 3.7 on
+  // any of these carried-over fields, this entry is wrong until corrected
+  // with real 3.8-specific data.
+  'gemini-3.8-flash': {
+    preview: false,
+    verifiedAt: '2026-09-03',
+    capabilities: {
+      multimodal_text: true, // DeepMind model card
+      multimodal_image: true, // DeepMind model card
+      multimodal_pdf: true, // DeepMind model card lists document/PDF input; same family treatment as gemini-3.7-flash
+      multimodal_audio: true, // DeepMind model card
+      multimodal_video: true, // DeepMind model card
+      gcs_file_uri: false, // carried over from gemini-3.7-flash (owner direction 2026-09-03) — not built, applies to any model this adapter serves
+      thinking_level: true, // carried over from gemini-3.7-flash (owner direction 2026-09-03) — not independently re-probed against 3.8
+      thinking_budget: false, // carried over from gemini-3.7-flash (owner direction 2026-09-03)
+      thought_summaries: true, // carried over from gemini-3.7-flash (owner direction 2026-09-03)
+      spatial_grounding: true, // carried over from gemini-3.7-flash (owner direction 2026-09-03)
+      video_timestamps: false, // carried over from gemini-3.7-flash (owner direction 2026-09-03) — not built (Phase 8C), model-independent
+      structured_output: true, // carried over from gemini-3.7-flash (owner direction 2026-09-03)
+      system_instruction: true, // carried over from gemini-3.7-flash (owner direction 2026-09-03)
+      stop_sequences: false, // carried over from gemini-3.7-flash (owner direction 2026-09-03) — not sent by this adapter today, model-independent
+      safety_settings: false, // carried over from gemini-3.7-flash (owner direction 2026-09-03) — not sent by this adapter today, model-independent
+      logprobs: true, // carried over from gemini-3.7-flash (owner direction 2026-09-03)
+      count_tokens: true, // carried over from gemini-3.7-flash (owner direction 2026-09-03)
+      context_caching_implicit: true, // carried over from gemini-3.7-flash (owner direction 2026-09-03) — not independently re-observed against 3.8 responses
+      context_caching_explicit: false, // carried over from gemini-3.7-flash (owner direction 2026-09-03) — not built (Phase 8E), model-independent
+      function_calling_single: true, // carried over from gemini-3.7-flash (owner direction 2026-09-03)
+      function_calling_parallel: false, // carried over from gemini-3.7-flash (owner direction 2026-09-03) — ARCNAVE product policy (RS-AIG-018/ADR-030 P2(c)), not a vendor ceiling claim
+      code_execution: false, // carried over from gemini-3.7-flash (owner direction 2026-09-03) — not built (Phase 8G), model-independent
+      batch_prediction: false, // carried over from gemini-3.7-flash (owner direction 2026-09-03) — gcs_file_uri still false, same reasoning as 3.7's entry
+      supervised_fine_tuning: false, // carried over from gemini-3.7-flash (owner direction 2026-09-03) — not built (Phase 8I), model-independent
+      distillation: false, // carried over from gemini-3.7-flash (owner direction 2026-09-03) — not built (Phase 8I), model-independent
+    },
+    inputLimits: {
+      maxContextTokens: 1_048_576, // DeepMind model card
+      maxOutputTokens: 65536, // carried over from gemini-3.7-flash's live-verified ceiling (owner direction 2026-09-03) — not independently re-probed against 3.8's real 400-error boundary
+    },
+    supportedMimeTypes: ['audio/wav'], // carried over from gemini-3.7-flash (owner direction 2026-09-03)
+    notes: [
+      'Carried over verbatim from gemini-3.7-flash on explicit owner direction (2026-09-03), not independently re-verified per field — see this entry\'s header comment. multimodal_text/image/pdf/audio/video are the one exception, doc-cited against 3.8 directly.',
+      'multimodal_video is attempted (matches gemini.js supportsAudioVideo) but not independently live-verified per codec — see CURRENT-STATE.md 2026-08-30 banner (inherited caveat from 3.7).',
+      'thinking_budget is not exposed by this model/API surface; only thinking_level is real here — do not configure both for this model (inherited caveat from 3.7).',
+    ],
+  },
 };
 
 const DEFAULT_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes — long enough that a request/turn never rebuilds this object more than once, short enough that a registry-table edit ships within one deploy cycle without depending on a process restart

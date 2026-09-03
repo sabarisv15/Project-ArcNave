@@ -10,7 +10,7 @@ const config = require('../src/config');
 const aiExplicitCache = require('../src/services/aiExplicitCache');
 
 const BIG_PREFIX = 'ARCNAVE curriculum policy and tool routing catalogue. '.repeat(360); // > MIN_CACHEABLE_CHARS (~4k tokens)
-const CFG = { projectId: 'p', model: 'gemini-3.7-flash', location: 'global', accessToken: 't' };
+const CFG = { projectId: 'p', model: 'gemini-3.8-flash', location: 'global', accessToken: 't' };
 
 function withFetch(impl, fn) {
   const original = global.fetch;
@@ -50,7 +50,7 @@ test('resolveCachedSystemInstruction: with the flag on, creates a cachedContents
         assert.ok(url.endsWith('/cachedContents'), 'posts to the cachedContents collection');
         assert.equal(options.method, 'POST');
         const body = JSON.parse(options.body);
-        assert.ok(body.model.includes('gemini-3.7-flash'));
+        assert.ok(body.model.includes('gemini-3.8-flash'));
         assert.equal(body.systemInstruction.parts[0].text, BIG_PREFIX);
         assert.match(body.ttl, /^\d+s$/);
         createCalls += 1;

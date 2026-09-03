@@ -19,10 +19,10 @@ test('getCapabilityProfile: a curated model returns real, cited capability data'
   const profile = registry.getCapabilityProfile({
     projectId: 'proj-1',
     location: 'global',
-    modelId: 'gemini-3.7-flash',
+    modelId: 'gemini-3.8-flash',
   });
   assert.equal(profile.provider, 'vertex_ai');
-  assert.equal(profile.modelId, 'gemini-3.7-flash');
+  assert.equal(profile.modelId, 'gemini-3.8-flash');
   assert.equal(profile.capabilities.multimodal_audio, true);
   assert.equal(profile.capabilities.multimodal_text, true);
   assert.equal(profile.capabilities.batch_prediction, false);
@@ -58,12 +58,12 @@ test('getCapabilityProfile: identity is keyed by project/location/model/version,
   const a = registry.getCapabilityProfile({
     projectId: 'proj-a',
     location: 'global',
-    modelId: 'gemini-3.7-flash',
+    modelId: 'gemini-3.8-flash',
   });
   const b = registry.getCapabilityProfile({
     projectId: 'proj-b',
     location: 'us-central1',
-    modelId: 'gemini-3.7-flash',
+    modelId: 'gemini-3.8-flash',
     modelVersion: '001',
   });
   assert.equal(a.projectId, 'proj-a');
@@ -83,15 +83,15 @@ test('getCapabilityProfile: requires modelId', () => {
 });
 
 test('getCapabilityProfile: caches within the TTL window, keyed per identity', () => {
-  const first = registry.getCapabilityProfile({ projectId: 'proj-c', location: 'global', modelId: 'gemini-3.7-flash' });
+  const first = registry.getCapabilityProfile({ projectId: 'proj-c', location: 'global', modelId: 'gemini-3.8-flash' });
   const second = registry.getCapabilityProfile({
     projectId: 'proj-c',
     location: 'global',
-    modelId: 'gemini-3.7-flash',
+    modelId: 'gemini-3.8-flash',
   });
   assert.equal(first, second, 'must return the exact same cached object, not rebuild it');
 
-  const third = registry.getCapabilityProfile({ projectId: 'proj-d', location: 'global', modelId: 'gemini-3.7-flash' });
+  const third = registry.getCapabilityProfile({ projectId: 'proj-d', location: 'global', modelId: 'gemini-3.8-flash' });
   assert.notEqual(first, third, 'a different projectId must not share the same cache entry');
 });
 
@@ -99,7 +99,7 @@ test('getCapabilityProfile: a near-zero ttlMs re-fetches rather than serving a s
   const first = registry.getCapabilityProfile({
     projectId: 'proj-e',
     location: 'global',
-    modelId: 'gemini-3.7-flash',
+    modelId: 'gemini-3.8-flash',
     ttlMs: 1,
   });
   await new Promise((resolve) => {
@@ -108,7 +108,7 @@ test('getCapabilityProfile: a near-zero ttlMs re-fetches rather than serving a s
   const second = registry.getCapabilityProfile({
     projectId: 'proj-e',
     location: 'global',
-    modelId: 'gemini-3.7-flash',
+    modelId: 'gemini-3.8-flash',
     ttlMs: 1,
   });
   assert.notEqual(first, second);
@@ -119,7 +119,7 @@ test('hasCapability: rejects an unknown capability name rather than silently ret
   assert.throws(
     () =>
       registry.hasCapability(
-        { projectId: 'p', location: 'global', model: 'gemini-3.7-flash' },
+        { projectId: 'p', location: 'global', model: 'gemini-3.8-flash' },
         'not_a_real_capability',
       ),
     TypeError,
@@ -128,7 +128,7 @@ test('hasCapability: rejects an unknown capability name rather than silently ret
 
 test('hasCapability: reads cfg.model (adapter-shaped), not cfg.modelId', () => {
   assert.equal(
-    registry.hasCapability({ projectId: 'p', location: 'global', model: 'gemini-3.7-flash' }, 'multimodal_audio'),
+    registry.hasCapability({ projectId: 'p', location: 'global', model: 'gemini-3.8-flash' }, 'multimodal_audio'),
     true,
   );
 });
@@ -137,7 +137,7 @@ test('toSafeSummary: never includes projectId, and carries only product-relevant
   const profile = registry.getCapabilityProfile({
     projectId: 'super-secret-proj',
     location: 'global',
-    modelId: 'gemini-3.7-flash',
+    modelId: 'gemini-3.8-flash',
   });
   const summary = registry.toSafeSummary(profile);
   assert.equal('projectId' in summary, false);

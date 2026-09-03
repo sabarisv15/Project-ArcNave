@@ -101,7 +101,7 @@ test('getAiConfig: DEFAULT_AI_PROVIDER=gemini routes a no-row college to the glo
   const originalGeminiModel = globalConfig.gemini.model;
   globalConfig.defaultAiProvider = 'gemini';
   globalConfig.gemini.projectId = 'gemini-real-project';
-  globalConfig.gemini.model = 'gemini-3.7-flash';
+  globalConfig.gemini.model = 'gemini-3.8-flash';
   t.after(() => {
     globalConfig.defaultAiProvider = originalDefaultAiProvider;
     globalConfig.gemini.projectId = originalGeminiProjectId;
@@ -113,7 +113,7 @@ test('getAiConfig: DEFAULT_AI_PROVIDER=gemini routes a no-row college to the glo
   assert.equal(result.provider, 'gemini');
   assert.equal(result.adapter.name, 'gemini');
   assert.equal(result.config.projectId, 'gemini-real-project');
-  assert.equal(result.config.model, 'gemini-3.7-flash');
+  assert.equal(result.config.model, 'gemini-3.8-flash');
 });
 
 test('getAiConfig: an unrecognized DEFAULT_AI_PROVIDER (typo, or a provider with no global block) falls back to gemini rather than throwing', async (t) => {

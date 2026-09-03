@@ -4,7 +4,7 @@ _Last updated: 2026-09-03._
 
 ---
 
-# ⛔ NEWEST BANNER — P4 in progress: O3, 5.5/5.6, 5.12, and 5.10 done and pushed; 5.4/5.11/5.3/3.4 remain, 2026-09-03.
+# ⛔ NEWEST BANNER — P4 in progress: O3, 5.5/5.6, 5.12, 5.10, and 5.11 done and pushed; 5.4/5.3/3.4 remain, 2026-09-03.
 
 Same session as the O3 banner below, continued. Owner asked to work
 through the rest of P4 after O3. Triaged: O2 and O8 are genuinely
@@ -20,53 +20,19 @@ uncommitted):
 - **5.5/5.6 (bundle-size limit in CI)** — commit `f6bc6e8`, [ADL-078](../30-decisions/ledger.md#adl-078). `size-limit` budgeted against real measured build output (entry/vendor-react/vendor-radix/vendor-query/CSS, each measured-gzip + ~20% headroom); one naming-only `vite.config.js` addition (`entryFileNames`) to resolve a real glob collision found during measurement, explicitly NOT a chunking change (owner confirmed this distinction before it was made).
 - **5.12 (isolated error boundaries)** — commit `bde756b`, [ADL-079](../30-decisions/ledger.md#adl-079). Hand-rolled `ErrorBoundary` wraps `AppShell`'s `<Outlet/>` (page-level, keyed on route) and `Markdown`'s `<ReactMarkdown/>` (keyed on source). Plan originally targeted `MermaidDiagram` for the widget-level boundary; reading it in full showed it already self-heals its own render failures (dead-code boundary), so this retargeted to the actually-fragile `remark-math`/`rehype-katex` parse path instead — a real correction found during required inspection, not assumed going in.
 - **5.10 (accessibility audit)** — commit `55772c3`, [ADL-080](../30-decisions/ledger.md#adl-080). Real count at start: 57 `jsx-a11y` warnings. Found the root cause before touching any component: `eslint.config.js`'s blanket rule-enablement transform read only rule NAMES from jsx-a11y's recommended config, discarding severity/options — silently re-enabling the deprecated `label-has-for` (upstream default: off) and stripping `control-has-associated-label`'s own `ignoreElements: ['input','textarea',...]` list. Fixing that transform alone dropped 57→9 with zero markup changes; the remaining 9 got individual per-site fixes (never a fake role/handler where a real alternative existed). Final: 0 `jsx-a11y` warnings.
-
-**Session paused here — owner will start 5.11 fresh in a new session.**
-5.11's plan is already researched and owner-approved (with two
-corrections applied: preserve the source comments' real token
-distinctions rather than flattening them when compressing for
-scanability; document each of the 3 real `components/ui/` primitives
-exactly as they are today — real props/behavior/variants — not what a
-conventional design-system catalogue would normally contain), but
-**zero files were touched for 5.11** — no code, no doc, nothing to
-commit from that research. The plan itself is not saved anywhere
-outside this session's own ephemeral plan-mode file, so a fresh
-session needs to redo the research pass (short — see the exact
-findings below) before writing `bka/50-frontend/DESIGN-SYSTEM.md`.
-
-**5.11 research findings, so the next session doesn't have to
-re-derive them:** `frontend/src/index.css`'s `--c-*` custom properties
-and `frontend/tailwind.config.js`'s color/font wiring already have a
-rich, deliberate token system with extensive in-code comments — the
-doc should distill these into a scannable table, compressed but not
-flattened (e.g. `tint`/`mist`/`active` are three similar-looking but
-semantically distinct surfaces with different jobs — preserve that,
-don't collapse it). The "component catalogue" half needs an honest
-scope: `frontend/src/components/ui/` has exactly 3 files
-(`CopyButton.jsx`, `Drawer.jsx`, `IconButton.jsx`) — no shared
-Button/Badge primitive exists (4 separate feature-specific badge
-components instead: `SeatStateBadge.jsx`/`StaffNavCountBadge.jsx`/
-`StudentNavCountBadge.jsx`/`StudentOriginBadge.jsx`); `cva()` from the
-already-installed `class-variance-authority` is used nowhere
-(`grep -rn "cva("` returns zero matches). Document the 3 real
-primitives as they actually are, not as a generic catalogue would
-assume; document the `FIELD`/`MENU_ITEM`/`TOOL_BTN`-shaped local style
-constants duplicated across ≥5 files as a named "Known gap," not
-fixed in this slice (that's a separate multi-file refactor). Also
-found and still needs fixing: `CLAUDE.md` cites
-`frontend/src/components/ui/badge.test.jsx` as an existing pattern
-reference — it does not exist, stale reference, fix while in the area.
+- **5.11 (design-system doc)** — [ADL-081](../30-decisions/ledger.md#adl-081). New `bka/50-frontend/DESIGN-SYSTEM.md`: distilled the real `frontend/src/index.css`/`tailwind.config.js` token system (ground plane, tinted fields incl. `tint`/`mist`/`active`'s distinct jobs kept separate not flattened, text ramp, accent, warm, lines, status families, typography, shadows) into a scannable reference, and documented the 3 real `components/ui/` primitives (`CopyButton.jsx`, `Drawer.jsx`, `IconButton.jsx`) exactly as they are — no invented `Button`/`Badge` primitive, since none exists (4 separate feature-specific badge components stand in for it; `cva()` confirmed unused via `grep -rn "cva(" frontend/src` — zero matches). Named the `FIELD`/`MENU_ITEM`/`TOOL_BTN` duplication across 14 files as a documented "Known gap," not fixed (separate multi-file refactor). Also fixed the stale `CLAUDE.md` citation of a nonexistent `components/ui/badge.test.jsx` → repointed to the real `components/AppShell.test.jsx`. Documentation-only, so no `npm test`/build gate applies — every claim (file counts, grep results) was re-verified against current code in this session rather than trusted from the prior session's unwritten plan.
 
 **After 5.11, remaining P4 items:** 5.4 (live updates, notifications
 currently polled), 5.3 (newer type-safe router — flagged as high blast
 radius, touches every route), 3.4 (merge the document paths into one
 clear route) — one slice at a time, same plan→inspect→verify→commit→push
-discipline as the four done so far. None of these are blocked on O3's
+discipline as the five done so far. None of these are blocked on O3's
 infra existing.
 
-**Committed and pushed:** yes, all four completed slices (`ae2b9fe`,
-`f6bc6e8`, `bde756b`, `55772c3`) are on `origin/p0-modernization-foundation`.
-This checkpoint commit itself has nothing else pending.
+**Committed and pushed:** the four earlier slices (`ae2b9fe`, `f6bc6e8`,
+`bde756b`, `55772c3`) are on `origin/p0-modernization-foundation`. 5.11
+(this checkpoint) is committed in the same pass as this file — see git
+log for the exact commit.
 
 ---
 

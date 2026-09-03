@@ -6894,3 +6894,65 @@ run build && npm run size` — all 5 ADL-078 budgets still pass (entry
 206.59kB, unchanged from the 5.12 checkpoint — markup-only changes, no
 bundle growth). `npm run format:check` clean on every file this slice
 touched.
+
+
+---
+
+## ADL-081
+
+### 5.11 (modernization P4) -- design-system doc: color/type/shadow token reference + honest 3-primitive component catalogue
+
+**What prompted this.** 5.10 (ADL-080) landed; next P4 item. Owner had
+already approved this slice's plan in a prior session (with two
+corrections: preserve `tint`/`mist`/`active`'s real distinct-surface
+semantics when compressing the token comments for scanability, rather
+than flattening them into one "light blue" entry; document the 3 real
+`components/ui/` primitives exactly as they are today, not as a
+conventional design-system catalogue would assume). That plan was
+never written to disk, so this session re-verified everything against
+current code rather than trusting the remembered summary.
+
+**Re-verified against code, not assumed from the prior session's
+recall.** Read `frontend/src/index.css`'s `:root` block and
+`frontend/tailwind.config.js` in full; read all 3 files in
+`frontend/src/components/ui/` (`CopyButton.jsx`, `Drawer.jsx`,
+`IconButton.jsx`) in full. Confirmed by direct grep, not memory: `grep
+-rn "cva(" frontend/src` returns zero matches (`class-variance-
+authority` is an installed dependency, used nowhere); no shared
+`Button`/`Badge` primitive exists -- four separate feature-specific
+badge components stand in for it (`SeatStateBadge.jsx`,
+`StaffNavCountBadge.jsx`, `StudentNavCountBadge.jsx`,
+`StudentOriginBadge.jsx`); a `FIELD`/`MENU_ITEM`/`TOOL_BTN`-shaped
+local style-constant pattern is duplicated (not shared) across 14
+files, named as a "Known gap," not fixed here -- that's a separate
+multi-file refactor.
+
+**Also fixed while in the area.** `CLAUDE.md` cited
+`frontend/src/components/ui/badge.test.jsx` as an existing
+behavior-testing pattern reference -- that file does not exist (no
+`Badge` primitive exists to test). Repointed the citation to
+`frontend/src/components/AppShell.test.jsx`, which is a real file and
+follows the same behavior-not-markup pattern.
+
+**Output.** New `bka/50-frontend/DESIGN-SYSTEM.md` -- current source
+of truth for the token system (ground plane, tinted fields, text ramp,
+accent, warm, lines, status families, typography, shadows) and the
+3-primitive component catalogue, distilled from the code's own
+in-source rationale comments rather than replacing them. Does not
+supersede `bka/50-frontend/design-tokens.md`, which was already marked
+superseded on 2026-08-07 and kept only as historical record.
+
+**Out of scope, as planned:** the `FIELD`/`MENU_ITEM`/`TOOL_BTN`
+duplication (documented as a known gap, not fixed); no `cva()`
+migration (nothing currently uses it, so there is nothing to migrate);
+no new `Badge` primitive (the 4 existing feature-specific components
+are documented as-is, per the owner's "document reality, not a
+conventional catalogue" correction).
+
+**Verification.** Documentation-only change (`bka/50-frontend/
+DESIGN-SYSTEM.md` new, `CLAUDE.md` one-line citation fix) -- no
+frontend source touched, so `npm test`/`npm run build` are not
+applicable to this slice; every specific claim in the new doc (file
+counts, grep results, file lists) was verified directly against
+current code before being written, not carried over from the prior
+session's unwritten plan.

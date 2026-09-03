@@ -42,6 +42,18 @@ async function errorHandler(err, req, res, next) {
   if (res.headersSent) {
     return;
   }
+
+  // express.json()'s strict-mode body parser (body-parser under the
+  // hood) throws a SyntaxError with type 'entity.parse.failed' for
+  // malformed or non-object/array top-level JSON bodies. That's a
+  // client error, not a server fault — surface it as 400 in the same
+  // { detail } shape routes use for their own validation failures,
+  // instead of falling through to the generic 500 below.
+  if (err.type === 'entity.parse.failed' || err instanceof SyntaxError) {
+    res.status(400).json({ detail: 'Malformed JSON in request body' });
+    return;
+  }
+
   res.status(500).json({ detail: 'Internal server error' });
 }
 

@@ -6619,3 +6619,82 @@ bootstrap/deploy verification is impossible until the runbook's
 `gcloud` steps are actually run — full Docker suite/lint confirmed
 unaffected since none of these changes touch `backend/Dockerfile` or
 any file the existing suite covers.
+
+---
+
+## ADL-078
+
+### 5.5/5.6 (modernization P4) — bundle-size limit in CI: evidence-driven budgets, an entry-chunk naming fix, no chunking-structure changes
+
+**What prompted this.** O3 (ADL-077) landed; owner asked to work
+through the rest of P4. Triaged: O2 (gradual rollout) and O8
+(auto-rollback) are genuinely blocked on infra that doesn't exist yet
+(O2 explicitly gated on "multiple server processes actually running,"
+O8 needs real staging traffic to roll back from); "internal-use loop"
+and "score live traffic" are operational activities, not code. Started
+with 5.5/5.6 — the plan's own P4 bullet list scopes it specifically as
+"bundle-size limit in CI" (`ARCNAVE-modernization-english.md:638`),
+narrower than 5.5's other framing at line 640 ("build-tool and styling
+upgrades," a separate future Vite/Tailwind major-version slice) and
+5.3's router migration (also deferred — high blast radius, touches
+every route). 5.6's own text ("fine for an internal dashboard — just
+split the bundle") already matches what `vite.config.js` does today
+(`build.rollupOptions.output.manualChunks`); this closes it by
+guarding that outcome against silent regression, not by writing new
+splitting logic.
+
+**Evidence-driven budgets, not guessed ones — owner's own correction
+mid-plan.** The first plan draft proposed setting `size-limit` budgets
+before ever running a real build. Owner required running `npm run
+build` first and configuring against the actual measured artifacts,
+with headroom stated and derived from real numbers — and explicitly
+required NOT touching `vite.config.js`'s chunking to make the check
+pass (an implementation agent "solving" a budget failure by
+restructuring `manualChunks` would defeat the guardrail's entire
+point).
+
+**Real problem found during the measurement step.** The actual eager
+entry chunk builds to `index-[hash].js` by Vite's default naming — but
+an unrelated *lazy* chunk (some component's own `index.jsx`) also
+builds to `index-[hash].js`. A `size-limit` glob for "the entry
+bundle" would ambiguously match both, and new same-named lazy chunks
+will keep appearing over time as more `index.jsx` files get added —
+not a one-off fluke. Flagged to the owner rather than silently
+resolved either way (guess-glob past the collision, or skip the
+entry-chunk budget entirely) — owner chose the fix: one line in
+`vite.config.js`, `build.rollupOptions.output.entryFileNames:
+'assets/app-entry-[hash].js'`. This renames ONLY the entry's output
+file; confirmed byte-identical size before/after the rename
+(701.94kB/206.74kB gzip both times) — proof it's a naming change, not
+a chunking change, and doesn't cross the owner's own stated line.
+
+**What shipped, real code, Docker/local-verified.**
+- `frontend/vite.config.js` — the one-line `entryFileNames` addition
+  above, with a comment distinguishing it from `manualChunks`
+  (untouched).
+- `frontend/package.json` — `size-limit`/`@size-limit/file`
+  devDependencies (installed with `--legacy-peer-deps`, matching the
+  existing react19/next-themes peer-conflict workaround
+  `.github/workflows/ci.yml`'s frontend job already uses), a `"size":
+  "size-limit"` script, and a `size-limit` config array: 5 budgets
+  (app-entry chunk, vendor-radix, vendor-query, vendor-react, main
+  CSS), each the real measured gzip size from an actual `npm run
+  build` plus ~20% headroom (entry 206.74kB→248KB, vendor-radix
+  44.27kB→54KB, vendor-query 25.74kB→31KB, vendor-react 12.45kB→15KB,
+  CSS 23.14kB→28KB) — documented in `ci.yml`'s new step comment since
+  `package.json` (JSON) can't hold comments itself.
+- `.github/workflows/ci.yml` — new `Bundle size limit` step in the
+  `frontend` job, after the existing `Build` step, running `npm run
+  size` against the build the previous step just produced.
+
+**Verification.** `npm run build && npx size-limit` — all 5 budgets
+pass against real output. Sanity-checked the gate actually fails:
+temporarily set the entry budget to `1 KB`, confirmed a real failure
+(`exit code 1`, "exceeded by 205.32 kB"), then restored the real
+248 KB value. Full frontend suite unaffected: `npm run lint` (0
+errors, 88 pre-existing warnings, none in changed files), `npm run
+typecheck` (clean), `npm test` (45/45 files, 552/552 tests passing).
+`npm run format:check`'s 68 pre-existing flagged files are untouched
+by this change (confirmed by filename, none are files this slice
+edited) — a pre-existing baseline issue, not a regression introduced
+here.

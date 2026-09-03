@@ -21,6 +21,15 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
+        // P4 5.5/5.6 (bundle-size CI limit) — naming only, not chunking:
+        // without this, the real entry chunk's default "index-[hash].js"
+        // name collides with unrelated lazily-loaded chunks (any
+        // component's own index.jsx also builds to "index-[hash].js"),
+        // making a size-limit glob for "the entry bundle" ambiguous. This
+        // renames ONLY the entry's output file; it does not change which
+        // modules go in which chunk (that's manualChunks, below,
+        // untouched).
+        entryFileNames: 'assets/app-entry-[hash].js',
         manualChunks: {
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
           'vendor-radix': [

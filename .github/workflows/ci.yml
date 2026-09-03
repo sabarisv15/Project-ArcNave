@@ -113,6 +113,25 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+      # ARCNAVE modernization P4 (5.5/5.6: "bundle-size limit in CI").
+      # frontend/package.json's "size-limit" array budgets 5 assets: the
+      # eager entry chunk + the 3 manualChunks vendor bundles (all from
+      # vite.config.js's build.rollupOptions.output — the entry chunk was
+      # given a stable "app-entry-[hash].js" name there specifically so
+      # this check's glob can't ambiguously match an unrelated lazy
+      # chunk that also happens to start with "index-") + the main CSS
+      # file. Every limit is the real gzipped size measured from an
+      # actual `npm run build` (not a guessed number) plus ~20%
+      # headroom: entry 206.74kB->248KB, vendor-radix 44.27kB->54KB,
+      # vendor-query 25.74kB->31KB, vendor-react 12.45kB->15KB, CSS
+      # 23.14kB->28KB. This guards the *existing* code-split shape
+      # (5.6's own recorded decision: "fine for an internal dashboard —
+      # just split the bundle") against silent regression — it is not a
+      # bundle-size optimization pass, and a real breach should prompt
+      # revisiting the change that grew it, not loosening this budget
+      # reflexively.
+      - name: Bundle size limit
+        run: npm run size
 
   # ARCNAVE modernization P1 (PDF 1.17: "AI test set — run offline and
   # in CI"). The offline half is already satisfied by the `backend`

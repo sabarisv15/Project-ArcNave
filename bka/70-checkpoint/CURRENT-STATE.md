@@ -4,6 +4,30 @@ _Last updated: 2026-09-03._
 
 ---
 
+# ⛔ NEWEST BANNER — P4 in progress: O3, 5.5/5.6, and 5.12 done and pushed; 5.4/5.10/5.11/5.3/3.4 remain, 2026-09-03.
+
+Same session as the O3 banner below, continued. Owner asked to work
+through the rest of P4 after O3. Triaged: O2 and O8 are genuinely
+blocked (O2 needs multiple server processes actually running; O8 needs
+real staging traffic to roll back from — neither exists since O3's
+infra was never actually provisioned, by owner's own choice).
+"Internal-use loop"/"score live traffic" are operational activities,
+not code. Worked through the rest one slice at a time, each planned,
+Docker/local-verified, and pushed separately (session-hygiene rule:
+checkpoint at module boundaries, don't accumulate a whole phase
+uncommitted):
+
+- **5.5/5.6 (bundle-size limit in CI)** — commit `f6bc6e8`, [ADL-078](../30-decisions/ledger.md#adl-078). `size-limit` budgeted against real measured build output (entry/vendor-react/vendor-radix/vendor-query/CSS, each measured-gzip + ~20% headroom); one naming-only `vite.config.js` addition (`entryFileNames`) to resolve a real glob collision found during measurement, explicitly NOT a chunking change (owner confirmed this distinction before it was made).
+- **5.12 (isolated error boundaries)** — commit `bde756b`, [ADL-079](../30-decisions/ledger.md#adl-079). Hand-rolled `ErrorBoundary` wraps `AppShell`'s `<Outlet/>` (page-level, keyed on route) and `Markdown`'s `<ReactMarkdown/>` (keyed on source). Plan originally targeted `MermaidDiagram` for the widget-level boundary; reading it in full showed it already self-heals its own render failures (dead-code boundary), so this retargeted to the actually-fragile `remark-math`/`rehype-katex` parse path instead — a real correction found during required inspection, not assumed going in.
+
+**Exact next action:** continue through the remaining independently-buildable P4 items — 5.4 (live updates, notifications currently polled), 5.10 (full accessibility audit), 5.11 (design-system doc + component catalogue), 5.3 (newer type-safe router — flagged as high blast radius, touches every route), 3.4 (merge the document paths into one clear route) — one slice at a time, same plan→inspect→verify→commit→push discipline as the three done so far. None of these are blocked on O3's infra existing.
+
+**Committed and pushed:** yes, all three slices (`ae2b9fe`, `f6bc6e8`, `bde756b`) are on `origin/p0-modernization-foundation`.
+
+---
+
+# ⛔ Previous banner — O3 (staging environment + smoke tests): code/config landed, real GCP infra deliberately NOT provisioned, 2026-09-03.
+
 # ⛔ NEWEST BANNER — P4 O3 (staging environment + smoke tests): code/config landed, real GCP infra deliberately NOT provisioned, 2026-09-03.
 
 **O3 (staging environment + smoke tests) is code-complete, not infra-complete.** First P4 item, per the previous banner's own "move to P4" pointer. User chose GCP Cloud Run as staging host and explicitly chose **code/config only this session** — no real Cloud SQL/Cloud Run/Secret Manager resources exist yet. Full decision writeup: [ADL-077](../30-decisions/ledger.md#adl-077).

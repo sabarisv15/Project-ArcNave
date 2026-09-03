@@ -14,7 +14,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "size": "size-limit"
+    "size": "size-limit",
+    "audit:gate": "npm audit --json | node scripts/audit-policy-gate.cjs audit-allowlist.json"
   },
   "size-limit": [
     {

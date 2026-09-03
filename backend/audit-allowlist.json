@@ -1,0 +1,26 @@
+{
+  "_comment": "ARCNAVE modernization P5 (O5) dependency policy allowlist — read by scripts/audit-policy-gate.js. Only HIGH/CRITICAL advisories need an entry here; MODERATE/LOW stay informational (npm audit still reports them, see dependency-scan-baseline.md). Every entry needs a real 'reason' and 'recorded' date — this is an accepted-risk log, not a blanket suppression.",
+  "accepted": [
+    {
+      "url": "https://github.com/advisories/GHSA-5j98-mcp5-4vw2",
+      "package": "glob",
+      "severity": "high",
+      "reason": "Command injection in glob's own CLI (-c/--cmd), transitive dev-only dependency of node-pg-migrate (migration tooling). Never invoked as a CLI, never in the request path. Fix needs a node-pg-migrate major bump not yet scheduled.",
+      "recorded": "2026-09-03"
+    },
+    {
+      "url": "https://github.com/advisories/GHSA-w3rx-r6r6-pgpr",
+      "package": "image-size",
+      "severity": "high",
+      "reason": "ICNS parser infinite-loop DoS, transitive via pptxgenjs (PPT export). This codebase never embeds images through pptxgenjs's image path, so the vulnerable parser is never exercised. Fix needs pptxgenjs@1.1.5, a major downgrade from the pinned ^4.0.1 with its own breaking-API regression risk — tracked, not yet scheduled.",
+      "recorded": "2026-09-03"
+    },
+    {
+      "url": "https://github.com/advisories/GHSA-5p2g-fcmc-qvqq",
+      "package": "image-size",
+      "severity": "high",
+      "reason": "Same package/exposure as GHSA-w3rx-r6r6-pgpr above (JXL/HEIF parsers instead of ICNS) — same reasoning, same fix, same unscheduled-major-downgrade blocker.",
+      "recorded": "2026-09-03"
+    }
+  ]
+}

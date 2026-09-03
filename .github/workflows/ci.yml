@@ -27,6 +27,16 @@ env:
   PLATFORM_JWT_SECRET_KEY: ci-platform-jwt-secret-not-a-real-credential
   DOCUMENT_STORAGE_ENCRYPTION_KEY: ci-document-storage-key-not-a-real-credential
 
+# ARCNAVE modernization P5 (O5: "no software bill of materials/
+# signing... policy checks"). id-token: write is needed workflow-wide
+# for cosign's keyless (Sigstore/OIDC) SBOM signing — no signing key to
+# manage, no paid infra (the P0-P5 mandate's own "new investment" stop
+# condition doesn't apply here). contents: read matches the existing
+# implicit default explicitly.
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   backend:
     runs-on: ubuntu-latest
@@ -68,6 +78,40 @@ jobs:
       # yet.
       - name: Dependency audit (informational — see dependency-scan-baseline.md)
         run: docker compose exec -T app npm audit || true
+      # ARCNAVE modernization P5 (O5). Real regression gate on top of
+      # the informational audit above: fails only on a HIGH/CRITICAL
+      # advisory not already triaged in audit-allowlist.json (see that
+      # file + scripts/audit-policy-gate.js for the reasoning) — never
+      # forces the pre-existing, already-accepted vulnerabilities in
+      # dependency-scan-baseline.md to be fixed blind.
+      - name: Dependency policy gate (blocking — see audit-allowlist.json)
+        run: docker compose exec -T app npm run audit:gate
+      # SBOM (Software Bill of Materials, CycloneDX format) — the
+      # backend bind-mounts ./backend:/app into the container
+      # (docker-compose.yml), so sbom.json written at the container's
+      # /app/sbom.json lands directly on the runner at backend/sbom.json,
+      # no docker cp needed.
+      - name: Generate SBOM (CycloneDX)
+        run: docker compose exec -T app npm run sbom
+      - uses: sigstore/cosign-installer@v3
+      # Keyless signing (Sigstore, GitHub Actions OIDC — see this
+      # workflow's own `permissions: id-token: write`) — no signing key
+      # to generate, store, or rotate, no paid infra. Verifiable later
+      # with `cosign verify-blob --certificate-identity-regexp ...
+      # --certificate-oidc-issuer https://token.actions.githubusercontent.com`.
+      - name: Sign SBOM (keyless, Sigstore)
+        run: |
+          cosign sign-blob --yes \
+            --output-signature backend/sbom.json.sig \
+            --output-certificate backend/sbom.json.crt \
+            backend/sbom.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-sbom
+          path: |
+            backend/sbom.json
+            backend/sbom.json.sig
+            backend/sbom.json.crt
       - name: Migrate up
         run: docker compose exec -T app npm run migrate
       # Reversibility (CLAUDE.md rule 6: "every migration must be
@@ -109,6 +153,11 @@ jobs:
         run: npm run typecheck
       - name: Dependency audit (informational — see dependency-scan-baseline.md)
         run: npm audit || true
+      # ARCNAVE modernization P5 (O5) — same mechanism as the matching
+      # backend step. See backend/scripts/audit-policy-gate.js's header
+      # comment for the reasoning; this is frontend/scripts/audit-policy-gate.cjs.
+      - name: Dependency policy gate (blocking — see audit-allowlist.json)
+        run: npm run audit:gate
       - name: Test
         run: npm test
       - name: Build
@@ -132,6 +181,37 @@ jobs:
       # reflexively.
       - name: Bundle size limit
         run: npm run size
+      # ARCNAVE modernization P5 (O5). Uses syft (anchore/sbom-action)
+      # instead of the backend's local cyclonedx-npm script: that npm-ls-
+      # based tool crashes against this repo's own tracked react19/
+      # @radix-ui peer-dependency conflict (the same one --legacy-peer-
+      # deps above already works around) — confirmed live, not assumed —
+      # even with its documented --ignore-npm-errors escape hatch. syft
+      # scans the filesystem directly, no `npm ls` involved, so it
+      # sidesteps that crash entirely. Free, no paid infra.
+      - name: Generate SBOM (CycloneDX, syft)
+        uses: anchore/sbom-action@v0
+        with:
+          path: frontend
+          format: cyclonedx-json
+          output-file: frontend/sbom.json
+          upload-artifact: false
+      - uses: sigstore/cosign-installer@v3
+      # Keyless signing (Sigstore, GitHub Actions OIDC) — see the
+      # matching backend step's comment for the reasoning.
+      - name: Sign SBOM (keyless, Sigstore)
+        run: |
+          cosign sign-blob --yes \
+            --output-signature sbom.json.sig \
+            --output-certificate sbom.json.crt \
+            sbom.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-sbom
+          path: |
+            frontend/sbom.json
+            frontend/sbom.json.sig
+            frontend/sbom.json.crt
 
   # ARCNAVE modernization P1 (PDF 1.17: "AI test set — run offline and
   # in CI"). The offline half is already satisfied by the `backend`

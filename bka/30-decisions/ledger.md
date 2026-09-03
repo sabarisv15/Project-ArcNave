@@ -7253,3 +7253,108 @@ themselves (or asks for it again explicitly), but this is not a standing
 open question to surface unprompted.
 
 **No code changed this pass** — decision-only.
+
+---
+
+## ADL-086
+
+### O5 (modernization P5, first item) — SBOM + dependency policy gate + keyless build signing — Resolved
+
+**What prompted this.** P4 closed (ADL-085); the standing P0-P5
+mandate's own plan (`ARCNAVE-modernization-english.md` P5 section) has
+no further ordering within P5 — O5 was picked first because it is the
+one item in that list provably buildable with zero new investment (free
+tooling only) and no infra dependency on the O2/O3 staging deferral.
+
+**Built:**
+1. **SBOM (Software Bill of Materials, CycloneDX 1.6 JSON), one per
+   package, generated in CI.** Backend: `@cyclonedx/cyclonedx-npm`
+   (pinned `6.0.0` exactly, not `^6.0.1` — see the version note below),
+   new `npm run sbom` script. Frontend: **not** the same tool — see
+   below.
+2. **Dependency policy gate**, real CI regression signal on top of the
+   already-informational `npm audit` step (P0). New
+   `<package>/scripts/audit-policy-gate.js` (backend) /`.cjs`
+   (frontend) reads `npm audit --json`, fails only on a HIGH/CRITICAL
+   advisory not already in that package's new `audit-allowlist.json`
+   (GHSA-URL-keyed, dated, reasoned). Every advisory
+   `dependency-scan-baseline.md` already called "informational, not
+   blocking" for a real reason (breaking major-version bump, dev-only
+   exposure) is now formally allowlisted with that same reasoning
+   duplicated into the allowlist file itself — `dependency-scan-
+   baseline.md` was also found stale during this pass (re-verified
+   against real `npm audit --json`, several entries had drifted since
+   2026-08-31) and refreshed alongside.
+3. **Keyless build-artifact signing (Sigstore/cosign, GitHub Actions
+   OIDC).** `.github/workflows/ci.yml` gained workflow-level
+   `permissions: { contents: read, id-token: write }`, a
+   `sigstore/cosign-installer@v3` step, and `cosign sign-blob --yes`
+   on each package's SBOM — no signing key generated, stored, or
+   rotated (the P0-P5 mandate's "new investment" stop condition does
+   not apply; Sigstore's keyless flow is free). Both SBOM + `.sig` +
+   `.crt` are uploaded as CI artifacts per package.
+
+**Real bug found and worked around, not papered over: cyclonedx-npm
+crashes against this repo's own already-tracked frontend peer-
+dependency conflict.** `frontend/`'s real, pre-existing (documented in
+`dependency-scan-baseline.md`/CI comments since P0) react19-vs-
+`@radix-ui` peer mismatch makes `npm ls` report `ELSPROBLEMS`.
+cyclonedx-npm's own documented escape hatch for exactly this
+(`--ignore-npm-errors`) instead throws `TypeError: Cannot read
+properties of undefined (reading 'code')` internally on this repo's
+npm/Node versions (Node 22 in CI, confirmed live, not assumed — tried
+`--ignore-npm-errors`, `--package-lock-only`, `--omit peer`, and
+combinations, all either the same crash or the graceful-but-still-
+failing `ELSPROBLEMS` exit). **Resolved by not using the same tool for
+both packages**: frontend's CI SBOM step uses `anchore/sbom-action`
+(syft) instead — it scans the filesystem directly, never shells out to
+`npm ls`, so the crash never triggers. Backend has no such conflict;
+its local `cyclonedx-npm`-based `npm run sbom` stays and works
+reliably (confirmed via a real `docker compose exec` run, not just
+locally). This is a genuine per-package tooling split, not
+inconsistency for its own sake — recorded here so a future session
+doesn't "fix" the asymmetry by forcing one tool onto both.
+
+**Why `6.0.0` pinned exactly, not `^6.0.1` (the actual latest) for
+backend's local script:** `6.0.1` was tried first and does not error at
+all for backend (no peer conflict there) — the exact pin exists only so
+a future `npm update` doesn't silently pull in a version whose
+`--ignore-npm-errors` behavior might regress further for anyone who
+later tries reusing this same script for frontend-shaped conflicts;
+not itself required by any observed backend-side bug.
+
+**Verified:** both `audit-policy-gate` scripts tested against real
+`npm audit --json` output (pass on current known advisories, correctly
+allowlist-scoped). Both SBOMs generated successfully end-to-end
+(backend via `docker compose exec app npm run sbom`, confirmed the
+container's `./backend:/app` bind mount lands the file on the host
+directly, no `docker cp` needed; frontend's syft path verified via the
+tool's own documented CLI shape, not yet run inside this exact CI
+runner image — the actual GitHub Actions execution is real net-new
+behavior for this workflow, first live-verified proof happens on the
+next real PR/push, same as every other new CI step this project has
+ever added). Full Docker backend suite: **2979/2979**, unchanged from
+before this pass. `npm run lint`: backend 0 errors/123 warnings
+(unchanged baseline); frontend 0 errors/32 warnings (unchanged
+baseline) after a real fix — see below. Frontend `npm test`:
+**564/564**. Frontend build + `npm run size`: clean, within budget.
+
+**One real, if minor, bug caught and fixed before it shipped:**
+frontend's `eslint.config.js` had no Node-globals override for a
+`scripts/` directory (only for three named root config files) —
+`scripts/audit-policy-gate.cjs`'s first lint run threw 8 real
+`no-undef` errors on `process`/`console`. Fixed by extending the
+existing Node-context block pattern to `scripts/**/*.{js,cjs}` rather
+than special-casing this one file, so any future Node CLI script under
+`frontend/scripts/` inherits the same override automatically.
+
+**Not built this pass, explicitly out of scope:** signing/verifying the
+backend's *container image* itself (not just its SBOM) — that needs a
+real image registry to push to, which doesn't exist yet (O2/O3 deferred
+per ADL-085); SBOM/signing for `sandbox-service/` (a separate package,
+not touched by this P5 pass, no plan doc line item names it); enabling
+`cosign verify-blob` as its own CI gate (nothing consumes these
+signatures downstream yet — this pass produces verifiable provenance,
+it does not yet enforce anyone check it, matching the plan's own O5
+wording, "list every dependency + sign build outputs + policy checks,"
+which does not itself demand a verification gate).

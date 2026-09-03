@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "sbom": "cyclonedx-npm --output-file sbom.json",
+    "audit:gate": "npm audit --json | node scripts/audit-policy-gate.js audit-allowlist.json"
   },
   "dependencies": {
     "argon2": "^0.41.1",
@@ -38,6 +40,7 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@cyclonedx/cyclonedx-npm": "6.0.0",
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.4.0",
     "eslint": "^10.9.1",

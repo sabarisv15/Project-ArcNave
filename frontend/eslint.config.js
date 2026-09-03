@@ -110,6 +110,17 @@ export default [
     },
   },
   {
+    // Node-context CLI scripts (CommonJS, run by `npm run` in CI/local
+    // shell, never shipped to the browser) — P5 O5's audit-policy-gate.cjs
+    // is the first of these; same Node-globals need as the config-file
+    // block above.
+    files: ['scripts/**/*.{js,cjs}'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: { ...globals.node },
+    },
+  },
+  {
     ignores: ['node_modules/**', 'dist/**', 'coverage/**'],
   },
   prettierConfig,

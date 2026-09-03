@@ -1,6 +1,6 @@
 # Current State
 
-_Last updated: 2026-09-02._
+_Last updated: 2026-09-03._
 
 ---
 
@@ -61,13 +61,60 @@ project's own "full tests run in Docker" discipline):
 errors (123 pre-existing warnings, same baseline). Containers stopped
 after (`docker compose down`) — nothing left running.
 
-**Exact next action:** commit + push this (uncommitted as of this
-banner). 2.4 is now fully closed — measured, decided, built, tested. Next
-priority items, same as recorded two banners down: **1.16** (agent
-rewrite, standing highest-value item), **academicService.js**-first
-read for 4.6's actual file-split (still only surveyed), or the
-remaining frontend-provider taxonomy decision (5 providers left flat by
-deliberate owner choice, not oversight).
+**Committed and pushed — `p0-modernization-foundation` is up to date
+with `origin/p0-modernization-foundation`, nothing pending.** Commits
+this session, newest last: `d0399c2` (assessments/calendar providers),
+`729be0c` (ComposerProvider/Projects/Artifacts/institution-provider
+bundle), `60df5f0` (2.4 first measurement), `0b948c8` (2.4 decision),
+`cb3719d` (2.4 build — HEAD as of this checkpoint).
+
+**2.4 is now fully closed** — measured, decided
+([ADL-074](../30-decisions/ledger.md#adl-074)), built, Docker-tested
+(2873/2873). **5.9 (frontend reorg) is effectively done** — every
+provider/route/component with an unambiguous single-feature owner has
+moved (chat, assessments, calendar, projects, artifacts, institution's
+3-provider cluster); the 5 remaining flat pieces
+(`WorkspaceProvider` + ~90 other files) stay flat by explicit owner
+decision, not oversight — do not re-attempt moving them without a new
+scoping conversation.
+
+**Exact next action — pick one, each is independently startable, no
+blockers on any of them:**
+1. **1.16 / clash C10 — rewrite the agent as a step-by-step machine.**
+   THE standing highest-value P3 item, unblocked (Docker works this
+   session). Needs its OWN dedicated session — do not combine with
+   anything else. Read `docs/bka/10-specification/` for clash C10/C11
+   before touching `aiService.js`'s core loop: a past incident
+   (recorded in the plan) showed re-packaging system-instruction rule
+   text mid-turn measurably weakened rule-following (3/3 → 2/7) — any
+   rewrite must keep the rule text byte-identical across a turn.
+2. **4.6 — split `academicService.js` (2,501 lines).** Survey already
+   done this session (full backend line-count list is in the banner
+   several sections down) — `academicService.js` is the next candidate
+   after `aiToolRegistry.js`/`aiService.js` (both explicitly excluded,
+   overlap with #1 above). Read its internal structure for real seams
+   before moving anything; verify with the full Docker suite after,
+   same discipline this session used throughout.
+3. **`WorkspaceProvider` — the one provider still genuinely flat, by
+   deliberate decision, not oversight.** Its `sendMessage`/`runAiTurn`
+   serves chat+project+artifact sends in one function, so it stays
+   `store/WorkspaceProvider.jsx` as cross-feature shared plumbing.
+   Splitting that logic apart (not just moving the file) is a real
+   refactor this session explicitly chose not to attempt. Only revisit
+   if the owner wants to open that specific question — don't restart
+   this file-by-file move pattern against it without that conversation.
+   (The institution cluster — `InstitutionalLifecycleProvider`/
+   `AcademicRosterProvider`/`AcademicTermProvider` — already moved as
+   files into `features/institution/store/` this session; their ~20
+   consumer components/routes/hooks deliberately stayed flat, which is
+   the settled shape, not a TODO.)
+
+**If starting fresh next session:** read this banner, then
+`ARCNAVE-modernization-english.md` (repo root) for the full P0-P5 plan
+if `1.16`/`4.6` context is needed beyond what's summarized here — do
+not re-read the whole `bka/` estate; this file plus the two linked ADLs
+(`ADL-074`, and whichever covers 1.16/4.6 if one exists by then) should
+be enough to continue with zero re-derivation.
 
 ---
 

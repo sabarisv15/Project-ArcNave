@@ -7026,3 +7026,91 @@ variant of `ai.js`'s existing `streamRequest` pattern — native
 and `frontend/src/components/NotificationBell.jsx`, wired into
 `Sidebar.jsx` beside `SidebarUtilityCluster`, gated by
 `useAuth().can('notifications.read')`.
+
+
+---
+
+## ADL-083
+
+### 5.3 (modernization P4) — TanStack Router scaffold, isolated island, real cutover strategy deferred as its own decision
+
+**What prompted this.** Owner asked to "start 5.3." Real blast radius,
+measured not guessed: `react-router-dom@6.27` (latest `7.18.3`),
+classic declarative `<Routes>/<Route>` (no data router), 33 route
+files, ~140 call-sites of router hooks/`Link`, 47 `<Route>` entries in
+`App.jsx` alone. Already flagged in the checkpoint as needing its own
+scoping pass, same caution as 1.16/4.6 — not attempted blind.
+
+**Decision 1 — which router.** [ADL-072](#adl-072) already decided the
+TS migration is gradual, additive-only, new-files-only. A genuine
+"type-safe router" only pays off if route files are real TypeScript,
+which puts React Router v7's *Framework mode* (its only mode with real
+route typegen) off the table on its own: Framework mode is Remix's
+SSR/full-stack convention set, and 5.5's own plan text ("fine for an
+internal dashboard — just split the bundle") already rejected SSR for
+this app. Asked the owner in Tanglish what the genuinely modern 2026
+choice is for a Vite SPA that explicitly isn't doing SSR; recommended
+**TanStack Router** — real compile-time type inference for paths/
+params/search-params, framework-agnostic, no SSR requirement — and the
+owner agreed. TanStack's own route *tree* can live entirely in new
+`.tsx` files that import existing `.jsx` page components as leaf
+elements, so adopting it does not by itself force converting any
+existing page component to TypeScript — additive-only compliant.
+
+**Decision 2 — how much this session.** Offered three sizes: full
+migration in one pass, a scaffold-plus-verified-slice, or stopping for
+a lower-risk path-constants module instead. Owner picked the scaffold.
+
+**Real architectural risk found while building the scaffold, not
+assumed going in — this is the actual reason "migrate a route" and
+"migrate the whole app" can't be split into small independent slices
+the way most of this thread's other P4 items have been:** swapping the
+app's root provider from react-router-dom's `<BrowserRouter>` to
+TanStack's `<RouterProvider>` breaks every one of the ~140 existing
+router-hook call-sites **app-wide**, the instant it happens, regardless
+of which individual routes were "migrated" yet — `useNavigate`/
+`useParams`/`useLocation` throw outside a react-router `<Router>`
+context, and running two independently-owned History-API listeners
+against the same browser history at once is not a documented, verified-
+safe pattern (each side calls `pushState`/reacts to `popstate` on its
+own). Neither risk was worth taking on unverified inside a scaffolding
+pass.
+
+**What actually shipped, given that constraint.** `@tanstack/react-
+router@^1.170` added. `frontend/src/router-preview/routeTree.tsx` (new,
+real `.tsx` — root route + an index route + a `/students/$studentId`
+typed-param route, `Link`/`useParams` both compile-time checked against
+the route tree's own types) and `RouterPreviewIsland.jsx` (mounts
+`RouterProvider`). Registered as its **own isolated, unauthenticated
+top-level route** (`/router-preview/*`, alongside `/login`, outside
+`ProtectedRoute`) in `App.jsx` — a real, live, browser-verified proof
+that TanStack Router genuinely works with this app's actual Vite/React
+19/Tailwind stack and real `tsc --noEmit` type-checking, without
+touching the real route tree, without swapping the root provider, and
+without any coexistence risk (the wildcard leaf means react-router-dom
+matches `/router-preview/*` once and never re-evaluates as TanStack
+navigates beneath it).
+
+**Explicitly NOT decided or done this pass — the real cutover strategy
+is its own separate, still-open decision, not silently assumed:** how
+the eventual swap actually happens (all-at-once root-provider swap
+timed with a full call-site migration in one release, vs. some other
+coexistence mechanism not yet identified as safe) is unresolved. This
+scaffold proves the destination is real and reachable; it does not
+prove a safe path to it, and that path is what the next 5.3 pass has to
+scope before touching any real route.
+
+**Verified live.** `npm run typecheck` clean (the route tree's own
+types check for real — a wrong `Link` `to`/`params` pair would be a
+real `tsc` error here, verified by reading the file, not just "no
+errors reported"). `npm run lint` unchanged baseline (32 warnings, 0
+errors, none in new files). `npm test` 49/49 files, 564/564 tests, no
+regressions. Live in the browser (Vite dev server, no Docker needed —
+the island is unauthenticated): `/router-preview` renders the index
+route; direct navigation to `/router-preview/students/demo-001` renders
+the typed param route with `studentId` correctly resolved; `/login`
+still renders exactly as before, confirming zero interference with the
+real app. Console/network showed only the pre-existing, expected `/api/
+v1/auth/refresh` 500s (no backend running on this host, same standing
+constraint every other slice this session has hit) — nothing from the
+new files.

@@ -4,7 +4,7 @@ _Last updated: 2026-09-03._
 
 ---
 
-# ⛔ NEWEST BANNER — P4 in progress: O3, 5.5/5.6, 5.12, 5.10, 5.11, and 5.4 done and pushed; 5.3/3.4 remain, 2026-09-03.
+# ⛔ NEWEST BANNER — P4 in progress: O3, 5.5/5.6, 5.12, 5.10, 5.11, and 5.4 done and pushed; 5.3 scaffolded (real cutover NOT done, see below); 3.4 remains, 2026-09-03.
 
 Same session as the O3 banner below, continued. Owner asked to work
 through the rest of P4 after O3. Triaged: O2 and O8 are genuinely
@@ -23,18 +23,20 @@ uncommitted):
 - **5.11 (design-system doc)** — [ADL-081](../30-decisions/ledger.md#adl-081). New `bka/50-frontend/DESIGN-SYSTEM.md`: distilled the real `frontend/src/index.css`/`tailwind.config.js` token system (ground plane, tinted fields incl. `tint`/`mist`/`active`'s distinct jobs kept separate not flattened, text ramp, accent, warm, lines, status families, typography, shadows) into a scannable reference, and documented the 3 real `components/ui/` primitives (`CopyButton.jsx`, `Drawer.jsx`, `IconButton.jsx`) exactly as they are — no invented `Button`/`Badge` primitive, since none exists (4 separate feature-specific badge components stand in for it; `cva()` confirmed unused via `grep -rn "cva(" frontend/src` — zero matches). Named the `FIELD`/`MENU_ITEM`/`TOOL_BTN` duplication across 14 files as a documented "Known gap," not fixed (separate multi-file refactor). Also fixed the stale `CLAUDE.md` citation of a nonexistent `components/ui/badge.test.jsx` → repointed to the real `components/AppShell.test.jsx`. Documentation-only, so no `npm test`/build gate applies — every claim (file counts, grep results) was re-verified against current code in this session rather than trusted from the prior session's unwritten plan.
 - **5.4 (notifications live feed, sidebar bell)** — [ADL-082](../30-decisions/ledger.md#adl-082). Owner asked to "start 5.4"; found the checkpoint's own "remaining" claim was stale — both SSE backend routes (job-progress, notifications) were already shipped `0fc6cda`/`899c738`, but genuinely unconsumed (zero frontend references to either). Ran a real Product Reasoning pass (no mockup existed): owner narrowed scope to notifications-only (background-job SSE has no job-creating UI to attach to yet, stays unwired) and picked a sidebar bell + popover for placement (the redesigned shell has no header bar). Page contract + Approved Spec: `bka/60-product-reasoning/notification-bell(-approved-spec).md`. Built `frontend/src/api/notifications.js` (GET-based fetch SSE reader — `EventSource` can't carry the required Bearer header, so this is a new GET variant of `ai.js`'s existing POST `streamRequest` pattern) and `frontend/src/components/NotificationBell.jsx`, wired into `Sidebar.jsx` beside `SidebarUtilityCluster`, gated by `useAuth().can('notifications.read')` (principal/hod only). Real constraint found while spec'ing: the `notifications` table has no `read_at`/per-recipient row (it's a college-wide announcement ledger, not a personal inbox) — the "unread" badge is therefore explicitly a client-side, session-local `localStorage` "changed since last opened" affordance, not a claim about server state. Caught and fixed one real bug before it shipped: a first draft used template-literal Tailwind classes (`` `bg-${token}-soft` ``) for the status pill, which Tailwind's JIT content-scanner can't see — replaced with a static `STATUS_TONE` map (same pattern `SeatStateBadge.jsx`'s own `seat.tone` already uses). 4 new tests (permission gating, list render, empty state, live-badge-then-clear-on-open). `npm run lint` 0 errors (no new warnings), `npm run typecheck` clean, `npm test` 49/49 files, 564/564 tests (560 prior + 4 new), `npm run format:check` clean on all new/changed files, `npm run build && npm run size` — entry chunk 208.6kB gzip, still inside the 248kB ADL-078 budget.
 
-**After 5.4, remaining P4 items:** 5.3 (newer type-safe router —
-flagged as high blast radius, touches every route), 3.4 (merge the
-document paths into one clear route — already flagged earlier this
-thread as needing its own `/product-reasoning` pass, it's the Documents
-Institutional/Personal tab-merge) — one slice at a time, same
-plan→inspect→verify→commit→push discipline as the six done so far. None
-of these are blocked on O3's infra existing.
+- **5.3 (TanStack Router scaffold)** — [ADL-083](../30-decisions/ledger.md#adl-083). Owner picked **TanStack Router** as the genuinely modern 2026 choice for this Vite SPA (RR v7 Framework mode — its only mode with real route typegen — pulls toward SSR, already rejected by 5.5's own "internal dashboard, no SSR" plan text) over a route-path-constants module or a full same-session migration. Scoped to a **scaffold**, not a cutover: real architectural risk found while building it — swapping the root provider from react-router-dom's `<BrowserRouter>` to TanStack's `<RouterProvider>` breaks all ~140 existing router-hook call-sites app-wide instantly, and running two independently-owned History-API listeners at once isn't a verified-safe pattern — so nothing in the real route tree was touched. Shipped: `frontend/src/router-preview/routeTree.tsx` (new, real `.tsx`, root + index + a typed `/students/$studentId` param route) + `RouterPreviewIsland.jsx`, mounted as its own isolated, unauthenticated top-level route (`/router-preview/*`, beside `/login`, outside `ProtectedRoute`) in `App.jsx`. Live-verified in the browser (Vite dev server, no Docker needed since unauthenticated): index route renders, `/router-preview/students/demo-001` resolves `studentId` correctly typed, `/login` unaffected, no console/network errors from the new files. `npm run typecheck`/`lint`/`test` all clean, no regressions (49/49 files, 564/564 tests). **The real cutover strategy (how the eventual root-provider swap + full call-site migration actually happens safely) is still an open, unscoped decision — the next 5.3 pass starts there, not by touching a real route.**
+
+**After this session, remaining P4 items:** 3.4 (merge the document
+paths into one clear route — already flagged earlier this thread as
+needing its own `/product-reasoning` pass, it's the Documents
+Institutional/Personal tab-merge), plus 5.3's own real cutover (see
+above — not startable blind, needs a cutover-strategy decision first).
+None of these are blocked on O3's infra existing.
 
 **Committed and pushed:** the four earlier slices (`ae2b9fe`, `f6bc6e8`,
-`bde756b`, `55772c3`) plus 5.11 (`6eb8e75`) are on
-`origin/p0-modernization-foundation`. 5.4 (this checkpoint) is committed
-in the same pass as this file — see git log for the exact commit.
+`bde756b`, `55772c3`), 5.11 (`6eb8e75`), and 5.4 (`1121bf0`) are on
+`origin/p0-modernization-foundation`. 5.3's scaffold (this checkpoint)
+is committed in the same pass as this file — see git log for the exact
+commit.
 
 ---
 

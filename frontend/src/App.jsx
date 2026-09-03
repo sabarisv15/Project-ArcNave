@@ -91,6 +91,10 @@ const DelegatedOverview = lazyNamed(() => import('./routes/DelegatedOverview'), 
 const DelegatedApprovalsView = lazyNamed(() => import('./routes/DelegatedApprovalsView'), 'DelegatedApprovalsView');
 const DelegatedWorkAreasView = lazyNamed(() => import('./routes/DelegatedWorkAreaView'), 'DelegatedWorkAreasView');
 const DelegatedWorkAreaDetail = lazyNamed(() => import('./routes/DelegatedWorkAreaView'), 'DelegatedWorkAreaDetail');
+// P4 5.3 scaffold — an isolated, unauthenticated island proving TanStack
+// Router works with this app's real stack, deliberately not part of the
+// real (react-router-dom) route tree below. See router-preview/routeTree.tsx.
+const RouterPreviewIsland = lazyNamed(() => import('./router-preview/RouterPreviewIsland'), 'RouterPreviewIsland');
 
 // P3 5.9 — attendance state moved from a context provider to a Zustand
 // store, so this layout no longer wraps anything; it owns the section's
@@ -153,6 +157,10 @@ export default function App() {
           <Suspense fallback={<Loading label="Loading…" />}>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
+              {/* P4 5.3 scaffold — isolated, unauthenticated, deliberately outside
+                  ProtectedRoute so it never touches the real (react-router-dom)
+                  route tree below. See router-preview/routeTree.tsx. */}
+              <Route path="/router-preview/*" element={<RouterPreviewIsland />} />
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppShell />}>
                   <Route path="/" element={<HomeView />} />

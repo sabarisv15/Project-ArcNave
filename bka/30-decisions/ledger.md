@@ -7613,3 +7613,30 @@ clean. `turbo run build`: frontend builds correctly (backend has no
 behavior, not an error). Full Docker backend suite re-confirmed
 unaffected by the root-level addition: **2994/2994**, run from inside
 the already-running container, exactly as before this pass.
+
+---
+
+## ADL-091
+
+### D8 (modernization P5) — table partitioning — Resolved, deferred with measured baseline
+
+**What prompted this.** Sixth P5 item this session. Queried the real
+running `demo`-seeded Docker Postgres (`pg_stat_user_tables`) before
+designing anything, per this project's own "measure before designing"
+discipline. Largest table in the whole database: `audit_log`, 1,840
+rows / 1.28 MB. Everything else is smaller — several orders of
+magnitude below where PostgreSQL partitioning starts paying for its own
+complexity.
+
+**Decision: [ADR-032](adr-register.md#adr-032) — defer the build,
+record the analysis.** Building partitioning against zero real
+production data would be exactly the speculative-build pattern this
+project avoids elsewhere. What's recorded instead, so a future session
+doesn't re-derive it: `audit_log` is the clear candidate (append-only,
+every row has `created_at`, structurally the fastest grower by design);
+monthly RANGE partitioning on `created_at` is the named strategy;
+~10M rows/10GB or a real traced query-performance problem is the named
+trigger to actually build it. Neither condition exists today.
+
+**No code changed this pass** — decision-only, no test suite to
+re-run.

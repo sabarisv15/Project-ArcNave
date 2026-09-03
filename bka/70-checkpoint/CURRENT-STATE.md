@@ -4,6 +4,20 @@ _Last updated: 2026-09-03._
 
 ---
 
+# ⛔ NEWEST BANNER — P5 continues: D8 (table partitioning) resolved as a deferred, measured decision. 2026-09-03.
+
+Same session, "go ahead for remaining." [ADR-032](../30-decisions/adr-register.md#adr-032) / [ADL-091](../30-decisions/ledger.md#adl-091). Queried the real Docker Postgres before deciding anything: largest table in the whole DB is `audit_log` at 1,840 rows / 1.28 MB — nowhere near where partitioning pays off. Decision recorded (not built): `audit_log` is the named candidate, monthly RANGE partitioning on `created_at` is the named strategy, ~10M rows/10GB or a traced query problem is the named trigger. No code changed.
+
+**P5 is now down to exactly two remaining items, both genuinely blocked on the owner (new-investment stop condition, standing mandate):**
+- **O6** (secrets manager) — needs a decision on whether to provision a real paid secrets-manager service now, or defer like O2/O3. O7 already built the Secret Manager *containers* in Terraform (code-only) — O6's own remaining scope is populating real values + wiring the app to read from Secret Manager instead of `.env`, which itself needs real GCP infra to exist first (the same infra O2/O3 already deferred).
+- **D1's remaining "read replica" half** — a second, real, billed Postgres instance. The connection-pooler half of D1 already closed in P3 (ADL-075); only the read-replica half is P5-scoped and needs the owner's go-ahead.
+
+**Exact next action:** ask the owner about O6 and D1's read-replica half directly — do not build either without an explicit answer, per the standing mandate's own "new investment" stop condition. Once resolved (built, or explicitly deferred like O2/O3), P5 itself closes.
+
+**Committed:** not yet as of this banner.
+
+---
+
 # ⛔ NEWEST BANNER — P5 continues: 5.13 (npm workspaces + Turborepo) shipped. 2026-09-03.
 
 Same session, continuing "go ahead for remaining." [ADL-090](../30-decisions/ledger.md#adl-090). New root `package.json` (npm workspaces) + `turbo.json` — local-dev convenience only, `.github/workflows/ci.yml` and both Dockerfiles untouched, zero risk to the already-verified pipeline (Docker's backend build context is `./backend`, invisible to root files). Real measured caching: `turbo run lint` 10.7s cold, 49ms cached. Full Docker backend suite re-confirmed unaffected: 2994/2994.

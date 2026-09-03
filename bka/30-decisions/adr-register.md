@@ -66,6 +66,7 @@ were corrected by that review: the LLM provider row
 | [ADR-029](#adr-029) | Universal Document Intelligence — structural CDR + deterministic analysis, no general execution | Accepted | [RS-AIG-002](../10-specification/RS-AIG-ai-governance.md#rs-aig-002), [RS-AIG-018](../10-specification/RS-AIG-ai-governance.md#rs-aig-018), [RS-AIG-019](../10-specification/RS-AIG-ai-governance.md#rs-aig-019) |
 | [ADR-030](#adr-030) | ARCNAVE Context Architecture — structured, stability-annotated context replaces flat prompt strings | Accepted, phased | [RS-AIG-008](../10-specification/RS-AIG-ai-governance.md#rs-aig-008) |
 | [ADR-031](#adr-031) | API version / retirement policy | Accepted | none — engineering/release-process policy, not a business rule |
+| [ADR-032](#adr-032) | Table partitioning trigger + candidate/strategy (deferred until real volume) | Deferred | none — engineering/scaling decision, not a business rule |
 
 ---
 
@@ -635,3 +636,63 @@ implement in an afternoon the first time it is actually needed (a
 `res.set('Deprecation', 'true'); res.set('Sunset', ...)` call in the
 deprecated route handler, or a thin middleware wrapping it — either is a
 few lines, not a design decision, once this ADR exists).
+
+---
+
+### ADR-032
+
+**Table partitioning — deferred, not built, with a real measured baseline
+and a named trigger** (ARCNAVE modernization P5, plan item D8: "no
+partitioning → partition the biggest growing tables"). Measured against
+the real running `demo`-seeded Docker Postgres before writing anything
+(this project's own standing "measure before designing" discipline):
+`pg_stat_user_tables` shows the single largest table in the whole
+database is `audit_log` at **1,840 rows / 1.28 MB**; every other table
+is smaller still (`messages`/`ai_tool_embeddings`/`notifications`
+single/double digits or zero rows). No table in this codebase is within
+several orders of magnitude of where PostgreSQL partitioning typically
+starts paying for its own added complexity (tens of millions of rows, or
+a query pattern that specifically benefits from partition pruning) —
+this is expected and consistent with ADL-085's own "ARCNAVE is
+pre-launch, no live tenant data yet" reasoning, not a surprise finding.
+
+**Decision: defer the build, not the analysis.** Partitioning
+`audit_log` (or any other table) today, against zero real production
+data, would be exactly the speculative-build pattern this project
+consistently avoids elsewhere (LaTeX/Mermaid rendering, O2 gradual
+rollout, ADR-031's own deprecation-header mechanism) — there is no real
+query-performance or vacuum-pressure problem this would fix yet, and a
+wrong partitioning key chosen against a tiny synthetic dataset is worse
+than no partitioning at all once real traffic shape actually exists.
+
+**What IS decided, so a future session doesn't have to re-derive it:**
+- **Candidate:** `audit_log` is the clear first candidate if/when
+  partitioning is ever warranted — append-only (round 7's finding:
+  `SELECT, INSERT` only for the `arcnave_app` role, no `UPDATE`/`DELETE`
+  grant), every row carries a real `created_at timestamptz NOT NULL
+  DEFAULT now()`, and it is structurally the one table every tenant's
+  every AI/workflow/document action writes to on every request — the
+  fastest, least bounded grower in the schema by design, not by
+  accident.
+- **Strategy, if it is ever built:** native PostgreSQL declarative RANGE
+  partitioning on `created_at`, monthly partitions, created ahead of
+  need by a scheduled job (not manually) — the standard pattern for an
+  append-only audit/event table. `college_id`'s own RLS policy
+  (`tenant_isolation`, forced) is unaffected by partitioning on a
+  different column; partition-level pruning on `created_at` and
+  row-level tenant filtering on `college_id` are orthogonal, both stay
+  in force together.
+- **Trigger to actually build this:** either (a) `audit_log` crosses
+  roughly 10 million rows or 10 GB (whichever comes first — an early,
+  conservative threshold, revisit downward only if a specific slow-query
+  or vacuum-pressure signal appears sooner), or (b) a real, measured
+  query-performance problem is traced to `audit_log`'s unpartitioned
+  size specifically (via `EXPLAIN ANALYZE`/`pg_stat_statements`,
+  D6's own already-shipped observability), whichever happens first.
+  Neither condition exists today.
+
+**Revisit:** at the same P0-P5 mandate's standard review cadence
+(post-module or quarterly, whichever is sooner) once real tenant traffic
+exists — check `pg_stat_user_tables` again before assuming the numbers
+above are still current; this ADR's own measured baseline goes stale the
+moment a real college onboards.

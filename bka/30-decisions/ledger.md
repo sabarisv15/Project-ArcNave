@@ -7640,3 +7640,42 @@ trigger to actually build it. Neither condition exists today.
 
 **No code changed this pass** — decision-only, no test suite to
 re-run.
+
+---
+
+## ADL-092
+
+### O6/D1 (modernization P5) — deferred indefinitely, owner decision — P5 thread closed
+
+**What prompted this.** Both of P5's remaining items (O6 — secrets
+manager; D1's remaining read-replica half, the connection-pooler half
+already closed in P3 per ADL-075) need real, billed GCP infrastructure
+that doesn't exist yet. Asked the owner directly, per the standing
+P0-P5 mandate's own new-investment stop condition (real infra spend is
+exactly the class of decision this mandate does not let an agent make
+unilaterally) — offered three options (defer both, provision both now,
+or split — O6 now/D1 deferred).
+
+**Decision: defer both indefinitely — owner picked the same call as
+O2/O3 (ADL-085).** ARCNAVE is still pre-launch; real ongoing GCP cost
+(a Secret Manager instance, a second billed Postgres read-replica) has
+no live users yet to justify it. Same treatment as every other
+declined-for-now infra this project already carries (O2/O3, off-host
+backup storage, a Langfuse tracing stack).
+
+**What this changes going forward.** O6's groundwork already exists
+code-only (O7's Terraform, ADL-089, created the Secret Manager secret
+*containers* — no real values, no app wiring); D1's connection-pooler
+half stays closed (ADL-075), only the read-replica half is deferred.
+Neither should be re-asked about in a future P5/P6 banner unless the
+owner raises it again — same "stop re-asking" precedent ADL-085 already
+set for O2/O3.
+
+**P5 thread status: CLOSED.** Every item is now either shipped (O5,
+4.10, prompt/model version registry, O7, 5.13) or a deliberate, recorded
+deferral (D8 — ADR-032/ADL-091; O6/D1 — this entry). The standing
+P0-P5 modernization plan (`ARCNAVE-modernization-english.md`) has no
+further phase after P5.
+
+**No code changed this pass** — decision-only, no test suite to
+re-run.

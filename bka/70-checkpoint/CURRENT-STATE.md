@@ -4,6 +4,32 @@ _Last updated: 2026-09-03._
 
 ---
 
+# ⛔ NEWEST BANNER — P5 thread CLOSED: O6/D1 deferred indefinitely (owner decision, ADL-092) — the entire P0-P5 modernization plan has no further queued phase. 2026-09-03.
+
+Same session as every P5 banner below, concluding it. Asked the owner
+directly about O6 (secrets manager) and D1's remaining read-replica
+half — both need real, billed GCP infra that doesn't exist yet, the
+exact "new investment" stop condition the standing P0-P5 mandate
+reserves for the owner, not an agent decision. Owner picked the same
+call as O2/O3 (ADL-085): **defer both indefinitely.** Full writeup:
+[ADL-092](../30-decisions/ledger.md#adl-092).
+
+**P5 (Enterprise polish) is now fully closed.** Final tally, every item
+from `ARCNAVE-modernization-english.md`'s P5 list:
+- **O5** (SBOM + dependency policy gate + keyless signing) — shipped. [ADL-086](../30-decisions/ledger.md#adl-086).
+- **4.10** (API version/retirement policy) — shipped, decision-only. [ADR-031](../30-decisions/adr-register.md#adr-031)/[ADL-087](../30-decisions/ledger.md#adl-087).
+- **Prompt/model version registry + gradual-rollout primitive** — shipped. [ADL-088](../30-decisions/ledger.md#adl-088).
+- **O7** (infrastructure-as-code, Terraform) — shipped, code-only. [ADL-089](../30-decisions/ledger.md#adl-089).
+- **5.13** (npm workspaces + Turborepo) — shipped. [ADL-090](../30-decisions/ledger.md#adl-090).
+- **D8** (table partitioning) — deferred, measured baseline recorded. [ADR-032](../30-decisions/adr-register.md#adr-032)/[ADL-091](../30-decisions/ledger.md#adl-091).
+- **O6 + D1 read-replica** — deferred indefinitely, owner decision. [ADL-092](../30-decisions/ledger.md#adl-092).
+
+**The entire P0-P5 modernization plan is now done or deliberately deferred — nothing further is queued.** `ARCNAVE-modernization-english.md`'s own P0→P5 structure has no P6. If starting fresh next session with no other instruction: **there is no more auto-pilot "next phase" to pick from this plan.** Two real findings from this thread are worth a future session's attention even though they're outside the plan itself: (1) `aiService.js` carries genuine pre-existing Prettier formatting debt this session found and did not fix (ADL-088's own note); (2) `gh run list` shows this repo's CI has apparently never executed on real GitHub Actions despite existing since P0 — every "format:check/lint clean" claim across every P0-P5 round was true only against local Docker checks.
+
+**Committed and pushed:** every P5 commit through `384a988` is on `origin/p0-modernization-foundation`. This banner's own ADL-092 entry is committed in the same pass — see git log for the exact commit.
+
+---
+
 # ⛔ NEWEST BANNER — P5 continues: D8 (table partitioning) resolved as a deferred, measured decision. 2026-09-03.
 
 Same session, "go ahead for remaining." [ADR-032](../30-decisions/adr-register.md#adr-032) / [ADL-091](../30-decisions/ledger.md#adl-091). Queried the real Docker Postgres before deciding anything: largest table in the whole DB is `audit_log` at 1,840 rows / 1.28 MB — nowhere near where partitioning pays off. Decision recorded (not built): `audit_log` is the named candidate, monthly RANGE partitioning on `created_at` is the named strategy, ~10M rows/10GB or a traced query problem is the named trigger. No code changed.

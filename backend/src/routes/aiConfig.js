@@ -16,6 +16,7 @@ const identityService = require('../services/identityService');
 const vertexCapabilityRegistry = require('../services/vertexCapabilityRegistry');
 const aiCostControlService = require('../services/aiCostControlService');
 const aiModelVersionService = require('../services/aiModelVersionService');
+const aiPromptVersionRegistry = require('../services/aiPromptVersionRegistry');
 const config = require('../config');
 const { describeFeatureFlags } = require('../featureFlags');
 
@@ -137,6 +138,19 @@ function createAiConfigRouter() {
     requirePermission('ai_config.read'),
     asyncHandler(async (_req, res) => {
       res.json({ flags: describeFeatureFlags(config) });
+    }),
+  );
+
+  // ARCNAVE modernization P5 ("prompt and model version registry") —
+  // read-only view of aiPromptVersionRegistry.js, same
+  // platform-wide/no-tenant-resolution/ai_config.read posture as
+  // GET /ai-config/feature-flags immediately above (this reports the
+  // process's own prompt-module versions, not a tenant's config).
+  router.get(
+    '/ai-config/prompt-versions',
+    requirePermission('ai_config.read'),
+    asyncHandler(async (_req, res) => {
+      res.json(aiPromptVersionRegistry.describePromptVersions());
     }),
   );
 

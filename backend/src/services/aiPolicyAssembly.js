@@ -193,14 +193,37 @@ const MODE_PREFIX = {
 // Assembly order is fixed (not input-order-dependent) and append-only in
 // spirit: CORE is always present; each further module is added only once
 // its own gate is true, never removed once true within a single call.
+//
+// ARCNAVE modernization P5 ("prompt and model version registry") — the
+// gating conditions live in exactly ONE place (this function) so
+// buildPolicy's assembled text and getActiveModuleNames's name list can
+// never drift apart; both are thin projections of the same
+// resolveActiveModules(state) call, never two separately-maintained
+// copies of the same six conditions.
+function resolveActiveModules(state) {
+  const modules = [{ name: 'CORE', content: CORE }];
+  if (state.hasHistory) modules.push({ name: 'CONTINUITY', content: CONTINUITY });
+  if (state.toolCount > 0) modules.push({ name: 'TOOL_SELECTION', content: TOOL_SELECTION });
+  if (state.toolCount >= 2) modules.push({ name: 'PLAN', content: PLAN });
+  if (state.hasFileTool) modules.push({ name: 'FILE', content: FILE });
+  if (state.focusEntityType === 'artifact') modules.push({ name: 'ARTIFACT', content: ARTIFACT });
+  return modules;
+}
+
 function buildPolicy(state) {
-  const modules = [CORE];
-  if (state.hasHistory) modules.push(CONTINUITY);
-  if (state.toolCount > 0) modules.push(TOOL_SELECTION);
-  if (state.toolCount >= 2) modules.push(PLAN);
-  if (state.hasFileTool) modules.push(FILE);
-  if (state.focusEntityType === 'artifact') modules.push(ARTIFACT);
-  return modules.join('\n\n');
+  return resolveActiveModules(state)
+    .map((m) => m.content)
+    .join('\n\n');
+}
+
+// Which named modules buildPolicy(state) would include, in the same
+// fixed order — used by aiPromptVersionRegistry.js to tag a turn with
+// exactly which prompt-module versions were actually in force, for
+// reproducibility (ARCNAVE-modernization-english.md, "How the best
+// teams actually write it" §4: "pin prompt versions and model
+// versions"). Never used to alter buildPolicy's own output.
+function getActiveModuleNames(state) {
+  return resolveActiveModules(state).map((m) => m.name);
 }
 
 module.exports = {
@@ -212,4 +235,5 @@ module.exports = {
   ARTIFACT,
   MODE_PREFIX,
   buildPolicy,
+  getActiveModuleNames,
 };

@@ -4,6 +4,28 @@ _Last updated: 2026-09-03._
 
 ---
 
+# ⛔ NEWEST BANNER — P5 continues: 4.10 (API version/retirement policy, decision-only) + prompt/model version registry + gradual-rollout primitive, both shipped. 2026-09-03.
+
+Same session as the O5 banner below, continuing through P5 at the
+owner's "go ahead for remaining" instruction. Two more items closed,
+each independently startable, no ordering between them:
+
+**4.10 — API version/retirement policy.** [ADR-031](../30-decisions/adr-register.md#adr-031) / [ADL-087](../30-decisions/ledger.md#adl-087). Decision-only, no code: CLAUDE.md rule 5 (`/api/v1/` only) is untouched. Specifies what counts as a genuinely breaking change (vs. additive, never a version bump), the `Deprecation`/`Sunset` RFC 8594 header mechanism + same-day `CHANGES.md` entry for the day a real `/api/v2/` is needed, and a 6-month minimum support window. No route is deprecated today, so no header middleware was built — same "don't build speculatively" posture this project already applies elsewhere.
+
+**Prompt/model version registry + gradual-rollout primitive.** [ADL-088](../30-decisions/ledger.md#adl-088). New `aiPromptVersionRegistry.js` (chat-module versions from `aiPolicyAssembly.js`'s six real ADR-030 modules, seeded v1 — no prior history existed to recover — plus a read of `documentExtractionService.js`'s existing four prompt-version constants, newly exported rather than duplicated), new `GET /ai-config/prompt-versions` route, and `aiService.js` wired to log one `ai_decision_versions` line per turn combining the prompt-module tag with the model version `aiModelVersionService.js` already tracks. New `resolveRolloutBucket(seed, percent)` deterministic-bucketing primitive in `featureFlags.js` for the "gradual rollout" half — **not wired to any real flag yet**, mechanism-ready only, matching ADR-031's own posture (nothing currently needs a partial rollout). `aiPolicyAssembly.js`'s `buildPolicy` refactored non-invasively (same output, verified against its own full existing test suite) to share one internal `resolveActiveModules(state)` with the new `getActiveModuleNames`.
+
+**Two real findings surfaced and deliberately NOT fixed, flagged for a future session:**
+1. `aiService.js` carries genuine, pre-existing Prettier formatting debt in four blocks this session never touched (confirmed real — checked against the true git-staged LF blob inside the Linux container, not just this Windows checkout's CRLF noise). `npm run format:check` would fail in real CI for this file today, independent of any P5 change.
+2. `gh run list` shows **this repo's CI has never actually executed on real GitHub Actions**, despite existing and being Docker-verified locally since P0. Every prior round's "format:check/lint clean" claim was true only against local Docker checks, never a real GitHub Actions run. Branch protection likely was also never actually turned on (ci.yml's own comment already flagged this needs a repo admin).
+
+**Verified:** full Docker backend suite **2994/2994** (2979 + 15 new tests across `ai-policy-assembly.test.js`, `ai-prompt-version-registry.test.js` (new), `feature-flags.test.js`). `npm run lint`: 0 errors/123 warnings (unchanged). `npm run typecheck`: clean. No migration (every addition is plain JS, no schema change). The ADL-050-sensitive suites (`ai-service.test.js` + 4 siblings, 330 tests) all pass unmodified — confirms the new `promptVersionTag` field never touches the segment-sharing invariant.
+
+**Exact next action:** remaining P5 items, none started, all independently startable: **O6** (secrets manager — likely needs a paid service, ask owner before provisioning), **O7** (infrastructure-as-code — likely code/config-only like O3 was), **D8** (partition the biggest growing tables — no new cost), **D1's remaining "read replica" half** (real new investment — the connection-pooler half already closed in P3), **5.13** (multi-package workspace tooling — no cost). Also worth a future session, separate from P5's own list: the two findings above (aiService.js formatting debt; CI never actually run on GitHub Actions — this second one may be worth surfacing to the owner directly, since it means the whole CI investment from P0 onward has never been proven against the real platform).
+
+**Committed:** not yet as of this banner — `git status --short` before doing anything destructive.
+
+---
+
 # ⛔ NEWEST BANNER — P5 started: O5 (SBOM + dependency policy gate + keyless signing) shipped, Docker-verified. 2026-09-03.
 
 **First P5 item, per the previous banner's own "move to P5" pointer** (`ARCNAVE-modernization-english.md`'s P5 list has no internal ordering — O5 picked first as the only item provably buildable with zero new investment and no dependency on the O2/O3 staging deferral). Full decision writeup, every real bug found (a cyclonedx-npm crash against this repo's own already-tracked frontend peer-dependency conflict, worked around by using a different tool per package rather than forcing one tool onto both; a frontend ESLint Node-globals gap for the new `scripts/` dir), and everything deliberately left out of scope this pass: [ADL-086](../30-decisions/ledger.md#adl-086).

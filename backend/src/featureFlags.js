@@ -115,6 +115,44 @@ function parseStrictBoolean(raw) {
   return raw === 'true';
 }
 
+// ARCNAVE modernization P5 ("gradual rollout for prompt and model
+// changes") — a deterministic percentage-bucketing primitive, NOT a
+// per-tenant config mechanism (this file's own stated scope above:
+// "PROCESS-LEVEL BEHAVIOUR TRIAL, never tenant-facing"). Given the same
+// `seed` (e.g. a conversationId or collegeId — the caller's choice, not
+// this function's), the same request always lands in the same bucket:
+// no flip-flopping a user between an old and new prompt/model variant
+// mid-conversation, which a naive Math.random() per call would risk.
+// This is distinct from O2's general app-version gradual rollout
+// (deferred indefinitely, ADL-085 — that needs multiple server
+// processes actually running to shift traffic between); a prompt/model
+// variant choice happens inside one already-running process, so it
+// needs no new infra at all.
+//
+// No FLAG_DEFINITIONS entry uses this yet — same "mechanism specified
+// and ready, not forced onto anything real" posture ADR-031 (API
+// deprecation headers) just established: nothing currently needs a
+// partial rollout, so nothing is wired to a percentage. The next
+// experimental flag that does (e.g. trialling a new model alias on 10%
+// of requests before a full switch) reads `percent` off its own env var
+// and calls this — a few lines, not a design decision, once this
+// function exists.
+function resolveRolloutBucket(seed, percent) {
+  if (typeof percent !== 'number' || percent <= 0) return false;
+  if (percent >= 100) return true;
+  // FNV-1a, 32-bit — small, dependency-free, stable across Node
+  // versions/platforms (unlike a hash keyed off object iteration order
+  // or Math.random, which are exactly what "deterministic" rules out).
+  let hash = 0x811c9dc5;
+  const str = String(seed);
+  for (let i = 0; i < str.length; i += 1) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  const bucket = (hash >>> 0) % 100;
+  return bucket < percent;
+}
+
 // Resolve every flag from the current process.env. Called once by
 // config.js at module-load time. Throws on any invalid explicit value.
 function resolveFlags(env = process.env) {
@@ -150,4 +188,5 @@ module.exports = {
   resolveFlags,
   describeFeatureFlags,
   parseStrictBoolean,
+  resolveRolloutBucket,
 };

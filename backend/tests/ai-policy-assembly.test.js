@@ -10,7 +10,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const aiPolicyAssembly = require('../src/services/aiPolicyAssembly');
 
-const { CORE, CONTINUITY, TOOL_SELECTION, PLAN, FILE, ARTIFACT, MODE_PREFIX, buildPolicy } = aiPolicyAssembly;
+const { CORE, CONTINUITY, TOOL_SELECTION, PLAN, FILE, ARTIFACT, MODE_PREFIX, buildPolicy, getActiveModuleNames } =
+  aiPolicyAssembly;
 
 function baseState(overrides = {}) {
   return {
@@ -147,4 +148,37 @@ test('MODE_PREFIX.general starts with the exact sentence an existing ai-service.
 test('MODE_PREFIX.curriculum is a short mode-identity opener distinct from CORE', () => {
   assert.match(MODE_PREFIX.curriculum, /^You are ARCNAVE's campus assistant/);
   assert.ok(!CORE.startsWith('You are ARCNAVE'), 'CORE must be mode-agnostic, not open with a mode identity line');
+});
+
+// ARCNAVE modernization P5 ("prompt and model version registry") —
+// getActiveModuleNames must agree with buildPolicy exactly, since both
+// are thin projections of the same resolveActiveModules(state) call.
+test('getActiveModuleNames: CORE only when no other gate is true', () => {
+  assert.deepEqual(getActiveModuleNames(baseState()), ['CORE']);
+});
+
+test("getActiveModuleNames: every module simultaneously, in buildPolicy's exact fixed order", () => {
+  const state = baseState({
+    hasHistory: true,
+    toolCount: 2,
+    hasFileTool: true,
+    focusEntityType: 'artifact',
+  });
+  assert.deepEqual(getActiveModuleNames(state), ['CORE', 'CONTINUITY', 'TOOL_SELECTION', 'PLAN', 'FILE', 'ARTIFACT']);
+});
+
+test('getActiveModuleNames: agrees with buildPolicy across every gate combination (never drifts apart)', () => {
+  const MODULE_TEXT = { CORE, CONTINUITY, TOOL_SELECTION, PLAN, FILE, ARTIFACT };
+  for (const hasHistory of [false, true]) {
+    for (const toolCount of [0, 1, 2]) {
+      for (const hasFileTool of [false, true]) {
+        for (const focusEntityType of [null, 'artifact']) {
+          const state = baseState({ hasHistory, toolCount, hasFileTool, focusEntityType });
+          const names = getActiveModuleNames(state);
+          const policy = buildPolicy(state);
+          assert.equal(policy, names.map((n) => MODULE_TEXT[n]).join('\n\n'));
+        }
+      }
+    }
+  }
 });

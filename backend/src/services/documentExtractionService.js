@@ -942,4 +942,12 @@ module.exports = {
   buildSpatialFieldExtractionSchema,
   isValidSpatialFieldExtractionShape,
   isValidBoundingBox,
+  // ARCNAVE modernization P5 ("prompt and model version registry") —
+  // exported so aiPromptVersionRegistry.js can read these as the single
+  // source of truth instead of a second, driftable copy of the same
+  // literal version strings.
+  VISION_TRANSCRIPTION_PROMPT_VERSION,
+  DOCUMENT_CLASSIFICATION_PROMPT_VERSION,
+  FIELD_EXTRACTION_PROMPT_VERSION,
+  SPATIAL_FIELD_EXTRACTION_PROMPT_VERSION,
 };

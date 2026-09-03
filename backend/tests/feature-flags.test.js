@@ -5,7 +5,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { FLAG_DEFINITIONS, resolveFlags, describeFeatureFlags, parseStrictBoolean } = require('../src/featureFlags');
+const {
+  FLAG_DEFINITIONS,
+  resolveFlags,
+  describeFeatureFlags,
+  parseStrictBoolean,
+  resolveRolloutBucket,
+} = require('../src/featureFlags');
 
 test('FLAG_DEFINITIONS: the six EXPERIMENTAL_* AI behaviour trials, all hot-path, all inert by default', () => {
   const keys = FLAG_DEFINITIONS.map((d) => d.key).sort();
@@ -125,4 +131,48 @@ test('parseStrictBoolean is the shared strict parser', () => {
   assert.equal(parseStrictBoolean('true'), true);
   assert.equal(parseStrictBoolean('1'), false);
   assert.equal(parseStrictBoolean(undefined), false);
+});
+
+// ARCNAVE modernization P5 ("gradual rollout for prompt and model
+// changes") — the deterministic percentage-bucketing primitive.
+test('resolveRolloutBucket: 0 percent never enrolls, 100 percent always enrolls', () => {
+  for (const seed of ['college-a', 'college-b', '', 'conversation-123']) {
+    assert.equal(resolveRolloutBucket(seed, 0), false, seed);
+    assert.equal(resolveRolloutBucket(seed, 100), true, seed);
+  }
+});
+
+test('resolveRolloutBucket: a non-positive or non-numeric percent is always false, never throws', () => {
+  assert.equal(resolveRolloutBucket('x', -5), false);
+  assert.equal(resolveRolloutBucket('x', undefined), false);
+  assert.equal(resolveRolloutBucket('x', NaN), false);
+  assert.equal(resolveRolloutBucket('x', null), false);
+});
+
+test('resolveRolloutBucket: deterministic — same seed, same percent, same result every call', () => {
+  for (let i = 0; i < 20; i += 1) {
+    assert.equal(resolveRolloutBucket('college-demo', 37), resolveRolloutBucket('college-demo', 37));
+  }
+});
+
+test('resolveRolloutBucket: real ~N% of a large seed population enrolls, not 0% or 100%', () => {
+  const percent = 20;
+  let enrolled = 0;
+  const total = 5000;
+  for (let i = 0; i < total; i += 1) {
+    if (resolveRolloutBucket(`seed-${i}`, percent)) enrolled += 1;
+  }
+  const rate = (enrolled / total) * 100;
+  // Loose bound (hash-based bucketing, not a statistical RNG test) —
+  // catches a real "always 0" or "always 100" bug, not meant to assert
+  // hash-quality precision.
+  assert.ok(rate > 10 && rate < 30, `enrollment rate ${rate}% should be roughly near ${percent}%`);
+});
+
+test('resolveRolloutBucket: different seeds at the same percent are not all identical (real bucketing, not a constant)', () => {
+  const results = new Set();
+  for (let i = 0; i < 50; i += 1) {
+    results.add(resolveRolloutBucket(`distinct-${i}`, 50));
+  }
+  assert.deepEqual(results, new Set([true, false]));
 });

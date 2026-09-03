@@ -7358,3 +7358,140 @@ signatures downstream yet — this pass produces verifiable provenance,
 it does not yet enforce anyone check it, matching the plan's own O5
 wording, "list every dependency + sign build outputs + policy checks,"
 which does not itself demand a verification gate).
+
+---
+
+## ADL-087
+
+### 4.10 (modernization P5) — API version / retirement policy — Resolved, decision-only
+
+**What prompted this.** Second P5 item this session, picked next after
+O5 ([ADL-086](#adl-086)) because it is doc-only (no code, no infra,
+zero investment question) and independently startable.
+
+**Decision, full text: [ADR-031](adr-register.md#adr-031).** Summary:
+CLAUDE.md rule 5 (`/api/v1/` only) stays exactly as-is — this ADR does
+not introduce a `v2` prefix or touch any route. It specifies, for the
+day a genuinely breaking change is needed: what counts as breaking
+(vs. additive, never a version bump), the `Deprecation`/`Sunset` RFC
+8594 header mechanism plus a same-day `CHANGES.md` entry, and a
+6-month minimum support window (this internal tool's only real API
+consumer today is its own frontend — a full academic term to migrate
+every call site). Deliberately **no code shipped**: no route is
+deprecated today, so there is nothing real to attach header middleware
+to yet — matches this project's own "don't build speculatively"
+pattern (LaTeX/Mermaid, O2 gradual-rollout tooling).
+
+**No code changed this pass** — decision-only, no test suite to
+re-run.
+
+---
+
+## ADL-088
+
+### Prompt/model version registry + gradual-rollout primitive (modernization P5) — Resolved
+
+**What prompted this.** Third P5 item this session, picked next after
+O5 ([ADL-086](#adl-086)) and 4.10 ([ADL-087](#adl-087)) — code-only,
+no infra, independently startable. The plan's own "How the best teams
+actually write it" §4: "Reproducible. Same input and tools give the
+same result. Pin prompt versions and model versions."
+
+**Found before building anything: half of this already existed.**
+`aiModelVersionService.js` (CEO Vertex/Gemini audit #41) already
+detects MODEL version drift, and `GET /ai-config/ops-status` already
+surfaces it. `documentExtractionService.js` already versions its four
+extraction prompts (`*_PROMPT_VERSION` constants, already at v2 for
+two of them). What was genuinely missing: ADR-030's six real chat
+system-prompt modules (`aiPolicyAssembly.js`'s `CORE`/`CONTINUITY`/
+`TOOL_SELECTION`/`PLAN`/`FILE`/`ARTIFACT` — confirmed these are real,
+live code, not just the ADR's aspirational module names, by reading
+`aiPolicyAssembly.js` directly) carried no version identifier at all,
+and no single place existed to see every prompt version — chat and
+document-extraction — at once.
+
+**Built:**
+1. **`aiPolicyAssembly.js`** — non-invasive refactor: `buildPolicy`'s
+   six gating conditions now live in one shared internal
+   `resolveActiveModules(state)`, with `buildPolicy` and a new
+   `getActiveModuleNames` as thin projections of it — `buildPolicy`'s
+   return value is byte-identical to before (verified: `ai-policy-
+   assembly.test.js`'s existing ~15 assertions all still pass
+   unmodified), so this is additive, not a rewrite of live behavior.
+2. **`aiPromptVersionRegistry.js`** (new) — `CHAT_MODULE_VERSIONS`
+   (all six seeded `v1`, an honest baseline — no prior version history
+   existed to recover), `computePromptVersionTag(activeModuleNames)`
+   (e.g. `CORE@v1+TOOL_SELECTION@v1`), and `describePromptVersions()`
+   (same read-only-introspection shape as `featureFlags.js`'s own
+   `describeFeatureFlags`), which reads `documentExtractionService.js`'s
+   four existing version constants directly (newly exported for this,
+   never re-declared as a second copy) rather than duplicating their
+   literal values.
+3. **`GET /ai-config/prompt-versions`** (new route, `ai_config.read`,
+   same platform-wide/no-tenant-resolution posture as the sibling
+   `GET /ai-config/feature-flags` immediately above it in
+   `routes/aiConfig.js`).
+4. **Wired into `aiService.js`**: `buildDecisionContext` computes
+   `promptVersionTag` once (from the same `policyState` object already
+   passed to `buildPolicy`, never a second copy of those five fields —
+   avoids exactly the two-copies-drift risk `resolveActiveModules`
+   itself was built to avoid one layer down) and threads it through to
+   `decide`, which now logs one `ai_decision_versions` line carrying
+   both halves — `promptVersionTag` and the model/modelVersion
+   `aiModelVersionService`'s own drift check already reads.
+   Diagnostics-only (`logInfo`, never read back by any code path) —
+   confirmed via the full `ai-service.test.js`/`ai-service-media-
+   support.test.js`/`ai-service-token-preflight.test.js`/`ai-
+   providers.test.js`/`ai-service-guardrail-reinforcement.test.js`
+   suites (330 tests) that this cannot have touched the ADL-050
+   segment-sharing invariant — it adds a plain string field to a
+   returned data object, never touches a segment.
+5. **`resolveRolloutBucket(seed, percent)`** (new, in `featureFlags.js`)
+   — a deterministic FNV-1a hash-bucketing primitive for "gradual
+   rollout for prompt and model changes." Distinct from O2's general
+   app-version gradual rollout (deferred indefinitely, ADL-085 — that
+   needs multiple server processes actually running to shift traffic
+   between): a prompt/model variant choice happens inside one
+   already-running process, so it needs no new infra. **Not wired to
+   any real flag yet** — same "mechanism specified and ready, not
+   forced onto anything real" posture [ADR-031](adr-register.md#adr-031)
+   (API deprecation headers) just established: nothing currently needs
+   a partial rollout. Explicitly scoped `seed`-based, not per-tenant —
+   `featureFlags.js`'s own stated design boundary ("PROCESS-LEVEL
+   BEHAVIOUR TRIAL, never tenant-facing") is preserved, not revisited.
+
+**Real, pre-existing bug found and deliberately NOT fixed here, out of
+scope:** while blob-checking the true staged (LF) content of every
+touched file against `prettier --check` (to separate real formatting
+debt from this Windows checkout's own CRLF noise — `core.autocrlf=true`
+was independently confirmed to make ~40-70 untouched files across the
+repo falsely appear to need reformatting, purely a local-disk artifact,
+not a real repo problem), `aiService.js` was found to carry **genuine,
+pre-existing** formatting debt in four blocks this session never
+touched (`arcnaveContext`'s `buildContext` call in
+`executeWorkflowPlan`, `resolveTurnContext`'s and `fetchTools`'s
+function signatures, and one destructure in `askAgent`) — confirmed
+real (not CRLF noise) by running `prettier --check` against the exact
+git-staged blob content inside the Linux container. This means
+`npm run format:check` would currently fail in real CI for this file,
+independent of this session's changes — flagged here rather than
+silently fixed (would have bloated this P5 diff with unrelated
+reformatting) or silently ignored. **Also newly discovered this
+session: `gh run list` shows this repo's CI has never actually executed
+on real GitHub Actions** (P0's own `.github/workflows/ci.yml` exists
+and has been Docker-verified locally every round since, but zero real
+runs exist) — every prior round's "format:check clean" claim was true
+against a local Docker/Linux check, never against an actual GitHub
+Actions run. Neither of these is this pass's to fix; both are real,
+worth a future session's attention.
+
+**Verified:** `ai-policy-assembly.test.js` — the existing suite
+unmodified/passing plus 3 new tests confirming `getActiveModuleNames`
+never disagrees with `buildPolicy` across every gate combination.
+`ai-prompt-version-registry.test.js` (new, 7 tests). `feature-
+flags.test.js` — 6 new `resolveRolloutBucket` tests (determinism, 0/100
+edge cases, real ~N% distribution over 5,000 seeds, non-constant
+output). Full Docker backend suite: **2994/2994** (2979 + 15 new).
+`npm run lint`: 0 errors, 123 warnings (unchanged baseline).
+`npm run typecheck`: clean. Migrate up/down not applicable (no schema
+change — every new field is additive JS, no migration).

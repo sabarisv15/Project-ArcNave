@@ -40,9 +40,10 @@ const aiMemoryService = require('./aiMemoryService');
 const artifactService = require('./artifactService');
 const aiCostControlService = require('./aiCostControlService');
 const aiModelVersionService = require('./aiModelVersionService');
+const aiPromptVersionRegistry = require('./aiPromptVersionRegistry');
 const aiNumericClaimLocaleSupport = require('./aiNumericClaimLocaleSupport');
 const aiGuardrailService = require('./aiGuardrailService');
-const { logWarn, logError } = require('../logging/logger');
+const { logInfo, logWarn, logError } = require('../logging/logger');
 // AI Experience Layer (AIX) — presentation only, added after the real
 // pipeline above has already produced its final, authorized result.
 // Every field this file already returns (entries, preamble, question,
@@ -3380,13 +3381,23 @@ async function buildDecisionContext({
   // turn-scoped on purpose — an attachment present THIS turn is real turn
   // content, not retrieval noise.
   const hasFileTool = roleTools.some((t) => FILE_TOOL_NAMES.has(t.name)) || documents.length > 0;
-  const decisionPolicy = aiPolicyAssembly.buildPolicy({
+  const policyState = {
     mode: 'curriculum',
     hasHistory: historyTurns.length > 0,
     toolCount: tools.length,
     hasFileTool,
     focusEntityType: focusContext && focusContext.entityType,
-  });
+  };
+  const decisionPolicy = aiPolicyAssembly.buildPolicy(policyState);
+  // ARCNAVE modernization P5 ("prompt and model version registry") — the
+  // exact module set buildPolicy just assembled into `decisionPolicy`,
+  // tagged with each module's own version. Reused (never re-derived) by
+  // `decide` below to log alongside aiModelVersionService's own model-
+  // version observation, so one log line carries both halves of "same
+  // input and tools give the same result."
+  const promptVersionTag = aiPromptVersionRegistry.computePromptVersionTag(
+    aiPolicyAssembly.getActiveModuleNames(policyState),
+  );
   // Review Finding #2 — built once and shared, unmodified, by BOTH
   // decisionSegments (the initial call) and continuationSegments (every
   // call after it): the two context variants must never differ in their
@@ -3599,6 +3610,7 @@ async function buildDecisionContext({
     cachedSystemInstructionName,
     imagesSupported,
     imageAnalysisUnavailable,
+    promptVersionTag,
   };
 }
 
@@ -3615,6 +3627,7 @@ async function decide({
   imagesSupported,
   images,
   imageAnalysisUnavailable,
+  promptVersionTag,
   onStep,
 }) {
   const decisionStartedAt = Date.now();
@@ -3633,6 +3646,20 @@ async function decide({
     aiConfig.model,
     decision.modelVersion,
   );
+  // ARCNAVE modernization P5 ("prompt and model version registry") —
+  // both halves of "same input and tools give the same result" in one
+  // log line: which prompt modules were assembled (promptVersionTag)
+  // and which model actually answered (adapter.name/aiConfig.model, the
+  // same values aiModelVersionService's own drift check just used).
+  // Diagnostics only — never read back by any code path, so it can
+  // never affect a real turn's behavior.
+  logInfo('ai_decision_versions', {
+    collegeId: identityContext.collegeId,
+    provider: adapter.name,
+    model: aiConfig.model,
+    modelVersion: decision.modelVersion || null,
+    promptVersionTag,
+  });
   // imageCount reflects images actually included in the request sent to
   // the provider — never the raw attachmentIds count.
   const imageCount = imagesSupported ? images.length : 0;
@@ -4262,6 +4289,7 @@ async function askAgent(
     imagesSupported: decisionCtx.imagesSupported,
     images,
     imageAnalysisUnavailable: decisionCtx.imageAnalysisUnavailable,
+    promptVersionTag: decisionCtx.promptVersionTag,
     onStep,
   });
 

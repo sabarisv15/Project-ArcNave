@@ -4,6 +4,16 @@ _Last updated: 2026-09-03._
 
 ---
 
+# ⛔ NEWEST BANNER — P5 continues: 5.13 (npm workspaces + Turborepo) shipped. 2026-09-03.
+
+Same session, continuing "go ahead for remaining." [ADL-090](../30-decisions/ledger.md#adl-090). New root `package.json` (npm workspaces) + `turbo.json` — local-dev convenience only, `.github/workflows/ci.yml` and both Dockerfiles untouched, zero risk to the already-verified pipeline (Docker's backend build context is `./backend`, invisible to root files). Real measured caching: `turbo run lint` 10.7s cold, 49ms cached. Full Docker backend suite re-confirmed unaffected: 2994/2994.
+
+**Exact next action:** remaining P5 items: **O6** (secrets manager — ask owner before provisioning; O7 already built the Secret Manager containers, so O6's remaining scope may just be "populate real values + wire the app to read from Secret Manager instead of `.env`"), **D8** (partition the biggest growing tables — no new cost, needs a real query against this repo's own table sizes to pick candidates rather than guessing), **D1's remaining "read replica" half** (real new investment, must ask). That's the whole P5 list — once these three are resolved (built, or explicitly deferred like O2/O3), P5 itself closes.
+
+**Committed:** not yet as of this banner.
+
+---
+
 # ⛔ NEWEST BANNER — P5 continues: O7 (infrastructure-as-code, Terraform) shipped, code-only. 2026-09-03.
 
 Same session, continuing "go ahead for remaining." [ADL-089](../30-decisions/ledger.md#adl-089). New `infra/terraform/` — the exact same resources `STAGING-DEPLOY-RUNBOOK.md` (O3) already documents as manual `gcloud` commands, now as Terraform: 2 GCS buckets, the Cloud SQL instance/database, 6 Secret Manager secret containers (never a value), and a deploy service account + IAM bindings + Workload Identity Federation (no downloaded JSON key). `terraform validate` passed against the real `hashicorp/google` provider schema (stronger check than O3's own manual-command review got) — still code-only, nothing applied against real GCP, same ADL-085 pre-launch-cost reasoning.

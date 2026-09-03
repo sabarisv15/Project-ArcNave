@@ -7551,3 +7551,65 @@ apply instructions, and the explicit reminder to keep this in sync with
 **Verified:** `terraform fmt -check` clean, `terraform validate`
 Success. No backend test suite applies — no backend/frontend code
 touched this pass.
+
+---
+
+## ADL-090
+
+### 5.13 (modernization P5) — npm workspaces + Turborepo build cache — Resolved
+
+**What prompted this.** Fifth P5 item this session ("go ahead for
+remaining" — the owner's own instruction to keep working through the
+list). Plan text: "No multi-package tooling: plain npm -> workspace +
+build cache tools."
+
+**Scoped deliberately conservative: a local-dev/DX convenience layer
+only, zero change to the actually-verified pipeline.** New root
+`package.json` (`"workspaces": ["backend", "frontend"]`) + `turbo.json`
+add `npm install` once at the root (symlinks
+`node_modules/arcnave-backend`/`arcnave-frontend` to the real
+directories, confirmed — no files moved or duplicated) and
+`turbo run <task>` for local lint/typecheck/format:check/build/test
+across both packages, with real content-hash-keyed local caching
+(measured: a repeated `turbo run lint` dropped from 10.7s to 49ms,
+`>>> FULL TURBO`). **`.github/workflows/ci.yml` and both Dockerfiles
+are byte-for-byte unchanged** — `git status` after this pass shows only
+the two new root files, `turbo.json`, and one `.gitignore` line
+(`.turbo/`). This was a deliberate choice, not an oversight: Docker's
+`backend` build context is `./backend` (docker-compose.yml), invisible
+to anything at the repo root, and CI's `frontend` job already installs
+independently via `actions/setup-node` — rewiring either to be
+workspace-aware would be exactly the kind of destabilizing structural
+change this project's own "measure before designing" discipline argues
+against for two packages with genuinely little cross-package coupling
+today (confirmed: no shared internal module exists between
+backend/frontend, per ADL-086's own note on this same question for
+SBOM tooling). If real coupling ever emerges, revisit whether Docker/CI
+should become workspace-aware then — not speculatively now.
+
+**`test` task explicitly marked `"cache": false`** in `turbo.json` —
+backend's test suite hits a real (Docker) Postgres; caching its result
+keyed only on source-file hashes would produce a false "cache hit" for
+a change in seed/fixture data the hash never captures. Every other task
+(lint/typecheck/format:check/build) is a pure function of source files
+and safely cached.
+
+**Real, expected non-issue caught and NOT chased further:** `turbo run
+format:check` fails on `arcnave-frontend` — this is the exact same,
+already-diagnosed Windows `core.autocrlf=true` checkout artifact this
+session's own O5/prompt-registry passes already confirmed is not real
+(the true git-staged LF blob passes `prettier --check` cleanly);
+turbo surfacing it is expected behavior (it runs the real
+`npm run format:check` script unmodified), not a new bug turbo
+introduced.
+
+**Verified:** `npm install` at root (added 4 packages — `turbo` +
+transitive — existing `backend`/`frontend` `node_modules` untouched,
+confirmed via `git status` showing zero diff on either package's own
+`package.json`/`package-lock.json`). `turbo run lint`: both packages
+run, 0 errors (same 123-warning baseline). `turbo run typecheck`:
+clean. `turbo run build`: frontend builds correctly (backend has no
+`build` script — turbo correctly skips it, standard documented
+behavior, not an error). Full Docker backend suite re-confirmed
+unaffected by the root-level addition: **2994/2994**, run from inside
+the already-running container, exactly as before this pass.

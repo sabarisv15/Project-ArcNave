@@ -14,7 +14,7 @@ import {
 import { ENDORSEMENT_STATES, chainProgress, endorsementChainLabel } from '../lib/endorsementChain';
 import { departmentLabel, hodOf } from '../lib/institutionData';
 import { timetableStateOf } from '../lib/institutionTimetableData';
-import { useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import { useInstitutionalLifecycle } from '@/features/institution';
 import { cn } from '../lib/utils';
 
 /**

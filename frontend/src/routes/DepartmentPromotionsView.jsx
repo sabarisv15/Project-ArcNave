@@ -8,8 +8,7 @@ import { NoAssignedDepartment, NoResults } from '../components/InstitutionalStat
 import { SearchPopoverField, SortIconPopover } from '../components/ToolbarIcons';
 import { FilterPopover, FilterSelect } from '../components/FilterPopover';
 import { PANE, STICKY_HEAD, TABLE_HEAD, StickyTableShell, TableEmptyState } from '../components/WorkspaceLayout';
-import { useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
-import { useAcademicTerm } from '../store/AcademicTermProvider';
+import { useInstitutionalLifecycle, useAcademicTerm } from '@/features/institution';
 import { cn } from '../lib/utils';
 
 /**

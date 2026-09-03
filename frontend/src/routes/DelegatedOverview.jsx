@@ -10,7 +10,7 @@ import { DELEGATED_ROOT, delegatedScope, routedRevisions } from '../lib/delegate
 import { ENDORSEMENT_STATES, chainProgress, endorsementChainLabel } from '../lib/endorsementChain';
 import { DEPARTMENT_BY_ID, departmentLabel, hodOf } from '../lib/institutionData';
 import { timetableStateOf } from '../lib/institutionTimetableData';
-import { useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import { useInstitutionalLifecycle } from '@/features/institution';
 import { cn } from '../lib/utils';
 
 /**

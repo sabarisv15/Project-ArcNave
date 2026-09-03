@@ -1,8 +1,7 @@
 import { act, renderHook, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import { AcademicRosterProvider, useAcademicRoster } from '../store/AcademicRosterProvider';
-import { AcademicTermProvider } from '../store/AcademicTermProvider';
+import { AcademicRosterProvider, useAcademicRoster, AcademicTermProvider } from '@/features/institution';
 import { OWNED_CLASS, PROMOTED_STUDENTS, PRIOR_SEMESTER } from '../lib/classTutorData';
 import { ACTIVE_CLASSES } from '../lib/academicCalendar';
 import { studentsOfClass as baselineStudentsOfClass } from '../lib/rosterData';

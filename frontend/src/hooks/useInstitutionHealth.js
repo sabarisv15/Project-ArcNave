@@ -4,9 +4,7 @@ import { PROVISIONING } from '../lib/provisioning';
 import { INSTITUTION_ATTENTION, departmentHealth } from '../lib/institutionSignals';
 import { deriveInstitutionReadiness } from '../lib/institutionReadiness';
 import { buildLiveSnapshot, deriveInstitutionSetup } from '../lib/institutionSetupData';
-import { useAcademicTerm } from '../store/AcademicTermProvider';
-import { useAcademicRoster } from '../store/AcademicRosterProvider';
-import { useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import { useAcademicTerm, useAcademicRoster, useInstitutionalLifecycle } from '@/features/institution';
 
 /**
  * The institution as it currently is, rather than as it was when the fixtures

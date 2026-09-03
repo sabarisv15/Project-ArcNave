@@ -7,7 +7,7 @@ import { SourcesWidget } from './SourcesPopover';
 import { ChatWorkspace, ChatTranscriptScrollArea, ChatComposerDock } from './ChatWorkspace';
 import { useTranscriptScroll } from '../../../hooks/useTranscriptScroll';
 import { useWorkspace } from '../../../store/WorkspaceProvider';
-import { composerScope, useComposer } from '../../../store/ComposerProvider';
+import { composerScope, useComposer } from '../store/ComposerProvider';
 
 /**
  * Normal chat, through the shared ChatWorkspace shell: inline top bar, transcript

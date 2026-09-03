@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { FileOutput } from 'lucide-react';
-import { Markdown } from '../components/Markdown';
+import { Markdown } from '@/components/Markdown';
 import { ArtifactRevisionComposer } from '../components/ArtifactRevisionComposer';
 import { ArtifactContextPanel, ArtifactContextDrawer } from '../components/ArtifactContextPanel';
 import {
@@ -12,13 +12,14 @@ import {
   ChatTranscriptScrollArea,
   ChatComposerDock,
   SourcesWidget,
+  composerScope,
+  useComposer,
 } from '@/features/chat';
-import { useTranscriptScroll } from '../hooks/useTranscriptScroll';
-import { useWorkspace } from '../store/WorkspaceProvider';
-import { composerScope, useComposer } from '../store/ComposerProvider';
+import { useTranscriptScroll } from '@/hooks/useTranscriptScroll';
+import { useWorkspace } from '@/store/WorkspaceProvider';
 import { artifactsApi } from '@/api/artifacts';
-import { ARTIFACT_CONTEXT } from '../lib/mockData';
-import { cn } from '../lib/utils';
+import { ARTIFACT_CONTEXT } from '@/lib/mockData';
+import { cn } from '@/lib/utils';
 
 // Same class ProjectDetail.jsx's own extraSections items use — ChatHeader.jsx
 // doesn't export its MENU_ITEM constant, so each caller keeps its own copy.

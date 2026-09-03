@@ -17,7 +17,7 @@
  */
 
 import { SeatScopeHeader } from './SeatScopeHeader';
-import { useAcademicTerm } from '../store/AcademicTermProvider';
+import { useAcademicTerm } from '@/features/institution';
 import { delegatedScope } from '../lib/delegatedScope';
 
 export function DelegatedScopeHeader({ scope = delegatedScope(), trail }) {

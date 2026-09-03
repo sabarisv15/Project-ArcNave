@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
-import { ACTIVE_CLASSES } from '../lib/academicCalendar';
-import { ALL_STUDENTS, studentsOfClass as baselineStudentsOfClass } from '../lib/rosterData';
+import { ACTIVE_CLASSES } from '@/lib/academicCalendar';
+import { ALL_STUDENTS, studentsOfClass as baselineStudentsOfClass } from '@/lib/rosterData';
 import { useAcademicTerm } from './AcademicTermProvider';
 
 /**

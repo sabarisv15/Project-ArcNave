@@ -3,7 +3,7 @@ import { DrawerShell } from '@/components/ui/Drawer';
 import { ATTENDANCE_THRESHOLD, CLASS_BY_ID, tutorOf } from '../lib/departmentData';
 import { StudentOriginBadge } from './StudentOriginBadge';
 import { PROMOTION_OUTCOMES } from '../lib/promotionData';
-import { useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import { useInstitutionalLifecycle } from '@/features/institution';
 import { cn } from '../lib/utils';
 
 /**

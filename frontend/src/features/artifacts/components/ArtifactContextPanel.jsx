@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { Building2, Database, FileSpreadsheet, FileText, Paperclip, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '../lib/utils';
+import { cn } from '@/lib/utils';
 
 /**
  * Artifact context — what this artifact was **made from**.

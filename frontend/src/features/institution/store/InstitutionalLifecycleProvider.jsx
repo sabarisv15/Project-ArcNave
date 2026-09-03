@@ -9,22 +9,22 @@ import {
   coverageOf,
   formatSeatDate,
   hodCoverageOf,
-} from '../lib/seatState';
+} from '@/lib/seatState';
 import {
   PROMOTION_OUTCOMES,
   candidateIndex,
   priorClassIndex,
   targetClassIdFor,
   targetSectionsFor,
-} from '../lib/promotionData';
-import { canFinalApprove, finalApprovalBlockReason, finalApprovedState, returnedState } from '../lib/endorsementChain';
+} from '@/lib/promotionData';
+import { canFinalApprove, finalApprovalBlockReason, finalApprovedState, returnedState } from '@/lib/endorsementChain';
 import {
   canDelegatedReview,
   delegatedBlockReason,
   delegatedReviewedState,
   delegatedScope,
-} from '../lib/delegatedScope';
-import { TIMETABLE_STATE_BY_DEPT } from '../lib/institutionTimetableData';
+} from '@/lib/delegatedScope';
+import { TIMETABLE_STATE_BY_DEPT } from '@/lib/institutionTimetableData';
 import { useAcademicRoster } from './AcademicRosterProvider';
 import { useAcademicTerm } from './AcademicTermProvider';
 

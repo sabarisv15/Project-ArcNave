@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Plus } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '../lib/utils';
+import { cn } from '@/lib/utils';
 
 const overlay = 'fixed inset-0 z-[80] bg-overlay/20 animate-fadeUp';
 const panel =

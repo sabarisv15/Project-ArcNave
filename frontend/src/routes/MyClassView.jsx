@@ -18,7 +18,7 @@ import { ClassScopeHeader } from '../components/ClassScopeHeader';
 import { CapacityMeter } from '../components/CapacityMeter';
 import { PriorSemesterPanel } from '../components/PriorSemesterPanel';
 import { TIMETABLE_STATE_LABELS, TIMETABLE_STATE_TONE } from '../lib/timetableState';
-import { useAcademicRoster } from '../store/AcademicRosterProvider';
+import { useAcademicRoster } from '@/features/institution';
 import { NoAssignedClass, NoWatchlist, NothingPending } from '../components/InstitutionalState';
 import { TABLE_HEAD } from '../components/WorkspaceLayout';
 import { cn } from '../lib/utils';

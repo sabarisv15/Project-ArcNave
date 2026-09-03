@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { ArtifactTypeSelector } from '../components/ArtifactTypeSelector';
-import { useWorkspace } from '../store/WorkspaceProvider';
+import { useWorkspace } from '@/store/WorkspaceProvider';
 
 /** Create with template — no AI composer until a form is chosen. */
 export function ArtifactCreate() {

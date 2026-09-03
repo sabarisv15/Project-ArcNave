@@ -11,9 +11,7 @@ import { DepartmentScopeHeader } from '../components/DepartmentScopeHeader';
 import { NoAssignedDepartment, NoClasses, NothingPending } from '../components/InstitutionalState';
 import { TABLE_HEAD, TableEmptyState } from '../components/WorkspaceLayout';
 import { useDepartmentClasses } from '../hooks/useDepartmentClasses';
-import { useAcademicRoster } from '../store/AcademicRosterProvider';
-import { useAcademicTerm } from '../store/AcademicTermProvider';
-import { useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import { useAcademicRoster, useAcademicTerm, useInstitutionalLifecycle } from '@/features/institution';
 import { mean } from '../lib/rosterData';
 import { cn } from '../lib/utils';
 

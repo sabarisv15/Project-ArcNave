@@ -6,7 +6,7 @@ import { CLASS_BY_ID } from '../lib/departmentData';
 import { DEPT_REQUESTS, DEPT_REQUEST_KINDS } from '../lib/departmentApprovalsData';
 import { DAYS, HOURS, LIVE_VERSION, WORKLOAD_STATES, periodsFor } from '../lib/departmentTimetableData';
 import { FACULTY_LIFECYCLE_STATES, reassignmentPreflight } from '../lib/facultyLifecycle';
-import { useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import { useInstitutionalLifecycle } from '@/features/institution';
 import { cn } from '../lib/utils';
 
 /**

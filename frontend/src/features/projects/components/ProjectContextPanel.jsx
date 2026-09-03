@@ -4,7 +4,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { FileText, Lock, Paperclip, Pencil, Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { AddTextDialog, InstructionsDialog } from './Dialogs';
-import { useWorkspace } from '../store/WorkspaceProvider';
+import { useWorkspace } from '@/store/WorkspaceProvider';
 
 /** Instructions · Memory · Context. Compact sections, never large cards — the
  *  single bounded panel supplies the container hierarchy. */

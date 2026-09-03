@@ -1,9 +1,12 @@
 import { act, renderHook, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import { AcademicTermProvider } from '../store/AcademicTermProvider';
-import { AcademicRosterProvider } from '../store/AcademicRosterProvider';
-import { InstitutionalLifecycleProvider, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import {
+  AcademicTermProvider,
+  AcademicRosterProvider,
+  InstitutionalLifecycleProvider,
+  useInstitutionalLifecycle,
+} from '@/features/institution';
 import {
   ENDORSEMENT_STATES,
   canFinalApprove,

@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { AuthContext } from '@/hooks/useAuth';
 import { WorkspaceProvider } from '@/store/WorkspaceProvider';
-import { ComposerProvider } from '@/store/ComposerProvider';
+import { ComposerProvider } from '@/features/chat';
 import { hasPermission } from '@/lib/permissions';
 import App from '@/App';
 

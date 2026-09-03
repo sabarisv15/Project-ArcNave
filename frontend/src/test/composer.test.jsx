@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { ComposerProvider, composerScope, isEmptyComposer, useComposer } from '../store/ComposerProvider';
+import { ComposerProvider, composerScope, isEmptyComposer, useComposer } from '../features/chat';
 import { draftKey, readDraft } from '../lib/draftStore';
 import { ME } from '../lib/substituteData';
 

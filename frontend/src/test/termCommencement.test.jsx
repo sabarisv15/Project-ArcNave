@@ -1,9 +1,14 @@
 import { act, renderHook, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import { AcademicTermProvider, useAcademicTerm } from '../store/AcademicTermProvider';
-import { AcademicRosterProvider, useAcademicRoster } from '../store/AcademicRosterProvider';
-import { InstitutionalLifecycleProvider, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import {
+  AcademicTermProvider,
+  useAcademicTerm,
+  AcademicRosterProvider,
+  useAcademicRoster,
+  InstitutionalLifecycleProvider,
+  useInstitutionalLifecycle,
+} from '@/features/institution';
 import { ACTIVE_CLASSES, BAND_SEMESTERS } from '../lib/academicCalendar';
 import { CLASS_TUTOR_SEATS } from '../lib/seatState';
 import { REVIEW_CANDIDATES } from '../lib/promotionData';

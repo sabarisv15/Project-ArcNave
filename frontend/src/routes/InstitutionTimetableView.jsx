@@ -14,7 +14,7 @@ import { InstitutionScopeHeader } from '../components/InstitutionScopeHeader';
 import { FinalApprovalDrawer } from '../components/FinalApprovalDrawer';
 import { NoDepartments, NoExceptions } from '../components/InstitutionalState';
 import { PANE, STICKY_HEAD, TABLE_HEAD, StickyTableShell } from '../components/WorkspaceLayout';
-import { useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import { useInstitutionalLifecycle } from '@/features/institution';
 import { cn } from '../lib/utils';
 
 /**

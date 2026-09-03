@@ -13,8 +13,8 @@ import {
   termLabel,
   timetableStatesOfTerm,
   bandLabelOfTerm,
-} from '../lib/academicTerm';
-import { attendanceLiveIn, attendanceLockReasonIn, stateIn } from '../lib/timetableState';
+} from '@/lib/academicTerm';
+import { attendanceLiveIn, attendanceLockReasonIn, stateIn } from '@/lib/timetableState';
 
 /**
  * Which academic term the institution is currently running.

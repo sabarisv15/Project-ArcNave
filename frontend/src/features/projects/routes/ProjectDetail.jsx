@@ -11,14 +11,15 @@ import {
   ChatTranscriptScrollArea,
   ChatComposerDock,
   CHAT_GUTTER,
+  composerScope,
+  useComposer,
 } from '@/features/chat';
 import { ProjectContextPanel, ProjectContextDrawer } from '../components/ProjectContextPanel';
 import { ProjectContextStrip, ProjectContextBadge } from '../components/ProjectContextStrip';
 import { DeleteProjectDialog } from '../components/Dialogs';
-import { useTranscriptScroll } from '../hooks/useTranscriptScroll';
-import { useWorkspace } from '../store/WorkspaceProvider';
-import { composerScope, useComposer } from '../store/ComposerProvider';
-import { cn } from '../lib/utils';
+import { useTranscriptScroll } from '@/hooks/useTranscriptScroll';
+import { useWorkspace } from '@/store/WorkspaceProvider';
+import { cn } from '@/lib/utils';
 
 const MENU_ITEM =
   'flex items-center gap-[9px] h-[32px] px-[9px] rounded-[9px] font-sans text-[12.5px] text-ink cursor-pointer outline-none data-[highlighted]:bg-tint2';

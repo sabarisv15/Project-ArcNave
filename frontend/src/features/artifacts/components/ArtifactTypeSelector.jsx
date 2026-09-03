@@ -1,4 +1,4 @@
-import { ARTIFACT_TYPES } from '../lib/mockData';
+import { ARTIFACT_TYPES } from '@/lib/mockData';
 
 /** Seven artifact forms. No composer is shown until one is selected. */
 export function ArtifactTypeSelector({ onSelect }) {

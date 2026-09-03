@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { ComposerProvider, composerScope, useComposer } from '../store/ComposerProvider';
+import { ComposerProvider, composerScope, useComposer } from '../features/chat';
 import { useComposerAttachments } from '../features/chat/hooks/useComposerAttachments';
 import { aiApi } from '../api/ai';
 

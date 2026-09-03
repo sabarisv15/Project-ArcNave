@@ -6,7 +6,7 @@ import { SeatStateBadge } from './SeatStateBadge';
 import { FACULTY_BY_ID, facultyInitials, facultyOfDepartment } from '../lib/institutionData';
 import { seatTitle } from '../lib/seatTitles';
 import { HOD_L3 } from '../lib/roles';
-import { LIFECYCLE_REJECTION, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import { LIFECYCLE_REJECTION, useInstitutionalLifecycle } from '@/features/institution';
 import { cn } from '../lib/utils';
 
 /**

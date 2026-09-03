@@ -4,8 +4,7 @@ import { AlertTriangle, Lock } from 'lucide-react';
 import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '@/components/ui/Drawer';
 import { DEPARTMENT } from '../lib/departmentData';
 import { PROMOTION_OUTCOMES, REVIEW_CONTEXT_NOTE, priorClassIndex, targetSectionsFor } from '../lib/promotionData';
-import { LIFECYCLE_REJECTION, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
-import { useAcademicTerm } from '../store/AcademicTermProvider';
+import { LIFECYCLE_REJECTION, useInstitutionalLifecycle, useAcademicTerm } from '@/features/institution';
 import { cn } from '../lib/utils';
 
 /**

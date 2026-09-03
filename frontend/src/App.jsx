@@ -12,9 +12,7 @@ import { delegatedRegistered } from './lib/delegatedScope';
 import { ClassGate } from './components/ClassGate';
 import { AssessmentsProvider } from '@/features/assessments';
 import { useAttendanceLifecycle } from '@/features/attendance';
-import { AcademicRosterProvider } from './store/AcademicRosterProvider';
-import { AcademicTermProvider } from './store/AcademicTermProvider';
-import { InstitutionalLifecycleProvider } from './store/InstitutionalLifecycleProvider';
+import { AcademicRosterProvider, AcademicTermProvider, InstitutionalLifecycleProvider } from '@/features/institution';
 import { Loading } from './components/InstitutionalState';
 
 // Every route view below is a named export, not a default one — React.lazy
@@ -30,11 +28,11 @@ const lazyNamed = (importer, name) => lazy(() => importer().then((m) => ({ defau
 
 const ChatRoute = lazyNamed(() => import('./features/chat/routes/ChatRoute'), 'ChatRoute');
 const AiMemorySettingsView = lazyNamed(() => import('./routes/AiMemorySettingsView'), 'AiMemorySettingsView');
-const ProjectsView = lazyNamed(() => import('./routes/ProjectsView'), 'ProjectsView');
-const ProjectDetail = lazyNamed(() => import('./routes/ProjectDetail'), 'ProjectDetail');
-const ArtifactLibrary = lazyNamed(() => import('./routes/ArtifactLibrary'), 'ArtifactLibrary');
-const ArtifactCreate = lazyNamed(() => import('./routes/ArtifactCreate'), 'ArtifactCreate');
-const ArtifactEditor = lazyNamed(() => import('./routes/ArtifactEditor'), 'ArtifactEditor');
+const ProjectsView = lazyNamed(() => import('./features/projects/routes/ProjectsView'), 'ProjectsView');
+const ProjectDetail = lazyNamed(() => import('./features/projects/routes/ProjectDetail'), 'ProjectDetail');
+const ArtifactLibrary = lazyNamed(() => import('./features/artifacts/routes/ArtifactLibrary'), 'ArtifactLibrary');
+const ArtifactCreate = lazyNamed(() => import('./features/artifacts/routes/ArtifactCreate'), 'ArtifactCreate');
+const ArtifactEditor = lazyNamed(() => import('./features/artifacts/routes/ArtifactEditor'), 'ArtifactEditor');
 const CurriculumView = lazyNamed(() => import('./routes/CurriculumView'), 'CurriculumView');
 const CurriculumLanding = lazyNamed(() => import('./routes/CurriculumLanding'), 'CurriculumLanding');
 const MyClassView = lazyNamed(() => import('./routes/MyClassView'), 'MyClassView');

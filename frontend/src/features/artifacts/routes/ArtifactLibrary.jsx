@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { ArtifactCard } from '../components/ArtifactCard';
-import { SearchControl, SearchField } from '../components/SearchControl';
-import { FilterControl } from '../components/FilterControl';
-import { useWorkspace } from '../store/WorkspaceProvider';
-import { ARTIFACT_FILTERS } from '../lib/mockData';
+import { SearchControl, SearchField } from '@/components/SearchControl';
+import { FilterControl } from '@/components/FilterControl';
+import { useWorkspace } from '@/store/WorkspaceProvider';
+import { ARTIFACT_FILTERS } from '@/lib/mockData';
 
 export function ArtifactLibrary() {
   const navigate = useNavigate();

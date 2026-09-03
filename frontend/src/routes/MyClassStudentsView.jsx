@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ChevronRight, Plus, Upload } from 'lucide-react';
 import { ATTENDANCE_THRESHOLD, OWNED_CLASS } from '../lib/classTutorData';
-import { useAcademicRoster } from '../store/AcademicRosterProvider';
+import { useAcademicRoster } from '@/features/institution';
 import { ClassScopeHeader } from '../components/ClassScopeHeader';
 import { ClassStudentDrawer } from '../components/ClassStudentDrawer';
 import { AdmissionWizard } from '../components/AdmissionWizard';

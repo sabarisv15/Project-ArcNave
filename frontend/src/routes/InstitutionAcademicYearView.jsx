@@ -7,7 +7,7 @@ import { InstitutionScopeHeader } from '../components/InstitutionScopeHeader';
 import { CommenceSemesterDialog } from '../components/CommenceSemesterDialog';
 import { InstitutionDelegatedSummary } from '../components/InstitutionDelegatedSummary';
 import { PANE, TABLE_HEAD } from '../components/WorkspaceLayout';
-import { useAcademicTerm } from '../store/AcademicTermProvider';
+import { useAcademicTerm } from '@/features/institution';
 import { useInstitutionHealth } from '../hooks/useInstitutionHealth';
 import { cn } from '../lib/utils';
 

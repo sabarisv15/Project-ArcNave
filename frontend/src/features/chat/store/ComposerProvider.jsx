@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { clearDraft, draftKey, readDraft, writeDraft } from '../lib/draftStore';
-import { ME } from '../lib/substituteData';
+import { clearDraft, draftKey, readDraft, writeDraft } from '@/lib/draftStore';
+import { ME } from '@/lib/substituteData';
 
 /**
  * Composer draft isolation.

@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import { ATTENDANCE_THRESHOLD, CLASS_BY_ID, DEPARTMENT, DEPT_CLASSES } from '../lib/departmentData';
 import { DocumentsPendingBadge, StudentOriginBadge } from '../components/StudentOriginBadge';
-import { useAcademicRoster } from '../store/AcademicRosterProvider';
+import { useAcademicRoster } from '@/features/institution';
 import { DepartmentScopeHeader } from '../components/DepartmentScopeHeader';
 import { DepartmentStudentDrawer } from '../components/DepartmentStudentDrawer';
 import { EmptyRoster, NoAssignedDepartment, NoResults } from '../components/InstitutionalState';

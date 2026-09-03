@@ -7,7 +7,7 @@ import { DEPARTMENT, DEPT_FACULTY, FACULTY_BY_ID, facultyInitials } from '../lib
 import { FACULTY_LIFECYCLE_STATES, assignabilityReason, isAssignable } from '../lib/facultyLifecycle';
 import { seatTitle } from '../lib/seatTitles';
 import { CLASS_TUTOR_L4 } from '../lib/roles';
-import { useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import { useInstitutionalLifecycle } from '@/features/institution';
 import { cn } from '../lib/utils';
 
 /**

@@ -13,9 +13,12 @@ import {
 import { curriculumNavFor } from '../components/SidebarNavigation';
 import { LEVEL_2, TEACHING_STAFF } from '../lib/roles';
 import { canFinalApprove, endorsementChainLabel } from '../lib/endorsementChain';
-import { AcademicTermProvider } from '../store/AcademicTermProvider';
-import { AcademicRosterProvider } from '../store/AcademicRosterProvider';
-import { InstitutionalLifecycleProvider, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import {
+  AcademicTermProvider,
+  AcademicRosterProvider,
+  InstitutionalLifecycleProvider,
+  useInstitutionalLifecycle,
+} from '@/features/institution';
 import { renderApp as renderAppShared } from './renderApp';
 
 const wrapper = ({ children }) => (

@@ -4,7 +4,88 @@ _Last updated: 2026-09-02._
 
 ---
 
-# ⛔ NEWEST BANNER — assessments/calendar providers moved; 4.6 survey done but NOT split; 2.4/2.5 NOT attempted, 2026-09-02, same session as the banners below.
+# ⛔ NEWEST BANNER — ComposerProvider + Projects + Artifacts + Institution-provider-bundle all moved into features/, 2026-09-02, same session as the banner below (uncommitted).
+
+**Owner answered the taxonomy questions the banner below raised, then
+asked to also fold Projects and Artifacts into their own feature
+folders in the same pass.** All four moves done:
+
+1. **ComposerProvider** (`store/` → `features/chat/store/`) — owner
+   confirmed: same 4 consumers as `AIComposer` (HomeView, ProjectDetail,
+   ArtifactEditor, ChatView), already in `features/chat/`. Mechanical
+   move, added to `features/chat/index.js`'s barrel.
+2. **Projects** — `ProjectsView.jsx`, `ProjectDetail.jsx` (routes),
+   `ProjectCard.jsx`, `ProjectContextPanel.jsx`, `ProjectContextStrip.jsx`,
+   `Dialogs.jsx` (components, all 4 of its exports are project dialogs)
+   → `features/projects/`. Zero external consumers of any of these
+   besides the two lazy routes, so no barrel needed — `App.jsx`'s lazy
+   imports updated to the direct new paths, same convention every other
+   lazy route uses.
+3. **Artifacts** — `ArtifactCreate.jsx`, `ArtifactEditor.jsx`,
+   `ArtifactLibrary.jsx` (routes), `ArtifactCard.jsx`,
+   `ArtifactTypeSelector.jsx`, `ArtifactContextPanel.jsx`,
+   `ArtifactRevisionComposer.jsx` → `features/artifacts/`. Same "no
+   barrel needed" shape as Projects.
+4. **Institution provider bundle** — owner confirmed: only
+   `InstitutionalLifecycleProvider.jsx`, `AcademicRosterProvider.jsx`,
+   `AcademicTermProvider.jsx` themselves move (they depend on each
+   other — Lifecycle uses both Roster and Term, Roster uses Term —
+   confirming they're a real cluster), into
+   `features/institution/store/`, with a barrel
+   (`features/institution/index.js`). **Their ~20 consumer
+   components/routes/hooks (DepartmentFacultyDrawer, MyClassView,
+   ClassScopeHeader, useInstitutionHealth, etc.) deliberately did NOT
+   move** — every one spans Institution/Department/Delegated/MyClass
+   levels, so moving them would mean inventing feature boundaries this
+   pass doesn't have authorization to invent. All ~20 external
+   importers (components/hooks/routes/tests) repointed to
+   `@/features/institution`, several multi-line duplicate imports from
+   the same three old paths consolidated into one import per file.
+
+**One real mistake caught and fixed before committing:** `FilterControl.jsx`
+was moved into `features/artifacts/components/` on the assumption it was
+artifact-exclusive — the check that missed this used a path-substring
+grep (`components/FilterControl`) instead of matching the import
+statement itself, which missed `components/Recents.jsx`'s `./FilterControl`
+relative import. **Caught by the full frontend suite** (`vite:import-analysis`
+failed to resolve `./FilterControl` from `Recents.jsx`, 18 test files
+failed at once) — moved back to flat `components/`, re-audited every
+file moved in this session (this batch AND the two earlier committed
+ones — chat, assessments/calendar) with the CORRECT filename-based grep
+(`from ['"].*/Name['"]`, not a path-substring), confirmed no other
+instance of this mistake exists. **Lesson for future moves: always grep
+by the import statement's filename pattern, never by path substring —
+a substring match misses relative imports from siblings inside the
+same old flat folder.**
+
+**Verified, this session:** `npx eslint src/` — 0 errors (same 88
+pre-existing warnings). Full frontend suite — **552/552** (one flaky
+run showed 551/552 on `students.test.jsx`'s "opens on the live class"
+case with a stuck "Loading…" state; failed only in the full-suite run,
+passed clean in isolation and on a second full-suite re-run — pre-existing
+test-order flakiness, not caused by this move; if it recurs, it needs
+its own investigation, not a re-litigation of this diff). `npm run
+build` — clean; `dist/assets/` still has separate chunks for
+`ArtifactCreate`/`ArtifactEditor`/`ArtifactLibrary`/`ProjectDetail`/
+`ProjectsView`, confirming lazy code-splitting survived every move.
+
+**Exact next action:** commit + push this (uncommitted as of this
+banner). That closes out everything safely mechanical in the 5.9
+frontend reorg — remaining flat: `WorkspaceProvider` (~955 lines,
+deliberately left as cross-feature shared plumbing per owner decision —
+its `sendMessage`/`runAiTurn` serves chat+project+artifact sends in one
+function, so splitting it apart is a real logic refactor, not a file
+move) plus ~90 other files in flat `components/`/`routes/`/`lib/` with
+no single-feature owner. Then: **2.4/2.5** — owner said yes to a live
+Vertex probe; scope and run one before writing new production code
+(separate from this frontend work, backend + billable). Then
+**academicService.js**-first read for 4.6's actual split (still not
+attempted — needs its own Docker-verified pass). Then **1.16** (agent
+rewrite) remains the standing highest-value item.
+
+---
+
+# ⛔ Previous banner — assessments/calendar providers moved; 4.6 survey done but NOT split; 2.4/2.5 NOT attempted, 2026-09-02, same session as the banners below.
 
 **Owner asked for 3 things in one pass, batching verification to save
 time: (2) 4.6 file-split survey, (3) the rest of the frontend-provider

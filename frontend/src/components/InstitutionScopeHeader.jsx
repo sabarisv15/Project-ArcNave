@@ -18,7 +18,7 @@ import { INSTITUTION } from '../lib/institutionData';
 import { seatTitle } from '../lib/seatTitles';
 import { PRINCIPAL_L1 } from '../lib/roles';
 import { SeatScopeHeader } from './SeatScopeHeader';
-import { useAcademicTerm } from '../store/AcademicTermProvider';
+import { useAcademicTerm } from '@/features/institution';
 
 export function InstitutionScopeHeader({ institution = INSTITUTION, roleLabel = seatTitle(PRINCIPAL_L1), trail }) {
   /*

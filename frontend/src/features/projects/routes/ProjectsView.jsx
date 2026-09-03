@@ -3,10 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import * as Popover from '@radix-ui/react-popover';
 import { ArrowDownUp, Plus } from 'lucide-react';
 import { ProjectCard } from '../components/ProjectCard';
-import { SearchControl, SearchField } from '../components/SearchControl';
+import { SearchControl, SearchField } from '@/components/SearchControl';
 import { NewProjectDialog } from '../components/Dialogs';
-import { useWorkspace } from '../store/WorkspaceProvider';
-import { PROJECT_SORTS } from '../lib/mockData';
+import { useWorkspace } from '@/store/WorkspaceProvider';
+import { PROJECT_SORTS } from '@/lib/mockData';
 
 export function ProjectsView() {
   const navigate = useNavigate();

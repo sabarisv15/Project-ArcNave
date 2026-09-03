@@ -21,3 +21,8 @@ export { ChatHeader } from './components/ChatHeader';
 export { ChatMessage } from './components/ChatMessage';
 export { ChatWorkspace, ChatTranscriptScrollArea, ChatComposerDock, CHAT_GUTTER } from './components/ChatWorkspace';
 export { SourcesWidget, SourcesTrigger } from './components/SourcesPopover';
+// Same 4 consumers as AIComposer (HomeView, ProjectDetail, ArtifactEditor,
+// ChatView) — moved here alongside it rather than staying in flat store/,
+// since it's a mechanical move (identical consumer set), not a new
+// taxonomy decision.
+export { ComposerProvider, composerScope, isEmptyComposer, useComposer } from './store/ComposerProvider';

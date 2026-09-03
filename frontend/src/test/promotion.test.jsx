@@ -1,9 +1,13 @@
 import { act, renderHook, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import { AcademicTermProvider } from '../store/AcademicTermProvider';
-import { AcademicRosterProvider, useAcademicRoster } from '../store/AcademicRosterProvider';
-import { InstitutionalLifecycleProvider, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import {
+  AcademicTermProvider,
+  AcademicRosterProvider,
+  useAcademicRoster,
+  InstitutionalLifecycleProvider,
+  useInstitutionalLifecycle,
+} from '@/features/institution';
 import {
   PRIOR_CLASSES,
   PROMOTION_OUTCOMES,

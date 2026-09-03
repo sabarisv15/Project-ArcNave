@@ -1,9 +1,13 @@
 import { act, renderHook, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import { AcademicTermProvider, useAcademicTerm } from '../store/AcademicTermProvider';
-import { AcademicRosterProvider } from '../store/AcademicRosterProvider';
-import { InstitutionalLifecycleProvider, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import {
+  AcademicTermProvider,
+  useAcademicTerm,
+  AcademicRosterProvider,
+  InstitutionalLifecycleProvider,
+  useInstitutionalLifecycle,
+} from '@/features/institution';
 import { HOD_SEATS, SEAT_STATES, hodSeat } from '../lib/seatState';
 import { DEPARTMENTS, facultyOfDepartment } from '../lib/institutionData';
 import { seatTitle } from '../lib/seatTitles';

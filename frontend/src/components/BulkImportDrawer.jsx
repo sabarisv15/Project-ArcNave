@@ -12,7 +12,7 @@ import {
   sampleFile,
   summarise,
 } from '../lib/bulkImportData';
-import { useAcademicRoster } from '../store/AcademicRosterProvider';
+import { useAcademicRoster } from '@/features/institution';
 import { OWNED_CLASS, PROMOTED_STUDENTS } from '../lib/classTutorData';
 import { STICKY_HEAD, TABLE_HEAD, StickyTableShell } from './WorkspaceLayout';
 import { cn } from '../lib/utils';

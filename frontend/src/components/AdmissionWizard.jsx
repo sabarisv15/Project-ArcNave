@@ -9,7 +9,7 @@ import {
   emptyAdmission,
   missingRequired,
 } from '../lib/admissionData';
-import { REJECTION, useAcademicRoster } from '../store/AcademicRosterProvider';
+import { REJECTION, useAcademicRoster } from '@/features/institution';
 import { OWNED_CLASS } from '../lib/classTutorData';
 import { cn } from '../lib/utils';
 

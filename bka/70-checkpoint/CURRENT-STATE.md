@@ -4,6 +4,14 @@ _Last updated: 2026-09-03._
 
 ---
 
+# ⛔ NEWEST BANNER — aiService.js's flagged Prettier formatting debt (ADL-088) is fixed. 2026-09-03.
+
+Same day, owner asked directly to fix the debt the P5 thread flagged and deliberately left unfixed. [ADL-093](../30-decisions/ledger.md#adl-093). Fixed against the true git blob (not this Windows checkout's CRLF-confused copy) to avoid reintroducing the same noise — confirmed the diff touches only the four already-named blocks, purely cosmetic, full backend suite unchanged at 2994/2994. The other P5-thread finding (CI never actually run on real GitHub Actions) is still open, not this pass's ask.
+
+**Committed:** not yet as of this banner.
+
+---
+
 # ⛔ NEWEST BANNER — P5 thread CLOSED: O6/D1 deferred indefinitely (owner decision, ADL-092) — the entire P0-P5 modernization plan has no further queued phase. 2026-09-03.
 
 Same session as every P5 banner below, concluding it. Asked the owner

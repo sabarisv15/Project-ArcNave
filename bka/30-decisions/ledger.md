@@ -7679,3 +7679,34 @@ further phase after P5.
 
 **No code changed this pass** — decision-only, no test suite to
 re-run.
+
+---
+
+## ADL-093
+
+### aiService.js Prettier formatting debt (flagged in ADL-088) — Fixed
+
+**What prompted this.** The owner asked to fix the pre-existing
+formatting debt ADL-088 found and deliberately left unfixed (four
+blocks — `executeWorkflowPlan`'s `arcnaveContext` build, `resolveTurn
+Context`'s and `fetchTools`'s function signatures, one destructure in
+`askAgent` — none touched by that session's own edits).
+
+**Fixed without the Windows CRLF-checkout noise this session's earlier
+work already diagnosed:** extracted the real git-committed (LF) blob
+directly (`git show HEAD:...`), ran `prettier --write` on THAT inside
+the Linux container, confirmed the diff touched only the same four
+already-named blocks (122 diff lines, 4 hunks — matches exactly),
+confirmed the result passes `prettier --check` cleanly, then replaced
+the working file with it via a plain byte copy (never `git checkout`,
+which would reintroduce CRLF and risk masking the fix under this
+checkout's own line-ending conversion). Purely cosmetic — no logic
+changed, confirmed by running the exact ADL-050-sensitive suites this
+project always re-checks after touching `aiService.js`
+(`ai-service.test.js` + 4 siblings, 352 tests) plus the full backend
+suite.
+
+**Verified:** `npm run lint` 0 errors/123 warnings (unchanged),
+`npm run typecheck` clean, full Docker backend suite **2994/2994**
+(unchanged from before this fix — confirms it's genuinely
+formatting-only).

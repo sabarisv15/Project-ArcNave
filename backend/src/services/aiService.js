@@ -2178,53 +2178,56 @@ async function executeWorkflowPlan(
     hasFileTool,
     focusEntityType: null,
   });
-  const arcnaveContext = aiContextAssembly.buildContext([
-    aiContextAssembly.segment({
-      source: 'safety-preamble',
-      stability: aiContextAssembly.STABILITY.STATIC,
-      target: 'system',
-      content: systemPrompt,
-    }),
-    aiContextAssembly.segment({
-      source: 'mode-prefix',
-      stability: aiContextAssembly.STABILITY.STATIC,
-      target: 'system',
-      content: aiPolicyAssembly.MODE_PREFIX.curriculum,
-    }),
-    aiContextAssembly.segment({
-      source: 'policy-modules',
-      stability: aiContextAssembly.STABILITY.CONVERSATION,
-      target: 'system',
-      content: policy,
-    }),
-    aiContextAssembly.segment({
-      source: 'plan-summary-note',
-      stability: aiContextAssembly.STABILITY.TURN,
-      target: 'system',
-      content: `This answer combines the results of ${stepResults.length} tool(s), run as one plan:\n${stepDescriptions}${failureText}`,
-    }),
-    aiContextAssembly.segment({
-      source: 'identity',
-      stability: aiContextAssembly.STABILITY.CONVERSATION,
-      target: 'system',
-      content: identityBlock,
-    }),
-    // ADR-030 P1: TOOL_RESULT_ANSWER_SYSTEM_PROMPT's turn-specific
-    // guidance lives in the message stream, not the system segments —
-    // same text, same content, unchanged from P1.
-    aiContextAssembly.segment({
-      source: 'tool-result-data',
-      stability: aiContextAssembly.STABILITY.VOLATILE,
-      target: 'user',
-      content: userPrompt,
-    }),
-    aiContextAssembly.segment({
-      source: 'tool-result-answer-guidance',
-      stability: aiContextAssembly.STABILITY.STATIC,
-      target: 'user',
-      content: TOOL_RESULT_ANSWER_SYSTEM_PROMPT,
-    }),
-  ], { historyTurns });
+  const arcnaveContext = aiContextAssembly.buildContext(
+    [
+      aiContextAssembly.segment({
+        source: 'safety-preamble',
+        stability: aiContextAssembly.STABILITY.STATIC,
+        target: 'system',
+        content: systemPrompt,
+      }),
+      aiContextAssembly.segment({
+        source: 'mode-prefix',
+        stability: aiContextAssembly.STABILITY.STATIC,
+        target: 'system',
+        content: aiPolicyAssembly.MODE_PREFIX.curriculum,
+      }),
+      aiContextAssembly.segment({
+        source: 'policy-modules',
+        stability: aiContextAssembly.STABILITY.CONVERSATION,
+        target: 'system',
+        content: policy,
+      }),
+      aiContextAssembly.segment({
+        source: 'plan-summary-note',
+        stability: aiContextAssembly.STABILITY.TURN,
+        target: 'system',
+        content: `This answer combines the results of ${stepResults.length} tool(s), run as one plan:\n${stepDescriptions}${failureText}`,
+      }),
+      aiContextAssembly.segment({
+        source: 'identity',
+        stability: aiContextAssembly.STABILITY.CONVERSATION,
+        target: 'system',
+        content: identityBlock,
+      }),
+      // ADR-030 P1: TOOL_RESULT_ANSWER_SYSTEM_PROMPT's turn-specific
+      // guidance lives in the message stream, not the system segments —
+      // same text, same content, unchanged from P1.
+      aiContextAssembly.segment({
+        source: 'tool-result-data',
+        stability: aiContextAssembly.STABILITY.VOLATILE,
+        target: 'user',
+        content: userPrompt,
+      }),
+      aiContextAssembly.segment({
+        source: 'tool-result-answer-guidance',
+        stability: aiContextAssembly.STABILITY.STATIC,
+        target: 'user',
+        content: TOOL_RESULT_ANSWER_SYSTEM_PROMPT,
+      }),
+    ],
+    { historyTurns },
+  );
 
   // Model routing (P1.3) — routed on the HIGHEST riskLevel across every
   // step, never an average or the first step's alone: a plan combining
@@ -3163,7 +3166,11 @@ async function askGeneralChat(
 // independent of which mode/pipeline the question ends up in: quota,
 // attachments, and every hint/promptQuestion variant. Returns only what
 // later phases need — not a single "turn state" object.
-async function resolveTurnContext(client, question, { identityContext, focusContext, projectContext, history, attachmentIds }) {
+async function resolveTurnContext(
+  client,
+  question,
+  { identityContext, focusContext, projectContext, history, attachmentIds },
+) {
   // CEO Vertex/Gemini audit #42/C20/C21 (2026-08-30) — Per-Tenant Cost/
   // Quota Control and Rate Limits, both real, "urgent" gaps ADL-066
   // found with zero mitigation today. Checked first, before any other
@@ -3230,7 +3237,12 @@ async function resolveTurnContext(client, question, { identityContext, focusCont
 // Phase 2 — FETCH TOOLS. Role-permitted tools, semantic shortlisting,
 // the greeting fast-path, and the two config/identity promises kicked off
 // early because neither depends on the other (Review Finding #16).
-async function fetchTools(client, identityContext, question, { images, documents, media, focusContext, projectContext }) {
+async function fetchTools(
+  client,
+  identityContext,
+  question,
+  { images, documents, media, focusContext, projectContext },
+) {
   // excludeHumanOnly: true — upload_institutional_document is
   // deliberately never in this list: the LLM may propose+resolve a
   // destination (resolve_document_destination, a normal L1 tool, stays in
@@ -4199,8 +4211,16 @@ async function askAgent(
     history,
     attachmentIds,
   });
-  const { images, documents, media, historyTurns, attachmentHint, promptQuestion, compactPromptQuestion, answerPromptQuestion } =
-    turnContext;
+  const {
+    images,
+    documents,
+    media,
+    historyTurns,
+    attachmentHint,
+    promptQuestion,
+    compactPromptQuestion,
+    answerPromptQuestion,
+  } = turnContext;
 
   // Research mode short-circuits before a single ARCNAVE tool is even
   // listed — see askGeneralChat's own comment above it. Anything other

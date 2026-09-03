@@ -2939,15 +2939,23 @@ async function askGeneralChat(
   // systemPrompt/userPrompt pair — representation change only, byte-
   // identical output via aiContextAssembly.flattenToPrompts. identityBlock
   // stays last — ADR-030 P0 (see executeWorkflowPlan's own comment).
-  // Research mode never offers tools/focus (see this function's own call
-  // site) so only CORE (+CONTINUITY if history) can ever apply here —
-  // genuinely no safety-preamble segment either (no sanitized tool
-  // context exists in Research mode).
+  // Research mode offers exactly ONE tool — generate_document — never the
+  // Curriculum catalogue, never focus/project context, never a multi-step
+  // loop (owner decision 2026-09-03, reversing the prior "no tool is ever
+  // added" posture specifically for file-export requests, live-caught:
+  // "convert this into Excel/PDF" in Research mode had no honest way to
+  // succeed before this). role-gated the same way Curriculum's own
+  // roleTools is (aiToolRegistry.listTools({role})) — a role outside
+  // generate_document's allowedRoles gets an empty fileTools array and
+  // this function's behavior is byte-identical to before.
+  const fileTools = aiToolRegistry
+    .listTools({ excludeHumanOnly: true, role: identityContext.role })
+    .filter((tool) => tool.name === 'generate_document');
   const policy = aiPolicyAssembly.buildPolicy({
     mode: 'general',
     hasHistory,
-    toolCount: 0,
-    hasFileTool: false,
+    toolCount: fileTools.length,
+    hasFileTool: fileTools.length > 0,
     focusEntityType: null,
   });
   const userSegments = [
@@ -3058,6 +3066,7 @@ async function askGeneralChat(
       media: mediaSupported ? media : undefined,
       thinkingLevel,
       historyTurns,
+      tools: fileTools,
     },
   );
 
@@ -3066,16 +3075,88 @@ async function askGeneralChat(
   // event — so a slow provider response left the UI on the initial
   // default status with no real signal at all. One event, right before
   // the only LLM call this path makes.
-  onStep({ phase: 'synthesizing' });
-  const { text: rawAnswer, usage } = await completeMaybeStreaming(
-    client,
-    identityContext,
-    adapter,
-    aiConfig,
-    arcnaveContext,
-    'general_chat',
-    onDelta,
-  );
+  let rawAnswer;
+  let usage;
+  let researchToolUsed = null;
+  let researchToolEntries = [];
+  if (fileTools.length === 0) {
+    // Unchanged from before this owner decision — no tool offered means
+    // no reason to give up live token streaming, so this stays on the
+    // completeStream path exactly as it always has.
+    onStep({ phase: 'synthesizing' });
+    ({ text: rawAnswer, usage } = await completeMaybeStreaming(
+      client,
+      identityContext,
+      adapter,
+      aiConfig,
+      arcnaveContext,
+      'general_chat',
+      onDelta,
+    ));
+  } else {
+    // A tool is offered (generate_document only), so this must go through
+    // completeWithTools instead of completeStream — the same trade every
+    // Curriculum-mode turn already makes (askAgent's own decide()/writeUp()
+    // never stream either; see this file's own top comment). No multi-step
+    // loop: at most one tool call, then one continuation call for the
+    // final answer, mirroring the exact writeUp() "model saw the tool
+    // result and answered directly, no separate synthesis call" shape.
+    onStep({ phase: 'deciding' });
+    const decisionStartedAt = Date.now();
+    const decision = await adapter.completeWithTools(aiConfig, arcnaveContext);
+    await logLlmCall(client, {
+      identityContext,
+      adapter,
+      aiConfig,
+      purpose: 'general_chat',
+      usage: decision.usage,
+      latencyMs: Date.now() - decisionStartedAt,
+      toolCount: fileTools.length,
+    });
+    usage = decision.usage;
+    if (decision.type === 'tool_call' && decision.toolName === 'generate_document') {
+      onStep({ phase: 'running_tool', toolName: decision.toolName, stepIndex: 0, totalSteps: 1 });
+      const toolResult = await invokeTool(client, decision.toolName, decision.arguments || {}, {
+        identityContext,
+        provider: adapter.name,
+        model: aiConfig.model,
+      });
+      researchToolEntries = toolResult.entries;
+      const priorTurns = [
+        {
+          toolName: decision.toolName,
+          arguments: decision.arguments || {},
+          callId: decision.callId,
+          rawToolCall: decision.rawToolCall,
+          resultText: renderToolResultText(toolResult),
+        },
+      ];
+      onStep({ phase: 'synthesizing', toolName: decision.toolName });
+      const continuationStartedAt = Date.now();
+      const continuation = await adapter.completeWithTools(aiConfig, arcnaveContext, priorTurns);
+      await logLlmCall(client, {
+        identityContext,
+        adapter,
+        aiConfig,
+        purpose: 'general_chat',
+        usage: continuation.usage,
+        latencyMs: Date.now() - continuationStartedAt,
+        toolCount: fileTools.length,
+      });
+      usage = addUsage(usage, continuation.usage);
+      researchToolUsed = decision.toolName;
+      // continuation.type is 'answer' in the overwhelming common case
+      // (the model just saw its own tool result). The one edge case this
+      // falls back for — a SECOND tool_call from a single-tool offer,
+      // something no live turn has produced — reports the tool's own
+      // result text directly rather than guessing at a second round this
+      // path was deliberately never built to run.
+      rawAnswer = continuation.type === 'answer' ? continuation.text : renderToolResultText(toolResult);
+    } else {
+      onStep({ phase: 'synthesizing' });
+      rawAnswer = decision.text;
+    }
+  }
 
   // Review Finding #10 — Research mode has no tool/evidence pipeline of
   // its own (this function never builds Curriculum's `evidence` array —
@@ -3093,13 +3174,14 @@ async function askGeneralChat(
   const researchVerificationNote = buildResearchVerificationNote(researchVerification.status);
   const answer = researchVerificationNote ? `${rawAnswer}\n\n${researchVerificationNote}` : rawAnswer;
 
-  const sanitizedContext = aiPromptSafetyLayer.buildSanitizedContext([]);
+  const sanitizedContext = aiPromptSafetyLayer.buildSanitizedContext(researchToolEntries);
+  const researchTool = researchToolUsed ? fileTools.find((tool) => tool.name === researchToolUsed) || null : null;
   const presentation = aiExperienceLayer.buildPresentation({
     sanitizedContext,
     question,
     answer,
-    toolUsed: null,
-    tool: null,
+    toolUsed: researchToolUsed,
+    tool: researchTool,
     actorRole: identityContext.role,
   });
   return {
@@ -3107,7 +3189,7 @@ async function askGeneralChat(
     imageCount: imagesSupported ? images.length : 0,
     imageAnalysisUnavailable,
     question,
-    toolUsed: null,
+    toolUsed: researchToolUsed,
     answer,
     verification: researchVerification,
     usage,

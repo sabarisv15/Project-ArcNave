@@ -4974,12 +4974,16 @@ test('askAgent: even if a hostile instruction embedded in an attachment convince
 });
 
 // General/Curriculum scope mode (ScopeToggle.jsx's redefinition of the old
-// Ask/Act toggle) — General never gives the model a tool to call at all, a
-// structural boundary (no tools field in the outbound request, not just a
-// prompt instruction), proven directly against the real request body the
-// adapter sends, the same way the vision tests above prove the image
-// content block rather than trusting the mock's return value alone.
-test("aiService.askAgent: mode 'general' never sends a tools/tool_choice field — completeMaybeStreaming's plain-completion path runs, not completeWithTools", async (t) => {
+// Ask/Act toggle) — General never gives the model the Curriculum catalogue,
+// a structural boundary that still holds (proven directly against the real
+// request body the adapter sends, the same way the vision tests above prove
+// the image content block rather than trusting the mock's return value
+// alone). Owner decision (2026-09-03) narrowed but did not remove that
+// boundary: General now offers exactly ONE tool — generate_document — so a
+// live-caught gap ("convert this into Excel/PDF" in Research mode had no
+// honest way to succeed) is closed without reopening the rest of the
+// Curriculum tool catalogue.
+test("aiService.askAgent: mode 'general' offers ONLY generate_document, never the Curriculum catalogue, and skips it entirely when the model doesn't call it", async (t) => {
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'staff', collegeId: 'college-a' };
   let capturedBody;
@@ -5006,15 +5010,69 @@ test("aiService.askAgent: mode 'general' never sends a tools/tool_choice field �
     );
   });
 
-  assert.equal(toolInvoked, false, 'no ARCNAVE tool is ever offered to the model in Research mode');
+  assert.equal(toolInvoked, false, 'a question with no file intent never actually calls generate_document');
+  assert.equal(capturedBody.tools.length, 1, 'Research mode offers exactly one tool, never the full catalogue');
+  assert.equal(capturedBody.tools[0].function.name, 'generate_document');
+  const systemMessage = capturedBody.messages.find((m) => m.role === 'system');
+  assert.match(systemMessage.content, /Research mode/);
+});
+
+test("aiService.askAgent: mode 'general' offers NO tool at all to a role outside generate_document's allowedRoles", async () => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'class_admin_unpermitted', collegeId: 'college-a' };
+  let capturedBody;
+
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(
+      async (url, options) => {
+        capturedBody = JSON.parse(options.body);
+        return mockAnswerResponse('Plain answer, no tool field expected.');
+      },
+      async () => {
+        const result = await aiService.askAgent(client, 'explain react hooks for a class project', {
+          identityContext,
+          mode: 'general',
+        });
+        assert.equal(result.answer, 'Plain answer, no tool field expected.');
+      },
+    );
+  });
+
   assert.equal(
     capturedBody.tools,
     undefined,
-    'Research mode never sends a tools field — nothing for the model to call',
+    "an unpermitted role gets byte-identical behavior to before this change — no tools field at all",
   );
   assert.equal(capturedBody.tool_choice, undefined);
-  const systemMessage = capturedBody.messages.find((m) => m.role === 'system');
-  assert.match(systemMessage.content, /Research mode/);
+});
+
+test("aiService.askAgent: mode 'general' actually calls generate_document when the model asks for it, and reports it as toolUsed", async (t) => {
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'staff', collegeId: 'college-a' };
+  let toolParamsSeen;
+  t.mock.method(aiToolRegistry, 'invokeTool', async (toolName, { params }) => {
+    toolParamsSeen = params;
+    return { preamble: '', boundaryStart: '', boundaryEnd: '', entries: [] };
+  });
+
+  await withOpenAiConfig('test-openai-key', async () => {
+    await withMockFetch(
+      sequentialMockFetch([
+        mockToolCallResponse('generate_document', { title: 'Arrears', content: '| A |\n|---|\n| 1 |', format: 'xlsx' }),
+        mockAnswerResponse('Here you go — download it from your Documents.'),
+      ]),
+      async () => {
+        const result = await aiService.askAgent(client, 'convert this into excel and give me a downloadable file', {
+          identityContext,
+          mode: 'general',
+        });
+        assert.equal(result.toolUsed, 'generate_document');
+        assert.equal(result.answer, 'Here you go — download it from your Documents.');
+      },
+    );
+  });
+
+  assert.equal(toolParamsSeen.format, 'xlsx');
 });
 
 test("aiService.askAgent: mode 'curriculum' (and no mode at all) is byte-for-byte the unchanged tool-selecting path", async () => {

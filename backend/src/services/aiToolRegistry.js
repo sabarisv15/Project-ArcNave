@@ -3848,7 +3848,7 @@ registerTool({
     'extracted from an attachment, already computed earlier in this conversation, or simply listed by the ' +
     'user) and needs no NEW calculation — use generate_document(format: "xlsx" or "csv") for that instead: it ' +
     'converts a markdown table straight to a real workbook, no code, no formula-verification gate, nothing to ' +
-    'fail. Reach for THIS tool\'s saveAs/expectFormulasIn path only when the workbook itself must report a ' +
+    "fail. Reach for THIS tool's saveAs/expectFormulasIn path only when the workbook itself must report a " +
     'value derived from a computation over the data (a sum, average, count, etc.) that has to stay correct if ' +
     'the underlying numbers change later — e.g. a per-category total the reader might reasonably expect to ' +
     'recalculate. In that case, write the workbook with openpyxl to the exact filename given in saveAs, and ' +

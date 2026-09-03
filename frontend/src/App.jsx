@@ -10,7 +10,7 @@ import { InstitutionGate } from './components/InstitutionGate';
 import { DelegatedGate, DelegatedNotConfigured } from './components/DelegatedGate';
 import { delegatedRegistered } from './lib/delegatedScope';
 import { ClassGate } from './components/ClassGate';
-import { AssessmentsProvider } from './store/AssessmentsProvider';
+import { AssessmentsProvider } from '@/features/assessments';
 import { useAttendanceLifecycle } from '@/features/attendance';
 import { AcademicRosterProvider } from './store/AcademicRosterProvider';
 import { AcademicTermProvider } from './store/AcademicTermProvider';
@@ -50,9 +50,12 @@ const ClassLogsView = lazyNamed(() => import('./routes/ClassLogsView'), 'ClassLo
 const ReportsView = lazyNamed(() => import('./routes/ReportsView'), 'ReportsView');
 const TimetableView = lazyNamed(() => import('./routes/TimetableView'), 'TimetableView');
 const WorkloadView = lazyNamed(() => import('./routes/WorkloadView'), 'WorkloadView');
-const AssessmentsView = lazyNamed(() => import('./routes/AssessmentsView'), 'AssessmentsView');
+const AssessmentsView = lazyNamed(
+  () => import('./features/assessments/routes/AssessmentsView'),
+  'AssessmentsView',
+);
 const DocumentsView = lazyNamed(() => import('./features/documents/routes/DocumentsView'), 'DocumentsView');
-const CalendarView = lazyNamed(() => import('./routes/CalendarView'), 'CalendarView');
+const CalendarView = lazyNamed(() => import('./features/calendar/routes/CalendarView'), 'CalendarView');
 const DepartmentOverview = lazyNamed(() => import('./routes/DepartmentOverview'), 'DepartmentOverview');
 const DepartmentClassesView = lazyNamed(() => import('./routes/DepartmentClassesView'), 'DepartmentClassesView');
 const DepartmentFacultyView = lazyNamed(() => import('./routes/DepartmentFacultyView'), 'DepartmentFacultyView');

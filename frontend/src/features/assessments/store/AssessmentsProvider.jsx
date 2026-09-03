@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { ME, canPublish, initialAssessments, isValidMark, scopeById, studentsForScope } from '../lib/assessmentsData';
-import { ACTIVE_VERSION_ID } from '../lib/timetableData';
+import { ACTIVE_VERSION_ID } from '@/lib/timetableData';
 
 const AssessmentsContext = createContext(null);
 

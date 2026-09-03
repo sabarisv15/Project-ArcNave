@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { Check, Search } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn } from '@/lib/utils';
 import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '@/components/ui/Drawer';
 import { AssessmentReportDrawer } from './AssessmentReportDrawer';
 import { useAssessmentsStore } from '../store/AssessmentsProvider';
@@ -12,10 +12,10 @@ import {
   scopeById,
   studentsForScope,
 } from '../lib/assessmentsData';
-import { formatDateDMY } from '../lib/ist';
-import { AutosaveStatus, DraftRestoredNote } from './AutosaveStatus';
-import { CELL_DEBOUNCE_MS, useAutosave, useRestoredDraft } from '../hooks/useAutosave';
-import { draftKey } from '../lib/draftStore';
+import { formatDateDMY } from '@/lib/ist';
+import { AutosaveStatus, DraftRestoredNote } from '@/components/AutosaveStatus';
+import { CELL_DEBOUNCE_MS, useAutosave, useRestoredDraft } from '@/hooks/useAutosave';
+import { draftKey } from '@/lib/draftStore';
 import { ME } from '@/lib/currentUser';
 
 /**

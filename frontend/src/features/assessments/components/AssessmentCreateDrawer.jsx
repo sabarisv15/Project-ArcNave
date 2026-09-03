@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn } from '@/lib/utils';
 import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '@/components/ui/Drawer';
 import { useAssessmentsStore } from '../store/AssessmentsProvider';
 import { ASSESSMENT_TYPES, eligibleScopes, scopeLabel } from '../lib/assessmentsData';
-import { SessionTypeChip } from './SessionType';
-import { istDayKey, parseISTDateBounds } from '../lib/ist';
-import { AutosaveStatus, DraftRestoredNote } from './AutosaveStatus';
-import { useAutosave, useRestoredDraft } from '../hooks/useAutosave';
-import { draftKey } from '../lib/draftStore';
+import { SessionTypeChip } from '@/components/SessionType';
+import { istDayKey, parseISTDateBounds } from '@/lib/ist';
+import { AutosaveStatus, DraftRestoredNote } from '@/components/AutosaveStatus';
+import { useAutosave, useRestoredDraft } from '@/hooks/useAutosave';
+import { draftKey } from '@/lib/draftStore';
 import { ME as DOC_ME } from '@/lib/currentUser';
 
 const FIELD =

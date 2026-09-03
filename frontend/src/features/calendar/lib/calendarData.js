@@ -14,7 +14,7 @@
  * user-facing date renders DD/MM/YYYY, matching the rest of Curriculum.
  */
 
-import { DAY_MS, istDayKey, istMidnight } from './ist';
+import { DAY_MS, istDayKey, istMidnight } from '@/lib/ist';
 
 export const EVENT_TYPES = {
   academic: { label: 'Academic', dot: 'rgb(var(--c-accent))' },

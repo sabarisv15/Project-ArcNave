@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import { Lock, Trash2 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn } from '@/lib/utils';
 import { DrawerRail, DrawerShell, GHOST_BTN } from '@/components/ui/Drawer';
-import { AutosaveStatus, DraftRestoredNote } from './AutosaveStatus';
-import { useAutosave, useRestoredDraft } from '../hooks/useAutosave';
-import { draftKey } from '../lib/draftStore';
+import { AutosaveStatus, DraftRestoredNote } from '@/components/AutosaveStatus';
+import { useAutosave, useRestoredDraft } from '@/hooks/useAutosave';
+import { draftKey } from '@/lib/draftStore';
 import { useCalendarStore } from '../store/CalendarProvider';
 import { EVENT_TYPES, noteHasContent } from '../lib/calendarData';
 import { ME } from '@/lib/currentUser';
-import { formatDateDMY } from '../lib/ist';
-import { parseISTDateBounds } from '../lib/ist';
+import { formatDateDMY } from '@/lib/ist';
+import { parseISTDateBounds } from '@/lib/ist';
 
 const FIELD =
   'w-full font-sans text-ink bg-paper border border-line rounded-[10px] px-[11px] py-[8px] outline-none transition-colors duration-200 placeholder:text-ink-faint focus:border-accent-line focus:shadow-[0_0_0_3px_rgba(11,114,133,.1)]';

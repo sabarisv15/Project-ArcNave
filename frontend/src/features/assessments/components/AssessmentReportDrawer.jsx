@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn } from '@/lib/utils';
 import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '@/components/ui/Drawer';
 import { TYPE_LABELS, percentageFor } from '../lib/assessmentsData';
-import { downloadTextFile, printReport, rowsToCsv } from '../lib/reportBuilder';
-import { formatDateDMY, formatTime12IST, istDayKey } from '../lib/ist';
+import { downloadTextFile, printReport, rowsToCsv } from '@/lib/reportBuilder';
+import { formatDateDMY, formatTime12IST, istDayKey } from '@/lib/ist';
 
 /**
  * Every column the report can carry. `Result / status` is included because

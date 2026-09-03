@@ -7,7 +7,7 @@ import {
   marksProgress,
   scopeById,
   studentsForScope,
-} from '../lib/assessmentsData';
+} from '../features/assessments/lib/assessmentsData';
 import { ownedScopesForVersion, blocksForDay, ACTIVE_VERSION_ID } from '../lib/timetableData';
 
 describe('assessment scope is timetable-derived', () => {

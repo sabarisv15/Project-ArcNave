@@ -24,9 +24,9 @@
  * published assessment keeps who created it as well as who published it.
  */
 
-import { ACTIVE_VERSION_ID, ownedScopesForVersion, scopeLabel } from './timetableData';
+import { ACTIVE_VERSION_ID, ownedScopesForVersion, scopeLabel } from '@/lib/timetableData';
 import { buildRoster } from '@/features/attendance/lib/attendanceData';
-import { istMidnight, DAY_MS } from './ist';
+import { istMidnight, DAY_MS } from '@/lib/ist';
 
 export const ME = { id: 'staff-me', name: 'Priya Ramesh' };
 

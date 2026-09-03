@@ -10,8 +10,9 @@
 // It is identity, not documents data, so it lives here.
 //
 // FLAGGED, deliberately NOT unified: two other `ME` fixtures exist —
-// lib/assessmentsData.js (`{ id: 'staff-me', name: 'Priya Ramesh' }`,
-// no role) and lib/substituteData.js (`{ id: 'staff-me', name: 'You' }`).
+// features/assessments/lib/assessmentsData.js
+// (`{ id: 'staff-me', name: 'Priya Ramesh' }`, no role) and
+// lib/substituteData.js (`{ id: 'staff-me', name: 'You' }`).
 // Same id, different names and shapes. Merging them would change visible
 // UI text (substitute rows deliberately read "You"), which is a product
 // decision, not a refactor. Recorded here so the duplication is at least

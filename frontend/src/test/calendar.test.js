@@ -7,7 +7,7 @@ import {
   monthGrid,
   noteHasContent,
   notePreview,
-} from '../lib/calendarData';
+} from '../features/calendar/lib/calendarData';
 import { istDayKey } from '../lib/ist';
 
 describe('institutional events', () => {

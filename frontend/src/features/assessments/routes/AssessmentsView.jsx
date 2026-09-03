@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { cn } from '../lib/utils';
+import { cn } from '@/lib/utils';
 import { useAssessmentsStore } from '../store/AssessmentsProvider';
 import {
   ASSESSMENT_SORTS,
@@ -10,10 +10,10 @@ import {
   scopeById,
   studentsForScope,
 } from '../lib/assessmentsData';
-import { formatDateDMY } from '../lib/ist';
-import { SearchPopoverField, SortIconPopover } from '../components/ToolbarIcons';
-import { FilterPopover, FilterSelect } from '../components/FilterPopover';
-import { TABLE_HEAD, TableEmptyState } from '../components/WorkspaceLayout';
+import { formatDateDMY } from '@/lib/ist';
+import { SearchPopoverField, SortIconPopover } from '@/components/ToolbarIcons';
+import { FilterPopover, FilterSelect } from '@/components/FilterPopover';
+import { TABLE_HEAD, TableEmptyState } from '@/components/WorkspaceLayout';
 import { PRIMARY_BTN } from '@/components/ui/Drawer';
 import { AssessmentCreateDrawer } from '../components/AssessmentCreateDrawer';
 import { AssessmentDetailDrawer } from '../components/AssessmentDetailDrawer';

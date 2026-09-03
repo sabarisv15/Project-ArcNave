@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, NotebookPen, StickyNote } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn } from '@/lib/utils';
 import { CalendarProvider, useCalendarStore } from '../store/CalendarProvider';
 import { DateNoteDrawer } from '../components/DateNoteDrawer';
 import { NotesListDrawer } from '../components/NotesListDrawer';
 import { EVENT_TYPES, MONTH_NAMES, WEEKDAY_LABELS, monthGrid } from '../lib/calendarData';
-import { getISTParts, istDayKey } from '../lib/ist';
+import { getISTParts, istDayKey } from '@/lib/ist';
 
 const NAV_BTN =
   'w-[26px] h-[26px] grid place-items-center rounded-[8px] border-0 bg-transparent text-ink-muted cursor-pointer transition-colors duration-200 hover:bg-tint2 hover:text-ink';

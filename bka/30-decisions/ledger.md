@@ -6231,7 +6231,7 @@ this pass — due at the next Docker checkpoint.
 
 ## ADL-074
 
-### 2.4 (modernization P3) — Tesseract vs. Gemini vision on a real handwritten scan: measured, mechanism NOT yet built
+### 2.4 (modernization P3) — Tesseract vs. Gemini vision on real handwritten scans: measured twice, DECIDED — vision is the default, not a confidence-gated fallback
 
 **What prompted this.** Plan item 2.4 ("Scanned-page reading uses a weak
 in-app engine, 30-page cap — poor on tables and handwriting — use a
@@ -6278,25 +6278,66 @@ published Vertex pricing for ~1,500 tokens) and latency (~10 s) is
 within what an interactive `/ai/ask` attachment turn already tolerates
 for other tool calls.
 
-**Decision: 2.4's premise is confirmed, real-cost-measured — but no
-production code changes yet.** This ADL is the measurement, not the
-build. Building a chat-attachment vision-model OCR fallback (mirroring
-`documentExtractionService.js`'s existing admission-wizard pattern, but
-for `documentTextExtractionService.js`'s OCR branch) is a separate,
-scoped implementation pass: it needs a real trigger condition (e.g.
-Tesseract confidence below some threshold — 29 clearly qualifies, but
-the cutoff itself is unmeasured), a decision on whether it always runs
-alongside Tesseract or only as a fallback, and the same untrusted-input
-boundary-wrapping (CLAUDE.md rule 9) every other extracted-text path
-already has.
+**Second measurement — a harder, multi-page real document.** The owner
+supplied a genuinely scanned 262-page PDF (`Analog Electronics EE`, a
+real GATE-exam study-notes scan — confirmed via `pdf-parse` to carry no
+real text layer, only a one-line watermark per early page). First 15
+pages rasterized via `pdftoppm` (run inside a throwaway `alpine`
+container with `poppler-utils` installed on demand, this host having no
+`pdftoppm` outside Docker) at the same 200 DPI
+`ocr/pdfRasterizer.js` already uses.
+
+- **Tesseract**, all 15 pages via `extractTextFromPages`: confidence
+  28.0–38.0 (**average 32.8/100**), every single page's output
+  unreadable garbage (e.g. `"BE BE Co / | £ he mobility of an unbond
+  ( [res e) u alae..."`) — handwritten technical notes (equations,
+  circuit/tree diagrams, Greek letters, subscripts) are, if anything,
+  harder for Tesseract than the first sample's exam paper.
+- **Gemini 3.7 Flash**, all 15 pages in ONE batched multimodal call
+  (not 15 separate calls): **16,598 in / 2,924 out tokens, 90.5 s**.
+  Output was not just readable but semantically correct and
+  well-structured: equations rendered as real LaTeX, the semiconductor
+  classification tree reproduced as an actual tree structure, specific
+  numeric values (electron/hole mobility, energy gaps, doping types)
+  transcribed correctly — requiring the model to understand the
+  diagrams, not just recognize characters. Cost for the whole 15-page
+  batch is a small fraction of a cent.
+- **Architecture finding, not just an accuracy one:** batching every
+  page of a document into a single vision call (rather than one call
+  per page) is both cheaper and faster than a per-page loop — worth
+  carrying into the real implementation.
+
+**Decision: Gemini vision is the DEFAULT engine for scanned chat
+attachments, not a confidence-gated fallback behind Tesseract.**
+Raised and argued the opposite way first — Tesseract is free, and
+gating on its confidence score would avoid paying for the (assumed)
+majority of clean/already-readable scans. **The owner explicitly
+rejected that framing and decided default, not fallback-gated,
+after hearing the argument** — recorded here as the settled decision,
+not re-opened by a future session on cost-optimization grounds alone.
+Two measured real documents (a single exam paper, a 15-page technical
+notebook) both show the same shape: Tesseract's failure is not
+occasional or borderline (confidence never exceeded 38/100 across 16
+total pages measured), and Gemini's real cost is trivial at the
+volumes involved. A confidence-based gate was also never fully
+trustworthy on its own terms — Tesseract's confidence score measures
+character-level certainty, not semantic correctness, so a "clean-looking
+but wrong" high-confidence misread was always a real failure mode a
+gate could hide.
 
 **Affected artefacts.** New: `backend/scripts/handwriting-ocr-quick-probe.js`
 (ad-hoc, not part of the tracked probe suite — kept for re-running
-against a different sample). No production code touched. No migration.
+against a different sample; the 15-page batch script used for the
+second measurement was a throwaway, not committed). No production code
+touched yet — implementing "vision is default" in
+`documentTextExtractionService.js`'s OCR branch is its own next,
+scoped pass.
 
-**Verification.** Live-run twice this session (Tesseract-only, then
-Tesseract+Vertex) against the same real image
-(`C:\Users\HAI\Pictures\Screenshots\Screenshot 2026-09-03 080707.png`,
-not committed — a real person's exam paper, kept off the repo). Not a
-unit test — this is a one-off measurement script, same category as
+**Verification.** Live-run three times this session: Tesseract-only,
+then Tesseract+Vertex, against
+`C:\Users\HAI\Pictures\Screenshots\Screenshot 2026-09-03 080707.png`
+(not committed); then Tesseract+Vertex again against 15 rasterized
+pages of `C:\Users\HAI\Downloads\Analog Electronics EE(www.gatenotes.in).pdf`
+(not committed, neither the source PDF nor the rasterized pages). Not a
+unit test — these are one-off measurement scripts, same category as
 `native-pdf-scale-probe.js`/`pdf-geometry-probe.js`.

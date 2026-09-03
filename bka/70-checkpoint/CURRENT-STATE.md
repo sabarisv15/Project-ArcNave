@@ -4,7 +4,54 @@ _Last updated: 2026-09-02._
 
 ---
 
-# ⛔ NEWEST BANNER — 2.4 measured live (real Tesseract + real Vertex call), decisive result, 2026-09-03. NOT yet built. Same session as the banner below (that one now committed as `729be0c`, pushed).
+# ⛔ NEWEST BANNER — 2.4 DECIDED (vision is DEFAULT, not fallback), measured twice, 2026-09-03. NOT yet built. Same session as the banner below (that one committed as `729be0c`, pushed; the first 2.4 measurement as `60df5f0`, pushed).
+
+**2.4 now has a settled decision, not just a measurement.** Full
+writeup: [ADL-074](../30-decisions/ledger.md#adl-074) (updated in
+place — read the whole entry, it now covers two real measurements and
+the final decision, not just the first one). Short version:
+
+- **Second measurement**, a harder case: a real 262-page scanned GATE
+  study-notes PDF (owner-supplied), first 15 pages tested. Tesseract:
+  28.0-38.0 confidence (avg 32.8/100), every page unreadable garbage.
+  Gemini 3.7 Flash, all 15 pages in ONE batched call: 16,598 in / 2,924
+  out tokens, 90.5s, output was not just readable but semantically
+  correct (equations as real LaTeX, diagram structure reproduced,
+  specific technical values transcribed correctly).
+- **Decision, explicitly settled by the owner: Gemini vision is the
+  DEFAULT for scanned chat attachments, NOT a confidence-gated
+  fallback behind Tesseract.** The assistant argued for fallback-only
+  (cost: don't pay for scans Tesseract could already read for free) —
+  the owner heard the argument and explicitly rejected it, choosing
+  default over fallback. **This is decided, not open for a future
+  session to re-litigate on cost-optimization grounds alone** — if
+  revisited, it needs a new reason, not the same cost argument already
+  heard and rejected here.
+- **Still not built.** Both measurements are real code (Tesseract via
+  the actual `ocr/tesseractOcr.js` module; Vertex via the same
+  `GoogleAuth`/`modelUrl()` pattern every other probe uses), but no
+  production path was touched. Implementing "vision is default" in
+  `documentTextExtractionService.js`'s OCR branch — replacing (or
+  running instead of) the Tesseract call in the chat-attachment
+  path — is the next, scoped, NOT-yet-started implementation pass.
+  Carry forward the batching finding: one multimodal call per
+  document (all pages at once), not one call per page.
+
+**Exact next action:** implement the vision-as-default OCR path in
+`documentTextExtractionService.js` (the function `extractPdfText`'s OCR
+branch and whatever image-attachment branch calls `tesseractOcr`
+directly) — replace/precede the `tesseractOcr` call with a Gemini
+vision call by default, batching all pages of one attachment into one
+request. Needs: the untrusted-input boundary-wrapping every other
+extracted-text path already has (CLAUDE.md rule 9), a real decision on
+whether Tesseract is kept at all (as an offline/no-network fallback?)
+or removed outright now that it's not the default, and Docker-verified
+tests once built. This is a real, scoped implementation task — start it
+fresh, don't fold it into an unrelated pass.
+
+---
+
+# ⛔ Previous banner — 2.4 measured live (real Tesseract + real Vertex call), decisive result, 2026-09-03. NOT yet built. Same session as the banner below (that one now committed as `729be0c`, pushed).
 
 **2.4 ("scanned-page reading uses a weak in-app engine... use a vision
 model") is no longer an unscoped guess — it has a real measurement, on a

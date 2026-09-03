@@ -4,7 +4,62 @@ _Last updated: 2026-09-03._
 
 ---
 
-# ⛔ NEWEST BANNER — 4.6 BUILT and Docker-verified; WorkspaceProvider P3 item CLOSED, 2026-09-03. New session, after the 2.4/5.9 banner below.
+# ⛔ NEWEST BANNER — D1 AND 4.9 BOTH CLOSED; P3 (Structural cleanup) IS NOW FULLY CLOSED, 2026-09-03. Same session as the two banners below (D1, then 4.9 across 8 route files).
+
+**D1 (connection pooler) is closed.** `pg.Pool` (`backend/src/db/pool.js`) already WAS the real connection pooler for this single-process deployment — no pgbouncer needed (same "don't build multi-instance coordination ahead of actually running multiple processes" reasoning `circuitBreaker.js` already used for C8). The real gap was observability: `backend/src/db/tenantConnection.js`'s `_begin()` (the sole `appPool.connect()` call site) now logs `db_pool_contention` when `appPool.waitingCount > 0` at checkout time; `GET /api/v1/health` (`backend/src/tenantApp.js`) additively returns `pool: {total, idle, waiting}`. 3 new tests in `tests/db-pool-observability.test.js`. Full decision writeup: [ADL-075](../30-decisions/ledger.md#adl-075).
+
+**4.9 (contract tests on the noisiest routes) is closed — all 8 of 8 route files done**, verify-after-each discipline held throughout (owner's explicit pacing choice this session), in the owner-chosen priority order (highest real risk first). Full decision writeup, every file's route/subtest counts, and both real crash-class fixes: [ADL-076](../30-decisions/ledger.md#adl-076).
+
+✅ All 8 done, each Docker-verified (full suite + lint, 0 errors, 123 warnings, matching baseline) immediately after its own file:
+1. **ai.js** — 5 routes, `tests/ai-contract.test.js` (10 subtests).
+2. **students.js** — 23 routes, `tests/students-contract.test.js` (14 subtests). Found and fixed a real pre-existing bug here: `middleware/validate.js`'s `req.query = result.data.query` threw `TypeError: Cannot set property query of #<IncomingMessage> which has only a getter` on Express 5 — no schema before this file's `listStudentsSchema` ever validated `query`, so the bug was latent. Fixed with `Object.defineProperty(req, 'query', {value, writable, configurable, enumerable})`. This fix is load-bearing for every later file's query schemas too — proven working in students.js/staff.js/attendance.js/documents.js/platform.js/classes.js/assessments.js.
+3. **staff.js** — 16 routes, `tests/staff-contract.test.js` (14 subtests).
+4. **attendance.js** — 12 routes, `tests/attendance-contract.test.js` (10 subtests).
+5. **documents.js** — 31 routes (the largest file), `tests/documents-contract.test.js` (12 subtests).
+6. **platform.js** — 29 routes (the platform-admin sub-app, `requirePlatformAdmin`-gated, not `requireAuth`/`requirePermission` like the other 7 files), `tests/platform-contract.test.js` (11 subtests). Registered in `routes/openapi.js` with a `/platform/...` path prefix (unlike the other 7 files' bare paths) since this router mounts under `/api/v1/platform`, a structurally separate sub-app from the tenant one that serves `GET /api/v1/openapi.json` (ADR-010) — documentation-only, no cross-app request ever happens.
+7. **classes.js** — 18 routes, `tests/classes-contract.test.js` (10 subtests). Found and fixed a real pre-existing crash class: `generate-timetable`/`revise-timetable`'s `requirements` was `.map()`-ed unconditionally with no type check — a non-array `requirements` threw a raw 500. Fixed by typing it `z.array(z.any()).optional()`.
+8. **assessments.js** (the last file) — 20 routes, `tests/assessments-contract.test.js` (9 subtests). Found and fixed a second real pre-existing crash class: `assessment_types.max_marks`/`assessment_marks.marks_obtained` are NUMERIC columns with no type check anywhere in `assessmentService` (only presence checks) — a non-numeric value passed every check and failed as a raw, unhandled Postgres "invalid input syntax for type numeric" 500. Fixed by typing those fields `z.number().optional()`.
+
+**Final numbers:** full Docker suite 2979/2979 passing, `npm run lint` 0 errors, 123 warnings (unchanged baseline) — same as every per-file checkpoint along the way, confirming no cumulative drift across the 8-file pass.
+
+**P3 (Structural cleanup) is now fully closed.** Every P3 line item has been re-verified against code — D1 and 4.9 (this session) were the last two gaps; everything else (1.16, 4.6, 5.8/5.9, 1.18, 1.13, 1.11, 1.12, 2.3/2.4/2.5, 3.2, 4.3/5.2/C7, 1.5/D3) was already confirmed done in the 1.16 banner below.
+
+**If starting fresh next session:** P3 is done — move to **P4 (Maturity — staging + gradual rollout)** per [ARCNAVE-modernization-english.md](../../ARCNAVE-modernization-english.md)'s own P0-P5 plan. Read that plan's P4 section fresh rather than assuming scope from this banner's summary.
+
+**Committed:** not yet — every change this session (D1 + 4.9 across all 8 files + both ADL entries) is uncommitted working-tree state. `git status --short` before doing anything destructive.
+
+---
+
+# ⛔ Previous banner — 1.16 / clash C10 BUILT and Docker-verified, plus live behavioral-suite evidence, 2026-09-03. Same session as the 4.6/WorkspaceProvider banner below.
+
+**1.16 (`askAgent` rewritten as a step-by-step machine) is done, Docker-verified, live-suite-verified.** Two-step change, per an explicit owner-approved plan requiring full verification between steps (a past incident, [ADL-050](../30-decisions/ledger.md#adl-050), showed re-packaging governance-bearing system-instruction text mid-turn measurably weakened rule-following, 3/3 → 2/7 on a live model).
+
+**Correction to this same banner's own first draft: P3 is NOT closed.** The first version of this banner claimed "1.16 was the last remaining P3 item," copying the previous banner's own claim without re-checking it against the plan's actual P3 list ([ARCNAVE-modernization-english.md](../../ARCNAVE-modernization-english.md)'s P3 section) — caught when the owner asked "p3 over ah?" in the same session. Re-verified every P3 line item against code/ledger directly (not against prior banner text): confirmed done — 1.16, 4.6, 5.8/5.9, 1.18 (guardrail layer — BLOCK was already wired at the route, FLAG done this session), 1.13 (`aiNumericClaimLocaleSupport.js`, wired into `verifyNumericClaims`, its own file comment claiming "not wired yet" is now stale), 1.11 (`aiThinkingDepthClassifier` auto-selects thinking level), 1.12 (native forced-format, wired in `claude.js`/`openAiCompatibleUtils.js`/`vertexMaas.js`), 2.3/2.4/2.5 (file-text cache + vision OCR default), 3.2 (dead skill scripts removed), 4.3/5.2/C7 (typed-code migration — started per the plan's own "start" wording: `tsconfig.json` both sides, mixed files allowed, new files typed, [ADL-072](../30-decisions/ledger.md#adl-072)), 1.5/D3 (hybrid search — mechanism built, shipped OFF pending a live probe before enabling, same measure-before-enabling posture this project uses elsewhere, [ADL-073](../30-decisions/ledger.md#adl-073)). **Genuinely NOT started, zero evidence in code or the ledger:**
+- **D1 — connection pooler.** Only a passing by-analogy comment exists elsewhere (`circuitBreaker.js`: "same reasoning D1... already settled") — no pgbouncer/pooler config, no ledger decision entry recording it as built OR deliberately deferred.
+- **4.9 — contract tests on the noisiest routes.** No file, no ledger entry, nothing.
+
+**Exact next action:** pick D1 or 4.9 to close out P3 for real, or explicitly ask the owner whether either is deliberately deferred to a later phase (neither currently has a recorded decision either way — that gap itself needs closing, not just the build).
+
+**Step 1 — pure structural extraction, zero behavior change.** `aiService.js`'s `askAgent` (~1,100 lines, one function) is now 8 named phase functions read top-to-bottom as the pipeline the plan itself names: `resolveTurnContext` (route/inputs) → general-mode early return to `askGeneralChat` → `fetchTools` → `buildDecisionContext` → `decide` → `act` → `verify` → `writeUp`, plus a thin orchestrator. Literal code motion, not a rewrite — same logic, same text, same call arguments, moved into functions. The ADL-050 invariant (`sharedSystemSegments` built once, `decisionSegments`/`continuationSegments` each a **new array** from spreading it but sharing the same **segment-object references**, `decisionContext`/`continuationContext.segments` never cloned — confirmed by reading `aiContextAssembly.buildContext`/`segment` before editing, not assumed) survives the extraction exactly: `buildDecisionContext` builds it once, `act` rebuilds `continuationContext` on schema-fetch tool grants from the same `continuationSegments` array, never re-deriving the segments.
+
+**Step 2 — FLAG-tier guardrail reinforcement wiring**, the deliverable named in [routes/ai.js:537-550](../../backend/src/routes/ai.js#L537) ("that wiring belongs to the 1.16 session, which owns that file"). `aiGuardrailService.screenInput(question)` called exactly once per request, in `buildDecisionContext` (Curriculum) and `askGeneralChat` (Research); on `verdict === 'flag'`, one additive `guardrail-reinforcement-note` segment (`STABILITY.TURN`, before `identity`) carrying `aiGuardrailService.REINFORCEMENT_NOTE` byte-identically. Non-FLAG questions (every real scenario in the behavioral suite) get nothing added.
+
+**Verified — the FULL Docker suite, both steps:** Step 1: 2873/2873 passing, 0 lint errors, 123 pre-existing warnings (one extra `no-await-in-loop` warning from the extraction was found and eliminated — `executeWorkflowPlan`'s plan-tool branch returns the promise unawaited, same as the pre-refactor bare `return executeWorkflowPlan(...)`, not a suppression comment). Step 2: 2879/2879 (2873 + 6 new tests in `tests/ai-service-guardrail-reinforcement.test.js`), 0 lint errors, 123 warnings. The 5 files required to stay byte-for-byte unmodified (`ai-service.test.js`, `ai-service-media-support.test.js`, `ai-service-token-preflight.test.js`, `ai-providers.test.js`, `ai-policy-assembly.test.js`, including the 3 ADL-050 regression-lock tests) confirmed unchanged via `git diff --stat` — zero diff.
+
+**Live behavioral suite (`scripts/ai-behavioral-suite.js`, real Gemini calls via ADC) — run repeatedly, measured not assumed:**
+- Full 53-scenario suite: pre-refactor baseline 51/53, Step 1 50/53, Step 2 52/53.
+- Because categories C/E/L showed the only movement, ran 3 extra `CATEGORY_FILTER=C,E,L` samples (12 scenarios each) on BOTH the untouched baseline (`git stash`) and Step 1's code for a fair comparison: baseline 4-run total 38/48 (79%), Step 1 4-run total 43/48 (90%) — failures flip in both directions run-to-run on both codebases (e.g. `e2` failed in all 4 baseline samples, `c5`/`c6` flip either way), consistent with Gemini's documented non-deterministic thinking-budget behavior, not a systematic regression. This is the opposite shape from ADL-050's own finding (a reproducible, one-directional 75%→29% gap across many samples) — no such pattern found here.
+- Step 2's full run: 52/53, matching-or-better than baseline in every category; the one failure (`e2`) is the same scenario that failed in 4/4 of the earlier repeated samples on unmodified code — pre-existing flakiness, not a new regression from the FLAG-note wiring (expected, since it only fires on FLAG-matched input and none of the 53 scenarios are FLAG-shaped).
+
+**Committed:** not yet — pending user's own review/commit step.
+
+**P3 (Structural cleanup) is almost, but not fully, closed** — everything on the list is done except D1 (connection pooler) and 4.9 (contract tests); see the correction above.
+
+**If starting fresh next session:** read this banner. Close D1 and/or 4.9 (or get an explicit deferral decision on them) before treating P3 as done and moving to P4 (Maturity — staging + gradual rollout).
+
+---
+
+# ⛔ Previous banner — 4.6 BUILT and Docker-verified; WorkspaceProvider P3 item CLOSED, 2026-09-03. Same session as the 2.4/5.9 banner below.
 
 **4.6 (`academicService.js` split, 2,501 lines) is done, Docker-verified,
 committed.** `academicService.js` is now a ~138-line thin facade over 9

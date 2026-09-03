@@ -6350,3 +6350,150 @@ the one call-site change needed in `aiService.resolveChatAttachments`.
 implementation detail in `CURRENT-STATE.md`'s own banner for this
 build — not restated here per this file's own scope (decisions and
 their reasoning, not ongoing task/build state).
+
+## ADL-075
+
+### D1 (modernization P3) — connection pooler: `pg.Pool` already IS the pooler; the real gap was exhaustion observability, not a missing pooling layer
+
+**What prompted this.** Plan item D1, "Connection pooler," listed flat in
+P3 alongside genuinely unbuilt infrastructure. Read directly against
+code before assuming a pgbouncer-shaped deliverable was needed (this
+session's owner-flagged discipline, see `verify-code-not-docs` — a
+`bka/` line item's wording is not proof of what's actually missing).
+
+**What the code already had.** `backend/src/db/pool.js` constructs two
+`pg.Pool` instances (`appPool`/`platformPool`, ADR-015's three-role
+separation) with an explicit, reasoned `max`/`min`/timeout
+configuration (`config.dbPool`, `src/config.js` — raised from `pg`'s
+default 10 to 20 specifically because every request holds one client
+for its whole lifetime, see that config block's own comment). This
+already IS a real connection pooler for a single Node process — there
+is no multi-instance fan-out problem here for pgbouncer to solve, and
+`circuitBreaker.js`'s own comment already states the adjacent
+reasoning ("do not build multi-instance coordination ahead of actually
+running multiple app processes") for C8/D1 alike. What was actually
+missing: zero observability into pool exhaustion — nothing recorded
+when a request had to queue behind `config.dbPool.max` already-checked-
+out connections, and `pool.waitingCount`/`totalCount`/`idleCount` (real
+live gauges `pg.Pool` already exposes) were read nowhere in the
+codebase.
+
+**Decision: keep `pg.Pool` as the pooler; add the missing
+observability, do not stand up pgbouncer.** Standing up a separate
+pooler process for a single app instance would be pure overhead with
+no problem it actually solves today — the same build-ahead-of-real-
+need pattern this modernization effort has explicitly avoided
+elsewhere (ADL-054/055/070's "build first, measure never" corrections
+apply by the same logic here). Revisit only once this deployment
+genuinely runs multiple app processes.
+
+**What shipped, real code.**
+- `backend/src/db/tenantConnection.js`'s `_begin()` (the sole
+  `appPool.connect()` call site — every request's transaction opens
+  through here) now reads `appPool.waitingCount` immediately before
+  connecting; when `> 0`, logs `db_pool_contention` (`pool: 'app'`,
+  `waitingCount`, `totalCount`, `idleCount`) via the existing
+  `logWarn`. Per-request, not a new background timer or polling loop —
+  consistent with this codebase's existing "check inline, log if
+  abnormal" idiom (e.g. `logAttachmentTokenPreflight`).
+- `GET /api/v1/health` (`backend/src/tenantApp.js`) additively returns
+  `pool: { total, idle, waiting }` alongside its existing `status: 'ok'`
+  — a pull-based view of the same gauges, no new query, no behavior
+  change for any existing caller.
+
+**Verification.** 3 new tests in
+`backend/tests/db-pool-observability.test.js`: `/health`'s new field
+shape; `db_pool_contention` fires with the right fields when
+`waitingCount > 0` (proven via a scoped `Object.defineProperty`
+override of the live `appPool` singleton's gauge — a real getter on
+`pg.Pool`'s own prototype, restored after the test, never touching real
+pool behavior); and confirms silence in the normal (`waitingCount ===
+0`) case. Full Docker suite and lint due at the next Docker checkpoint
+alongside 4.9 (contract tests, same session).
+
+## ADL-076
+
+### 4.9 (modernization P3) — contract tests on the noisiest routes: zod schemas + `validate()` on all 8 route files, one real Express-5 bug and two real crash classes found and fixed along the way
+
+**What prompted this.** Plan item 4.9, the last open P3 line item
+alongside D1 (ADL-075, same session). Scope: extend
+`middleware/validate.js`'s zod-schema pattern (already proven on
+`routes/auth.js`) to the 8 highest-real-risk route files, in
+owner-chosen priority order: `ai.js` → `students.js` → `staff.js` →
+`attendance.js` → `documents.js` → `platform.js` → `classes.js` →
+`assessments.js`. Verify-after-each discipline held for all 8 — a full
+Docker suite + lint run immediately after each file, before moving to
+the next, the owner's explicit pacing choice.
+
+**Per-file route/subtest counts, permissive-schema discipline held
+throughout:** never re-assert a requiredness/format check the route or
+service already owns and returns its OWN specific message for — that
+field stays `.optional()`/untyped (`z.any()`) at the schema layer, so
+`validate()` never intercepts ahead of the business check.
+
+| File | Routes | Test file | Subtests |
+|---|---|---|---|
+| `ai.js` | 5 | `tests/ai-contract.test.js` | 10 |
+| `students.js` | 23 | `tests/students-contract.test.js` | 14 |
+| `staff.js` | 16 | `tests/staff-contract.test.js` | 14 |
+| `attendance.js` | 12 | `tests/attendance-contract.test.js` | 10 |
+| `documents.js` | 31 | `tests/documents-contract.test.js` | 12 |
+| `platform.js` | 29 | `tests/platform-contract.test.js` | 11 |
+| `classes.js` | 18 | `tests/classes-contract.test.js` | 10 |
+| `assessments.js` | 20 | `tests/assessments-contract.test.js` | 9 |
+
+**One real pre-existing bug found and fixed (`students.js`, first
+file):** `middleware/validate.js`'s `req.query = result.data.query`
+threw `TypeError: Cannot set property query of #<IncomingMessage>
+which has only a getter` on Express 5 — no schema before
+`listStudentsSchema` had ever validated `query`, so the bug was
+latent since the Express 5 migration. Fixed with
+`Object.defineProperty(req, 'query', {value, writable, configurable,
+enumerable})`, overriding Express 5's getter-only accessor with a real
+own-property. Load-bearing for every later file's query schemas —
+proven working in students.js/staff.js/attendance.js/documents.js/
+platform.js/classes.js/assessments.js.
+
+**Two real crash classes found and fixed along the way (not just
+type-safety theater):**
+- `classes.js`'s `generate-timetable`/`revise-timetable` routes
+  `.map()`-ed `requirements` unconditionally
+  (`((req.body || {}).requirements || []).map(...)`) — a non-array
+  `requirements` (string/object) threw a raw `TypeError` 500 today.
+  Fixed by typing `requirements: z.array(z.any()).optional()` in
+  `generateTimetableSchema`/`reviseTimetableSchema`.
+- `assessments.js`'s `assessment_types.max_marks`/
+  `assessment_marks.marks_obtained` are NUMERIC columns with no type
+  check anywhere in `assessmentService` (only presence checks) — a
+  non-numeric value passed every existing check and then failed as a
+  raw, unhandled Postgres "invalid input syntax for type numeric" 500.
+  Fixed by typing those fields `z.number().optional()` in
+  `createAssessmentTypeSchema`/`updateAssessmentTypeSchema`/
+  `recordMarkSchema`/`updateMarkSchema`/
+  `requestMarkCorrectionSchema`/`requestMarkReevaluationSchema`.
+
+**`platform.js` is structurally different from the other 7 files** —
+gated by `requirePlatformAdmin` (a separate token type/secret, not
+`requireAuth`/`requirePermission`) and mounted under a genuinely
+separate sub-app (`/api/v1/platform`, ADR-010 isolation). Its
+`.schemas` map uses a `/platform/...` path prefix (the other 7 files
+use bare paths) when registered in `routes/openapi.js`, since
+`GET /api/v1/openapi.json` is served from the tenant app — this is
+documentation-only static registration, no cross-app request ever
+happens, so it doesn't violate the isolation boundary
+`tests/platform.test.js` already proves.
+
+**Verification, every file.** `docker compose exec app node --test
+tests/<file>-contract.test.js` (new file, clean pass) → `node --test
+tests/<file>.test.js` (pre-existing file, zero diff/behavior change,
+confirmed unaffected) → `npm test` (full suite, growing by each file's
+new subtest count) → `npm run lint` (0 errors, 123 warnings throughout,
+matching baseline every time). Final full-suite count: 2979/2979
+passing, 0 lint errors, 123 warnings (unchanged baseline).
+
+**P3 (Structural cleanup) is now fully closed** — D1 (ADL-075) and 4.9
+(this entry) were the last two open items; every other P3 line item
+was already re-verified against code in the 1.16 banner
+(`bka/70-checkpoint/CURRENT-STATE.md`). Next: P4 (Maturity — staging +
+gradual rollout) per `ARCNAVE-modernization-english.md`'s own P0-P5
+plan.

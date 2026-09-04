@@ -9,16 +9,23 @@
 // tenantMiddleware in tenantApp.js, same as routes/invitations.js.
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { appPool } = require('../db/pool');
 const { openTenantTransaction } = require('../db/tenantTransaction');
 const positionAccountInvitationService = require('../services/positionAccountInvitationService');
+
+const acceptPositionInvitationSchema = z.object({
+  body: z.object({ token: z.string().optional(), password: z.string().optional() }).optional(),
+});
 
 function createPositionAccountInvitationsRouter() {
   const router = express.Router();
 
   router.post(
     '/position-accounts/invitations/accept',
+    validate(acceptPositionInvitationSchema),
     asyncHandler(async (req, res) => {
       const { token, password } = req.body || {};
 
@@ -67,3 +74,6 @@ function createPositionAccountInvitationsRouter() {
 }
 
 module.exports = createPositionAccountInvitationsRouter;
+module.exports.schemas = {
+  '/position-accounts/invitations/accept': { post: acceptPositionInvitationSchema },
+};

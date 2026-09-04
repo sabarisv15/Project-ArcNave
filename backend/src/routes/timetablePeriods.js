@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const academicService = require('../services/academicService');
 const identityService = require('../services/identityService');
@@ -62,6 +64,37 @@ function mapAcademicServiceError(err, res) {
   return false;
 }
 
+const timetablePeriodIdParams = z.object({ id: z.string() });
+const createTimetablePeriodSchema = z.object({
+  body: z
+    .object({
+      day_of_week: z.any().optional(),
+      hour_index: z.any().optional(),
+      start_time: z.string().optional(),
+      end_time: z.string().optional(),
+    })
+    .optional(),
+});
+const generateSlotGridSchema = z.object({
+  body: z
+    .object({
+      working_days: z.any().optional(),
+      start_time: z.string().optional(),
+      end_time: z.string().optional(),
+      slot_duration_minutes: z.any().optional(),
+      break_after_slots: z.any().optional(),
+    })
+    .optional(),
+});
+const importTimetableCsvSchema = z.object({
+  body: z.object({ file_name: z.string().optional(), file_base64: z.string().optional() }).optional(),
+});
+const getTimetablePeriodSchema = z.object({ params: timetablePeriodIdParams });
+const listTimetablePeriodsSchema = z.object({
+  query: z.object({ limit: z.string().optional(), offset: z.string().optional() }).optional(),
+});
+const deleteTimetablePeriodSchema = z.object({ params: timetablePeriodIdParams });
+
 function createTimetablePeriodsRouter() {
   const router = express.Router();
 
@@ -76,6 +109,7 @@ function createTimetablePeriodsRouter() {
   router.post(
     '/timetable-periods',
     requirePermission('timetable_periods.create'),
+    validate(createTimetablePeriodSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -100,6 +134,7 @@ function createTimetablePeriodsRouter() {
   router.post(
     '/timetable-periods/generate-grid',
     requirePermission('timetable_periods.generate_grid'),
+    validate(generateSlotGridSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const {
@@ -138,6 +173,7 @@ function createTimetablePeriodsRouter() {
   router.post(
     '/timetable-periods/import-csv',
     requirePermission('timetable_periods.import_csv'),
+    validate(importTimetableCsvSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -166,6 +202,7 @@ function createTimetablePeriodsRouter() {
   router.get(
     '/timetable-periods/:id',
     requireAuth,
+    validate(getTimetablePeriodSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const period = await academicService.getTimetablePeriod(req.dbClient, req.params.id);
@@ -194,6 +231,7 @@ function createTimetablePeriodsRouter() {
   router.get(
     '/timetable-periods',
     requireAuth,
+    validate(listTimetablePeriodsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { limit: rawLimit, offset: rawOffset } = req.query;
@@ -208,6 +246,7 @@ function createTimetablePeriodsRouter() {
   router.delete(
     '/timetable-periods/:id',
     requirePermission('timetable_periods.delete'),
+    validate(deleteTimetablePeriodSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -230,3 +269,9 @@ function createTimetablePeriodsRouter() {
 }
 
 module.exports = createTimetablePeriodsRouter;
+module.exports.schemas = {
+  '/timetable-periods': { post: createTimetablePeriodSchema, get: listTimetablePeriodsSchema },
+  '/timetable-periods/generate-grid': { post: generateSlotGridSchema },
+  '/timetable-periods/import-csv': { post: importTimetableCsvSchema },
+  '/timetable-periods/{id}': { get: getTimetablePeriodSchema, delete: deleteTimetablePeriodSchema },
+};

@@ -10,7 +10,9 @@
 // routes/positionAccountInvitations.js.
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { appPool } = require('../db/pool');
 const { openTenantTransaction } = require('../db/tenantTransaction');
 const staffService = require('../services/staffService');
@@ -43,11 +45,32 @@ function profileBodyToFields(body) {
   return fields;
 }
 
+const acceptStaffInvitationSchema = z.object({
+  body: z
+    .object({
+      token: z.string().optional(),
+      username: z.string().optional(),
+      password: z.string().optional(),
+      full_name: z.string().optional(),
+      gender: z.string().optional(),
+      dob: z.string().optional(),
+      phone: z.string().optional(),
+      designation: z.string().optional(),
+      qualification: z.string().optional(),
+      has_phd: z.any().optional(),
+      aicte_id: z.string().optional(),
+      joined_year: z.any().optional(),
+      address: z.string().optional(),
+    })
+    .optional(),
+});
+
 function createStaffInvitationsRouter() {
   const router = express.Router();
 
   router.post(
     '/staff/invitations/accept',
+    validate(acceptStaffInvitationSchema),
     asyncHandler(async (req, res) => {
       const { token, username, password } = req.body || {};
       const profileFields = profileBodyToFields(req.body || {});
@@ -105,3 +128,6 @@ function createStaffInvitationsRouter() {
 }
 
 module.exports = createStaffInvitationsRouter;
+module.exports.schemas = {
+  '/staff/invitations/accept': { post: acceptStaffInvitationSchema },
+};

@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const workflowChainService = require('../services/workflowChainService');
 const identityService = require('../services/identityService');
@@ -25,6 +27,20 @@ function mapWorkflowChainServiceError(err, res) {
   return false;
 }
 
+const createDelegationSchema = z.object({
+  body: z
+    .object({
+      role: z.string().optional(),
+      department_id: z.string().optional(),
+      delegate_user_id: z.string().optional(),
+      start_date: z.string().optional(),
+      end_date: z.string().optional(),
+      reason: z.string().optional(),
+    })
+    .optional(),
+});
+const revokeDelegationSchema = z.object({ params: z.object({ id: z.string() }) });
+
 function createWorkflowChainsRouter() {
   const router = express.Router();
 
@@ -36,6 +52,7 @@ function createWorkflowChainsRouter() {
   router.post(
     '/workflow-delegations',
     requirePermission('workflow_delegations.create'),
+    validate(createDelegationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const {
@@ -80,6 +97,7 @@ function createWorkflowChainsRouter() {
   router.post(
     '/workflow-delegations/:id/revoke',
     requirePermission('workflow_delegations.create'),
+    validate(revokeDelegationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const delegation = await workflowChainService.revokeDelegation(req.dbClient, req.params.id, {
@@ -99,3 +117,7 @@ function createWorkflowChainsRouter() {
 }
 
 module.exports = createWorkflowChainsRouter;
+module.exports.schemas = {
+  '/workflow-delegations': { post: createDelegationSchema },
+  '/workflow-delegations/{id}/revoke': { post: revokeDelegationSchema },
+};

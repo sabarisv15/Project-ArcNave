@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth } = require('../middleware/rbac');
 const conversationService = require('../services/conversationService');
 const identityService = require('../services/identityService');
@@ -34,12 +36,67 @@ function mapConversationServiceError(err, res) {
 // routes/personalNotes.js/routes/projects.js. Every route implicitly
 // scopes to identityService.resolveActorUserId(req.capabilities);
 // nothing here ever accepts a userId from the request.
+const conversationIdParams = z.object({ id: z.string() });
+const conversationMessageParams = z.object({ id: z.string(), messageId: z.string() });
+const listConversationsSchema = z.object({
+  query: z
+    .object({
+      project_id: z.string().optional(),
+      search: z.string().optional(),
+      archived: z.string().optional(),
+      limit: z.string().optional(),
+      offset: z.string().optional(),
+    })
+    .optional(),
+});
+const createConversationSchema = z.object({
+  body: z.object({ title: z.string().optional(), project_id: z.string().optional() }).optional(),
+});
+const updateConversationSchema = z.object({
+  params: conversationIdParams,
+  body: z
+    .object({
+      title: z.string().optional(),
+      project_id: z.string().optional(),
+      pinned: z.any().optional(),
+      archived: z.any().optional(),
+    })
+    .optional(),
+});
+const deleteConversationSchema = z.object({ params: conversationIdParams });
+const listMessagesSchema = z.object({
+  params: conversationIdParams,
+  query: z.object({ limit: z.string().optional(), offset: z.string().optional() }).optional(),
+});
+const addMessageSchema = z.object({
+  params: conversationIdParams,
+  body: z
+    .object({
+      role: z.string().optional(),
+      content: z.any().optional(),
+      tool_used: z.any().optional(),
+      tool_params: z.any().optional(),
+      presentation: z.any().optional(),
+      raw_data: z.any().optional(),
+      parent_message_id: z.string().optional(),
+      attachments: z.any().optional(),
+      input_tokens: z.any().optional(),
+      output_tokens: z.any().optional(),
+    })
+    .optional(),
+});
+const editMessageSchema = z.object({
+  params: conversationMessageParams,
+  body: z.object({ content: z.any().optional() }).optional(),
+});
+
 function createConversationsRouter() {
   const router = express.Router();
 
   router.get(
     '/conversations',
     requireAuth,
+    validate(listConversationsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { project_id: projectId, search, archived, limit, offset } = req.query || {};
@@ -58,6 +115,7 @@ function createConversationsRouter() {
   router.post(
     '/conversations',
     requireAuth,
+    validate(createConversationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { title, project_id: projectId } = req.body || {};
@@ -73,6 +131,7 @@ function createConversationsRouter() {
   router.put(
     '/conversations/:id',
     requireAuth,
+    validate(updateConversationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { title, project_id: projectId, pinned, archived } = req.body || {};
@@ -99,6 +158,7 @@ function createConversationsRouter() {
   router.delete(
     '/conversations/:id',
     requireAuth,
+    validate(deleteConversationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -116,6 +176,7 @@ function createConversationsRouter() {
   router.get(
     '/conversations/:id/messages',
     requireAuth,
+    validate(listMessagesSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { limit, offset } = req.query || {};
@@ -136,6 +197,7 @@ function createConversationsRouter() {
   router.post(
     '/conversations/:id/messages',
     requireAuth,
+    validate(addMessageSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const {
@@ -179,6 +241,7 @@ function createConversationsRouter() {
   router.patch(
     '/conversations/:id/messages/:messageId',
     requireAuth,
+    validate(editMessageSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { content } = req.body || {};
@@ -202,3 +265,9 @@ function createConversationsRouter() {
 }
 
 module.exports = createConversationsRouter;
+module.exports.schemas = {
+  '/conversations': { get: listConversationsSchema, post: createConversationSchema },
+  '/conversations/{id}': { put: updateConversationSchema, delete: deleteConversationSchema },
+  '/conversations/{id}/messages': { get: listMessagesSchema, post: addMessageSchema },
+  '/conversations/{id}/messages/{messageId}': { patch: editMessageSchema },
+};

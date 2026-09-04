@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const calendarService = require('../services/calendarService');
 const identityService = require('../services/identityService');
@@ -44,6 +46,24 @@ function mapCalendarServiceError(err, res) {
   return false;
 }
 
+const calendarEventIdParams = z.object({ id: z.string() });
+const listCalendarEventsSchema = z.object({
+  query: z.object({ from_date: z.string().optional(), to_date: z.string().optional() }).optional(),
+});
+const getCalendarEventSchema = z.object({ params: calendarEventIdParams });
+const calendarEventBodySchema = z
+  .object({
+    title: z.string().optional(),
+    event_type: z.string().optional(),
+    start_date: z.string().optional(),
+    end_date: z.string().optional(),
+    description: z.string().optional(),
+  })
+  .optional();
+const createCalendarEventSchema = z.object({ body: calendarEventBodySchema });
+const updateCalendarEventSchema = z.object({ params: calendarEventIdParams, body: calendarEventBodySchema });
+const deleteCalendarEventSchema = z.object({ params: calendarEventIdParams });
+
 function createCalendarRouter() {
   const router = express.Router();
 
@@ -57,6 +77,7 @@ function createCalendarRouter() {
   router.get(
     '/calendar-events',
     requireAuth,
+    validate(listCalendarEventsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { from_date: fromDate, to_date: toDate } = req.query;
@@ -68,6 +89,7 @@ function createCalendarRouter() {
   router.get(
     '/calendar-events/:id',
     requireAuth,
+    validate(getCalendarEventSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -83,6 +105,7 @@ function createCalendarRouter() {
   router.post(
     '/calendar-events',
     requirePermission('calendar.write'),
+    validate(createCalendarEventSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -102,6 +125,7 @@ function createCalendarRouter() {
   router.put(
     '/calendar-events/:id',
     requirePermission('calendar.write'),
+    validate(updateCalendarEventSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -122,6 +146,7 @@ function createCalendarRouter() {
   router.delete(
     '/calendar-events/:id',
     requirePermission('calendar.write'),
+    validate(deleteCalendarEventSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -141,3 +166,11 @@ function createCalendarRouter() {
 }
 
 module.exports = createCalendarRouter;
+module.exports.schemas = {
+  '/calendar-events': { get: listCalendarEventsSchema, post: createCalendarEventSchema },
+  '/calendar-events/{id}': {
+    get: getCalendarEventSchema,
+    put: updateCalendarEventSchema,
+    delete: deleteCalendarEventSchema,
+  },
+};

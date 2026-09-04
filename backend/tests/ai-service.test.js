@@ -4310,6 +4310,94 @@ test('resolveChatAttachments: a PDF attachment is extracted and audited as ai_at
   assert.equal(metadata.extractedChars, 'Attendance was 92% this month.'.length);
 });
 
+// A real, minimal %PDF header — enough for fileIntelligenceRouter's
+// sniffPdfMimeType (buffer.length >= 4 && ascii 'PDF' at offset 0) to
+// classify NATIVE_MULTIMODAL_DOCUMENT, unlike fakeDocumentDownload's
+// plain 'fake-document-bytes' buffer used by the extraction-only test
+// above (which has no magic bytes and never reaches the P2 2.1 branch).
+function realPdfBuffer(size = 32) {
+  const buffer = Buffer.alloc(Math.max(size, 8), 0x20);
+  buffer.write('%PDF-1.4', 0, 'ascii');
+  return buffer;
+}
+
+function fakeRealPdfDownload(overrides = {}) {
+  return {
+    document: {
+      doc_type: CHAT_DOC_TYPE,
+      uploaded_by_user_id: 'u1',
+      mime_type: 'application/pdf',
+      file_name: 'report.pdf',
+      ...overrides,
+    },
+    buffer: realPdfBuffer(),
+  };
+}
+
+test('resolveChatAttachments (P2 2.1): a real PDF is sent natively (media[]) by default, AND still text-extracted (documents[]) — additive, not a replacement', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async () => fakeRealPdfDownload());
+  t.mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: 'Attendance was 92% this month.',
+    method: 'text_layer',
+  }));
+  t.mock.method(configurationService, 'getConfiguration', async () => null); // no row -> ON by default (opt-OUT, not opt-in)
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const { media, documents } = await aiService.resolveChatAttachments(client, ['att-1'], identityContext);
+  assert.equal(media.length, 1);
+  assert.equal(media[0].mimeType, 'application/pdf');
+  assert.equal(media[0].capability, 'multimodal_pdf');
+  assert.equal(media[0].base64, realPdfBuffer().toString('base64'));
+  // The deterministic text-extraction path (RS-AIG-019's numeric-claim
+  // verifier reads THIS, never the native part) still ran, unchanged.
+  assert.equal(documents.length, 1);
+  assert.equal(documents[0].text, 'Attendance was 92% this month.');
+});
+
+test('resolveChatAttachments (P2 2.1): a college that explicitly opted out (enabled: false) gets no native PDF part, but text extraction is unaffected', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async () => fakeRealPdfDownload());
+  t.mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: 'Attendance was 92% this month.',
+    method: 'text_layer',
+  }));
+  t.mock.method(configurationService, 'getConfiguration', async (client, { category }) => {
+    assert.equal(category, 'native_pdf_attachments');
+    return { configuration: { enabled: false } };
+  });
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const { media, documents } = await aiService.resolveChatAttachments(client, ['att-1'], identityContext);
+  assert.equal(media.length, 0);
+  assert.equal(documents.length, 1);
+  assert.equal(documents[0].text, 'Attendance was 92% this month.');
+});
+
+test('resolveChatAttachments (P2 2.1): a PDF larger than MAX_NATIVE_PDF_BYTES skips the native part but still extracts text', async (t) => {
+  t.mock.method(documentService, 'downloadDocument', async () => ({
+    document: {
+      doc_type: CHAT_DOC_TYPE,
+      uploaded_by_user_id: 'u1',
+      mime_type: 'application/pdf',
+      file_name: 'huge.pdf',
+    },
+    buffer: realPdfBuffer(16 * 1024 * 1024), // over the 15MB bound (ADL-058 addendum: native reading does not scale)
+  }));
+  t.mock.method(documentTextExtractionService, 'extractPlainText', async () => ({
+    text: 'huge document text',
+    method: 'text_layer',
+  }));
+  const getConfigMock = t.mock.method(configurationService, 'getConfiguration', async () => null);
+  const client = fakeClient();
+  const identityContext = { userId: 'u1', role: 'principal', collegeId: 'college-a' };
+  const { media, documents } = await aiService.resolveChatAttachments(client, ['att-1'], identityContext);
+  assert.equal(media.length, 0);
+  assert.equal(documents.length, 1);
+  assert.equal(documents[0].text, 'huge document text');
+  // The size check happens before any config read, so an oversized PDF
+  // never pays for the lazy per-turn config lookup either.
+  assert.equal(getConfigMock.mock.callCount(), 0);
+});
+
 test('resolveChatAttachments: a docx/xlsx/csv/md/txt attachment each resolves through the same path (mocked extraction)', async (t) => {
   const cases = [
     ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'notes.docx'],

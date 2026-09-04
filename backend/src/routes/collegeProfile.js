@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requirePermission } = require('../middleware/rbac');
 const collegeProfileService = require('../services/collegeProfileService');
 const identityService = require('../services/identityService');
@@ -46,6 +48,20 @@ function bodyToFields(body, fieldMap) {
   return fields;
 }
 
+const updateCollegeProfileSchema = z.object({
+  body: z
+    .object({
+      name: z.string().optional(),
+      level1_position_title: z.string().optional(),
+      level3_position_title: z.string().optional(),
+      level4_position_title: z.string().optional(),
+      affiliating_university: z.string().optional(),
+      year_established: z.any().optional(),
+      address: z.string().optional(),
+    })
+    .optional(),
+});
+
 function createCollegeProfileRouter() {
   const router = express.Router();
 
@@ -66,6 +82,7 @@ function createCollegeProfileRouter() {
   router.put(
     '/college-profile',
     requirePermission('college_profile.update'),
+    validate(updateCollegeProfileSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       let profile;
@@ -95,3 +112,6 @@ function createCollegeProfileRouter() {
 }
 
 module.exports = createCollegeProfileRouter;
+module.exports.schemas = {
+  '/college-profile': { put: updateCollegeProfileSchema },
+};

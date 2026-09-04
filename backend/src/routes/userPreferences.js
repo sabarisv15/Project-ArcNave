@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth } = require('../middleware/rbac');
 const userPreferenceService = require('../services/userPreferenceService');
 const identityService = require('../services/identityService');
@@ -27,6 +29,14 @@ function mapUserPreferenceServiceError(err, res) {
 // design: the frontend decides what preference_key values exist
 // (dashboard layout, saved filters, notification channels, ...), this
 // route just stores/returns whatever key/value it's given.
+const preferenceKeyParams = z.object({ key: z.string() });
+const getPreferenceSchema = z.object({ params: preferenceKeyParams });
+const setPreferenceSchema = z.object({
+  params: preferenceKeyParams,
+  body: z.object({ value: z.any().optional() }).optional(),
+});
+const deletePreferenceSchema = z.object({ params: preferenceKeyParams });
+
 function createUserPreferencesRouter() {
   const router = express.Router();
 
@@ -45,6 +55,7 @@ function createUserPreferencesRouter() {
   router.get(
     '/preferences/:key',
     requireAuth,
+    validate(getPreferenceSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -62,6 +73,7 @@ function createUserPreferencesRouter() {
   router.put(
     '/preferences/:key',
     requireAuth,
+    validate(setPreferenceSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -82,6 +94,7 @@ function createUserPreferencesRouter() {
   router.delete(
     '/preferences/:key',
     requireAuth,
+    validate(deletePreferenceSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -100,3 +113,6 @@ function createUserPreferencesRouter() {
 }
 
 module.exports = createUserPreferencesRouter;
+module.exports.schemas = {
+  '/preferences/{key}': { get: getPreferenceSchema, put: setPreferenceSchema, delete: deletePreferenceSchema },
+};

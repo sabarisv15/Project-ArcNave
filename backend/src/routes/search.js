@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth } = require('../middleware/rbac');
 const identityService = require('../services/identityService');
 const searchService = require('../services/searchService');
@@ -19,12 +21,17 @@ function requireResolvedTenant(req, res) {
 // page/route already calls (studentService.listStudents,
 // staffService.listStaffForActor, academicService.listClasses), so
 // per-entity RBAC/scope is inherited from those, not re-decided here.
+const searchSchema = z.object({
+  query: z.object({ q: z.string().optional() }).optional(),
+});
+
 function createSearchRouter() {
   const router = express.Router();
 
   router.get(
     '/search',
     requireAuth,
+    validate(searchSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const results = await searchService.searchAll(req.dbClient, {
@@ -41,3 +48,6 @@ function createSearchRouter() {
 }
 
 module.exports = createSearchRouter;
+module.exports.schemas = {
+  '/search': { get: searchSchema },
+};

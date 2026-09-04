@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const curriculumService = require('../services/curriculumService');
 const workflowService = require('../services/workflowService');
@@ -86,12 +88,48 @@ function mapCurriculumServiceError(err, res) {
   return false;
 }
 
+const regulationIdParams = z.object({ id: z.string() });
+const subjectIdParams = z.object({ id: z.string() });
+const studentIdParams = z.object({ id: z.string() });
+const createRegulationSchema = z.object({
+  body: z.object({ name: z.string().optional(), description: z.string().optional() }).optional(),
+});
+const listRegulationsSchema = z.object({
+  query: z.object({ limit: z.string().optional(), offset: z.string().optional() }).optional(),
+});
+const getRegulationSchema = z.object({ params: regulationIdParams });
+const subjectBodySchema = z
+  .object({
+    subject_code: z.string().optional(),
+    subject_name: z.string().optional(),
+    semester: z.any().optional(),
+    credits: z.any().optional(),
+    lecture_hours: z.any().optional(),
+    tutorial_hours: z.any().optional(),
+    practical_hours: z.any().optional(),
+    subject_type: z.string().optional(),
+    prerequisites: z.any().optional(),
+    source_document_id: z.string().optional(),
+  })
+  .optional();
+const createSubjectSchema = z.object({ params: regulationIdParams, body: subjectBodySchema });
+const listSubjectsSchema = z.object({ params: regulationIdParams });
+const updateSubjectSchema = z.object({ params: subjectIdParams, body: subjectBodySchema });
+const deleteSubjectSchema = z.object({ params: subjectIdParams });
+const requestCurriculumMigrationSchema = z.object({
+  params: studentIdParams,
+  body: z.object({ to_regulation_id: z.string().optional() }).optional(),
+});
+const approveCurriculumMigrationSchema = z.object({ params: studentIdParams });
+const rejectCurriculumMigrationSchema = z.object({ params: studentIdParams });
+
 function createCurriculumRouter() {
   const router = express.Router();
 
   router.post(
     '/regulations',
     requirePermission('regulations.create'),
+    validate(createRegulationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -111,6 +149,7 @@ function createCurriculumRouter() {
   router.get(
     '/regulations',
     requireAuth,
+    validate(listRegulationsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { limit: rawLimit, offset: rawOffset } = req.query;
@@ -125,6 +164,7 @@ function createCurriculumRouter() {
   router.get(
     '/regulations/:id',
     requireAuth,
+    validate(getRegulationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const regulation = await curriculumService.getRegulation(req.dbClient, req.params.id);
@@ -139,6 +179,7 @@ function createCurriculumRouter() {
   router.post(
     '/regulations/:id/subjects',
     requirePermission('subjects.create'),
+    validate(createSubjectSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -162,6 +203,7 @@ function createCurriculumRouter() {
   router.get(
     '/regulations/:id/subjects',
     requireAuth,
+    validate(listSubjectsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const subjects = await curriculumService.listSubjectsForRegulation(req.dbClient, req.params.id);
@@ -172,6 +214,7 @@ function createCurriculumRouter() {
   router.put(
     '/subjects/:id',
     requirePermission('subjects.update'),
+    validate(updateSubjectSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -196,6 +239,7 @@ function createCurriculumRouter() {
   router.delete(
     '/subjects/:id',
     requirePermission('subjects.delete'),
+    validate(deleteSubjectSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const subject = await curriculumService.removeSubject(req.dbClient, req.params.id, {
@@ -212,6 +256,7 @@ function createCurriculumRouter() {
   router.post(
     '/students/:id/curriculum-migration',
     requireAuth,
+    validate(requestCurriculumMigrationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { to_regulation_id: toRegulationId } = req.body || {};
@@ -233,6 +278,7 @@ function createCurriculumRouter() {
   router.post(
     '/students/:id/curriculum-migration/approve',
     requireAuth,
+    validate(approveCurriculumMigrationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -250,6 +296,7 @@ function createCurriculumRouter() {
   router.post(
     '/students/:id/curriculum-migration/reject',
     requireAuth,
+    validate(rejectCurriculumMigrationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -268,3 +315,12 @@ function createCurriculumRouter() {
 }
 
 module.exports = createCurriculumRouter;
+module.exports.schemas = {
+  '/regulations': { post: createRegulationSchema, get: listRegulationsSchema },
+  '/regulations/{id}': { get: getRegulationSchema },
+  '/regulations/{id}/subjects': { post: createSubjectSchema, get: listSubjectsSchema },
+  '/subjects/{id}': { put: updateSubjectSchema, delete: deleteSubjectSchema },
+  '/students/{id}/curriculum-migration': { post: requestCurriculumMigrationSchema },
+  '/students/{id}/curriculum-migration/approve': { post: approveCurriculumMigrationSchema },
+  '/students/{id}/curriculum-migration/reject': { post: rejectCurriculumMigrationSchema },
+};

@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth } = require('../middleware/rbac');
 const projectService = require('../services/projectService');
 const identityService = require('../services/identityService');
@@ -37,6 +39,27 @@ function mapProjectServiceError(err, res) {
 // requireAuth only — a project has no role-based access rule, only
 // "must be the owner," which projectService enforces itself. Same
 // shape as routes/personalNotes.js.
+const projectIdParams = z.object({ id: z.string() });
+const projectDocumentParams = z.object({ id: z.string(), documentId: z.string() });
+const createProjectSchema = z.object({ body: z.object({ name: z.string().optional() }).optional() });
+const updateProjectSchema = z.object({
+  params: projectIdParams,
+  body: z
+    .object({
+      name: z.string().optional(),
+      instructions: z.string().optional(),
+      pinned: z.any().optional(),
+    })
+    .optional(),
+});
+const deleteProjectSchema = z.object({ params: projectIdParams });
+const listProjectDocumentsSchema = z.object({ params: projectIdParams });
+const attachProjectDocumentSchema = z.object({
+  params: projectIdParams,
+  body: z.object({ document_id: z.string().optional() }).optional(),
+});
+const detachProjectDocumentSchema = z.object({ params: projectDocumentParams });
+
 function createProjectsRouter() {
   const router = express.Router();
 
@@ -55,6 +78,7 @@ function createProjectsRouter() {
   router.post(
     '/projects',
     requireAuth,
+    validate(createProjectSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { name } = req.body || {};
@@ -75,6 +99,7 @@ function createProjectsRouter() {
   router.put(
     '/projects/:id',
     requireAuth,
+    validate(updateProjectSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { name, instructions, pinned } = req.body || {};
@@ -96,6 +121,7 @@ function createProjectsRouter() {
   router.delete(
     '/projects/:id',
     requireAuth,
+    validate(deleteProjectSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -116,6 +142,7 @@ function createProjectsRouter() {
   router.get(
     '/projects/:id/documents',
     requireAuth,
+    validate(listProjectDocumentsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -133,6 +160,7 @@ function createProjectsRouter() {
   router.post(
     '/projects/:id/documents',
     requireAuth,
+    validate(attachProjectDocumentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { document_id: documentId } = req.body || {};
@@ -154,6 +182,7 @@ function createProjectsRouter() {
   router.delete(
     '/projects/:id/documents/:documentId',
     requireAuth,
+    validate(detachProjectDocumentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -172,3 +201,9 @@ function createProjectsRouter() {
 }
 
 module.exports = createProjectsRouter;
+module.exports.schemas = {
+  '/projects': { post: createProjectSchema },
+  '/projects/{id}': { put: updateProjectSchema, delete: deleteProjectSchema },
+  '/projects/{id}/documents': { get: listProjectDocumentsSchema, post: attachProjectDocumentSchema },
+  '/projects/{id}/documents/{documentId}': { delete: detachProjectDocumentSchema },
+};

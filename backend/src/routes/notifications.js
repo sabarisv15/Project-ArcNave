@@ -21,7 +21,9 @@
 // to read them back with.
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requirePermission } = require('../middleware/rbac');
 const notificationService = require('../services/notificationService');
 const identityService = require('../services/identityService');
@@ -76,6 +78,24 @@ function bodyToServiceFields(body) {
   return fields;
 }
 
+const notificationIdParams = z.object({ id: z.string() });
+const draftNotificationSchema = z.object({
+  body: z
+    .object({
+      channel: z.string().optional(),
+      to_address: z.string().optional(),
+      subject: z.string().optional(),
+      body: z.string().optional(),
+      origin: z.string().optional(),
+      kind: z.string().optional(),
+    })
+    .optional(),
+});
+const submitNotificationSchema = z.object({ params: notificationIdParams });
+const listNotificationsSchema = z.object({
+  query: z.object({ limit: z.string().optional(), offset: z.string().optional() }).optional(),
+});
+
 function createNotificationsRouter() {
   const router = express.Router();
 
@@ -88,6 +108,7 @@ function createNotificationsRouter() {
   router.post(
     '/notifications',
     requirePermission('notifications.draft'),
+    validate(draftNotificationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -111,6 +132,7 @@ function createNotificationsRouter() {
   router.post(
     '/notifications/:id/submit',
     requirePermission('notifications.submit'),
+    validate(submitNotificationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -128,6 +150,7 @@ function createNotificationsRouter() {
   router.get(
     '/notifications',
     requirePermission('notifications.read'),
+    validate(listNotificationsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { limit, offset } = req.query;
@@ -221,3 +244,7 @@ function createNotificationsRouter() {
 }
 
 module.exports = createNotificationsRouter;
+module.exports.schemas = {
+  '/notifications': { post: draftNotificationSchema, get: listNotificationsSchema },
+  '/notifications/{id}/submit': { post: submitNotificationSchema },
+};

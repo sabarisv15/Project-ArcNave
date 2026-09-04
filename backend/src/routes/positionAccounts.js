@@ -11,7 +11,9 @@
 // unauthenticated, before tenantMiddleware.
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth } = require('../middleware/rbac');
 const positionAccountAuthService = require('../services/positionAccountAuthService');
 const positionAccountInvitationService = require('../services/positionAccountInvitationService');
@@ -23,11 +25,23 @@ const { setRefreshCookie, clearRefreshCookie, getRefreshTokenFromRequest } = cre
   config.positionRefreshCookie,
 );
 
+const positionAccountLoginSchema = z.object({
+  body: z.object({ official_email: z.string().optional(), password: z.string().optional() }).optional(),
+});
+const positionAccountMfaVerifySchema = z.object({
+  body: z.object({ challenge_id: z.string().optional(), code: z.string().optional() }).optional(),
+});
+const inviteToPositionSchema = z.object({
+  params: z.object({ departmentId: z.string() }),
+  body: z.object({ email: z.string().optional(), title: z.string().optional() }).optional(),
+});
+
 function createPositionAccountsRouter() {
   const router = express.Router();
 
   router.post(
     '/position-accounts/login',
+    validate(positionAccountLoginSchema),
     asyncHandler(async (req, res) => {
       if (req.collegeId === null) {
         res.status(400).json({ detail: 'No tenant could be resolved for this request' });
@@ -72,6 +86,7 @@ function createPositionAccountsRouter() {
   // caller isn't authenticated yet, same as /position-accounts/login.
   router.post(
     '/position-accounts/mfa/verify',
+    validate(positionAccountMfaVerifySchema),
     asyncHandler(async (req, res) => {
       const { challenge_id: challengeId, code } = req.body || {};
       try {
@@ -176,6 +191,7 @@ function createPositionAccountsRouter() {
   router.post(
     '/departments/:departmentId/position-accounts/invite',
     requireAuth,
+    validate(inviteToPositionSchema),
     asyncHandler(async (req, res) => {
       const { email, title } = req.body || {};
       try {
@@ -218,3 +234,8 @@ function createPositionAccountsRouter() {
 }
 
 module.exports = createPositionAccountsRouter;
+module.exports.schemas = {
+  '/position-accounts/login': { post: positionAccountLoginSchema },
+  '/position-accounts/mfa/verify': { post: positionAccountMfaVerifySchema },
+  '/departments/{departmentId}/position-accounts/invite': { post: inviteToPositionSchema },
+};

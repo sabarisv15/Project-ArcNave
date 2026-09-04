@@ -24,16 +24,29 @@
 // route with a much smaller test surface than tenantMiddleware's own.
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { appPool } = require('../db/pool');
 const { openTenantTransaction } = require('../db/tenantTransaction');
 const authService = require('../services/authService');
+
+const acceptInvitationSchema = z.object({
+  body: z
+    .object({
+      token: z.string().optional(),
+      username: z.string().optional(),
+      password: z.string().optional(),
+    })
+    .optional(),
+});
 
 function createInvitationsRouter() {
   const router = express.Router();
 
   router.post(
     '/invitations/accept',
+    validate(acceptInvitationSchema),
     asyncHandler(async (req, res) => {
       const { token, username, password } = req.body || {};
 
@@ -97,3 +110,6 @@ function createInvitationsRouter() {
 }
 
 module.exports = createInvitationsRouter;
+module.exports.schemas = {
+  '/invitations/accept': { post: acceptInvitationSchema },
+};

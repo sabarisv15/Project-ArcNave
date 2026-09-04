@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth } = require('../middleware/rbac');
 const aiMemoryService = require('../services/aiMemoryService');
 const identityService = require('../services/identityService');
@@ -21,6 +23,15 @@ function mapAiMemoryServiceError(err, res) {
   }
   return false;
 }
+
+// P4 route-validation pass — aiMemoryService.setConsent/forgetPreference/
+// forgetFact are the real validators; `consented` is passed straight
+// through with no type check at the route layer today, so it stays
+// z.any() here (a genuinely wrong-typed value still reaches the same
+// AiMemoryValidationError path it does now, not a new 400 source).
+const setConsentSchema = z.object({ body: z.object({ consented: z.any().optional() }).optional() });
+const forgetPreferenceSchema = z.object({ params: z.object({ memoryType: z.string() }) });
+const forgetFactSchema = z.object({ params: z.object({ factId: z.string() }) });
 
 // requireAuth only, always scoped to the caller's own account — same
 // ownership-only shape as routes/userPreferences.js and routes/personal-notes.js.
@@ -44,6 +55,7 @@ function createAiMemoryRouter() {
   router.put(
     '/ai/memory/consent',
     requireAuth,
+    validate(setConsentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -74,6 +86,7 @@ function createAiMemoryRouter() {
   router.delete(
     '/ai/memory/:memoryType',
     requireAuth,
+    validate(forgetPreferenceSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -110,6 +123,7 @@ function createAiMemoryRouter() {
   router.delete(
     '/ai/memory/facts/:factId',
     requireAuth,
+    validate(forgetFactSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       await aiMemoryService.forgetFact(req.dbClient, req.params.factId, {
@@ -123,3 +137,8 @@ function createAiMemoryRouter() {
 }
 
 module.exports = createAiMemoryRouter;
+module.exports.schemas = {
+  '/ai/memory/consent': { put: setConsentSchema },
+  '/ai/memory/{memoryType}': { delete: forgetPreferenceSchema },
+  '/ai/memory/facts/{factId}': { delete: forgetFactSchema },
+};

@@ -8,7 +8,9 @@
 // return value already enforces for PUT's response.
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requirePermission } = require('../middleware/rbac');
 const configurationService = require('../services/configurationService');
 const aiProviders = require('../services/aiProviders');
@@ -39,6 +41,22 @@ function mapAiConfigError(err, res) {
   }
   return false;
 }
+
+// P4 route-validation pass — same permissive discipline as the rest of
+// this pass: configurationService.setAiConfig is the real validator
+// (AiConfigValidationError), this only rejects a wrong-typed wire shape.
+const setAiConfigSchema = z.object({
+  body: z
+    .object({
+      provider: z.string().optional(),
+      api_key: z.string().optional(),
+      model: z.string().optional(),
+      embedding_model: z.string().optional(),
+      fast_model: z.string().optional(),
+      base_url: z.string().optional(),
+    })
+    .optional(),
+});
 
 function createAiConfigRouter() {
   const router = express.Router();
@@ -157,6 +175,7 @@ function createAiConfigRouter() {
   router.put(
     '/ai-config',
     requirePermission('ai_config.update'),
+    validate(setAiConfigSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const {
@@ -193,3 +212,6 @@ function createAiConfigRouter() {
 }
 
 module.exports = createAiConfigRouter;
+module.exports.schemas = {
+  '/ai-config': { put: setAiConfigSchema },
+};

@@ -1624,9 +1624,16 @@ wait or be built avoiding them:**
 - **2.3 — cache extracted file text.** **CONFLICT** — the re-extraction
   happens inside `aiService.js`'s `resolveChatAttachments`. Defer.
 - **2.4/2.5 — vision model for scans; complex-PDF fallback tightened.**
-  Depends on 2.1's already-landed native-PDF-reading path
-  (`aiService.js`) — likely also touches the same file. Check exact scope
-  before deciding if it's blocked.
+  Depends on 2.1's native-PDF-reading path (`aiService.js`) — likely
+  also touches the same file. Check exact scope before deciding if it's
+  blocked. **Correction (2026-09-04):** this entry's original "2.1's
+  already-landed" wording was FALSE at the time it was written — a
+  code-level fact-check found `resolveChatAttachments` classified PDFs
+  into `NATIVE_MULTIMODAL_DOCUMENT` but never actually branched on it;
+  every PDF silently fell through to text-extraction-only. 2.1 has now
+  genuinely landed (this session, see ledger ADL-097) — additive native
+  PDF sending alongside the unchanged text-extraction path, never a
+  replacement of it.
 
 **D1 — asked, owner deferred it.** Explained via a non-technical
 analogy (one waiter/one app instance today; a pooler is an

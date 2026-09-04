@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const academicService = require('../services/academicService');
 const visibilityService = require('../services/visibilityService');
@@ -96,6 +98,23 @@ async function assertCanViewAllocation(client, allocation, actor) {
   }
 }
 
+const facultyAllocationIdParams = z.object({ id: z.string() });
+const createFacultyAllocationSchema = z.object({
+  body: z
+    .object({
+      class_id: z.string().optional(),
+      period_id: z.string().optional(),
+      subject: z.string().optional(),
+      staff_user_id: z.string().optional(),
+    })
+    .optional(),
+});
+const getFacultyAllocationSchema = z.object({ params: facultyAllocationIdParams });
+const listFacultyAllocationSchema = z.object({
+  query: z.object({ class_id: z.string().optional(), staff_user_id: z.string().optional() }).optional(),
+});
+const deleteFacultyAllocationSchema = z.object({ params: facultyAllocationIdParams });
+
 function createFacultyAllocationRouter() {
   const router = express.Router();
 
@@ -112,6 +131,7 @@ function createFacultyAllocationRouter() {
   router.post(
     '/faculty-allocation',
     requirePermission('faculty_allocation.create'),
+    validate(createFacultyAllocationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -131,6 +151,7 @@ function createFacultyAllocationRouter() {
   router.get(
     '/faculty-allocation/:id',
     requireAuth,
+    validate(getFacultyAllocationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const allocation = await academicService.getFacultyAllocation(req.dbClient, req.params.id);
@@ -167,6 +188,7 @@ function createFacultyAllocationRouter() {
   router.get(
     '/faculty-allocation',
     requireAuth,
+    validate(listFacultyAllocationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { class_id: classId, staff_user_id: staffUserId } = req.query;
@@ -207,6 +229,7 @@ function createFacultyAllocationRouter() {
   router.delete(
     '/faculty-allocation/:id',
     requirePermission('faculty_allocation.delete'),
+    validate(deleteFacultyAllocationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const allocation = await academicService.removeFacultyAllocation(req.dbClient, req.params.id, {
@@ -224,3 +247,7 @@ function createFacultyAllocationRouter() {
 }
 
 module.exports = createFacultyAllocationRouter;
+module.exports.schemas = {
+  '/faculty-allocation': { post: createFacultyAllocationSchema, get: listFacultyAllocationSchema },
+  '/faculty-allocation/{id}': { get: getFacultyAllocationSchema, delete: deleteFacultyAllocationSchema },
+};

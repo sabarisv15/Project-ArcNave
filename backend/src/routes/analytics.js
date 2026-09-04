@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requirePermission } = require('../middleware/rbac');
 const analyticsService = require('../services/analyticsService');
 const identityService = require('../services/identityService');
@@ -13,6 +15,16 @@ function requireResolvedTenant(req, res) {
   }
   return true;
 }
+
+const attendanceRateSchema = z.object({
+  query: z
+    .object({
+      class_id: z.string().optional(),
+      start_date: z.string().optional(),
+      end_date: z.string().optional(),
+    })
+    .optional(),
+});
 
 function createAnalyticsRouter() {
   const router = express.Router();
@@ -37,6 +49,7 @@ function createAnalyticsRouter() {
   router.get(
     '/analytics/attendance-rate',
     requirePermission('analytics.attendance_rate.read'),
+    validate(attendanceRateSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { class_id: classId, start_date: startDate, end_date: endDate } = req.query;
@@ -62,3 +75,6 @@ function createAnalyticsRouter() {
 }
 
 module.exports = createAnalyticsRouter;
+module.exports.schemas = {
+  '/analytics/attendance-rate': { get: attendanceRateSchema },
+};

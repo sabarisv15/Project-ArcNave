@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const archivalService = require('../services/archivalService');
 const workflowService = require('../services/workflowService');
@@ -47,6 +49,26 @@ function mapArchivalServiceError(err, res) {
   return false;
 }
 
+const archivedRecordIdParams = z.object({ id: z.string() });
+const createArchivedRecordSchema = z.object({
+  body: z
+    .object({
+      entity_type: z.string().optional(),
+      entity_id: z.string().optional(),
+      reason: z.string().optional(),
+    })
+    .optional(),
+});
+const listArchivedRecordsSchema = z.object({
+  query: z.object({ entity_type: z.string().optional() }).optional(),
+});
+const requestRestorationSchema = z.object({
+  params: archivedRecordIdParams,
+  body: z.object({ reason: z.string().optional() }).optional(),
+});
+const approveRestorationSchema = z.object({ params: archivedRecordIdParams });
+const rejectRestorationSchema = z.object({ params: archivedRecordIdParams });
+
 function createArchivalRouter() {
   const router = express.Router();
 
@@ -58,6 +80,7 @@ function createArchivalRouter() {
   router.post(
     '/archived-records',
     requirePermission('archived_records.create'),
+    validate(createArchivedRecordSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { entity_type: entityType, entity_id: entityId, reason } = req.body || {};
@@ -78,6 +101,7 @@ function createArchivalRouter() {
   router.get(
     '/archived-records',
     requireAuth,
+    validate(listArchivedRecordsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const records = await archivalService.listArchivedRecords(req.dbClient, req.collegeId, {
@@ -90,6 +114,7 @@ function createArchivalRouter() {
   router.post(
     '/archived-records/:id/request-restoration',
     requireAuth,
+    validate(requestRestorationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -110,6 +135,7 @@ function createArchivalRouter() {
   router.post(
     '/archived-records/:id/approve-restoration',
     requireAuth,
+    validate(approveRestorationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -127,6 +153,7 @@ function createArchivalRouter() {
   router.post(
     '/archived-records/:id/reject-restoration',
     requireAuth,
+    validate(rejectRestorationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -145,3 +172,9 @@ function createArchivalRouter() {
 }
 
 module.exports = createArchivalRouter;
+module.exports.schemas = {
+  '/archived-records': { post: createArchivedRecordSchema, get: listArchivedRecordsSchema },
+  '/archived-records/{id}/request-restoration': { post: requestRestorationSchema },
+  '/archived-records/{id}/approve-restoration': { post: approveRestorationSchema },
+  '/archived-records/{id}/reject-restoration': { post: rejectRestorationSchema },
+};

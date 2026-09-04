@@ -7877,3 +7877,127 @@ live in a clean `node:22-slim` container reproducing CI's exact
 platform TypeScript binary installs correctly. PR #2's next CI run is
 the authoritative confirmation this thread has been building toward —
 watch that, not this local verification, as the final signal.
+
+## ADL-096
+
+### D7 backup restore actually run for the first time — this is what turns "tooling exists" into "a tested backup"
+
+**What prompted this.** A code-level fact-check of the whole P0-P5
+plan (requested against the attached modernization PDF directly, not
+against this ledger's own "done" claims) found `scripts/restore-
+database.js`'s own header comment admitting it had never actually been
+run: "MUST be run at least once against a real restore target before
+this is considered 'a tested backup,' not just 'a backup that exists.'"
+D7 was marked done in `CURRENT-STATE.md` on the strength of the
+tooling existing, not on a real restore ever happening — exactly the
+kind of doc/code gap this fact-check was hunting for.
+
+**What was actually done, live, against the running Docker stack
+(`gstack-db-1`, `gstack-app-1`):**
+1. `docker compose exec app node scripts/backup-database.js` — real
+   `pg_dump -Fc` against the admin role, wrote
+   `storage-backups/arcnave-db-backup-2026-09-04T02-12-07-323Z.dump`
+   (1.07 MB).
+2. `docker compose exec app node scripts/restore-database.js --latest
+   arcnave_restore_test` — restored that dump into a fresh disposable
+   database. Real result: **98 tables in the public schema, `colleges`
+   table with 190 rows** — not an empty schema, real tenant data
+   round-tripped through dump→restore correctly.
+3. Disposable `arcnave_restore_test` database dropped immediately
+   after verification (no lingering state).
+
+**Verified:** the restore path works end-to-end against this repo's
+actual schema/data shape, using the actual scripts as they exist in
+the repo today — no script changes were needed, the tooling was
+already correct. D7 is now genuinely "a tested backup," not just "a
+backup that exists." Off-host storage remains the one deliberately
+deferred half (per the script's own header comment) — no change to
+that, still correctly scoped to "once there's a real deploy target to
+protect."
+
+## ADL-097
+
+### 2.1 native PDF reading actually built — additive only, RS-AIG-019 kept intact
+
+**What prompted this.** The same code-level fact-check found `2.1`
+(clash C9, "send PDFs as real documents... counting stays on the exact-
+maths path") was marked done in `CURRENT-STATE.md` on the strength of
+`fileIntelligenceRouter.js` classifying a PDF into
+`NATIVE_MULTIMODAL_DOCUMENT` — but `aiService.js`'s
+`resolveChatAttachments` never actually branched on that category.
+Every chat-attached PDF silently fell straight through to the old
+text-extraction-only path; the router's classification was dead for
+this category. Corrected in `CURRENT-STATE.md` directly (see that
+file's 2.4/2.5 entry).
+
+**Why this isn't a simple "just wire it up."** `ADL-058 addendum`
+(2026-08-26) already measured native PDF reading and found it
+**cannot count** (2 vs 23 rows, 7 vs 839, 16 vs 1,603) and **does not
+scale** (a 400-page PDF failed outright after 300s). The
+`ai-chat-file-intelligence-router-approved-spec.md` Approved Spec
+explicitly marks "any change to `verifyNumericClaims`'s advisory-only
+nature, or to the PDF/table trust architecture (ADL-055 through
+ADL-065)" as **BARRED**, citing `RS-AIG-019` — a real governance rule
+(10-specification, not just an ADL preference): the numeric-claim
+verifier re-parses "the data already retrieved for that same answer,"
+which only works if that data is the deterministic extracted text
+ARCNAVE controls. Sending only the raw PDF (replacing extraction)
+would have broken that mechanism outright — a business-rule conflict,
+one of the P0-P5 mandate's own two stop conditions, not merely an
+architecture decision the mandate's standing ADL-bypass covers. Owner
+was asked directly; answer: **native PDF reading is now the default
+for every college**, additive only.
+
+**What was actually built.** `backend/src/services/aiService.js`
+`resolveChatAttachments`: a PDF classified `NATIVE_MULTIMODAL_DOCUMENT`
+now, in addition to (never instead of) the unchanged text-extraction
+call below it, also gets pushed into the `media` array as
+`{ mimeType: 'application/pdf', base64, capability: 'multimodal_pdf' }`
+— gated by:
+- **Size** — `MAX_NATIVE_PDF_BYTES` (15 MB), a real bound tied to
+  ADL-058's own measurement (the working 23-row exam-fees PDF vs. the
+  failing 400-page sheet), not a guess.
+- **Per-college opt-out** (`native_pdf_attachments` configuration
+  category) — **inverted from the audio/video precedent on purpose**:
+  audio/video is opt-IN (no row = disabled); native PDF is opt-OUT (no
+  row, or a row without `enabled: false`, = enabled). Owner direction,
+  2026-09-04.
+- **Provider capability** — `resolveMediaSupport` now filters `media`
+  per-item by a `capability` tag (`multimodal_audio`/`multimodal_video`/
+  `multimodal_pdf`) instead of one blanket boolean, so a provider
+  lacking PDF support doesn't wrongly gate out audio/video or vice
+  versa. Gemini already carries `multimodal_pdf: true` in
+  `vertexCapabilityRegistry.js` for both curated models — no adapter
+  change needed there. An unsupported PDF item is dropped **silently**
+  (no `buildMediaUnavailableNote`-style user-facing note) — unlike
+  audio/video, a dropped native PDF part is harmless: the text
+  extraction that already ran unconditionally still carries the turn.
+
+**Verified.** 3 new tests in `backend/tests/ai-service.test.js`: default
+opt-out-enabled + extraction still runs; explicit `enabled: false`
+drops only the native part; an oversized PDF skips native (and never
+pays for the config read) while extraction is unaffected. Full
+`ai-service.test.js` (241/241), `ai-service-media-support.test.js`
+(4/4, confirms the per-item capability filter doesn't regress existing
+untagged audio/video items), `ai-providers.test.js` +
+`file-intelligence-router.test.js` (96/96) all green in Docker.
+
+## ADL-098
+
+### P0 item 1 (CI pipeline) — first real green run on GitHub Actions
+
+**What prompted this.** The same code-level fact-check flagged CI as
+the one P0 item that had never actually gone green on real GitHub
+Actions (7 of 8 runs on PR #2 had failed), despite `CURRENT-STATE.md`
+treating the pipeline itself as "done" since it was built. The two real
+backend test failures blocking every prior run were in
+`web-search-weather-service.test.js` (see line ~4702 of this file) —
+already fixed on this branch by the time this entry was written.
+
+**Result — run `33827703280` (PR #2, `p0-modernization-foundation`):
+both `backend` and `frontend` jobs passed in full**, including every
+step the plan's P0/P5 items depend on (lint, format check, typecheck,
+dependency audit gate, SBOM generation + cosign signing, migrate
+up→down→up, the full test suite, build, bundle-size limit). This is
+the authoritative confirmation this thread was waiting on — P0 item 1
+is now genuinely, not just structurally, done.

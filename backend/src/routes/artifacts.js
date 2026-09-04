@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth } = require('../middleware/rbac');
 const artifactService = require('../services/artifactService');
 const identityService = require('../services/identityService');
@@ -34,6 +36,43 @@ function mapArtifactServiceError(err, res) {
   return false;
 }
 
+const artifactIdParams = z.object({ id: z.string() });
+const listArtifactsSchema = z.object({
+  query: z.object({ limit: z.string().optional(), offset: z.string().optional() }).optional(),
+});
+const getArtifactSchema = z.object({ params: artifactIdParams });
+const listArtifactVersionsSchema = z.object({ params: artifactIdParams });
+const createArtifactSchema = z.object({
+  body: z
+    .object({
+      title: z.string().optional(),
+      content: z.any().optional(),
+      conversation_id: z.string().optional(),
+      source_message_id: z.string().optional(),
+      artifact_type: z.string().optional(),
+    })
+    .optional(),
+});
+const updateArtifactSchema = z.object({
+  params: artifactIdParams,
+  body: z
+    .object({
+      title: z.string().optional(),
+      content: z.any().optional(),
+      conversation_id: z.string().optional(),
+    })
+    .optional(),
+});
+const deleteArtifactSchema = z.object({ params: artifactIdParams });
+const publishArtifactSchema = z.object({
+  params: artifactIdParams,
+  body: z.object({ format: z.string().optional() }).optional(),
+});
+const exportArtifactSchema = z.object({
+  params: artifactIdParams,
+  body: z.object({ format: z.string().optional() }).optional(),
+});
+
 // requireAuth only — same self-owned-resource shape as
 // routes/personalNotes.js/routes/projects.js/routes/conversations.js.
 function createArtifactsRouter() {
@@ -42,6 +81,7 @@ function createArtifactsRouter() {
   router.get(
     '/artifacts',
     requireAuth,
+    validate(listArtifactsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { limit, offset } = req.query || {};
@@ -57,6 +97,7 @@ function createArtifactsRouter() {
   router.get(
     '/artifacts/:id',
     requireAuth,
+    validate(getArtifactSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -74,6 +115,7 @@ function createArtifactsRouter() {
   router.get(
     '/artifacts/:id/versions',
     requireAuth,
+    validate(listArtifactVersionsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -91,6 +133,7 @@ function createArtifactsRouter() {
   router.post(
     '/artifacts',
     requireAuth,
+    validate(createArtifactSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const {
@@ -123,6 +166,7 @@ function createArtifactsRouter() {
   router.put(
     '/artifacts/:id',
     requireAuth,
+    validate(updateArtifactSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { title, content, conversation_id: conversationId } = req.body || {};
@@ -144,6 +188,7 @@ function createArtifactsRouter() {
   router.delete(
     '/artifacts/:id',
     requireAuth,
+    validate(deleteArtifactSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -161,6 +206,7 @@ function createArtifactsRouter() {
   router.post(
     '/artifacts/:id/publish',
     requireAuth,
+    validate(publishArtifactSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { format } = req.body || {};
@@ -185,6 +231,7 @@ function createArtifactsRouter() {
   router.post(
     '/artifacts/:id/export',
     requireAuth,
+    validate(exportArtifactSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { format } = req.body || {};
@@ -205,3 +252,10 @@ function createArtifactsRouter() {
 }
 
 module.exports = createArtifactsRouter;
+module.exports.schemas = {
+  '/artifacts': { get: listArtifactsSchema, post: createArtifactSchema },
+  '/artifacts/{id}': { get: getArtifactSchema, put: updateArtifactSchema, delete: deleteArtifactSchema },
+  '/artifacts/{id}/versions': { get: listArtifactVersionsSchema },
+  '/artifacts/{id}/publish': { post: publishArtifactSchema },
+  '/artifacts/{id}/export': { post: exportArtifactSchema },
+};

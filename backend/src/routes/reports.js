@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requirePermission } = require('../middleware/rbac');
 const reportService = require('../services/reportService');
 const identityService = require('../services/identityService');
@@ -26,6 +28,34 @@ function mapReportServiceError(err, res) {
   return false;
 }
 
+const studentExportReportSchema = z.object({
+  body: z
+    .object({
+      format: z.string().optional(),
+      columns: z.any().optional(),
+      student_ids: z.any().optional(),
+    })
+    .optional(),
+});
+const attendanceReportSchema = z.object({
+  body: z.object({ format: z.string().optional() }).optional(),
+});
+const financeReportSchema = z.object({
+  body: z.object({ format: z.string().optional() }).optional(),
+});
+const assessmentMarksReportSchema = z.object({
+  body: z
+    .object({
+      format: z.string().optional(),
+      academic_year: z.string().optional(),
+      department_id: z.string().optional(),
+      class_id: z.string().optional(),
+      subject: z.string().optional(),
+      assessment_type_id: z.string().optional(),
+    })
+    .optional(),
+});
+
 function createReportsRouter() {
   const router = express.Router();
 
@@ -49,6 +79,7 @@ function createReportsRouter() {
   router.post(
     '/reports/student-export',
     requirePermission('reports.student_export'),
+    validate(studentExportReportSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -77,6 +108,7 @@ function createReportsRouter() {
   router.post(
     '/reports/attendance',
     requirePermission('reports.generate'),
+    validate(attendanceReportSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -96,6 +128,7 @@ function createReportsRouter() {
   router.post(
     '/reports/finance',
     requirePermission('reports.generate'),
+    validate(financeReportSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -115,6 +148,7 @@ function createReportsRouter() {
   router.post(
     '/reports/assessment-marks',
     requirePermission('reports.generate'),
+    validate(assessmentMarksReportSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const body = req.body || {};
@@ -146,3 +180,9 @@ function createReportsRouter() {
 }
 
 module.exports = createReportsRouter;
+module.exports.schemas = {
+  '/reports/student-export': { post: studentExportReportSchema },
+  '/reports/attendance': { post: attendanceReportSchema },
+  '/reports/finance': { post: financeReportSchema },
+  '/reports/assessment-marks': { post: assessmentMarksReportSchema },
+};

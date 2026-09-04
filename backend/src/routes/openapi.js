@@ -29,6 +29,44 @@ const createDocumentsRouter = require('./documents');
 const createPlatformRouter = require('./platform');
 const createClassesRouter = require('./classes');
 const createAssessmentsRouter = require('./assessments');
+// P4 route-validation pass — the 36 additional routers migrated to a
+// zod schema in this pass, same "contribute .schemas, read here" wiring
+// every router above already uses.
+const createAcademicYearsRouter = require('./academicYears');
+const createActivityTimelineRouter = require('./activityTimeline');
+const createAdmissionDraftsRouter = require('./admissionDrafts');
+const createAiConfigRouter = require('./aiConfig');
+const createAiMemoryRouter = require('./aiMemory');
+const createAnalyticsRouter = require('./analytics');
+const createArchivalRouter = require('./archival');
+const createArtifactsRouter = require('./artifacts');
+const createBackgroundJobsRouter = require('./backgroundJobs');
+const createCalendarRouter = require('./calendar');
+const createClassLogsRouter = require('./classLogs');
+const createCollegeProfileRouter = require('./collegeProfile');
+const createConfigurationsRouter = require('./configurations');
+const createConversationsRouter = require('./conversations');
+const createCurriculumRouter = require('./curriculum');
+const createDepartmentsRouter = require('./departments');
+const createDocumentCategoriesRouter = require('./documentCategories');
+const createDocumentTypesRouter = require('./documentTypes');
+const createExaminationRouter = require('./examination');
+const createFacultyAllocationRouter = require('./facultyAllocation');
+const createFinanceRouter = require('./finance');
+const createInvitationsRouter = require('./invitations');
+const createNotificationsRouter = require('./notifications');
+const createPersonalNotesRouter = require('./personalNotes');
+const createPositionAccountInvitationsRouter = require('./positionAccountInvitations');
+const createPositionAccountsRouter = require('./positionAccounts');
+const createProjectsRouter = require('./projects');
+const createReportsRouter = require('./reports');
+const createSearchRouter = require('./search');
+const createStaffInvitationsRouter = require('./staffInvitations');
+const createStructuralAuthorizationKeysRouter = require('./structuralAuthorizationKeys');
+const createTimetablePeriodsRouter = require('./timetablePeriods');
+const createUserPreferencesRouter = require('./userPreferences');
+const createWorkflowChainsRouter = require('./workflowChains');
+const createWorkflowRequestsRouter = require('./workflowRequests');
 
 function buildOpenApiDocument() {
   const paths = {};
@@ -49,6 +87,41 @@ function buildOpenApiDocument() {
     createPlatformRouter,
     createClassesRouter,
     createAssessmentsRouter,
+    createAcademicYearsRouter,
+    createActivityTimelineRouter,
+    createAdmissionDraftsRouter,
+    createAiConfigRouter,
+    createAiMemoryRouter,
+    createAnalyticsRouter,
+    createArchivalRouter,
+    createArtifactsRouter,
+    createBackgroundJobsRouter,
+    createCalendarRouter,
+    createClassLogsRouter,
+    createCollegeProfileRouter,
+    createConfigurationsRouter,
+    createConversationsRouter,
+    createCurriculumRouter,
+    createDepartmentsRouter,
+    createDocumentCategoriesRouter,
+    createDocumentTypesRouter,
+    createExaminationRouter,
+    createFacultyAllocationRouter,
+    createFinanceRouter,
+    createInvitationsRouter,
+    createNotificationsRouter,
+    createPersonalNotesRouter,
+    createPositionAccountInvitationsRouter,
+    createPositionAccountsRouter,
+    createProjectsRouter,
+    createReportsRouter,
+    createSearchRouter,
+    createStaffInvitationsRouter,
+    createStructuralAuthorizationKeysRouter,
+    createTimetablePeriodsRouter,
+    createUserPreferencesRouter,
+    createWorkflowChainsRouter,
+    createWorkflowRequestsRouter,
   ];
   for (const router of contributors) {
     const schemas = router.schemas || {};

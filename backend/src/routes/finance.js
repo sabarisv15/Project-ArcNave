@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth } = require('../middleware/rbac');
 const financeService = require('../services/financeService');
 const staffService = require('../services/staffService');
@@ -149,6 +151,42 @@ function mapFinanceServiceError(err, res) {
   return false;
 }
 
+const feePaymentIdParams = z.object({ id: z.string() });
+const correctionIdParams = z.object({ correctionId: z.string() });
+const studentIdParams = z.object({ id: z.string() });
+const markFeePaymentSchema = z.object({
+  body: z
+    .object({
+      student_id: z.string().optional(),
+      status: z.string().optional(),
+      receipt_document_id: z.string().optional(),
+    })
+    .optional(),
+});
+const getFeePaymentSchema = z.object({
+  query: z.object({ student_id: z.string().optional() }).optional(),
+});
+const requestFeeCorrectionSchema = z.object({
+  params: feePaymentIdParams,
+  body: z.object({ proposed_status: z.string().optional(), reason: z.string().optional() }).optional(),
+});
+const listFeeCorrectionsSchema = z.object({ params: feePaymentIdParams });
+const approveFeeCorrectionSchema = z.object({ params: correctionIdParams });
+const rejectFeeCorrectionSchema = z.object({ params: correctionIdParams });
+const scholarshipEligibilitySchema = z.object({ params: studentIdParams });
+const recordScholarshipDecisionSchema = z.object({
+  params: studentIdParams,
+  body: z
+    .object({
+      scheme_name: z.string().optional(),
+      eligible: z.any().optional(),
+      reason: z.string().optional(),
+      supporting_document_id: z.string().optional(),
+    })
+    .optional(),
+});
+const listScholarshipDecisionsSchema = z.object({ params: studentIdParams });
+
 function createFinanceRouter() {
   const router = express.Router();
 
@@ -162,6 +200,7 @@ function createFinanceRouter() {
   router.post(
     '/finance/fee-payments',
     requireAuth,
+    validate(markFeePaymentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -191,6 +230,7 @@ function createFinanceRouter() {
   router.get(
     '/finance/fee-payments',
     requireAuth,
+    validate(getFeePaymentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { student_id: studentId } = req.query;
@@ -223,6 +263,7 @@ function createFinanceRouter() {
   router.post(
     '/finance/fee-payments/:id/corrections',
     requireAuth,
+    validate(requestFeeCorrectionSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { proposed_status: proposedStatus, reason } = req.body || {};
@@ -248,6 +289,7 @@ function createFinanceRouter() {
   router.get(
     '/finance/fee-payments/:id/corrections',
     requireAuth,
+    validate(listFeeCorrectionsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const corrections = await financeService.listFeeCorrectionsForPayment(req.dbClient, req.params.id);
@@ -263,6 +305,7 @@ function createFinanceRouter() {
   router.post(
     '/finance/fee-corrections/:correctionId/approve',
     requireAuth,
+    validate(approveFeeCorrectionSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -280,6 +323,7 @@ function createFinanceRouter() {
   router.post(
     '/finance/fee-corrections/:correctionId/reject',
     requireAuth,
+    validate(rejectFeeCorrectionSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -305,6 +349,7 @@ function createFinanceRouter() {
   router.get(
     '/finance/students/:id/scholarship-eligibility',
     requireAuth,
+    validate(scholarshipEligibilitySchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -328,6 +373,7 @@ function createFinanceRouter() {
   router.post(
     '/finance/students/:id/scholarship-decisions',
     requireAuth,
+    validate(recordScholarshipDecisionSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const {
@@ -357,6 +403,7 @@ function createFinanceRouter() {
   router.get(
     '/finance/students/:id/scholarship-decisions',
     requireAuth,
+    validate(listScholarshipDecisionsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const decisions = await financeService.listScholarshipDecisionsForStudent(req.dbClient, req.params.id);
@@ -368,3 +415,14 @@ function createFinanceRouter() {
 }
 
 module.exports = createFinanceRouter;
+module.exports.schemas = {
+  '/finance/fee-payments': { post: markFeePaymentSchema, get: getFeePaymentSchema },
+  '/finance/fee-payments/{id}/corrections': { post: requestFeeCorrectionSchema, get: listFeeCorrectionsSchema },
+  '/finance/fee-corrections/{correctionId}/approve': { post: approveFeeCorrectionSchema },
+  '/finance/fee-corrections/{correctionId}/reject': { post: rejectFeeCorrectionSchema },
+  '/finance/students/{id}/scholarship-eligibility': { get: scholarshipEligibilitySchema },
+  '/finance/students/{id}/scholarship-decisions': {
+    post: recordScholarshipDecisionSchema,
+    get: listScholarshipDecisionsSchema,
+  },
+};

@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const collegeProfileService = require('../services/collegeProfileService');
 const staffService = require('../services/staffService');
@@ -57,6 +59,28 @@ function mapDepartmentError(err, res) {
   return false;
 }
 
+const departmentIdParams = z.object({ id: z.string() });
+const hodInChargeAppointmentParams = z.object({ id: z.string(), appointmentId: z.string() });
+const departmentBodySchema = z
+  .object({
+    name: z.string().optional(),
+    approved_intake: z.any().optional(),
+    course_duration: z.any().optional(),
+    default_sections: z.any().optional(),
+  })
+  .optional();
+const createDepartmentSchema = z.object({ body: departmentBodySchema });
+const getDepartmentSchema = z.object({ params: departmentIdParams });
+const updateDepartmentSchema = z.object({ params: departmentIdParams, body: departmentBodySchema });
+const deleteDepartmentSchema = z.object({ params: departmentIdParams });
+const appointHodInChargeSchema = z.object({
+  params: departmentIdParams,
+  body: z.object({ faculty_user_id: z.string().optional(), reason: z.string().optional() }).optional(),
+});
+const getHodInChargeSchema = z.object({ params: departmentIdParams });
+const listHodInChargeHistorySchema = z.object({ params: departmentIdParams });
+const revokeHodInChargeSchema = z.object({ params: hodInChargeAppointmentParams });
+
 function createDepartmentsRouter() {
   const router = express.Router();
 
@@ -73,6 +97,7 @@ function createDepartmentsRouter() {
   router.post(
     '/departments',
     requirePermission('departments.create'),
+    validate(createDepartmentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -92,6 +117,7 @@ function createDepartmentsRouter() {
   router.get(
     '/departments/:id',
     requirePermission('departments.read'),
+    validate(getDepartmentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const department = await collegeProfileService.getDepartment(req.dbClient, req.params.id);
@@ -106,6 +132,7 @@ function createDepartmentsRouter() {
   router.put(
     '/departments/:id',
     requirePermission('departments.update'),
+    validate(updateDepartmentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -130,6 +157,7 @@ function createDepartmentsRouter() {
   router.delete(
     '/departments/:id',
     requirePermission('departments.delete'),
+    validate(deleteDepartmentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const department = await collegeProfileService.removeDepartment(req.dbClient, req.params.id, {
@@ -152,6 +180,7 @@ function createDepartmentsRouter() {
   router.post(
     '/departments/:id/hod-in-charge',
     requirePermission('hod_in_charge.appoint'),
+    validate(appointHodInChargeSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { faculty_user_id: facultyUserId, reason } = req.body || {};
@@ -182,6 +211,7 @@ function createDepartmentsRouter() {
   router.get(
     '/departments/:id/hod-in-charge',
     requireAuth,
+    validate(getHodInChargeSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const appointment = await staffService.getActiveHodInCharge(req.dbClient, req.collegeId, req.params.id);
@@ -192,6 +222,7 @@ function createDepartmentsRouter() {
   router.get(
     '/departments/:id/hod-in-charge/history',
     requireAuth,
+    validate(listHodInChargeHistorySchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const history = await staffService.listHodInChargeHistory(req.dbClient, req.params.id);
@@ -202,6 +233,7 @@ function createDepartmentsRouter() {
   router.post(
     '/departments/:id/hod-in-charge/:appointmentId/revoke',
     requirePermission('hod_in_charge.appoint'),
+    validate(revokeHodInChargeSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -223,3 +255,10 @@ function createDepartmentsRouter() {
 }
 
 module.exports = createDepartmentsRouter;
+module.exports.schemas = {
+  '/departments': { post: createDepartmentSchema },
+  '/departments/{id}': { get: getDepartmentSchema, put: updateDepartmentSchema, delete: deleteDepartmentSchema },
+  '/departments/{id}/hod-in-charge': { post: appointHodInChargeSchema, get: getHodInChargeSchema },
+  '/departments/{id}/hod-in-charge/history': { get: listHodInChargeHistorySchema },
+  '/departments/{id}/hod-in-charge/{appointmentId}/revoke': { post: revokeHodInChargeSchema },
+};

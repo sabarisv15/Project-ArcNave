@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth } = require('../middleware/rbac');
 const examinationService = require('../services/examinationService');
 const identityService = require('../services/identityService');
@@ -38,6 +40,26 @@ function mapExaminationServiceError(err, res) {
   return false;
 }
 
+const classIdParams = z.object({ id: z.string() });
+const uploadExamDocumentSchema = z.object({
+  params: classIdParams,
+  body: z
+    .object({
+      doc_type: z.string().optional(),
+      file_name: z.string().optional(),
+      mime_type: z.string().optional(),
+      file_base64: z.string().optional(),
+    })
+    .optional(),
+});
+const listExamDocumentsSchema = z.object({ params: classIdParams });
+const publishExamTimetableSchema = z.object({
+  params: classIdParams,
+  body: z.object({ document_id: z.string().optional() }).optional(),
+});
+const getCurrentExamTimetableSchema = z.object({ params: classIdParams });
+const listExamTimetableVersionsSchema = z.object({ params: classIdParams });
+
 function createExaminationRouter() {
   const router = express.Router();
 
@@ -51,6 +73,7 @@ function createExaminationRouter() {
   router.post(
     '/classes/:id/examination-documents',
     requireAuth,
+    validate(uploadExamDocumentSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { doc_type: docType, file_name: fileName, mime_type: mimeType, file_base64: fileBase64 } = req.body || {};
@@ -84,6 +107,7 @@ function createExaminationRouter() {
   router.get(
     '/classes/:id/examination-documents',
     requireAuth,
+    validate(listExamDocumentsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const documents = await examinationService.listExamDocumentsForClass(req.dbClient, req.params.id);
@@ -94,6 +118,7 @@ function createExaminationRouter() {
   router.post(
     '/classes/:id/examination-timetable/publish',
     requireAuth,
+    validate(publishExamTimetableSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { document_id: documentId } = req.body || {};
@@ -113,6 +138,7 @@ function createExaminationRouter() {
   router.get(
     '/classes/:id/examination-timetable/current',
     requireAuth,
+    validate(getCurrentExamTimetableSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const version = await examinationService.getCurrentOfficialTimetable(req.dbClient, req.params.id);
@@ -129,6 +155,7 @@ function createExaminationRouter() {
   router.get(
     '/classes/:id/examination-timetable/versions',
     requireAuth,
+    validate(listExamTimetableVersionsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const versions = await examinationService.listExamTimetableVersions(req.dbClient, req.params.id);
@@ -140,3 +167,9 @@ function createExaminationRouter() {
 }
 
 module.exports = createExaminationRouter;
+module.exports.schemas = {
+  '/classes/{id}/examination-documents': { post: uploadExamDocumentSchema, get: listExamDocumentsSchema },
+  '/classes/{id}/examination-timetable/publish': { post: publishExamTimetableSchema },
+  '/classes/{id}/examination-timetable/current': { get: getCurrentExamTimetableSchema },
+  '/classes/{id}/examination-timetable/versions': { get: listExamTimetableVersionsSchema },
+};

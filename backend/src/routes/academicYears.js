@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const academicYearService = require('../services/academicYearService');
 const identityService = require('../services/identityService');
@@ -54,12 +56,34 @@ function mapAcademicYearServiceError(err, res) {
   return false;
 }
 
+// P4 route-validation pass — same permissive discipline
+// students.js/attendance.js's own schema blocks established: the
+// service (academicYearService) is the real validator, this layer
+// only rejects a wrong-typed wire shape.
+const academicYearIdParams = z.object({ id: z.string() });
+const createAcademicYearSchema = z.object({
+  body: z
+    .object({
+      year_label: z.string().optional(),
+      start_date: z.string().optional(),
+      end_date: z.string().optional(),
+    })
+    .optional(),
+});
+const listAcademicYearsSchema = z.object({
+  query: z.object({ limit: z.string().optional(), offset: z.string().optional() }).optional(),
+});
+const getAcademicYearSchema = z.object({ params: academicYearIdParams });
+const activateAcademicYearSchema = z.object({ params: academicYearIdParams });
+const completeAcademicYearSchema = z.object({ params: academicYearIdParams });
+
 function createAcademicYearsRouter() {
   const router = express.Router();
 
   router.post(
     '/academic-years',
     requirePermission('academic_years.create'),
+    validate(createAcademicYearSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -79,6 +103,7 @@ function createAcademicYearsRouter() {
   router.get(
     '/academic-years',
     requireAuth,
+    validate(listAcademicYearsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { limit: rawLimit, offset: rawOffset } = req.query;
@@ -107,6 +132,7 @@ function createAcademicYearsRouter() {
   router.get(
     '/academic-years/:id',
     requireAuth,
+    validate(getAcademicYearSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const academicYear = await academicYearService.getAcademicYear(req.dbClient, req.params.id);
@@ -121,6 +147,7 @@ function createAcademicYearsRouter() {
   router.post(
     '/academic-years/:id/activate',
     requirePermission('academic_years.activate'),
+    validate(activateAcademicYearSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -138,6 +165,7 @@ function createAcademicYearsRouter() {
   router.post(
     '/academic-years/:id/complete',
     requirePermission('academic_years.complete'),
+    validate(completeAcademicYearSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -156,3 +184,9 @@ function createAcademicYearsRouter() {
 }
 
 module.exports = createAcademicYearsRouter;
+module.exports.schemas = {
+  '/academic-years': { post: createAcademicYearSchema, get: listAcademicYearsSchema },
+  '/academic-years/{id}': { get: getAcademicYearSchema },
+  '/academic-years/{id}/activate': { post: activateAcademicYearSchema },
+  '/academic-years/{id}/complete': { post: completeAcademicYearSchema },
+};

@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const documentCategoryService = require('../services/documentCategoryService');
 
@@ -32,6 +34,10 @@ function mapDocumentCategoryError(err, res) {
 // repository needs the category list to pick a destination or filter
 // by it, same "reads are open, writes are gated" split every other
 // router in this codebase draws.
+const createDocumentCategorySchema = z.object({
+  body: z.object({ name: z.string().optional() }).optional(),
+});
+
 function createDocumentCategoriesRouter() {
   const router = express.Router();
 
@@ -48,6 +54,7 @@ function createDocumentCategoriesRouter() {
   router.post(
     '/document-categories',
     requirePermission('document_categories.manage'),
+    validate(createDocumentCategorySchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -67,3 +74,6 @@ function createDocumentCategoriesRouter() {
 }
 
 module.exports = createDocumentCategoriesRouter;
+module.exports.schemas = {
+  '/document-categories': { post: createDocumentCategorySchema },
+};

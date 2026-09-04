@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth } = require('../middleware/rbac');
 const workflowService = require('../services/workflowService');
 const staffService = require('../services/staffService');
@@ -271,6 +273,16 @@ async function dispatchWorkflowAction(req, action) {
   return { result: await fn(req.dbClient, req.params.id, { actorUserId, remarks }) };
 }
 
+const workflowRequestIdParams = z.object({ id: z.string() });
+const approveWorkflowRequestSchema = z.object({
+  params: workflowRequestIdParams,
+  body: z.object({ remarks: z.string().optional() }).optional(),
+});
+const rejectWorkflowRequestSchema = z.object({
+  params: workflowRequestIdParams,
+  body: z.object({ remarks: z.string().optional() }).optional(),
+});
+
 function createWorkflowRequestsRouter() {
   const router = express.Router();
 
@@ -290,6 +302,7 @@ function createWorkflowRequestsRouter() {
   router.post(
     '/workflow-requests/:id/approve',
     requireAuth,
+    validate(approveWorkflowRequestSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -309,6 +322,7 @@ function createWorkflowRequestsRouter() {
   router.post(
     '/workflow-requests/:id/reject',
     requireAuth,
+    validate(rejectWorkflowRequestSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -329,3 +343,7 @@ function createWorkflowRequestsRouter() {
 }
 
 module.exports = createWorkflowRequestsRouter;
+module.exports.schemas = {
+  '/workflow-requests/{id}/approve': { post: approveWorkflowRequestSchema },
+  '/workflow-requests/{id}/reject': { post: rejectWorkflowRequestSchema },
+};

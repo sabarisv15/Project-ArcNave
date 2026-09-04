@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth } = require('../middleware/rbac');
 const activityTimelineService = require('../services/activityTimelineService');
 const identityService = require('../services/identityService');
@@ -14,6 +16,10 @@ function requireResolvedTenant(req, res) {
   return true;
 }
 
+const listActivityTimelineSchema = z.object({
+  query: z.object({ limit: z.string().optional(), offset: z.string().optional() }).optional(),
+});
+
 // requireAuth only — self-only by construction, see
 // activityTimelineService's own comment for why no userId is ever
 // accepted from the request.
@@ -23,6 +29,7 @@ function createActivityTimelineRouter() {
   router.get(
     '/activity-timeline',
     requireAuth,
+    validate(listActivityTimelineSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { limit: rawLimit, offset: rawOffset } = req.query;
@@ -39,3 +46,6 @@ function createActivityTimelineRouter() {
 }
 
 module.exports = createActivityTimelineRouter;
+module.exports.schemas = {
+  '/activity-timeline': { get: listActivityTimelineSchema },
+};

@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const configurationService = require('../services/configurationService');
 const storageProviderRegistry = require('../storage/storageProviderRegistry');
@@ -76,6 +78,18 @@ function assertValidStorageConfiguration(configuration) {
   }
 }
 
+const configurationCategoryParams = z.object({ category: z.string() });
+const getConfigurationSchema = z.object({ params: configurationCategoryParams });
+const setConfigurationSchema = z.object({
+  params: configurationCategoryParams,
+  body: z
+    .object({
+      configuration: z.any().optional(),
+      expected_version: z.any().optional(),
+    })
+    .optional(),
+});
+
 function createConfigurationsRouter() {
   const router = express.Router();
 
@@ -88,6 +102,7 @@ function createConfigurationsRouter() {
   router.get(
     '/configurations/:category',
     requireAuth,
+    validate(getConfigurationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const actorRole = req.jwtClaims.role || req.capabilities.effectiveRole;
@@ -122,6 +137,7 @@ function createConfigurationsRouter() {
   router.put(
     '/configurations/:category',
     requirePermission('configurations.update'),
+    validate(setConfigurationSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { configuration, expected_version: rawExpectedVersion } = req.body || {};
@@ -156,3 +172,6 @@ function createConfigurationsRouter() {
 }
 
 module.exports = createConfigurationsRouter;
+module.exports.schemas = {
+  '/configurations/{category}': { get: getConfigurationSchema, put: setConfigurationSchema },
+};

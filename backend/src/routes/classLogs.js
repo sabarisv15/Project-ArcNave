@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth } = require('../middleware/rbac');
 const classLogService = require('../services/classLogService');
 const identityService = require('../services/identityService');
@@ -42,12 +44,48 @@ function mapClassLogServiceError(err, res) {
 // the gate (visibilityService.assertCanViewClass for create/read,
 // creator-only ownership for edit/delete), same "the service is the
 // real gate" split most write routes in this codebase already use.
+const classLogIdParams = z.object({ id: z.string() });
+const listClassLogsSchema = z.object({
+  query: z
+    .object({
+      class_id: z.string().optional(),
+      subject: z.string().optional(),
+      from_date: z.string().optional(),
+      to_date: z.string().optional(),
+    })
+    .optional(),
+});
+const createClassLogSchema = z.object({
+  body: z
+    .object({
+      class_id: z.string().optional(),
+      timetable_period_id: z.string().optional(),
+      subject: z.string().optional(),
+      session_date: z.string().optional(),
+      topic: z.string().optional(),
+      notes: z.string().optional(),
+    })
+    .optional(),
+});
+const updateClassLogSchema = z.object({
+  params: classLogIdParams,
+  body: z
+    .object({
+      subject: z.string().optional(),
+      topic: z.string().optional(),
+      notes: z.string().optional(),
+    })
+    .optional(),
+});
+const deleteClassLogSchema = z.object({ params: classLogIdParams });
+
 function createClassLogsRouter() {
   const router = express.Router();
 
   router.get(
     '/class-logs',
     requireAuth,
+    validate(listClassLogsSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { class_id: classId, subject, from_date: fromDate, to_date: toDate } = req.query;
@@ -73,6 +111,7 @@ function createClassLogsRouter() {
   router.post(
     '/class-logs',
     requireAuth,
+    validate(createClassLogSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const {
@@ -107,6 +146,7 @@ function createClassLogsRouter() {
   router.put(
     '/class-logs/:id',
     requireAuth,
+    validate(updateClassLogSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const { subject, topic, notes } = req.body || {};
@@ -128,6 +168,7 @@ function createClassLogsRouter() {
   router.delete(
     '/class-logs/:id',
     requireAuth,
+    validate(deleteClassLogSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       try {
@@ -144,3 +185,7 @@ function createClassLogsRouter() {
 }
 
 module.exports = createClassLogsRouter;
+module.exports.schemas = {
+  '/class-logs': { get: listClassLogsSchema, post: createClassLogSchema },
+  '/class-logs/{id}': { put: updateClassLogSchema, delete: deleteClassLogSchema },
+};

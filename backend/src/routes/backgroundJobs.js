@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requirePermission } = require('../middleware/rbac');
 const backgroundJobService = require('../services/backgroundJobService');
 const identityService = require('../services/identityService');
@@ -14,12 +16,20 @@ function requireResolvedTenant(req, res) {
   return true;
 }
 
+const backgroundJobIdParams = z.object({ id: z.string() });
+const createBackgroundJobSchema = z.object({
+  body: z.object({ name: z.string().optional() }).optional(),
+});
+const getBackgroundJobSchema = z.object({ params: backgroundJobIdParams });
+const streamBackgroundJobSchema = z.object({ params: backgroundJobIdParams });
+
 function createBackgroundJobsRouter() {
   const router = express.Router();
 
   router.post(
     '/background-jobs',
     requirePermission('background_jobs.create'),
+    validate(createBackgroundJobSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const body = req.body || {};
@@ -44,6 +54,7 @@ function createBackgroundJobsRouter() {
   router.get(
     '/background-jobs/:id',
     requirePermission('background_jobs.read'),
+    validate(getBackgroundJobSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const job = await backgroundJobService.find(req.dbClient, req.params.id);
@@ -67,6 +78,7 @@ function createBackgroundJobsRouter() {
   router.get(
     '/background-jobs/:id/stream',
     requirePermission('background_jobs.read'),
+    validate(streamBackgroundJobSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
       const first = await backgroundJobService.find(req.dbClient, req.params.id);
@@ -143,3 +155,8 @@ function createBackgroundJobsRouter() {
 }
 
 module.exports = createBackgroundJobsRouter;
+module.exports.schemas = {
+  '/background-jobs': { post: createBackgroundJobSchema },
+  '/background-jobs/{id}': { get: getBackgroundJobSchema },
+  '/background-jobs/{id}/stream': { get: streamBackgroundJobSchema },
+};

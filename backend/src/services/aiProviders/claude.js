@@ -137,6 +137,52 @@ function baseUrl(cfg) {
   return cfg.baseUrl || DEFAULT_BASE_URL;
 }
 
+// Prompt caching, system-prompt side (ADL-100, 2026-09-04) — the
+// `tools` array already had its own cache_control breakpoint (P1.2,
+// below); the system prompt itself never did, which meant a plain
+// conversational turn (askGeneralChat, or Curriculum's own
+// greeting-classified zero-tool path — turnSetup.js's own
+// zeroToolFastPathActive) had NO cache_control anywhere in the request
+// at all, on either transport. Anthropic requires `system` to be a
+// content-block array (never a bare string) for a block to carry its
+// own `cache_control` — this wraps the single system string this
+// adapter has always built into that one-block array shape, byte-
+// identical content, just addressable. Applied UNCONDITIONALLY (no
+// minimum-length gate here): per Anthropic's own docs, a prefix below
+// this model's real minimum (1,024 tokens for Sonnet 5, 512 for Opus
+// 5 — both comfortably below this codebase's own measured ~1,300–2,200
+// token system-prompt floor, aiPolicyAssembly's CORE+CONTINUITY) simply
+// isn't cached — the call still succeeds, same graceful-degrade
+// posture ADL-071's Gemini-side cache handle already follows (degrade
+// to inline, never throw). No Vertex-vs-direct-API branch needed here
+// either — the ONLY documented Vertex difference is that the
+// `anthropic-beta` header must be OMITTED (buildRequest above already
+// only ever sends it on the direct-API branch, never Vertex's), not
+// that `cache_control` itself works differently.
+function buildSystemField(systemPrompt) {
+  if (!systemPrompt) return systemPrompt;
+  return [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }];
+}
+
+// ADL-100 — cachedTokens alongside the existing inputTokens/outputTokens
+// extraction, sourced from Anthropic's own usage.cache_read_input_tokens
+// (a real 0-or-positive count Anthropic always reports once caching is
+// wired at all, unlike Gemini's cachedContentTokenCount which is only
+// present when a hit actually occurred — llmCall.js's own cachedTokens
+// field already tolerates either "a real number" or "undefined = no
+// signal" per-provider, so this honest difference needs no adapter-side
+// normalization). Centralized here (used by every non-streaming call
+// site below) so the three previously-duplicated `payload.usage ? {...}
+// : undefined` blocks can't drift on which fields they extract.
+function extractUsage(payload) {
+  if (!payload || !payload.usage) return undefined;
+  return {
+    inputTokens: payload.usage.input_tokens,
+    outputTokens: payload.usage.output_tokens,
+    cachedTokens: payload.usage.cache_read_input_tokens,
+  };
+}
+
 // bodyFields: { model, max_tokens, system, messages, tools? } — the
 // transport-agnostic request shape both completeWithMeta and
 // completeWithTools already build. Vertex's rawPredict/streamRawPredict
@@ -144,8 +190,11 @@ function baseUrl(cfg) {
 // difference from the direct API, which takes it from the body and has
 // no per-model URL segment at all) and needs anthropic_version as a body
 // field instead of a header; prompt-caching's anthropic-beta header has
-// no Vertex equivalent in this adapter yet (not exercised — this project
-// has zero Vertex quota for Claude to verify caching behavior against).
+// no Vertex equivalent — Vertex actually REJECTS that header outright
+// (confirmed against Google's own Claude-on-Vertex docs, ADL-100), which
+// is exactly why this branch never adds it below. cache_control itself
+// (buildSystemField, the tools-array breakpoint in completeWithTools)
+// needs no such branch — it works identically on both transports.
 async function buildRequest(cfg, bodyFields, verb) {
   if (isVertexMode(cfg)) {
     // model: encoded in the URL, never the body, on Vertex. stream: the
@@ -244,7 +293,7 @@ async function completeWithMeta(cfg, arcnaveContext) {
   const payload = await postJson(cfg, {
     model: cfg.model,
     max_tokens: MAX_TOKENS,
-    system: systemPrompt,
+    system: buildSystemField(systemPrompt),
     messages: [...buildHistoryMessages(historyTurns), { role: 'user', content: buildUserContent(userPrompt, images) }],
     ...(responseSchema
       ? {
@@ -260,10 +309,7 @@ async function completeWithMeta(cfg, arcnaveContext) {
       : {}),
   });
 
-  const usage =
-    payload && payload.usage
-      ? { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens }
-      : undefined;
+  const usage = extractUsage(payload);
 
   if (responseSchema) {
     const blocks = Array.isArray(payload && payload.content) ? payload.content : [];
@@ -320,7 +366,7 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
     {
       model: cfg.model,
       max_tokens: MAX_TOKENS,
-      system: systemPrompt,
+      system: buildSystemField(systemPrompt),
       messages: [
         ...buildHistoryMessages(historyTurns),
         { role: 'user', content: buildUserContent(userPrompt, images) },
@@ -339,6 +385,7 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
   let full = '';
   let inputTokens;
   let outputTokens;
+  let cachedTokens;
   for await (const payload of iterateSseLines(response)) {
     let event;
     try {
@@ -354,12 +401,17 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
       }
     } else if (event && event.type === 'message_start' && event.message && event.message.usage) {
       inputTokens = event.message.usage.input_tokens;
+      // ADL-100 — cache_read_input_tokens rides on the SAME message_start
+      // usage block as input_tokens (Anthropic reports it once, up front,
+      // never incrementally like output_tokens below), so it's captured
+      // here rather than needing its own event branch.
+      cachedTokens = event.message.usage.cache_read_input_tokens;
     } else if (event && event.type === 'message_delta' && event.usage) {
       outputTokens = event.usage.output_tokens;
     }
   }
   if (typeof onUsage === 'function' && (inputTokens !== undefined || outputTokens !== undefined)) {
-    onUsage({ inputTokens, outputTokens });
+    onUsage({ inputTokens, outputTokens, cachedTokens });
   }
   return full;
 }
@@ -402,7 +454,7 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   const payload = await postJson(cfg, {
     model: cfg.model,
     max_tokens: MAX_TOKENS,
-    system: systemPrompt,
+    system: buildSystemField(systemPrompt),
     messages: [
       ...buildHistoryMessages(historyTurns),
       { role: 'user', content: buildUserContent(userPrompt, images) },
@@ -430,10 +482,7 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   const toolUse = blocks.find((b) => b.type === 'tool_use');
   if (toolUse) {
     // ADR-030 P0 telemetry — see gemini.js's own equivalent comment.
-    const usage =
-      payload && payload.usage
-        ? { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens }
-        : undefined;
+    const usage = extractUsage(payload);
     return {
       type: 'tool_call',
       toolName: toolUse.name,
@@ -448,10 +497,7 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   if (!textBlock) {
     throw new LlmRequestError('Claude response contained neither a tool_use block nor a text block');
   }
-  const usage =
-    payload && payload.usage
-      ? { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens }
-      : undefined;
+  const usage = extractUsage(payload);
   return { type: 'answer', text: textBlock.text, usage };
 }
 

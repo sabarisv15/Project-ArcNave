@@ -799,7 +799,10 @@ test('claude adapter.completeWithMeta: a forced tool_use response is re-serializ
       contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
     );
     assert.equal(text, JSON.stringify({ x: 'value' }));
-    assert.deepEqual(usage, { inputTokens: 5, outputTokens: 3 });
+    // ADL-100 — extractUsage now always includes cachedTokens (undefined
+    // here since this mocked response carries no cache_read_input_tokens,
+    // same as a real uncached Anthropic call).
+    assert.deepEqual(usage, { inputTokens: 5, outputTokens: 3, cachedTokens: undefined });
   } finally {
     global.fetch = originalFetch;
   }

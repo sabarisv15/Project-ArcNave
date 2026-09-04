@@ -126,11 +126,17 @@ async function logLlmCall(
         purpose,
         inputTokens: usage ? usage.inputTokens : undefined,
         outputTokens: usage ? usage.outputTokens : undefined,
-        // ADR-030 P3 — only ever populated by gemini.js today (Vertex AI's
-        // automatic implicit context caching, see that adapter's own
-        // extractUsage comment); undefined for every other provider/purpose,
-        // never coerced to 0, so a `NULL`/absent value in a query genuinely
-        // means "no signal," not "confirmed zero cache hit."
+        // ADR-030 P3 (gemini.js — Vertex AI's automatic implicit context
+        // caching) / ADL-100 (claude.js — explicit cache_control on the
+        // system prompt + tools array, both transports). Undefined for
+        // every other provider/purpose, never coerced to 0, so a `NULL`/
+        // absent value in a query genuinely means "no signal." Note the
+        // two providers' 0 vs undefined semantics differ honestly: Claude
+        // always reports a real 0-or-positive cache_read_input_tokens once
+        // wired at all (claude.js's extractUsage), while Gemini's
+        // cachedContentTokenCount is only present on an actual hit — a
+        // query over this column should never assume the two are
+        // comparable without checking `provider` too.
         cachedTokens: usage ? usage.cachedTokens : undefined,
         // Only populated when a caller passes `attempted` (currently
         // tool_search only) — an explicit false/null signal, never a

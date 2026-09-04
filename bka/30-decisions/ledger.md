@@ -8062,3 +8062,75 @@ composer nobody has touched), threaded through `AIComposer.jsx`/
 `ChatView.jsx`/`ChatRoute.jsx`/`WorkspaceProvider.jsx`'s
 `sendMessage`/`editMessage`/`runAiTurn` the same way `thinkingLevel`
 already is, replacing the static "Auto" `<span>`.
+
+## ADL-100
+
+### claude.js: explicit prompt caching on the system prompt, both transports — live-verified real cache hit
+
+**What prompted this.** Investigating why the AI Composer's own token
+counter showed ~1,300–2,700 input tokens for a bare "hi"/"hai" turn
+(same session, following up on the greeting-fast-path measurement
+above): ADL-071 already built explicit Vertex prompt caching for
+**Gemini**, deliberately shipped OFF because the real system-prompt
+prefix (~2,578 tokens measured then) was below Vertex's ~4,096-token
+floor to even create a cache. Checking whether the same applied to
+**Claude** (newly reachable via today's Sonnet-5/Opus-5 model picker,
+[ADL-099](#adl-099)) found a structurally different, and better,
+situation: Anthropic's own minimum cacheable prefix is **1,024 tokens
+for Sonnet 5, 512 for Opus 5** — both comfortably below this
+codebase's own measured ~1,300–2,200 token system-prompt floor
+(`CORE`+`CONTINUITY`, `aiPolicyAssembly.js`). But `claude.js` never
+attached `cache_control` to the system prompt at all — only to the
+`tools` array's last entry (P1.2), so a zero-tool/greeting turn
+(`askGeneralChat`, or Curriculum's own greeting-classified fast path)
+had literally no cache breakpoint anywhere in the request, on either
+transport.
+
+**What was decided.** Wrap `system` in Anthropic's content-block array
+shape (`[{ type: 'text', text: systemPrompt, cache_control: { type:
+'ephemeral' } }]`) unconditionally, on every non-streaming and
+streaming call site (`completeWithMeta`, `completeStream`,
+`completeWithTools`) — never gated on prompt length, since Anthropic's
+own behavior for a below-minimum prefix is a silent no-op (inference
+still succeeds, prefix just isn't cached), the same graceful-degrade
+posture ADL-071's Gemini-side handle already follows. No Vertex-vs-
+direct-API branch needed for `cache_control` itself — confirmed via
+Google's own Claude-on-Vertex docs that the ONLY transport difference
+is the `anthropic-beta` header, which Vertex rejects outright and
+which `buildRequest` already only ever sends on the direct-API branch.
+
+**Live-verified, real Vertex calls** (`project-8bcf740a-a7bd-4aea-974`,
+`claude-sonnet-5`, this session): two back-to-back `rawPredict` calls
+with the real `MODE_PREFIX.curriculum + CORE + CONTINUITY` text
+(5,362 chars, ~1,341 tokens) as the system prompt. Call 1:
+`cache_creation_input_tokens: 1715`. Call 2, identical prefix:
+`cache_creation_input_tokens: 0`, **`cache_read_input_tokens: 1715`**
+— a real cache hit, on a prefix size this codebase's own repeat-turn
+traffic already produces today, no padding needed.
+
+**Telemetry.** New `extractUsage(payload)` helper (replacing three
+duplicated `payload.usage ? {...} : undefined` blocks) adds
+`cachedTokens: payload.usage.cache_read_input_tokens` — a real
+0-or-positive number once wired at all, unlike Gemini's
+`cachedContentTokenCount` which is only present on an actual hit.
+`llmCall.js`'s `logLlmCall` already had a generic `cachedTokens` audit
+field (ADR-030 P3, previously Gemini-only) — this needed no schema
+change, just a stale comment correction noting Claude now populates it
+too, with the two providers' differing 0-vs-undefined semantics called
+out explicitly so a future query over that column doesn't conflate
+them.
+
+**Not done.** Gemini's own explicit-caching floor problem (ADL-071) is
+untouched — still below Vertex's 4,096-token minimum at today's real
+prompt sizes, still deliberately OFF. `completeStream`'s streaming
+`onUsage` path is wired but not independently live-verified against a
+real streaming Vertex call this session (only the non-streaming
+`rawPredict` probe above was run) — the code path is identical in
+shape to the already-verified non-streaming one (same `message_start`
+usage block Anthropic's SSE format documents), but flagged here rather
+than silently claimed as re-verified.
+
+**Verified.** `ai-providers.test.js` (72/72, one pre-existing test
+updated for the new `cachedTokens` key in the usage shape),
+`ai-service.test.js` + `ai-cost-control-service.test.js` +
+`ai-explicit-cache.test.js` (260/260) — all green in Docker.

@@ -6,10 +6,17 @@
 // tabular reports. This renders free-text AI-authored markdown (headings,
 // paragraphs, and any embedded pipe-tables) as a normal reading document —
 // the shape AI chat/artifact reports actually are, not tabular data.
-// Deliberately minimal markdown support (headings + paragraphs + tables
-// only, no bold/italic/nested-list parsing): AI-authored report content in
-// this codebase is plain prose with occasional tables, not arbitrary
-// CommonMark, and this is a v1 export, not a markdown renderer.
+// Deliberately minimal markdown support (headings H1-H6, **bold**/*italic*
+// inline runs, horizontal rules, single-level bullet lists, paragraphs,
+// and tables — still no nested/numbered lists or links): AI-authored
+// report content in this codebase is plain prose with occasional tables,
+// not arbitrary CommonMark, and this is a v1 export, not a markdown
+// renderer. A live-caught document (an AI-generated resume with ####
+// sub-headings, **bold** labels, and "* " bullets) showed those markers
+// being printed as literal characters instead of silently degrading —
+// bold/italic/H4-H6/horizontal-rule/bullet handling exists specifically
+// to close that gap, via markdownInline.js (shared with
+// markdownPdfGenerator.js so the two can't drift apart again).
 //
 // Visual design (this round): a live side-by-side against a same-prompt
 // Gemini-generated PDF showed this generator's first pass (plain
@@ -39,6 +46,14 @@ const {
 } = require('docx');
 const { parseTableAt } = require('./markdownTableParser');
 const { HEX } = require('./documentTheme');
+const {
+  stripStrayHtml,
+  isHorizontalRule,
+  matchHeading,
+  matchBullet,
+  parseInlineSegments,
+  stripInlineMarkers,
+} = require('./markdownInline');
 
 const HEADING_SIZE = { 1: 32, 2: 26, 3: 22 }; // half-points (docx `size` unit)
 
@@ -92,13 +107,23 @@ function headingParagraph(text, level) {
     indent: level > 1 ? { left: 160 } : undefined,
     children: [
       new TextRun({
-        text,
+        text: stripInlineMarkers(text),
         bold: true,
         color: HEX.ink,
         size: HEADING_SIZE[level],
       }),
     ],
   });
+}
+
+// **bold**/*italic* runs within one paragraph line — docx supports
+// per-run styling natively (unlike pdfkit), so this is just a map from
+// markdownInline.js's segments straight to TextRun.
+function inlineRuns(text, baseProps) {
+  return parseInlineSegments(text).map(
+    (seg) =>
+      new TextRun({ text: seg.text, bold: seg.bold || undefined, italics: seg.italic || undefined, ...baseProps }),
+  );
 }
 
 async function generate({ title, markdown }) {
@@ -132,16 +157,29 @@ async function generate({ title, markdown }) {
     }
 
     const line = lines[i];
-    const headingMatch = line.match(/^(#{1,3})\s+(.*)$/);
-    if (headingMatch) {
-      children.push(headingParagraph(headingMatch[2], headingMatch[1].length));
-    } else if (line.trim()) {
+    const heading = matchHeading(line);
+    if (heading) {
+      children.push(headingParagraph(heading.text, heading.level));
+    } else if (isHorizontalRule(line)) {
       children.push(
         new Paragraph({
-          spacing: { after: 120 },
-          children: [new TextRun({ text: line, color: HEX.inkSoft })],
+          spacing: { before: 100, after: 160 },
+          border: { bottom: { color: HEX.line, space: 1, style: BorderStyle.SINGLE, size: 6 } },
+          children: [],
         }),
       );
+    } else {
+      const bullet = matchBullet(line);
+      const cleaned = stripStrayHtml(bullet ? bullet.text : line);
+      if (cleaned.trim()) {
+        children.push(
+          new Paragraph({
+            spacing: { after: 120 },
+            bullet: bullet ? { level: 0 } : undefined,
+            children: inlineRuns(cleaned, { color: HEX.inkSoft }),
+          }),
+        );
+      }
     }
     i += 1;
   }

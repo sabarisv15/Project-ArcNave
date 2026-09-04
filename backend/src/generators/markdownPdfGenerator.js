@@ -18,10 +18,19 @@
 const PDFDocument = require('pdfkit');
 const { parseTableAt } = require('./markdownTableParser');
 const { HEX } = require('./documentTheme');
+const {
+  stripStrayHtml,
+  isHorizontalRule,
+  matchHeading,
+  matchBullet,
+  parseInlineSegments,
+  stripInlineMarkers,
+} = require('./markdownInline');
 
 const PAGE_MARGIN = 50;
 const TABLE_ROW_HEIGHT = 18;
 const TOP_MARGIN = 50;
+const BULLET_INDENT = 14;
 
 function hex(h) {
   return `#${h}`;
@@ -52,11 +61,53 @@ function drawHeading(doc, text, level) {
     .fillColor(hex(HEX.ink))
     .fontSize(sizes[level])
     .font('Helvetica-Bold')
-    .text(text, PAGE_MARGIN + (level > 1 ? 12 : 0), y, {
+    .text(stripInlineMarkers(text), PAGE_MARGIN + (level > 1 ? 12 : 0), y, {
       width: doc.page.width - PAGE_MARGIN * 2 - (level > 1 ? 12 : 0),
     });
   doc.moveDown(0.4);
   doc.fillColor(hex(HEX.inkSoft)).fontSize(10.5).font('Helvetica');
+}
+
+// **bold**/*italic* runs on one line, drawn as a single wrapped paragraph —
+// pdfkit has no per-run styling within one .text() call, so each segment is
+// written with {continued: true} (all but the last) so it stays part of the
+// same flowing line/paragraph instead of starting a new one. `x`/`width`
+// let a caller (drawBulletLine below) indent the whole paragraph, bullet
+// content included, without duplicating this segment-walking logic.
+function drawInlineText(doc, line, { x = PAGE_MARGIN, width = doc.page.width - PAGE_MARGIN * 2 } = {}) {
+  const segments = parseInlineSegments(line);
+  const y = doc.y;
+  segments.forEach((seg, i) => {
+    const font =
+      seg.bold && seg.italic
+        ? 'Helvetica-BoldOblique'
+        : seg.bold
+          ? 'Helvetica-Bold'
+          : seg.italic
+            ? 'Helvetica-Oblique'
+            : 'Helvetica';
+    doc.font(font);
+    if (i === 0) {
+      doc.text(seg.text, x, y, { continued: segments.length > 1, width });
+    } else {
+      doc.text(seg.text, { continued: i < segments.length - 1 });
+    }
+  });
+  doc.font('Helvetica');
+}
+
+// A bullet-list item — the "•" glyph drawn standalone at the page margin,
+// then the item's own (possibly bold/italic) text indented past it via
+// drawInlineText's x/width override, so wrapped lines land under the text,
+// not under the bullet.
+function drawBulletLine(doc, text) {
+  const y = doc.y;
+  doc.font('Helvetica').text('•', PAGE_MARGIN, y, { width: BULLET_INDENT, continued: false, lineBreak: false });
+  doc.y = y;
+  drawInlineText(doc, text, {
+    x: PAGE_MARGIN + BULLET_INDENT,
+    width: doc.page.width - PAGE_MARGIN * 2 - BULLET_INDENT,
+  });
 }
 
 function drawTable(doc, columns, rows) {
@@ -144,14 +195,29 @@ async function generate({ title, markdown }) {
       }
 
       const line = lines[i];
-      const headingMatch = line.match(/^(#{1,3})\s+(.*)$/);
-      if (headingMatch) {
-        drawHeading(doc, headingMatch[2], headingMatch[1].length);
-      } else if (line.trim()) {
-        doc.text(line);
+      const heading = matchHeading(line);
+      const bullet = heading ? null : isHorizontalRule(line) ? null : matchBullet(line);
+      if (heading) {
+        drawHeading(doc, heading.text, heading.level);
+      } else if (isHorizontalRule(line)) {
+        doc.moveDown(0.2);
+        doc
+          .moveTo(PAGE_MARGIN, doc.y)
+          .lineTo(doc.page.width - PAGE_MARGIN, doc.y)
+          .strokeColor(hex(HEX.line))
+          .stroke();
+        doc.moveDown(0.3);
+      } else if (bullet) {
+        drawBulletLine(doc, stripStrayHtml(bullet.text));
         doc.moveDown(0.3);
       } else {
-        doc.moveDown(0.2);
+        const cleaned = stripStrayHtml(line);
+        if (cleaned.trim()) {
+          drawInlineText(doc, cleaned);
+          doc.moveDown(0.3);
+        } else {
+          doc.moveDown(0.2);
+        }
       }
       i += 1;
     }

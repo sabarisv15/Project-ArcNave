@@ -10,6 +10,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { parseTableAt, findFirstTable } = require('../src/generators/markdownTableParser');
 const converter = require('../src/generators/markdownFormatConverter');
+const mammoth = require('mammoth');
+const { PDFParse } = require('pdf-parse');
 
 const SAMPLE_MARKDOWN =
   '# ECE 1040 vs 2040\n\n' +
@@ -105,4 +107,56 @@ test('markdownFormatConverter.convert: an unsupported format throws MarkdownConv
     () => converter.convert({ title: 'T', markdown: 'x' }, 'exe'),
     converter.MarkdownConversionError,
   );
+});
+
+// Live-caught bug (a real AI-generated resume PDF): **bold**, a #### level-4
+// heading, a --- divider, a "* " bullet, and a stray <br> were all printed
+// as literal characters in the exported PDF/DOCX instead of being
+// rendered. This content shape reproduces exactly that.
+const RESUME_LIKE_MARKDOWN =
+  '**PREETHI DEVARAJ**\n\n' +
+  '---\n\n' +
+  '#### Senior Executive — Financial Services\n\n' +
+  'Handled **customer coordination** and *root cause* investigation.\n\n' +
+  '* Followed up with stakeholders through to closure\n\n' +
+  'Signature<br>\n';
+
+async function extractPdfText(buffer) {
+  const parser = new PDFParse({ data: buffer });
+  try {
+    const result = await parser.getText();
+    return (result.pages || []).map((p) => p.text || '').join('\n');
+  } finally {
+    await parser.destroy();
+  }
+}
+
+test('markdownPdfGenerator (via convert): bold/heading-4/hr/br render instead of printing literal markdown', async () => {
+  const { buffer } = await converter.convert({ title: 'Resume', markdown: RESUME_LIKE_MARKDOWN }, 'pdf');
+  const text = await extractPdfText(buffer);
+  assert.ok(text.includes('PREETHI DEVARAJ'));
+  assert.ok(text.includes('Senior Executive'), 'a #### (H4) heading must still be recognized as a heading');
+  assert.ok(text.includes('customer coordination'));
+  assert.ok(text.includes('root cause'));
+  assert.ok(text.includes('Followed up with stakeholders'), 'bullet item text must still render');
+  assert.ok(!text.includes('* Followed up'), 'a bullet marker must not survive as a literal leading "* "');
+  assert.ok(!text.includes('**'), 'no literal ** should survive in the rendered PDF text');
+  assert.ok(!text.includes('####'), 'no literal #### should survive in the rendered PDF text');
+  assert.ok(!text.includes('<br>'), 'no literal <br> should survive in the rendered PDF text');
+  assert.ok(!text.includes('---'), 'no literal --- should survive in the rendered PDF text');
+});
+
+test('markdownDocxGenerator (via convert): bold/heading-4/hr/br render instead of printing literal markdown', async () => {
+  const { buffer } = await converter.convert({ title: 'Resume', markdown: RESUME_LIKE_MARKDOWN }, 'docx');
+  const { value: text } = await mammoth.extractRawText({ buffer });
+  assert.ok(text.includes('PREETHI DEVARAJ'));
+  assert.ok(text.includes('Senior Executive'), 'a #### (H4) heading must still be recognized as a heading');
+  assert.ok(text.includes('customer coordination'));
+  assert.ok(text.includes('root cause'));
+  assert.ok(text.includes('Followed up with stakeholders'), 'bullet item text must still render');
+  assert.ok(!text.includes('* Followed up'), 'a bullet marker must not survive as a literal leading "* "');
+  assert.ok(!text.includes('**'), 'no literal ** should survive in the rendered DOCX text');
+  assert.ok(!text.includes('####'), 'no literal #### should survive in the rendered DOCX text');
+  assert.ok(!text.includes('<br>'), 'no literal <br> should survive in the rendered DOCX text');
+  assert.ok(!text.includes('---'), 'no literal --- should survive in the rendered DOCX text');
 });

@@ -8001,3 +8001,64 @@ dependency audit gate, SBOM generation + cosign signing, migrate
 up→down→up, the full test suite, build, bundle-size limit). This is
 the authoritative confirmation this thread was waiting on — P0 item 1
 is now genuinely, not just structurally, done.
+
+## ADL-099
+
+### RS-AIG-008 amendment — user-facing, named per-turn model choice in the AI Composer
+
+**What prompted this.** Owner direction (2026-09-04): the AI Composer's
+static "Auto" label (`AIComposer.jsx`, next to `ScopeToggle`/
+`ThinkingLevelToggle`) becomes a real three-way picker — Gemini 3.8
+Flash / Claude Sonnet 5 / Claude Opus 5 — shown to the user **by real,
+named model**, replacing the always-server-decided default. A live
+Vertex probe the same session (this branch, 2026-09-04) confirmed both
+`claude-sonnet-5` and `claude-opus-5` are real, callable Vertex Model
+Garden ids on this project (200 responses), alongside the existing
+`gemini-3.8-flash` default (`vertexCapabilityRegistry.js`).
+
+**Why this needed a decision, not just code.** `RS-AIG-008` ("provider
+selection lives in configuration, per tenant") and `RS-AIG-027` ("no
+capability may ever be sourced from a frontend-supplied value") were
+read together by an initial research pass as barring this outright.
+On closer reading, `RS-AIG-027` governs *capability flags* (e.g. never
+trust a frontend claim that a model supports vision) — a caller
+choosing *which* curated, server-validated model to use is a different
+axis and doesn't trip it, since the resolved config is still built
+entirely server-side from a fixed allowlist, never from arbitrary
+frontend data. `RS-AIG-008` is the one that actually needed amending:
+its text scoped provider/model selection to tenant-level configuration
+only, with no per-turn, per-user axis. Owner explicitly chose the
+"amend governance, show real names" option over a neutral-tier-label
+alternative that would have kept `RS-AIG-008` untouched.
+
+**What was decided.** `RS-AIG-008` is amended (see that section's own
+text in `RS-AIG-ai-governance.md`) to add: per-turn model choice, from
+a fixed, server-side curated allowlist the user picks from in the
+Composer, is a second legitimate axis alongside per-tenant
+configuration — never an arbitrary frontend-supplied provider/model
+string. The CORE system-prompt provider-masking rule
+(`aiPolicyAssembly.js` — the assistant must never itself confirm which
+provider/model answered, even under direct/repeated questioning) is
+**unchanged and unrelated**: that rule governs what the model says
+inside its own answer; a user explicitly picking a labeled option in
+the Composer UI is a different, legitimate channel and doesn't weaken
+that in-conversation rule at all.
+
+**What was actually built.** `configurationService.js`'s new
+`MODEL_CHOICES` allowlist (`gemini-3.8-flash`/`claude-sonnet-5`/
+`claude-opus-5`) plus `resolveAiConfig`'s new `modelChoice` option,
+which — only when the label is in that allowlist — overrides the
+tenant's own provider/model resolution for that one turn (never
+persisted, never trusted past this one request). Threaded from
+`routes/ai.js`'s `askSchema`/`resolveAskContext` (new optional
+`model` field, same `.optional().nullable()` shape as
+`thinkingLevel`) through `aiService.askAgent` → `agentLoop.js` (both
+the Research-mode and Curriculum-mode config-resolution call sites) →
+`turnSetup.js`'s `fetchTools`. Frontend: `ModelSelectorToggle.jsx`
+(sibling to `ThinkingLevelToggle.jsx`, same segmented-button visual
+language), `EMPTY_COMPOSER.model` (`ComposerProvider.jsx`, `null` =
+let the tenant's own config decide — zero behavior change for a
+composer nobody has touched), threaded through `AIComposer.jsx`/
+`ChatView.jsx`/`ChatRoute.jsx`/`WorkspaceProvider.jsx`'s
+`sendMessage`/`editMessage`/`runAiTurn` the same way `thinkingLevel`
+already is, replacing the static "Auto" `<span>`.

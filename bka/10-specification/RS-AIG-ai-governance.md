@@ -274,15 +274,32 @@ The Tool Registry, Context Builder and Prompt Safety Layer are
 provider-agnostic. Provider selection lives in configuration, per tenant if
 ever needed. Exactly one module knows any provider's specific API shape.
 
+**Amendment (2026-09-04, [ADL-099](../30-decisions/ledger.md#adl-099)).**
+A second, narrower selection axis exists alongside per-tenant
+configuration: per-turn, user-picked model choice in the AI Composer,
+from a fixed, server-side curated allowlist (today: `gemini-3.8-flash`/
+`claude-sonnet-5`/`claude-opus-5`) the user selects by real, named
+model. This is never an arbitrary frontend-supplied provider/model
+string — the resolved adapter/config is still built entirely
+server-side from that fixed allowlist (`configurationService.js`'s
+`MODEL_CHOICES`), the same way `thinkingLevel` is a caller-overridable
+per-turn axis without being a frontend-supplied *capability* (see
+[RS-AIG-027](#rs-aig-027), which this amendment does not touch — that
+rule governs capability flags, not model selection). The CORE
+system-prompt provider-masking rule is unaffected: the model itself
+still may never confirm which provider/model it is inside its own
+answer, regardless of what the user picked in the Composer UI.
+
 The AI Experience Layer — a pure post-processing stage that produces
 presentation output from an already-final, already-authorized response — is
 likewise provider-neutral by construction. It never calls a tool, a Business
 Service or the LLM, and never influences which tool ran.
 
 **Consequence.** No document, decision record or configuration may assert a
-provider identity as an architectural fact. The provider currently in
-production is recorded in the [ADR register](../30-decisions/adr-register.md#adr-028)
-and nowhere else.
+provider identity as an architectural fact, except the curated, named
+allowlist this amendment establishes for the Composer's own model picker.
+The provider currently in production by default is recorded in the
+[ADR register](../30-decisions/adr-register.md#adr-028) and nowhere else.
 
 | | |
 |---|---|

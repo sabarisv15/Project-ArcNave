@@ -52,6 +52,15 @@ export const EMPTY_COMPOSER = Object.freeze({
   // above, a level chosen in one chat/project/artifact composer never
   // leaks into another.
   thinkingLevel: null,
+  // ADL-099 (2026-09-04) — ModelSelectorToggle.jsx, replacing the composer's
+  // old static "Auto" label with a real, named three-way pick (Gemini 3.8
+  // Flash / Sonnet 5 / Opus 5). `null` means "the user hasn't touched the
+  // toggle" — routes/ai.js's resolveModelChoice then lets the tenant's own
+  // configured provider decide, same "untouched default changes nothing"
+  // shape thinkingLevel already established above. Once a user picks one,
+  // it's respected verbatim for this scope, never auto-overridden — same
+  // per-scope-draft precedent as `mode`/`thinkingLevel`.
+  model: null,
   attachments: [],
   contextChips: [],
   mention: null,
@@ -213,6 +222,7 @@ export function useComposer(scopeKey, { canRestore = true, defaultMode = EMPTY_C
   const setText = useCallback((text) => patch({ text }), [patch]);
   const setMode = useCallback((mode) => patch({ mode }), [patch]);
   const setThinkingLevel = useCallback((thinkingLevel) => patch({ thinkingLevel }), [patch]);
+  const setModel = useCallback((model) => patch({ model }), [patch]);
   /**
    * Accepts a value or an updater. The updater form matters: several
    * attachment uploads report progress on their own timers, and two of them
@@ -230,16 +240,38 @@ export function useComposer(scopeKey, { canRestore = true, defaultMode = EMPTY_C
   const setContextChips = useCallback((contextChips) => patch({ contextChips }), [patch]);
   const setMention = useCallback((mention) => patch({ mention }), [patch]);
 
-  /** After a successful send, or an explicit discard. Clears this scope only. */
+  /**
+   * After a successful send, or an explicit discard. Clears the message-level
+   * state (text, attachments, context chips, mention) but keeps the scope's
+   * own Research/Curriculum mode and thinking level — those are a choice the
+   * user made for this scope, not per-message state, so sending one message
+   * must not silently flip the toggle back to Research for the next one.
+   */
   const reset = useCallback(() => {
     if (timer.current) {
       clearTimeout(timer.current);
       timer.current = null;
     }
     pending.current = null;
-    dropScope(scopeKey);
-    if (storageKey) clearDraft(storageKey);
-  }, [dropScope, scopeKey, storageKey]);
+    const current = peekScope(scopeKey);
+    const carried = {
+      ...EMPTY_COMPOSER,
+      mode: current?.mode ?? empty.mode,
+      thinkingLevel: current?.thinkingLevel ?? empty.thinkingLevel,
+      model: current?.model ?? empty.model,
+    };
+    if (
+      carried.mode === EMPTY_COMPOSER.mode &&
+      carried.thinkingLevel === EMPTY_COMPOSER.thinkingLevel &&
+      carried.model === EMPTY_COMPOSER.model
+    ) {
+      dropScope(scopeKey);
+      if (storageKey) clearDraft(storageKey);
+    } else {
+      patchScope(scopeKey, carried);
+      if (storageKey) writeDraft(storageKey, carried);
+    }
+  }, [dropScope, patchScope, peekScope, scopeKey, storageKey, empty]);
 
   return {
     scopeKey,
@@ -247,11 +279,13 @@ export function useComposer(scopeKey, { canRestore = true, defaultMode = EMPTY_C
     text: draft.text,
     mode: draft.mode,
     thinkingLevel: draft.thinkingLevel ?? EMPTY_COMPOSER.thinkingLevel,
+    model: draft.model ?? EMPTY_COMPOSER.model,
     attachments: draft.attachments,
     contextChips: draft.contextChips,
     setText,
     setMode,
     setThinkingLevel,
+    setModel,
     setAttachments,
     setContextChips,
     setMention,

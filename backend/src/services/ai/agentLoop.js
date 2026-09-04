@@ -630,7 +630,7 @@ async function writeUp({
 async function askAgent(
   client,
   question,
-  { identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel } = {},
+  { identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel, modelChoice } = {},
   onDelta,
   onStep = () => {},
 ) {
@@ -666,7 +666,7 @@ async function askAgent(
     const { adapter, config: aiConfig } = await configurationService.resolveAiConfig(
       client,
       identityContext.collegeId,
-      { allowExperimentalFallback: true },
+      { allowExperimentalFallback: true, modelChoice },
     );
     logAttachmentTokenPreflight({
       adapter,
@@ -704,6 +704,7 @@ async function askAgent(
     media,
     focusContext,
     projectContext,
+    modelChoice,
   });
 
   // Build the decision context — see buildDecisionContext's own comment

@@ -295,7 +295,7 @@ export function WorkspaceProvider({ children }) {
   const runAiTurn = useCallback(
     async (
       id,
-      { scope, projectId, artifactId, body, aiId, attachmentIds, sentAttachments = [], mode, thinkingLevel },
+      { scope, projectId, artifactId, body, aiId, attachmentIds, sentAttachments = [], mode, thinkingLevel, model },
     ) => {
       const patchAiMessage = (patch) => {
         setThreads((prev) => ({
@@ -329,6 +329,12 @@ export function WorkspaceProvider({ children }) {
             // unrecognized falls through to routes/ai.js's own default
             // ('fast' — gemini.js's existing LOW, zero behavior change).
             thinkingLevel,
+            // ADL-099 (2026-09-04) — ModelSelectorToggle.jsx's own real model
+            // id, this message only. `null`/unrecognized falls through to
+            // routes/ai.js's resolveModelChoice -> the tenant's own configured
+            // provider (zero behavior change for a composer nobody has
+            // touched).
+            model,
           },
           (event) => {
             if (event.type === 'delta') {
@@ -451,7 +457,7 @@ export function WorkspaceProvider({ children }) {
   );
 
   const sendMessage = useCallback(
-    async ({ scope = 'chat', convId, projectId, artifactId, text, attachments = [], mode, thinkingLevel }) => {
+    async ({ scope = 'chat', convId, projectId, artifactId, text, attachments = [], mode, thinkingLevel, model }) => {
       const body = (text ?? '').trim();
       if (!/[a-zA-Z0-9]/.test(body)) return null;
 
@@ -599,6 +605,7 @@ export function WorkspaceProvider({ children }) {
         sentAttachments,
         mode,
         thinkingLevel,
+        model,
       });
 
       return id;
@@ -623,7 +630,7 @@ export function WorkspaceProvider({ children }) {
    * same project/artifact/mode context a brand-new send would.
    */
   const editMessage = useCallback(
-    async ({ scope = 'chat', convId, projectId, artifactId, messageId, text, mode, thinkingLevel }) => {
+    async ({ scope = 'chat', convId, projectId, artifactId, messageId, text, mode, thinkingLevel, model }) => {
       const next = (text ?? '').trim();
       if (!convId || !next) return false;
       // A message sent earlier THIS session keeps its client-generated
@@ -686,6 +693,7 @@ export function WorkspaceProvider({ children }) {
         sentAttachments,
         mode,
         thinkingLevel,
+        model,
       });
 
       return true;

@@ -8,6 +8,7 @@ const { requireAuth } = require('../middleware/rbac');
 const aiToolRegistry = require('../services/aiToolRegistry');
 const aiService = require('../services/aiService');
 const aiProviders = require('../services/aiProviders');
+const configurationService = require('../services/configurationService');
 const conversationService = require('../services/conversationService');
 const notificationService = require('../services/notificationService');
 const webRetrievalService = require('../services/webRetrievalService');
@@ -57,6 +58,22 @@ function resolveThinkingLevel(label, question) {
     return THINKING_LEVEL_BY_LABEL[autoLabel] || THINKING_LEVEL_BY_LABEL[DEFAULT_THINKING_LEVEL];
   }
   return THINKING_LEVEL_BY_LABEL[label] || THINKING_LEVEL_BY_LABEL[DEFAULT_THINKING_LEVEL];
+}
+
+// ADL-099 / RS-AIG-008 amendment (2026-09-04) — the Composer's model
+// picker (ModelSelectorToggle.jsx, replacing the old static "Auto"
+// label). Unlike resolveThinkingLevel, an absent/unrecognized label
+// returns `undefined` here — never a guessed default model — so
+// configurationService.resolveAiConfig falls through to the tenant's
+// own configured provider exactly as before this amendment, the same
+// "only a validated, real choice overrides anything" discipline
+// resolveModelChoiceOverride itself applies server-side. Re-validating
+// here (not just trusting configurationService's own allowlist check)
+// means an unrecognized label never silently reaches the audit-log
+// metadata as if it had been honored.
+function resolveModelChoice(label) {
+  if (!label) return undefined;
+  return Object.prototype.hasOwnProperty.call(configurationService.MODEL_CHOICES, label) ? label : undefined;
 }
 
 // Short-session conversation memory (P0.1) — the outer ceiling on how
@@ -427,6 +444,10 @@ const askSchema = z.object({
       // level via ThinkingLevelToggle — reject only a genuinely wrong
       // type, not the untouched-default shape.
       thinkingLevel: z.string().optional().nullable(),
+      // ADL-099 — Composer model picker (ModelSelectorToggle.jsx). Same
+      // .optional().nullable() shape as thinkingLevel: EMPTY_COMPOSER.model
+      // defaults to `null`, sent as-is until the user picks one.
+      model: z.string().optional().nullable(),
     })
     .optional(),
 });
@@ -545,6 +566,7 @@ function createAiRouter() {
       attachment_ids: attachmentIds,
       mode,
       thinkingLevel,
+      model,
     } = req.body || {};
     let projectContext;
     if (projectId) {
@@ -592,6 +614,7 @@ function createAiRouter() {
       attachmentIds,
       mode,
       thinkingLevel: resolveThinkingLevel(thinkingLevel, question),
+      modelChoice: resolveModelChoice(model),
     };
   }
 
@@ -653,8 +676,17 @@ function createAiRouter() {
     validate(askSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
-      const { question, identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel } =
-        await resolveAskContext(req);
+      const {
+        question,
+        identityContext,
+        focusContext,
+        projectContext,
+        history,
+        attachmentIds,
+        mode,
+        thinkingLevel,
+        modelChoice,
+      } = await resolveAskContext(req);
 
       const blocked = await guardrailBlock(req, identityContext, question);
       if (blocked) {
@@ -671,6 +703,7 @@ function createAiRouter() {
           attachmentIds,
           mode,
           thinkingLevel,
+          modelChoice,
         });
         // Output screening: Aadhaar (RS-STU-002, statutory — never in AI
         // reasoning or reporting) and credential-shaped secrets.
@@ -707,8 +740,17 @@ function createAiRouter() {
     validate(askSchema),
     asyncHandler(async (req, res) => {
       if (!requireResolvedTenant(req, res)) return;
-      const { question, identityContext, focusContext, projectContext, history, attachmentIds, mode, thinkingLevel } =
-        await resolveAskContext(req);
+      const {
+        question,
+        identityContext,
+        focusContext,
+        projectContext,
+        history,
+        attachmentIds,
+        mode,
+        thinkingLevel,
+        modelChoice,
+      } = await resolveAskContext(req);
 
       res.writeHead(200, {
         'content-type': 'text/event-stream',
@@ -749,6 +791,7 @@ function createAiRouter() {
             attachmentIds,
             mode,
             thinkingLevel,
+            modelChoice,
           },
           (delta) => {
             const safe = redactor.push(delta);

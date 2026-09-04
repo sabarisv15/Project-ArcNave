@@ -24,6 +24,7 @@ export function HomeView() {
       attachments: composer.attachments,
       mode: composer.mode,
       thinkingLevel: composer.thinkingLevel,
+      model: composer.model,
     });
     if (!id) return;
     composer.reset(); // sent — clears Home's scope and nothing else
@@ -50,6 +51,8 @@ export function HomeView() {
               onMode={composer.setMode}
               thinkingLevel={composer.thinkingLevel}
               onThinkingLevel={composer.setThinkingLevel}
+              model={composer.model}
+              onModel={composer.setModel}
               variant="start"
               placeholder="Ask ArcNave anything about your campus…"
             />

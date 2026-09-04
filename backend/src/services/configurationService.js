@@ -314,13 +314,47 @@ function experimentalReasoningOverride() {
   };
 }
 
+// ADL-099 / RS-AIG-008 amendment (2026-09-04) — the AI Composer's
+// user-facing model picker (ModelSelectorToggle.jsx, replacing the old
+// static "Auto" label). A FIXED, curated allowlist, never an arbitrary
+// frontend-supplied provider/model string — same "never guessed, never
+// scattered" discipline vertexCapabilityRegistry.js's own curated table
+// already follows for capabilities. `claude-opus-5`/`claude-sonnet-5`
+// share globalClaudeConfig()'s projectId/location (same Vertex project,
+// only the model string differs — both live-verified 2026-09-04, real
+// 200 responses). gemini-3.8-flash reuses globalGeminiConfig() as-is
+// (already this deployment's real default model).
+const MODEL_CHOICES = {
+  'gemini-3.8-flash': () => ({ provider: 'gemini', config: { ...globalGeminiConfig(), model: 'gemini-3.8-flash' } }),
+  'claude-sonnet-5': () => ({ provider: 'claude', config: { ...globalClaudeConfig(), model: 'claude-sonnet-5' } }),
+  'claude-opus-5': () => ({ provider: 'claude', config: { ...globalClaudeConfig(), model: 'claude-opus-5' } }),
+};
+
+// An unrecognized/absent label returns null — the caller falls through
+// to the tenant's own configured provider exactly as before this
+// amendment existed, never a guessed or partially-applied override.
+function resolveModelChoiceOverride(modelChoice) {
+  const builder = modelChoice && MODEL_CHOICES[modelChoice];
+  if (!builder) return null;
+  const { provider, config } = builder();
+  return { provider, config, adapter: aiProviders.getAdapter(provider) };
+}
+
 // Returns { provider, config, adapter, configSource, experimentalOverrideApplied }.
-// configSource is 'experimental_fallback' only when the override above
-// actually applied; otherwise it passes getAiConfig's own
+// configSource is 'user_model_choice' only when a valid `modelChoice`
+// override applied (checked FIRST, ahead of experimentalReasoningOverride
+// — an explicit per-turn user pick from the curated allowlist always wins,
+// the same way a real thinkingLevel click always wins over auto-
+// classification), 'experimental_fallback' only when that override
+// applied instead; otherwise it passes getAiConfig's own
 // 'college_explicit'/'platform_default' straight through, unchanged —
 // this function narrows what CAN override, it never invents a new reason
 // to trust or distrust an already-resolved config.
-async function resolveAiConfig(client, collegeId, { allowExperimentalFallback = false } = {}) {
+async function resolveAiConfig(client, collegeId, { allowExperimentalFallback = false, modelChoice } = {}) {
+  const modelChoiceOverride = resolveModelChoiceOverride(modelChoice);
+  if (modelChoiceOverride) {
+    return { ...modelChoiceOverride, configSource: 'user_model_choice', experimentalOverrideApplied: false };
+  }
   const resolved = await getAiConfig(client, collegeId);
   if (!allowExperimentalFallback || resolved.configSource === 'college_explicit') {
     return { ...resolved, experimentalOverrideApplied: false };
@@ -406,4 +440,5 @@ module.exports = {
   resolveAiConfig,
   setAiConfig,
   getToolSearchConfig,
+  MODEL_CHOICES,
 };

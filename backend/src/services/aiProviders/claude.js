@@ -13,12 +13,18 @@
 //                    location's plain aiplatform.googleapis.com host (no
 //                    region prefix, same real exception gemini.js already
 //                    documents) were live-verified against a real project
-//                    (project-8bcf740a-a7bd-4aea-974, claude-sonnet-5): a
-//                    429 RESOURCE_EXHAUSTED naming the real base model
-//                    confirms the request reached and was correctly
-//                    routed by the real endpoint — this project's Vertex
-//                    quota for Claude is 0 pending a Google-reviewed
-//                    increase, not a shape/auth problem.
+//                    (project-8bcf740a-a7bd-4aea-974). 2026-09-04 live
+//                    rawPredict probe: claude-sonnet-5 and claude-opus-5
+//                    both returned real 200 responses (quota is live and
+//                    usable — the previous 0-quota/429 state this comment
+//                    used to document has been resolved by a Google-side
+//                    quota increase). claude-sonnet-4-6/claude-opus-4-6/
+//                    claude-opus-4-5/claude-opus-4-1 were also tried as
+//                    candidate Model Garden ids and all 404'd — the GCP
+//                    Quotas page's "anthropic-claude-sonnet-4-6" base_model
+//                    label does not correspond to a real, callable Vertex
+//                    model id; claude-sonnet-5/claude-opus-5 are the real
+//                    ids for this project.
 //
 // If both are present, projectId wins — Vertex is configurationService's
 // only mechanism for this provider today (see its own globalClaudeConfig

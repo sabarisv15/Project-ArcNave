@@ -21,7 +21,7 @@ export function ChatRoute() {
       meta={chat?.kind === 'project' ? chat.project : ''}
       messages={messages}
       placeholder="Reply to ArcNave…"
-      onSend={(text, attachments, mode, thinkingLevel) =>
+      onSend={(text, attachments, mode, thinkingLevel, model) =>
         sendMessage({
           scope: 'chat',
           convId: chatId,
@@ -29,6 +29,7 @@ export function ChatRoute() {
           attachments,
           mode,
           thinkingLevel,
+          model,
         })
       }
     />

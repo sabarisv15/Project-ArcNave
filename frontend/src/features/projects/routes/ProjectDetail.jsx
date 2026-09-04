@@ -78,6 +78,7 @@ export function ProjectDetail() {
       attachments: composer.attachments,
       mode: composer.mode,
       thinkingLevel: composer.thinkingLevel,
+      model: composer.model,
     });
     if (id) composer.reset(); // clears this project conversation's draft only
   };
@@ -167,6 +168,8 @@ export function ProjectDetail() {
                 onMode={composer.setMode}
                 thinkingLevel={composer.thinkingLevel}
                 onThinkingLevel={composer.setThinkingLevel}
+                model={composer.model}
+                onModel={composer.setModel}
                 variant="start"
                 placeholder="Ask ArcNave about this project…"
               />
@@ -194,6 +197,7 @@ export function ProjectDetail() {
                             text,
                             mode: composer.mode,
                             thinkingLevel: composer.thinkingLevel,
+                            model: composer.model,
                           })
                       : undefined
                   }
@@ -210,6 +214,8 @@ export function ProjectDetail() {
                 onMode={composer.setMode}
                 thinkingLevel={composer.thinkingLevel}
                 onThinkingLevel={composer.setThinkingLevel}
+                model={composer.model}
+                onModel={composer.setModel}
                 variant="chat"
                 placeholder="Ask ArcNave about this project…"
               />

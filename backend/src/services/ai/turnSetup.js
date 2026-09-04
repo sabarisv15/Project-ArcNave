@@ -129,7 +129,7 @@ async function fetchTools(
   client,
   identityContext,
   question,
-  { images, documents, media, focusContext, projectContext },
+  { images, documents, media, focusContext, projectContext, modelChoice },
 ) {
   // excludeHumanOnly: true — upload_institutional_document is
   // deliberately never in this list: the LLM may propose+resolve a
@@ -146,6 +146,7 @@ async function fetchTools(
   const identityBlockPromise = aiActorContext.describeIdentityContext(client, identityContext);
   const aiConfigPromise = configurationService.resolveAiConfig(client, identityContext.collegeId, {
     allowExperimentalFallback: true,
+    modelChoice,
   });
   // A rejection here is only ever surfaced via the real `await` further
   // down — this empty handler exists solely so Node never logs an

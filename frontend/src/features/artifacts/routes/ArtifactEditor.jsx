@@ -270,6 +270,7 @@ export function ArtifactEditor() {
                               text,
                               mode: composer.mode,
                               thinkingLevel: composer.thinkingLevel,
+                              model: composer.model,
                             })
                         : undefined
                     }
@@ -293,6 +294,7 @@ export function ArtifactEditor() {
                   attachments: composer.attachments,
                   mode: composer.mode,
                   thinkingLevel: composer.thinkingLevel,
+                  model: composer.model,
                 });
                 if (id) composer.reset(); // clears this artifact's scope only
               }}

@@ -96,6 +96,7 @@ export function ChatView({ chatId, title, meta, messages, placeholder, onSend, b
                           text,
                           mode: composer.mode,
                           thinkingLevel: composer.thinkingLevel,
+                          model: composer.model,
                         })
                     : undefined
                 }
@@ -109,13 +110,18 @@ export function ChatView({ chatId, title, meta, messages, placeholder, onSend, b
               value={composer.text}
               onChange={composer.setText}
               onSend={() => {
-                if (onSend(composer.text, composer.attachments, composer.mode, composer.thinkingLevel) !== false)
+                if (
+                  onSend(composer.text, composer.attachments, composer.mode, composer.thinkingLevel, composer.model) !==
+                  false
+                )
                   composer.reset();
               }}
               mode={composer.mode}
               onMode={composer.setMode}
               thinkingLevel={composer.thinkingLevel}
               onThinkingLevel={composer.setThinkingLevel}
+              model={composer.model}
+              onModel={composer.setModel}
               placeholder={placeholder}
             />
           </ChatComposerDock>

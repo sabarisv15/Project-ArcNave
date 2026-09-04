@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffec
 import { ArrowUp, ChevronDown, ChevronUp, Mic, Paperclip } from 'lucide-react';
 import { ScopeToggle } from './ScopeToggle';
 import { ThinkingLevelToggle } from './ThinkingLevelToggle';
+import { ModelSelectorToggle } from './ModelSelectorToggle';
 import { ComposerAttachmentStrip } from './ComposerAttachmentStrip';
 import { IconButton } from '../../../components/ui/IconButton';
 import { useComposerAttachments } from '../hooks/useComposerAttachments';
@@ -51,6 +52,8 @@ export const AIComposer = forwardRef(function AIComposer(
     onMode,
     thinkingLevel,
     onThinkingLevel,
+    model,
+    onModel,
     placeholder,
     variant = 'start',
     minHeight,
@@ -301,7 +304,11 @@ export const AIComposer = forwardRef(function AIComposer(
 
           <div className="flex-1" />
 
-          <span className="text-[13px] text-ink-faint tracking-[.01em]">Auto</span>
+          {onModel ? (
+            <ModelSelectorToggle model={model} onModel={onModel} />
+          ) : (
+            <span className="text-[13px] text-ink-faint tracking-[.01em]">Auto</span>
+          )}
 
           {speech.supported && (
             <IconButton

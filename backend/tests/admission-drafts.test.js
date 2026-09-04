@@ -19,6 +19,7 @@ const { Pool } = require('pg');
 const createApp = require('../src/app');
 const security = require('../src/security');
 const { seedClassTutorPosition, cleanupPositionRows } = require('./helpers/positionFixtures');
+const { cleanupCollegeStorage } = require('./helpers/storageFixtures');
 const openai = require('../src/services/aiProviders/openai');
 const globalConfig = require('../src/config');
 const { flattenToPrompts } = require('../src/services/aiContextAssembly');
@@ -127,6 +128,13 @@ async function cleanupTenant(adminPool, college) {
   await adminPool.query('DELETE FROM refresh_tokens WHERE college_id = $1', [college.collegeId]);
   await adminPool.query('DELETE FROM users WHERE college_id = $1', [college.collegeId]);
   await adminPool.query('DELETE FROM colleges WHERE college_id = $1', [college.collegeId]);
+  // The draft-document uploads in this file write real bytes through
+  // DocumentService — deleting only the rows used to leave the files
+  // behind for whichever storage-touching suite emptied the whole
+  // storage root next. Nothing empties that root any more (see
+  // tests/helpers/storageFixtures.js), so each file cleans up after
+  // its own tenant.
+  await cleanupCollegeStorage(college.collegeId);
 }
 
 test('admission drafts', async (t) => {

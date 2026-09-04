@@ -4,6 +4,42 @@
 
 ---
 
+## 2026-09-02 — Backend full-suite flake: tenant-scoped test storage cleanup
+
+Investigation of the nondeterministic `npm test` failures (suites reported
+`not ok` under a full run, passing in isolation and on an immediate re-run).
+
+**Root cause — cross-suite shared state, not a defect in any suite.**
+`node --test tests/` runs test files as concurrent processes against one
+shared `DOCUMENT_STORAGE_ROOT`. Three files that write real bytes
+(`documents.test.js`, `documents-chat-attachments.test.js`,
+`reports.test.js`) each emptied that entire root in their own `t.after()`
+— correct when a file runs alone, destructive when they overlap: whichever
+finished first deleted the files the others were still uploading, reading
+back and OCR-ing. Reproduced 2 failures in 10 runs of just those three
+files, with the teardown itself dying on
+`ENOTEMPTY: directory not empty, rmdir '<root>/chatatt.../shared/ai_chat_attachment'`
+— i.e. `documents` reported `failureType: 'hookFailed'` with all 19 of its
+own subtests green.
+
+| File | Change |
+|---|---|
+| `backend/tests/helpers/storageFixtures.js` | New. `cleanupCollegeStorage(...collegeIds)` removes `<storageRoot>/<collegeId>` and `<backupRoot>/<collegeId>` only. Safe because every path `fileStorage.buildStoragePath`/`buildDraftStoragePath` builds is tenant-prefixed. Still never rmdirs the root itself (it is a Docker volume mount point). |
+| `backend/tests/documents.test.js`, `documents-chat-attachments.test.js`, `reports.test.js` | Wholesale root wipe replaced with `cleanupCollegeStorage(<own tenants>)`. Now-unused `fs`/`path`/`config` requires dropped. |
+| `backend/tests/admission-drafts.test.js`, `timetable-periods.test.js` | Also upload real bytes and previously deleted only their DB rows, relying on someone else's root wipe to remove the files. Both now call `cleanupCollegeStorage` in their own `cleanupTenant`. |
+
+**Verification.** Pre-fix: 2/10 failures on the three-file subset. Post-fix:
+15/15 clean on that subset, 7/7 clean full-suite runs (2686/2686 each), and
+the storage root is left empty after a full run.
+
+**Not reproduced.** The `configurations` half of the 2026-09-02 report did
+not recur in 8 full-suite runs. DB connection exhaustion was ruled out by
+measurement (peak 6 connections against `max_connections = 100`); no test
+deletes rows outside its own tenant/admin scope; the login rate limiter is
+per-process and per-file usage stays well under its limit of 50.
+
+---
+
 ## 2026-08-22 — Research-mode rename, provider-aware history budget, streaming token usage, opt-in image generation
 
 Four asks from a compressed Tanglish request, resolved through `AskUserQuestion` into concrete scope, spec'd in `bka/60-product-reasoning/ai-copilot-research-mode-usage-imagegen-approved-spec.md` ([ADL-045](bka/30-decisions/ledger.md#adl-045)–[048](bka/30-decisions/ledger.md#adl-048), new `RS-AIG-025`).

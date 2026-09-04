@@ -18,6 +18,7 @@ const { Pool } = require('pg');
 const createApp = require('../src/app');
 const security = require('../src/security');
 const { seedPrincipalPosition, cleanupPositionRows } = require('./helpers/positionFixtures');
+const { cleanupCollegeStorage } = require('./helpers/storageFixtures');
 const config = require('../src/config');
 const fileStorage = require('../src/storage/fileStorage');
 
@@ -165,22 +166,11 @@ test('documents', async (t) => {
     await cleanupTenant(adminPool, collegeA);
     await cleanupTenant(adminPool, collegeB);
     await adminPool.end();
-    // Empties documentStorageRoot's CONTENTS, not the directory itself:
-    // docker-compose.yml now mounts a named volume at this exact path
-    // (this session's own task — durable storage), so the path itself
-    // is a mount point and can't be rmdir'd from inside the container,
-    // only emptied. Works the same whether documentStorageRoot is a
-    // plain directory (local, non-Docker test runs) or a volume mount.
-    const entries = await fs.readdir(config.documentStorageRoot).catch(() => []);
-    await Promise.all(entries.map((entry) => fs.rm(
-      path.join(config.documentStorageRoot, entry),
-      { recursive: true, force: true },
-    )));
-    const backupEntries = await fs.readdir(config.documentBackupRoot).catch(() => []);
-    await Promise.all(backupEntries.map((entry) => fs.rm(
-      path.join(config.documentBackupRoot, entry),
-      { recursive: true, force: true },
-    )));
+    // Only THIS file's two tenants' subtrees, never the whole storage
+    // root — see tests/helpers/storageFixtures.js for why (the root is
+    // shared with the other files that write real bytes, and they run
+    // concurrently under `node --test tests/`).
+    await cleanupCollegeStorage(collegeA.collegeId, collegeB.collegeId);
   });
 
   async function login(college, username) {
@@ -215,7 +205,7 @@ test('documents', async (t) => {
     assert.equal(resp.body.file_size_bytes, String(fileBytes.length));
     assert.equal(resp.body.college_id, collegeA.collegeId);
 
-    const onDisk = await fs.readFile(require('path').join(config.documentStorageRoot, resp.body.storage_path));
+    const onDisk = await fs.readFile(path.join(config.documentStorageRoot, resp.body.storage_path));
     assert.equal(onDisk.equals(fileBytes), false, 'bytes at rest must not be plain uploaded bytes');
     const fromStorage = await fileStorage.readFile(resp.body.storage_path);
     assert.ok(fromStorage.equals(fileBytes), 'DocumentService reads back the original bytes');

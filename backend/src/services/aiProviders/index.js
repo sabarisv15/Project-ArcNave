@@ -15,19 +15,20 @@ const claude = require('./claude');
 const selfHosted = require('./selfHosted');
 const openai = require('./openai');
 const vertexMaas = require('./vertexMaas');
-const perplexity = require('./perplexity');
 const errors = require('./errors');
 
+// perplexity.js is deliberately NOT in this registry — see its own
+// header comment for why it's a standalone web-grounded-answer
+// capability (agentAnswer) rather than a swappable chat provider that
+// implements this file's common complete()/completeWithTools()
+// interface. perplexityAnswerService.js requires it directly instead
+// of reaching it through getAdapter().
 const ADAPTERS = {
   gemini,
   claude,
   self_hosted: selfHosted,
   openai,
   vertex_maas: vertexMaas,
-  // Not a DEFAULT_AI_PROVIDER candidate — see perplexity.js's own header
-  // comment for why it's a standalone web-grounded-answer capability
-  // rather than a swappable chat provider.
-  perplexity,
 };
 
 function getAdapter(provider) {

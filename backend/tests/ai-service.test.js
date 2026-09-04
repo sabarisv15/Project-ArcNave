@@ -761,6 +761,7 @@ const CLASS_TUTOR_GRANTED_TOOLS = [
   'web_fetch',
   'image_search',
   'weather_fetch',
+  'perplexity_web_answer',
   'execute_code',
 ];
 

@@ -94,6 +94,10 @@ services:
       # change, just this env var. Real production credentialing is a
       # separate decision; this is this dev sandbox's own override.
       DEFAULT_AI_PROVIDER: ${DEFAULT_AI_PROVIDER:-gemini}
+      # ADL-071/ADL-101 — off (unset/false) is the safe default; a real
+      # prefix below Vertex's ~4,096-token minimum silently degrades to
+      # inline. Turned on 2026-09-04, ADL-101.
+      AI_EXPLICIT_CACHE: ${AI_EXPLICIT_CACHE:-false}
       GEMINI_PROJECT_ID: ${GEMINI_PROJECT_ID:-}
       GEMINI_LOCATION: ${GEMINI_LOCATION:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}

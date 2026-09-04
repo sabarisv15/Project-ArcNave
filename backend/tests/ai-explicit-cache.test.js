@@ -22,21 +22,33 @@ function withFetch(impl, fn) {
     });
 }
 
-test('resolveCachedSystemInstruction: returns null when config.aiExplicitCache is off (default), no HTTP call', async () => {
+test('resolveCachedSystemInstruction: returns null when config.aiExplicitCache is off, no HTTP call', async () => {
   aiExplicitCache._reset();
-  assert.equal(config.aiExplicitCache, false);
+  // Explicitly forced off for the duration of this test (save/restore,
+  // same pattern the "flag on" test below already uses) rather than
+  // asserting the ambient config.aiExplicitCache default — ADL-101
+  // (2026-09-04) turned this flag ON in this deployment's own .env/
+  // docker-compose.yml, so a real run no longer has it off by default;
+  // this test's OWN claim ("off means no HTTP call") must hold
+  // regardless of what a given environment happens to have configured.
+  const original = config.aiExplicitCache;
+  config.aiExplicitCache = false;
   let called = false;
-  await withFetch(
-    async () => {
-      called = true;
-      return { status: 200, json: async () => ({}) };
-    },
-    async () => {
-      const name = await aiExplicitCache.resolveCachedSystemInstruction(CFG, BIG_PREFIX);
-      assert.equal(name, null);
-    },
-  );
-  assert.equal(called, false, 'no cachedContents call when the feature is off');
+  try {
+    await withFetch(
+      async () => {
+        called = true;
+        return { status: 200, json: async () => ({}) };
+      },
+      async () => {
+        const name = await aiExplicitCache.resolveCachedSystemInstruction(CFG, BIG_PREFIX);
+        assert.equal(name, null);
+      },
+    );
+    assert.equal(called, false, 'no cachedContents call when the feature is off');
+  } finally {
+    config.aiExplicitCache = original;
+  }
 });
 
 test('resolveCachedSystemInstruction: with the flag on, creates a cachedContents resource once and reuses the handle', async () => {

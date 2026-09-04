@@ -48,6 +48,7 @@ const OPT_IN_CAPABILITIES = {
   web_search: 'web_search',
   web_search_fast: 'web_search',
   image_search: 'web_search',
+  perplexity_web_answer: 'perplexity_web_answer',
   weather_fetch: 'weather',
   fetch_trusted_web_page: 'web_retrieval',
 };

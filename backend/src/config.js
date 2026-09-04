@@ -297,6 +297,18 @@ module.exports = {
     fastModel: process.env.CLAUDE_FAST_MODEL || null,
   },
 
+  // Perplexity Agent API — a standalone web-grounded-answer capability
+  // (services/aiProviders/perplexity.js), NOT a DEFAULT_AI_PROVIDER
+  // candidate: it's an API-key vendor like openai/claude above, but its
+  // /v1/agent endpoint is agentic/web-grounded by design, not a drop-in
+  // complete()/completeWithTools() chat provider. apiKey is the one real
+  // secret in this block — resolved only from the environment, never
+  // committed (see perplexity.js's own header comment).
+  perplexity: {
+    apiKey: process.env.PERPLEXITY_API_KEY || null,
+    model: process.env.PERPLEXITY_MODEL || null,
+  },
+
   // Tool Search (Priority 1, Phase 1) — a dedicated, cheap Vertex AI
   // MaaS model (e.g. qwen/qwen3-next-80b-a3b-thinking-maas or
   // minimax/minimax-m2-maas — model-swappable, never hardcoded) whose

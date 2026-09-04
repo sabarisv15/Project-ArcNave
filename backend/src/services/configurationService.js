@@ -324,10 +324,26 @@ function experimentalReasoningOverride() {
 // only the model string differs — both live-verified 2026-09-04, real
 // 200 responses). gemini-3.8-flash reuses globalGeminiConfig() as-is
 // (already this deployment's real default model).
+// 'gpt-5.6-terra' (added alongside the three above) routes through the
+// Perplexity Router API rather than a dedicated adapter: the Router API
+// (`/router/v1/chat/completions`) is documented as OpenAI-schema-
+// compatible, so it's reached by pointing the existing `openai` adapter
+// at Perplexity's base URL with Perplexity's own key/model id, exactly
+// like selfHosted.js already does for a college's own OpenAI-compatible
+// endpoint — no new adapter file needed for a chat-only (non-agentic,
+// no web grounding) model. Web grounding for Perplexity is the
+// SEPARATE perplexity_web_answer AI tool (perplexityAnswerService.js /
+// services/aiProviders/perplexity.js), which uses the Agent API instead.
+const PERPLEXITY_ROUTER_BASE_URL = 'https://api.perplexity.ai/router/v1';
+
 const MODEL_CHOICES = {
   'gemini-3.8-flash': () => ({ provider: 'gemini', config: { ...globalGeminiConfig(), model: 'gemini-3.8-flash' } }),
   'claude-sonnet-5': () => ({ provider: 'claude', config: { ...globalClaudeConfig(), model: 'claude-sonnet-5' } }),
   'claude-opus-5': () => ({ provider: 'claude', config: { ...globalClaudeConfig(), model: 'claude-opus-5' } }),
+  'gpt-5.6-terra': () => ({
+    provider: 'openai',
+    config: { apiKey: globalConfig.perplexity.apiKey, baseUrl: PERPLEXITY_ROUTER_BASE_URL, model: 'openai/gpt-5.6-terra' },
+  }),
 };
 
 // An unrecognized/absent label returns null — the caller falls through

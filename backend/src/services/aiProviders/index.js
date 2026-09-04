@@ -15,6 +15,7 @@ const claude = require('./claude');
 const selfHosted = require('./selfHosted');
 const openai = require('./openai');
 const vertexMaas = require('./vertexMaas');
+const perplexity = require('./perplexity');
 const errors = require('./errors');
 
 const ADAPTERS = {
@@ -23,6 +24,10 @@ const ADAPTERS = {
   self_hosted: selfHosted,
   openai,
   vertex_maas: vertexMaas,
+  // Not a DEFAULT_AI_PROVIDER candidate — see perplexity.js's own header
+  // comment for why it's a standalone web-grounded-answer capability
+  // rather than a swappable chat provider.
+  perplexity,
 };
 
 function getAdapter(provider) {

@@ -18,6 +18,7 @@ const MODELS = [
   { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
   { id: 'claude-sonnet-5', label: 'Sonnet 5' },
   { id: 'claude-opus-5', label: 'Opus 5' },
+  { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra' },
 ];
 
 export function ModelSelectorToggle({ model, onModel }) {

@@ -146,7 +146,10 @@ const FILE =
   'to put in it yet, say so and ask what it should contain — never say you lack the capability itself. This ' +
   'holds on EVERY turn, not just the first: if you (or an earlier turn in this same conversation) already ' +
   'said you could not produce a file, that earlier answer was wrong and does not excuse repeating it — ' +
-  're-evaluate this request on its own terms and use the tool.';
+  're-evaluate this request on its own terms and use the tool. The downloadable file is never a substitute ' +
+  'for your chat reply: after calling the tool, still write out the actual generated content (the full text, ' +
+  'table, or document body — not just a title or a summary of it) directly in your answer, so the user can ' +
+  'read it right there in the conversation instead of having to open the download to see what it says.';
 
 // ARTIFACT — present when the user's workspace focus is an open artifact
 // (gate: focusEntityType === 'artifact'). Distilled from the id-free half

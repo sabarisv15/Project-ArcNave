@@ -342,7 +342,11 @@ const MODEL_CHOICES = {
   'claude-opus-5': () => ({ provider: 'claude', config: { ...globalClaudeConfig(), model: 'claude-opus-5' } }),
   'gpt-5.6-terra': () => ({
     provider: 'openai',
-    config: { apiKey: globalConfig.perplexity.apiKey, baseUrl: PERPLEXITY_ROUTER_BASE_URL, model: 'openai/gpt-5.6-terra' },
+    config: {
+      apiKey: globalConfig.perplexity.apiKey,
+      baseUrl: PERPLEXITY_ROUTER_BASE_URL,
+      model: 'openai/gpt-5.6-terra',
+    },
   }),
 };
 

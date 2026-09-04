@@ -8134,3 +8134,89 @@ than silently claimed as re-verified.
 updated for the new `cachedTokens` key in the usage shape),
 `ai-service.test.js` + `ai-cost-control-service.test.js` +
 `ai-explicit-cache.test.js` (260/260) — all green in Docker.
+
+## ADL-101
+
+### `AI_EXPLICIT_CACHE` turned on — real telemetry, not a re-guess, meets ADL-071's own re-open condition
+
+**What prompted this.** Following ADL-100 (Claude-side caching), the
+owner asked directly whether the same re-open condition ADL-071 already
+set for Gemini's own explicit cache had actually been met — rather than
+re-run another synthetic estimate. ADL-071 (2026-08-31) shipped
+`AI_EXPLICIT_CACHE` OFF because its own synthetic measurement of a real
+`askAgent` decision-call prefix (principal role) was 2,578 tokens,
+below Vertex's hard ~4,096-token minimum to create a cache. A follow-up
+synthetic worst-case check earlier this session (Principal, all 100
+tools, no tool-search shortlist, every policy module active) reached
+only 3,725 tokens — still short, reinforcing the "not yet" read.
+
+**What changed the answer.** Queried the real `audit_log` table
+(`gstack-db-1`, this dev/test environment's own DB — 869 real
+`ai_llm_call` rows from actual LLM calls made during development and
+testing, not a synthetic estimate, though also not literal live-
+production end-user traffic since ARCNAVE is pre-launch) instead of
+guessing further:
+
+| purpose | n | count > 4,096 tok | % | median tok | p90 tok |
+|---|---|---|---|---|---|
+| tool_select | 504 | **161** | **31.9%** | 3,071 | **5,073** |
+| plan_synthesis | 197 | 0 | 0% | 1,734 | 1,734 |
+| tool_answer | 133 | 0 | 0% | 1,535 | 1,535 |
+| general_chat | 20 | 0 | 0% | 1,516 | 1,571 |
+
+Nearly a third of real `tool_select` (the main DECIDE-step) calls
+already exceed Vertex's floor, with a p90 well past it — real usage
+patterns (larger tool-search shortlists, longer real identity/focus
+context) produce bigger prefixes than either synthetic estimate
+captured. ADL-071's own re-open condition — "the stable per-turn
+prefix exceeds ~4,096 tokens for real roles, measured" — is met.
+
+**What was decided and built.** Turned `AI_EXPLICIT_CACHE` on:
+- `docker-compose.yml`'s `app` service `environment:` block had NO
+  mapping for this var at all before this change — `config.js` read
+  `process.env.AI_EXPLICIT_CACHE` but Compose only forwards vars it
+  explicitly lists, so setting it in `.env` alone would have silently
+  done nothing. Added `AI_EXPLICIT_CACHE: ${AI_EXPLICIT_CACHE:-false}`
+  alongside the existing `DEFAULT_AI_PROVIDER` mapping.
+- `.env` (this environment, not committed — gitignored) and
+  `.env.example` (committed, documents the var + this decision) both
+  set to `true`.
+- Container recreated (`docker compose up -d --force-recreate app`) and
+  confirmed live: `AI_EXPLICIT_CACHE=true` inside the running container.
+
+**Live-verified, real Vertex calls**
+(`explicit-cache-live-turn-probe.js`, 3 identical curriculum turns for
+the seeded `demo` college's principal): all 3 turns showed
+`cached=0` — this specific probe's real prefix (3,296 tokens,
+single-tool `students_low_attendance` shortlist) fell below the floor,
+same graceful no-op ADL-071 already documented, no errors. A second,
+broader multi-tool probe (3 tools shortlisted) reached 3,689 tokens —
+still short. Neither probe run happened to reproduce the >4,096-token
+tail the real `audit_log` telemetry shows 32% of the time; the caching
+mechanism itself was already separately proven at floor-crossing size
+by ADL-071's own original probe (a 4,678-token synthetic prefix cut to
+~13 billed tokens, 99.7%) and by ADL-100's live Claude proof this same
+session. Flipping the flag on for real traffic is expected to start
+hitting real cache reads specifically on the ~32% of `tool_select`
+calls already measured above the floor — not independently re-confirmed
+against a real >4,096-token production call this session, flagged here
+rather than silently claimed as proven at that specific size for
+Gemini.
+
+**Real bug this exposed and fixed.**
+`ai-explicit-cache.test.js`'s "off by default" test asserted
+`config.aiExplicitCache === false` against the ambient module value
+instead of forcing it for the test's own duration — passed only by
+accident of the environment happening to have the flag unset. Broke
+the moment this flag turned on. Fixed to explicitly set/restore
+`config.aiExplicitCache = false` around itself, the same save/restore
+pattern the adjacent "flag on" test already used — isolates the test's
+own claim from whatever a given environment has configured.
+
+**Verified.** `ai-explicit-cache.test.js` (5/5), full backend suite
+(3,034/3,035 — the one remaining failure is `aiProviders: every
+registered adapter implements the full common interface` /
+`perplexity_web_answer` role rejection, both caused by a concurrent,
+unrelated, mid-flight Perplexity-provider addition in this same working
+directory, not by this change; left untouched, not this session's
+scope).

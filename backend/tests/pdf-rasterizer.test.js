@@ -29,13 +29,19 @@ function mockPdftoppmWritingPages(t, pageContents, capturedTempDirHolder) {
       const padded = total >= 10 ? String(pageNum).padStart(2, '0') : String(pageNum);
       return fs.writeFile(path.join(dir, `page-${padded}.png`), content);
     });
-    Promise.all(writes).then(() => callback(null, '', '')).catch(callback);
+    Promise.all(writes)
+      .then(() => callback(null, '', ''))
+      .catch(callback);
   });
 }
 
 test('rasterizePdfToImages: returns one buffer per page, in page order, and cleans up the temp dir', async (t) => {
   const tempDirHolder = {};
-  const execFileMock = mockPdftoppmWritingPages(t, [Buffer.from('page-1-bytes'), Buffer.from('page-2-bytes'), Buffer.from('page-3-bytes')], tempDirHolder);
+  const execFileMock = mockPdftoppmWritingPages(
+    t,
+    [Buffer.from('page-1-bytes'), Buffer.from('page-2-bytes'), Buffer.from('page-3-bytes')],
+    tempDirHolder,
+  );
   t.after(() => execFileMock.mock.restore());
 
   const pages = await pdfRasterizer.rasterizePdfToImages(Buffer.from('%PDF-fake'));
@@ -55,7 +61,10 @@ test('rasterizePdfToImages: sorts pages numerically, not lexically (page-10 afte
 
   const pages = await pdfRasterizer.rasterizePdfToImages(Buffer.from('%PDF-fake'));
   assert.equal(pages.length, 11);
-  assert.deepEqual(pages.map((p) => p.toString()), pageContents.map((p) => p.toString()));
+  assert.deepEqual(
+    pages.map((p) => p.toString()),
+    pageContents.map((p) => p.toString()),
+  );
 });
 
 test('rasterizePdfToImages: a pdftoppm failure is wrapped in PdfRasterizationError, and the temp dir is still cleaned up', async (t) => {
@@ -74,7 +83,9 @@ test('rasterizePdfToImages: a pdftoppm failure is wrapped in PdfRasterizationErr
 });
 
 test('rasterizePdfToImages: zero output pages throws PdfRasterizationError', async (t) => {
-  const execFileMock = t.mock.method(childProcess, 'execFile', (file, args, options, callback) => callback(null, '', ''));
+  const execFileMock = t.mock.method(childProcess, 'execFile', (file, args, options, callback) =>
+    callback(null, '', ''),
+  );
   t.after(() => execFileMock.mock.restore());
 
   await assert.rejects(
@@ -95,7 +106,10 @@ test('rasterizePdfToImages: passes a page-count ceiling and an exec timeout to p
   });
   t.after(() => execFileMock.mock.restore());
 
-  await assert.rejects(() => pdfRasterizer.rasterizePdfToImages(Buffer.from('%PDF-fake')), pdfRasterizer.PdfRasterizationError);
+  await assert.rejects(
+    () => pdfRasterizer.rasterizePdfToImages(Buffer.from('%PDF-fake')),
+    pdfRasterizer.PdfRasterizationError,
+  );
 
   assert.equal(capturedArgs[0], '-png');
   const lIndex = capturedArgs.indexOf('-l');

@@ -31,9 +31,7 @@ async function seedPrincipalPosition(adminPool, { collegeId, userId, passwordHas
   return { positionId: position.rows[0].id, accountId: account.rows[0].id };
 }
 
-async function seedHodPosition(adminPool, {
-  collegeId, userId, departmentId, passwordHash = 'x',
-}) {
+async function seedHodPosition(adminPool, { collegeId, userId, departmentId, passwordHash = 'x' }) {
   const position = await adminPool.query(
     `INSERT INTO positions (college_id, level, title, created_by)
      VALUES ($1, 3, 'HOD', $2) RETURNING id`,
@@ -65,9 +63,7 @@ async function seedHodPosition(adminPool, {
 // the user resolves as an ordinary, no-position staff member and every
 // tutor-reading call site (identityService.resolvePositionOccupant/
 // resolveActiveClassTutorPosition) sees no tutor at all.
-async function seedClassTutorPosition(adminPool, {
-  collegeId, userId, classId, passwordHash = 'x',
-}) {
+async function seedClassTutorPosition(adminPool, { collegeId, userId, classId, passwordHash = 'x' }) {
   const position = await adminPool.query(
     `INSERT INTO positions (college_id, level, title, created_by, position_type)
      VALUES ($1, 4, 'Class Tutor', $2, 'class_tutor') RETURNING id`,
@@ -95,7 +91,9 @@ async function seedClassTutorPosition(adminPool, {
   // coverage (Current Login Identity vs Position Occupancy), not just
   // the DB-row occupancy fixture the rest of this file's callers use.
   return {
-    positionId: position.rows[0].id, accountId: account.rows[0].id, officialEmail,
+    positionId: position.rows[0].id,
+    accountId: account.rows[0].id,
+    officialEmail,
   };
 }
 
@@ -114,5 +112,8 @@ async function cleanupPositionRows(adminPool, collegeId) {
 }
 
 module.exports = {
-  seedPrincipalPosition, seedHodPosition, seedClassTutorPosition, cleanupPositionRows,
+  seedPrincipalPosition,
+  seedHodPosition,
+  seedClassTutorPosition,
+  cleanupPositionRows,
 };

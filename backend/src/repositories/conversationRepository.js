@@ -46,9 +46,7 @@ async function findById(client, id) {
   return result.rows[0] || null;
 }
 
-async function listByUser(client, userId, {
-  projectId, search, archived = false, limit = 50, offset = 0,
-} = {}) {
+async function listByUser(client, userId, { projectId, search, archived = false, limit = 50, offset = 0 } = {}) {
   const conditions = ['user_id = $1', 'archived = $2'];
   const values = [userId, archived];
 

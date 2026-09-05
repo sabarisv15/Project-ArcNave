@@ -33,10 +33,7 @@ async function seedTwoTenants(adminPool) {
   const tenantB = `test_b_${suffix}`;
 
   for (const collegeId of [tenantA, tenantB]) {
-    await adminPool.query(
-      'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $1)',
-      [collegeId],
-    );
+    await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $1)', [collegeId]);
     await adminPool.query(
       `INSERT INTO users (college_id, username, email, password_hash, role)
        VALUES ($1, $2, $3, 'x', 'staff')`,
@@ -73,7 +70,10 @@ async function runIsolationTest(endMode) {
 
       await client1.query("SELECT set_config('app.current_tenant', $1, true)", [tenantA]);
       const rowsA = await client1.query('SELECT college_id FROM users');
-      assert.deepEqual(rowsA.rows.map((r) => r.college_id), [tenantA]);
+      assert.deepEqual(
+        rowsA.rows.map((r) => r.college_id),
+        [tenantA],
+      );
 
       if (endMode === 'commit') {
         await client1.query('COMMIT');
@@ -107,7 +107,10 @@ async function runIsolationTest(endMode) {
 
       await client2.query("SELECT set_config('app.current_tenant', $1, true)", [tenantB]);
       const rowsB = await client2.query('SELECT college_id FROM users');
-      assert.deepEqual(rowsB.rows.map((r) => r.college_id), [tenantB]);
+      assert.deepEqual(
+        rowsB.rows.map((r) => r.college_id),
+        [tenantB],
+      );
       await client2.query('COMMIT');
     } finally {
       client2.release();
@@ -137,10 +140,10 @@ test('arcnave_admin bypasses RLS (negative control)', async () => {
     // DATABASE_URL accidentally pointed at the admin role) rather
     // than passing vacuously — if RLS were silently not filtering at
     // all, this test would look identical to the isolation tests.
-    const result = await adminPool.query(
-      'SELECT college_id FROM users WHERE college_id IN ($1, $2)',
-      [tenantA, tenantB],
-    );
+    const result = await adminPool.query('SELECT college_id FROM users WHERE college_id IN ($1, $2)', [
+      tenantA,
+      tenantB,
+    ]);
     const seen = new Set(result.rows.map((r) => r.college_id));
     assert.deepEqual(seen, new Set([tenantA, tenantB]));
   } finally {

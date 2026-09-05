@@ -50,11 +50,20 @@ export function MermaidDiagram({ code }) {
     // A malformed diagram falls back to the raw source, never a blank gap
     // or a thrown render — the same "never worse than plain text" rule
     // CodeBlock's own highlight-failure fallback follows.
-    return <pre className="m-0 p-[10px] rounded-[10px] bg-soft border border-line-light overflow-x-auto text-[12.5px] font-mono text-ink-soft">{code}</pre>;
+    return (
+      <pre className="m-0 p-[10px] rounded-[10px] bg-soft border border-line-light overflow-x-auto text-[12.5px] font-mono text-ink-soft">
+        {code}
+      </pre>
+    );
   }
   if (!svg) {
     return <div className="my-[9px] h-[80px] rounded-[10px] bg-soft border border-line-light animate-pulse" />;
   }
-  // eslint-disable-next-line react/no-danger -- Mermaid's own SVG output, rendered under securityLevel: 'strict' (no script/click/HTML-label directives honored).
-  return <div className="my-[9px] flex justify-center overflow-x-auto scroll-quiet" dangerouslySetInnerHTML={{ __html: svg }} />;
+
+  return (
+    <div
+      className="my-[9px] flex justify-center overflow-x-auto scroll-quiet"
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
+  );
 }

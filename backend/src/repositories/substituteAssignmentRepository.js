@@ -7,15 +7,34 @@
 // migration's file-level comment, and its GRANT, which omits
 // UPDATE/DELETE at the DB permission level too).
 
-async function create(client, {
-  collegeId, classId, timetablePeriodId, assignmentDate, originalStaffUserId, substituteStaffUserId, assigningAuthorityUserId, reason,
-}) {
+async function create(
+  client,
+  {
+    collegeId,
+    classId,
+    timetablePeriodId,
+    assignmentDate,
+    originalStaffUserId,
+    substituteStaffUserId,
+    assigningAuthorityUserId,
+    reason,
+  },
+) {
   const result = await client.query(
     `INSERT INTO substitute_assignments
        (college_id, class_id, timetable_period_id, assignment_date, original_staff_user_id, substitute_staff_user_id, assigning_authority_user_id, reason)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
-    [collegeId, classId, timetablePeriodId, assignmentDate, originalStaffUserId || null, substituteStaffUserId, assigningAuthorityUserId, reason || null],
+    [
+      collegeId,
+      classId,
+      timetablePeriodId,
+      assignmentDate,
+      originalStaffUserId || null,
+      substituteStaffUserId,
+      assigningAuthorityUserId,
+      reason || null,
+    ],
   );
   return result.rows[0];
 }
@@ -85,5 +104,10 @@ async function findBySubstituteUserId(client, substituteStaffUserId) {
 }
 
 module.exports = {
-  create, findByClassPeriodAndDate, findByStaffPeriodAndDate, listForClass, findById, findBySubstituteUserId,
+  create,
+  findByClassPeriodAndDate,
+  findByStaffPeriodAndDate,
+  listForClass,
+  findById,
+  findBySubstituteUserId,
 };

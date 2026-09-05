@@ -25,7 +25,9 @@ const ROW = /^(\d{2})\.(\d{2})\.(\d{4})\s+(\S+)\s+(\S+)\s+(.*)$/;
 const NUM = /^-?[\d,]+\.\d{2}-?$/;
 const DATE_START = /^\d{2}\.\d{2}\.\d{4}\s/;
 
-function num(t) { return Number(t.replace(/,/g, '').replace(/-$/, '')) * (t.endsWith('-') ? 1 : 1); }
+function num(t) {
+  return Number(t.replace(/,/g, '').replace(/-$/, '')) * (t.endsWith('-') ? 1 : 1);
+}
 
 // A transaction's printed row wraps across physical lines when its DESC is
 // long — the amounts then land on a following line. Join every line from one
@@ -53,13 +55,20 @@ for (const block of blocks) {
   let i = qtyIndex + 1;
   if (tokens[i] !== undefined && !NUM.test(tokens[i])) i += 1; // TRK No.
   const money = [];
-  while (i < tokens.length && NUM.test(tokens[i]) && money.length < 7) { money.push(tokens[i]); i += 1; }
+  while (i < tokens.length && NUM.test(tokens[i]) && money.length < 7) {
+    money.push(tokens[i]);
+    i += 1;
+  }
   if (money.length < 7) continue;
   const desc = tokens.slice(0, qtyIndex).join(' ');
   const debit = num(money[4]);
   const credit = num(money[5]);
   rows.push({
-    month: `${m[3]}-${m[2]}`, type: m[4], desc, debit, credit,
+    month: `${m[3]}-${m[2]}`,
+    type: m[4],
+    desc,
+    debit,
+    credit,
   });
 }
 
@@ -76,11 +85,15 @@ for (const r of rows) {
   if (!cat) continue;
   matched += 1;
   const c = byCat.get(cat) || { debit: 0, credit: 0, n: 0 };
-  c.debit += r.debit; c.credit += r.credit; c.n += 1;
+  c.debit += r.debit;
+  c.credit += r.credit;
+  c.n += 1;
   byCat.set(cat, c);
   const k = `${cat}|${r.month}`;
   const cm = byCatMonth.get(k) || { debit: 0, credit: 0, n: 0 };
-  cm.debit += r.debit; cm.credit += r.credit; cm.n += 1;
+  cm.debit += r.debit;
+  cm.credit += r.credit;
+  cm.n += 1;
   byCatMonth.set(k, cm);
 }
 
@@ -88,16 +101,27 @@ const r2 = (n) => Math.round(n * 100) / 100;
 console.log(`parsed transaction rows: ${rows.length}`);
 console.log(`rows matching one of the 9 categories: ${matched}`);
 console.log('\nCategory        rows        DEBIT        CREDIT');
-let td = 0; let tc = 0;
+let td = 0;
+let tc = 0;
 for (const [name] of CATEGORIES) {
   const c = byCat.get(name);
-  if (!c) { console.log(`${name.padEnd(12)} —`); continue; }
-  td += c.debit; tc += c.credit;
-  console.log(`${name.padEnd(12)} ${String(c.n).padStart(5)} ${r2(c.debit).toFixed(2).padStart(14)} ${r2(c.credit).toFixed(2).padStart(14)}`);
+  if (!c) {
+    console.log(`${name.padEnd(12)} —`);
+    continue;
+  }
+  td += c.debit;
+  tc += c.credit;
+  console.log(
+    `${name.padEnd(12)} ${String(c.n).padStart(5)} ${r2(c.debit).toFixed(2).padStart(14)} ${r2(c.credit).toFixed(2).padStart(14)}`,
+  );
 }
-console.log(`${'GRAND'.padEnd(12)} ${String(matched).padStart(5)} ${r2(td).toFixed(2).padStart(14)} ${r2(tc).toFixed(2).padStart(14)}`);
+console.log(
+  `${'GRAND'.padEnd(12)} ${String(matched).padStart(5)} ${r2(td).toFixed(2).padStart(14)} ${r2(tc).toFixed(2).padStart(14)}`,
+);
 
 console.log('\nmonth-wise (category x month, non-zero only):');
 [...byCatMonth.entries()].sort().forEach(([k, v]) => {
-  console.log(`  ${k.padEnd(20)} n=${String(v.n).padStart(4)} debit=${r2(v.debit).toFixed(2).padStart(12)} credit=${r2(v.credit).toFixed(2).padStart(12)}`);
+  console.log(
+    `  ${k.padEnd(20)} n=${String(v.n).padStart(4)} debit=${r2(v.debit).toFixed(2).padStart(12)} credit=${r2(v.credit).toFixed(2).padStart(12)}`,
+  );
 });

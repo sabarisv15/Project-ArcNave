@@ -45,9 +45,15 @@ async function main() {
     buffer,
   });
 
-  const run = (params) => documentAnalysisService.analyzeAttachment({}, {
-    attachmentId: ATTACHMENT_ID, ...params,
-  }, IDENTITY);
+  const run = (params) =>
+    documentAnalysisService.analyzeAttachment(
+      {},
+      {
+        attachmentId: ATTACHMENT_ID,
+        ...params,
+      },
+      IDENTITY,
+    );
 
   let failures = 0;
   const check = (label, ok, detail) => {
@@ -60,7 +66,9 @@ async function main() {
   let sectionResult;
   try {
     sectionResult = await run({
-      filter: { pattern: 'RA' }, operation: 'count', sectionPattern: LIVE_BAD_SECTION_PATTERN,
+      filter: { pattern: 'RA' },
+      operation: 'count',
+      sectionPattern: LIVE_BAD_SECTION_PATTERN,
     });
   } catch (err) {
     check('uncompilable sectionPattern does not throw', false, `threw ${err.name}: ${err.message}`);
@@ -90,7 +98,9 @@ async function main() {
   // 3 — the reference regression: a VALID sectionPattern still scopes
   // correctly. 77 arrears across 21 students, unchanged since ADL-055.
   const reference = await run({
-    filter: { pattern: 'RA', mode: 'include' }, operation: 'count', sectionPattern: 'SANDWICH',
+    filter: { pattern: 'RA', mode: 'include' },
+    operation: 'count',
+    sectionPattern: 'SANDWICH',
   });
   check(
     'reference regression: 77 arrears across 21 students',
@@ -102,4 +112,7 @@ async function main() {
   process.exit(failures === 0 ? 0 : 1);
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

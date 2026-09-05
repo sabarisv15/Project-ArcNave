@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const academicService = require('../services/academicService');
 const visibilityService = require('../services/visibilityService');
@@ -96,6 +98,23 @@ async function assertCanViewAllocation(client, allocation, actor) {
   }
 }
 
+const facultyAllocationIdParams = z.object({ id: z.string() });
+const createFacultyAllocationSchema = z.object({
+  body: z
+    .object({
+      class_id: z.string().optional(),
+      period_id: z.string().optional(),
+      subject: z.string().optional(),
+      staff_user_id: z.string().optional(),
+    })
+    .optional(),
+});
+const getFacultyAllocationSchema = z.object({ params: facultyAllocationIdParams });
+const listFacultyAllocationSchema = z.object({
+  query: z.object({ class_id: z.string().optional(), staff_user_id: z.string().optional() }).optional(),
+});
+const deleteFacultyAllocationSchema = z.object({ params: facultyAllocationIdParams });
+
 function createFacultyAllocationRouter() {
   const router = express.Router();
 
@@ -109,37 +128,51 @@ function createFacultyAllocationRouter() {
   // ['principal']) gates writes, requireAuth gates reads, same as
   // every other Module 3 route.
 
-  router.post('/faculty-allocation', requirePermission('faculty_allocation.create'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const allocation = await academicService.assignFacultyAllocation(
-        req.dbClient,
-        { collegeId: req.collegeId, ...bodyToServiceFields(req.body || {}) },
-        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(201).json(allocation);
-    } catch (err) {
-      if (mapAcademicServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/faculty-allocation',
+    requirePermission('faculty_allocation.create'),
+    validate(createFacultyAllocationSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const allocation = await academicService.assignFacultyAllocation(
+          req.dbClient,
+          { collegeId: req.collegeId, ...bodyToServiceFields(req.body || {}) },
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.status(201).json(allocation);
+      } catch (err) {
+        if (mapAcademicServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.get('/faculty-allocation/:id', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const allocation = await academicService.getFacultyAllocation(req.dbClient, req.params.id);
-    if (allocation === null) {
-      res.status(404).json({ detail: `No faculty allocation found with id ${JSON.stringify(req.params.id)}` });
-      return;
-    }
-    const actor = { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole, collegeId: req.collegeId };
-    try {
-      await assertCanViewAllocation(req.dbClient, allocation, actor);
-    } catch (err) {
-      if (mapAcademicServiceError(err, res)) return;
-      throw err;
-    }
-    res.json(allocation);
-  }));
+  router.get(
+    '/faculty-allocation/:id',
+    requireAuth,
+    validate(getFacultyAllocationSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const allocation = await academicService.getFacultyAllocation(req.dbClient, req.params.id);
+      if (allocation === null) {
+        res.status(404).json({ detail: `No faculty allocation found with id ${JSON.stringify(req.params.id)}` });
+        return;
+      }
+      const actor = {
+        actorUserId: identityService.resolveActorUserId(req.capabilities),
+        actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+        collegeId: req.collegeId,
+      };
+      try {
+        await assertCanViewAllocation(req.dbClient, allocation, actor);
+      } catch (err) {
+        if (mapAcademicServiceError(err, res)) return;
+        throw err;
+      }
+      res.json(allocation);
+    }),
+  );
 
   // No plain, unscoped "list all" — academicService.js exposes only
   // the two lookups a real consumer already needs
@@ -152,49 +185,69 @@ function createFacultyAllocationRouter() {
   // allocations" means a staff actor may only query their own
   // staff_user_id, while hod/principal may query anyone's within their
   // own department/college.
-  router.get('/faculty-allocation', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { class_id: classId, staff_user_id: staffUserId } = req.query;
-    if (!classId && !staffUserId) {
-      res.status(400).json({ detail: 'class_id or staff_user_id query parameter is required' });
-      return;
-    }
-    if (classId && staffUserId) {
-      res.status(400).json({ detail: 'provide only one of class_id or staff_user_id, not both' });
-      return;
-    }
-    const actor = { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole, collegeId: req.collegeId };
-    try {
-      if (classId) {
-        await visibilityService.assertCanViewClass(req.dbClient, classId, actor);
-      } else {
-        const staff = await visibilityService.assertCanViewStaff(req.dbClient, { userId: staffUserId }, actor);
-        if (staff === null) {
-          res.status(404).json({ detail: `No staff found with user id ${JSON.stringify(staffUserId)}` });
-          return;
-        }
+  router.get(
+    '/faculty-allocation',
+    requireAuth,
+    validate(listFacultyAllocationSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { class_id: classId, staff_user_id: staffUserId } = req.query;
+      if (!classId && !staffUserId) {
+        res.status(400).json({ detail: 'class_id or staff_user_id query parameter is required' });
+        return;
       }
-    } catch (err) {
-      if (mapAcademicServiceError(err, res)) return;
-      throw err;
-    }
-    const allocations = classId
-      ? await academicService.listFacultyAllocationsForClass(req.dbClient, classId)
-      : await academicService.listFacultyAllocationsForStaff(req.dbClient, staffUserId);
-    res.json(allocations);
-  }));
+      if (classId && staffUserId) {
+        res.status(400).json({ detail: 'provide only one of class_id or staff_user_id, not both' });
+        return;
+      }
+      const actor = {
+        actorUserId: identityService.resolveActorUserId(req.capabilities),
+        actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+        collegeId: req.collegeId,
+      };
+      try {
+        if (classId) {
+          await visibilityService.assertCanViewClass(req.dbClient, classId, actor);
+        } else {
+          const staff = await visibilityService.assertCanViewStaff(req.dbClient, { userId: staffUserId }, actor);
+          if (staff === null) {
+            res.status(404).json({ detail: `No staff found with user id ${JSON.stringify(staffUserId)}` });
+            return;
+          }
+        }
+      } catch (err) {
+        if (mapAcademicServiceError(err, res)) return;
+        throw err;
+      }
+      const allocations = classId
+        ? await academicService.listFacultyAllocationsForClass(req.dbClient, classId)
+        : await academicService.listFacultyAllocationsForStaff(req.dbClient, staffUserId);
+      res.json(allocations);
+    }),
+  );
 
-  router.delete('/faculty-allocation/:id', requirePermission('faculty_allocation.delete'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const allocation = await academicService.removeFacultyAllocation(req.dbClient, req.params.id, { actorUserId: identityService.resolveActorUserId(req.capabilities) });
-    if (allocation === null) {
-      res.status(404).json({ detail: `No faculty allocation found with id ${JSON.stringify(req.params.id)}` });
-      return;
-    }
-    res.status(204).end();
-  }));
+  router.delete(
+    '/faculty-allocation/:id',
+    requirePermission('faculty_allocation.delete'),
+    validate(deleteFacultyAllocationSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const allocation = await academicService.removeFacultyAllocation(req.dbClient, req.params.id, {
+        actorUserId: identityService.resolveActorUserId(req.capabilities),
+      });
+      if (allocation === null) {
+        res.status(404).json({ detail: `No faculty allocation found with id ${JSON.stringify(req.params.id)}` });
+        return;
+      }
+      res.status(204).end();
+    }),
+  );
 
   return router;
 }
 
 module.exports = createFacultyAllocationRouter;
+module.exports.schemas = {
+  '/faculty-allocation': { post: createFacultyAllocationSchema, get: listFacultyAllocationSchema },
+  '/faculty-allocation/{id}': { get: getFacultyAllocationSchema, delete: deleteFacultyAllocationSchema },
+};

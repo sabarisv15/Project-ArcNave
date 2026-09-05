@@ -40,7 +40,11 @@ export function ProfileFooter() {
               floating portrait is a desktop gesture and stays restrained on
               the mobile drawer. */}
           <Avatar.Root className="shrink-0 -mt-[16px] lg:-mt-[20px] w-[46px] h-[46px] lg:w-[56px] lg:h-[56px] rounded-full border-[2.5px] border-paper shadow-avatar overflow-hidden block">
-            <Avatar.Image src="https://i.pravatar.cc/120?img=47" alt="Priya Ramesh" className="w-full h-full object-cover" />
+            <Avatar.Image
+              src="https://i.pravatar.cc/120?img=47"
+              alt="Priya Ramesh"
+              className="w-full h-full object-cover"
+            />
             {/* The avatar is the interface's one saturated element — a person,
                 not a control, so it takes the amber rather than the accent. */}
             <Avatar.Fallback className="w-full h-full grid place-items-center bg-warm-soft text-warm text-[15px] font-[600]">

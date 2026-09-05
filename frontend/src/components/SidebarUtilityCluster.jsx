@@ -27,7 +27,7 @@ export function SidebarUtilityCluster() {
   const { sidebarMode, pinSidebar, collapseSidebar } = useWorkspace();
   const isOverlay = sidebarMode === 'overlay';
 
-  const idx = typeof window !== 'undefined' ? window.history.state?.idx ?? 0 : 0;
+  const idx = typeof window !== 'undefined' ? (window.history.state?.idx ?? 0) : 0;
   const [maxIdx, setMaxIdx] = useState(idx);
 
   useEffect(() => {
@@ -44,7 +44,13 @@ export function SidebarUtilityCluster() {
       <IconButton label="Go back" tooltip="Back" className={BTN} disabled={!canBack} onClick={() => navigate(-1)}>
         <ArrowLeft size={15} strokeWidth={1.8} />
       </IconButton>
-      <IconButton label="Go forward" tooltip="Forward" className={BTN} disabled={!canForward} onClick={() => navigate(1)}>
+      <IconButton
+        label="Go forward"
+        tooltip="Forward"
+        className={BTN}
+        disabled={!canForward}
+        onClick={() => navigate(1)}
+      >
         <ArrowRight size={15} strokeWidth={1.8} />
       </IconButton>
       {isOverlay ? (

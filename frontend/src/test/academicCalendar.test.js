@@ -79,10 +79,7 @@ describe('Academic calendar — active classes are derived, never listed', () =>
       expect(activeClassesOfDepartment(d.id)).toHaveLength(expected);
     });
 
-    const total = PROVISIONED_DEPARTMENTS.reduce(
-      (sum, d) => sum + activeSemestersFor(d).length * d.sections.length,
-      0
-    );
+    const total = PROVISIONED_DEPARTMENTS.reduce((sum, d) => sum + activeSemestersFor(d).length * d.sections.length, 0);
     // Computed from provisioning, never compared to a number anyone typed.
     expect(ACTIVE_CLASS_TOTAL).toBe(total);
   });

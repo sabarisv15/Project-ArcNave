@@ -38,9 +38,7 @@ async function resolvePositionIdByClass(client, classId) {
 // occupying the given slot, or null if no position is assigned to it
 // (a vacant slot is the ordinary case, not an error — same convention
 // every other resolver in this directory follows).
-async function resolvePositionForSlot(client, {
-  collegeId, level, departmentId, classId,
-}) {
+async function resolvePositionForSlot(client, { collegeId, level, departmentId, classId }) {
   let positionId;
   if (classId) {
     positionId = await resolvePositionIdByClass(client, classId);

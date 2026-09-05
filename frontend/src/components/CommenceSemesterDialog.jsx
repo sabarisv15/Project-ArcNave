@@ -2,7 +2,7 @@ import { toast } from 'sonner';
 import { COMMENCEMENT_CONSEQUENCES, nextTermAfter } from '../lib/academicTerm';
 import { bandLabel } from '../lib/academicCalendar';
 import { ConfirmConsequenceDialog } from './ConfirmConsequenceDialog';
-import { TERM_REJECTION, useAcademicTerm } from '../store/AcademicTermProvider';
+import { TERM_REJECTION, useAcademicTerm } from '@/features/institution';
 
 /**
  * Commencing the next semester, and the eight things it does.

@@ -78,13 +78,16 @@ function hostFor(subdomain) {
 async function seedTenant(adminPool, label) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const collegeId = `cpapi${label}${suffix}`;
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [collegeId, `cpapitenant${label}${suffix}`],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    collegeId,
+    `cpapitenant${label}${suffix}`,
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userIds = {};
-  for (const [username, role] of [['principaluser', 'principal'], ['staffuser', 'staff']]) {
+  for (const [username, role] of [
+    ['principaluser', 'principal'],
+    ['staffuser', 'staff'],
+  ]) {
     // eslint-disable-next-line no-await-in-loop
     const result = await adminPool.query(
       `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
@@ -122,7 +125,8 @@ test('college-profile API', async (t) => {
 
   async function login(college, username) {
     const resp = await requestJson(baseUrl, '/api/v1/auth/login', 'POST', {
-      headers: { host: hostFor(college.subdomain) }, body: { username, password: PASSWORD },
+      headers: { host: hostFor(college.subdomain) },
+      body: { username, password: PASSWORD },
     });
     assert.equal(resp.status, 200);
     return resp.body.access_token;

@@ -24,14 +24,25 @@
 // can auto-populate the Principal's real users row instead of asking
 // them to re-type what the admin already entered. Null for every
 // invitation created via Organizations' Invite-L1 dialog (email only).
-async function createInvitation(pool, {
-  collegeId, email, tokenHash, createdBy, expiresAt, fullName, designation, phone, address,
-}) {
+async function createInvitation(
+  pool,
+  { collegeId, email, tokenHash, createdBy, expiresAt, fullName, designation, phone, address },
+) {
   const result = await pool.query(
     `INSERT INTO principal_invitations (college_id, email, token_hash, created_by, expires_at, full_name, designation, phone, address)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING id, college_id, email, expires_at, created_at, full_name, designation, phone, address`,
-    [collegeId, email, tokenHash, createdBy, expiresAt, fullName || null, designation || null, phone || null, address || null],
+    [
+      collegeId,
+      email,
+      tokenHash,
+      createdBy,
+      expiresAt,
+      fullName || null,
+      designation || null,
+      phone || null,
+      address || null,
+    ],
   );
   return result.rows[0];
 }
@@ -115,9 +126,7 @@ async function revokeInvitation(pool, invitationId) {
 // needs the college's display name, not just its id — the id alone
 // isn't what a human recognizes an org by) and folds it into the
 // search predicate alongside email/college_id.
-async function listInvitations(pool, {
-  limit = 20, offset = 0, status, search,
-} = {}) {
+async function listInvitations(pool, { limit = 20, offset = 0, status, search } = {}) {
   const conditions = [];
   const params = [limit, offset];
 
@@ -133,7 +142,9 @@ async function listInvitations(pool, {
 
   if (search) {
     params.push(`%${search}%`);
-    conditions.push(`(pi.email ILIKE $${params.length} OR pi.college_id ILIKE $${params.length} OR c.name ILIKE $${params.length})`);
+    conditions.push(
+      `(pi.email ILIKE $${params.length} OR pi.college_id ILIKE $${params.length} OR c.name ILIKE $${params.length})`,
+    );
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';

@@ -42,24 +42,29 @@ async function makeXlsx() {
 // directly" approach documentService.assertValidDocxTemplate already uses
 // for reading them.
 function makeDocx() {
-  const cell = (t) => `<w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr>`
-    + `<w:p><w:r><w:t>${t}</w:t></w:r></w:p></w:tc>`;
+  const cell = (t) =>
+    `<w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr>` + `<w:p><w:r><w:t>${t}</w:t></w:r></w:p></w:tc>`;
   const row = (cells) => `<w:tr>${cells.map(cell).join('')}</w:tr>`;
-  const body = `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>`
-    + ROWS.map(row).join('') + `</w:tbl><w:p><w:r><w:t>End of table</w:t></w:r></w:p>`;
-  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
-    + `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">`
-    + `<w:body>${body}</w:body></w:document>`;
-  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
-    + `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">`
-    + `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>`
-    + `<Default Extension="xml" ContentType="application/xml"/>`
-    + `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>`
-    + `</Types>`;
-  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
-    + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`
-    + `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>`
-    + `</Relationships>`;
+  const body =
+    `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>` +
+    ROWS.map(row).join('') +
+    `</w:tbl><w:p><w:r><w:t>End of table</w:t></w:r></w:p>`;
+  const documentXml =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+    `<w:body>${body}</w:body></w:document>`;
+  const contentTypes =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+    `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
+    `<Default Extension="xml" ContentType="application/xml"/>` +
+    `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
+    `</Types>`;
+  const rels =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+    `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>` +
+    `</Relationships>`;
   const zip = new PizZip();
   zip.file('[Content_Types].xml', contentTypes);
   zip.folder('_rels').file('.rels', rels);
@@ -84,7 +89,8 @@ function report(label, mimeType, text, extra = {}) {
 async function probeBuffer(label, buffer, mimeType) {
   const out = await textExtraction.extractPlainText(buffer, mimeType);
   return report(label, mimeType, out.text, {
-    method: out.method || '-', failureReason: out.failureReason || '-',
+    method: out.method || '-',
+    failureReason: out.failureReason || '-',
   });
 }
 
@@ -103,8 +109,7 @@ async function main() {
 
   await probeBuffer('CSV (text/csv)', makeCsv(), 'text/csv');
   await probeBuffer('TSV as text/plain', makeTsv(), 'text/plain');
-  await probeBuffer('XLSX (ARCNAVE\'s own extractor)', await makeXlsx(),
-    textExtraction.XLSX_MIME_TYPE);
+  await probeBuffer("XLSX (ARCNAVE's own extractor)", await makeXlsx(), textExtraction.XLSX_MIME_TYPE);
   await probeBuffer('DOCX with a real w:tbl', makeDocx(), textExtraction.DOCX_MIME_TYPE);
 
   console.log('\n--- real documents from the 2026-08-25 sessions ---');
@@ -113,4 +118,7 @@ async function main() {
   await probeFile('PDF: Tally day book', 'APRDAYBOOK.pdf');
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

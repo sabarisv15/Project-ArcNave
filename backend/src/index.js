@@ -3,6 +3,7 @@
 const createApp = require('./app');
 const config = require('./config');
 const { startPlatformStatsSync } = require('./jobs/platformStatsSync');
+const { startBackgroundJobWorker } = require('./jobs/backgroundJobWorker');
 
 const app = createApp();
 const port = process.env.PORT || 8000;
@@ -17,8 +18,11 @@ app.listen(port, () => {
   // way to notice short of reading traffic costs. Non-sensitive: a single
   // boolean, never the instruction text itself.
   if (config.experimentalFullInstructionsDocument) {
-    console.log('WARNING: experimentalFullInstructionsDocument is ENABLED — every LLM call in every turn will carry the full ~13k-token experimental operating-instructions document instead of the compact default prompts. Testing-phase only; turn this off outside a deliberate, time-boxed live trial.');
+    console.log(
+      'WARNING: experimentalFullInstructionsDocument is ENABLED — every LLM call in every turn will carry the full ~13k-token experimental operating-instructions document instead of the compact default prompts. Testing-phase only; turn this off outside a deliberate, time-boxed live trial.',
+    );
   }
 });
 
 startPlatformStatsSync();
+startBackgroundJobWorker();

@@ -44,7 +44,11 @@ test('getAiConfig: no per-college row falls back to the global openai default wh
 test('getAiConfig: a college with its own row uses its own provider/decrypted key, not the global default', async (t) => {
   const encryptedKey = cryptoUtil.encryptSecret('college-specific-real-key');
   const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async () => ({
-    provider: 'gemini', api_key: encryptedKey, model: 'gemini-2.5-flash', embedding_model: 'text-embedding-004', base_url: null,
+    provider: 'gemini',
+    api_key: encryptedKey,
+    model: 'gemini-2.5-flash',
+    embedding_model: 'text-embedding-004',
+    base_url: null,
   }));
   t.after(() => findMock.mock.restore());
 
@@ -56,17 +60,29 @@ test('getAiConfig: a college with its own row uses its own provider/decrypted ke
   assert.equal(result.config.model, 'gemini-2.5-flash');
 });
 
-test('getAiConfig: switching one college to a different provider never touches another college\'s config (independent repository calls)', async (t) => {
+test("getAiConfig: switching one college to a different provider never touches another college's config (independent repository calls)", async (t) => {
   const rows = {
-    'college-a': { provider: 'claude', api_key: cryptoUtil.encryptSecret('a-key'), model: 'claude-sonnet-4', embedding_model: null, base_url: null },
+    'college-a': {
+      provider: 'claude',
+      api_key: cryptoUtil.encryptSecret('a-key'),
+      model: 'claude-sonnet-4',
+      embedding_model: null,
+      base_url: null,
+    },
   };
-  const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async (client, collegeId) => rows[collegeId] || null);
+  const findMock = t.mock.method(
+    aiConfigRepository,
+    'findByCollegeId',
+    async (client, collegeId) => rows[collegeId] || null,
+  );
   t.after(() => findMock.mock.restore());
   // See the previous test's own comment — this test asserts college-b
   // falls back to the global default (openai, forced below) specifically.
   const originalDefaultAiProvider = globalConfig.defaultAiProvider;
   globalConfig.defaultAiProvider = 'openai';
-  t.after(() => { globalConfig.defaultAiProvider = originalDefaultAiProvider; });
+  t.after(() => {
+    globalConfig.defaultAiProvider = originalDefaultAiProvider;
+  });
 
   const a = await configurationService.getAiConfig({}, 'college-a');
   const b = await configurationService.getAiConfig({}, 'college-b');
@@ -85,7 +101,7 @@ test('getAiConfig: DEFAULT_AI_PROVIDER=gemini routes a no-row college to the glo
   const originalGeminiModel = globalConfig.gemini.model;
   globalConfig.defaultAiProvider = 'gemini';
   globalConfig.gemini.projectId = 'gemini-real-project';
-  globalConfig.gemini.model = 'gemini-3.7-flash';
+  globalConfig.gemini.model = 'gemini-3.8-flash';
   t.after(() => {
     globalConfig.defaultAiProvider = originalDefaultAiProvider;
     globalConfig.gemini.projectId = originalGeminiProjectId;
@@ -97,7 +113,7 @@ test('getAiConfig: DEFAULT_AI_PROVIDER=gemini routes a no-row college to the glo
   assert.equal(result.provider, 'gemini');
   assert.equal(result.adapter.name, 'gemini');
   assert.equal(result.config.projectId, 'gemini-real-project');
-  assert.equal(result.config.model, 'gemini-3.7-flash');
+  assert.equal(result.config.model, 'gemini-3.8-flash');
 });
 
 test('getAiConfig: an unrecognized DEFAULT_AI_PROVIDER (typo, or a provider with no global block) falls back to gemini rather than throwing', async (t) => {
@@ -109,7 +125,9 @@ test('getAiConfig: an unrecognized DEFAULT_AI_PROVIDER (typo, or a provider with
   // both gained one (Vertex AI/plain apiKey respectively) so neither
   // fits this test's premise anymore — see their own dedicated tests.
   globalConfig.defaultAiProvider = 'self_hosted';
-  t.after(() => { globalConfig.defaultAiProvider = originalDefaultAiProvider; });
+  t.after(() => {
+    globalConfig.defaultAiProvider = originalDefaultAiProvider;
+  });
 
   const result = await configurationService.getAiConfig({}, 'college-with-no-row');
 
@@ -123,7 +141,10 @@ test('getAiConfig: DEFAULT_AI_PROVIDER=claude resolves via its own global Vertex
   const originalClaudeConfig = globalConfig.claude;
   globalConfig.defaultAiProvider = 'claude';
   globalConfig.claude = {
-    projectId: 'claude-real-project', location: null, model: 'claude-sonnet-5', fastModel: null,
+    projectId: 'claude-real-project',
+    location: null,
+    model: 'claude-sonnet-5',
+    fastModel: null,
   };
   t.after(() => {
     globalConfig.defaultAiProvider = originalDefaultAiProvider;
@@ -146,12 +167,18 @@ test('getAiConfig: DEFAULT_AI_PROVIDER=claude resolves via its own global Vertex
 function withExperimentalReasoningModel(value, fn) {
   const original = globalConfig.experimentalReasoningModel;
   globalConfig.experimentalReasoningModel = value;
-  return fn().finally(() => { globalConfig.experimentalReasoningModel = original; });
+  return fn().finally(() => {
+    globalConfig.experimentalReasoningModel = original;
+  });
 }
 
 test('resolveAiConfig (Test 1): a college with explicit config wins even when the experiment is enabled', async (t) => {
   const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async () => ({
-    provider: 'gemini', api_key: null, model: 'approved-model', embedding_model: null, base_url: null,
+    provider: 'gemini',
+    api_key: null,
+    model: 'approved-model',
+    embedding_model: null,
+    base_url: null,
   }));
   t.after(() => findMock.mock.restore());
 
@@ -166,7 +193,11 @@ test('resolveAiConfig (Test 1): a college with explicit config wins even when th
 
 test('resolveAiConfig (Test 2): a college with explicit config is used identically when the experiment is disabled', async (t) => {
   const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async () => ({
-    provider: 'gemini', api_key: null, model: 'approved-model', embedding_model: null, base_url: null,
+    provider: 'gemini',
+    api_key: null,
+    model: 'approved-model',
+    embedding_model: null,
+    base_url: null,
   }));
   t.after(() => findMock.mock.restore());
 
@@ -224,13 +255,21 @@ test('resolveAiConfig (Test 5, documented limitation): a caller that does not op
   });
 });
 
-test('resolveAiConfig (Test 6): tenant isolation — one college\'s explicit config and another\'s fallback never leak into each other', async (t) => {
+test("resolveAiConfig (Test 6): tenant isolation — one college's explicit config and another's fallback never leak into each other", async (t) => {
   const rows = {
     'college-a': {
-      provider: 'gemini', api_key: null, model: 'approved-model', embedding_model: null, base_url: null,
+      provider: 'gemini',
+      api_key: null,
+      model: 'approved-model',
+      embedding_model: null,
+      base_url: null,
     },
   };
-  const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async (client, collegeId) => rows[collegeId] || null);
+  const findMock = t.mock.method(
+    aiConfigRepository,
+    'findByCollegeId',
+    async (client, collegeId) => rows[collegeId] || null,
+  );
   t.after(() => findMock.mock.restore());
 
   await withExperimentalReasoningModel('experimental-model', async () => {
@@ -247,32 +286,51 @@ test('resolveAiConfig (Test 6): tenant isolation — one college\'s explicit con
 
 test('resolveAiConfig (Test 7): an explicit but invalid college config (unknown provider) throws — the experiment never becomes an accidental bypass for a broken explicit config', async (t) => {
   const findMock = t.mock.method(aiConfigRepository, 'findByCollegeId', async () => ({
-    provider: 'not_a_real_vendor', api_key: null, model: 'whatever', embedding_model: null, base_url: null,
+    provider: 'not_a_real_vendor',
+    api_key: null,
+    model: 'whatever',
+    embedding_model: null,
+    base_url: null,
   }));
   t.after(() => findMock.mock.restore());
 
   await withExperimentalReasoningModel('experimental-model', async () => {
     await assert.rejects(
       () => configurationService.resolveAiConfig({}, 'college-a', { allowExperimentalFallback: true }),
-      (require('../src/services/aiProviders')).AiProviderUnknownError,
+      require('../src/services/aiProviders').AiProviderUnknownError,
     );
   });
 });
 
 test('setAiConfig: rejects an unknown provider before any DB write', async (t) => {
-  const upsertMock = t.mock.method(aiConfigRepository, 'upsert', async () => { throw new Error('should not be called'); });
+  const upsertMock = t.mock.method(aiConfigRepository, 'upsert', async () => {
+    throw new Error('should not be called');
+  });
   t.after(() => upsertMock.mock.restore());
 
   await assert.rejects(
-    () => configurationService.setAiConfig({}, 'college-a', { provider: 'not_a_real_vendor', apiKey: 'x' }, { userId: 'u1' }),
-    (require('../src/services/aiProviders')).AiProviderUnknownError,
+    () =>
+      configurationService.setAiConfig(
+        {},
+        'college-a',
+        { provider: 'not_a_real_vendor', apiKey: 'x' },
+        { userId: 'u1' },
+      ),
+    require('../src/services/aiProviders').AiProviderUnknownError,
   );
   assert.equal(upsertMock.mock.callCount(), 0);
 });
 
 test('setAiConfig: encrypts api_key before it reaches the repository, and never returns the raw key or its ciphertext', async (t) => {
   const upsertMock = t.mock.method(aiConfigRepository, 'upsert', async (client, fields) => ({
-    id: 'cfg-1', college_id: fields.collegeId, provider: fields.provider, api_key: fields.apiKey, model: fields.model, embedding_model: fields.embeddingModel, base_url: fields.baseUrl, updated_at: new Date(),
+    id: 'cfg-1',
+    college_id: fields.collegeId,
+    provider: fields.provider,
+    api_key: fields.apiKey,
+    model: fields.model,
+    embedding_model: fields.embeddingModel,
+    base_url: fields.baseUrl,
+    updated_at: new Date(),
   }));
   const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
   t.after(() => {
@@ -280,9 +338,16 @@ test('setAiConfig: encrypts api_key before it reaches the repository, and never 
     auditMock.mock.restore();
   });
 
-  const result = await configurationService.setAiConfig({}, 'college-a', {
-    provider: 'openai', apiKey: 'sk-real-secret-value', model: 'gpt-4o',
-  }, { userId: 'u1' });
+  const result = await configurationService.setAiConfig(
+    {},
+    'college-a',
+    {
+      provider: 'openai',
+      apiKey: 'sk-real-secret-value',
+      model: 'gpt-4o',
+    },
+    { userId: 'u1' },
+  );
 
   const [, upsertFields] = upsertMock.mock.calls[0].arguments;
   assert.notEqual(upsertFields.apiKey, 'sk-real-secret-value');

@@ -58,7 +58,9 @@ export function relativeTime(iso, now = Date.now()) {
  * better than a blank where a timestamp belongs.
  */
 export function metaToTimestamp(meta, now = Date.now()) {
-  const text = String(meta ?? '').toLowerCase().trim();
+  const text = String(meta ?? '')
+    .toLowerCase()
+    .trim();
   const n = parseInt(text, 10);
 
   if (text.includes('just now')) return new Date(now).toISOString();

@@ -20,16 +20,33 @@ const { logAttachmentTokenPreflight, TOKEN_PREFLIGHT_WARN_THRESHOLD } = aiServic
 
 test('logAttachmentTokenPreflight: an adapter with no countTokens is skipped entirely, never throws', () => {
   const adapter = {}; // claude/openai/self_hosted shape — no countTokens export
-  assert.doesNotThrow(() => logAttachmentTokenPreflight({
-    adapter, aiConfig: {}, identityContext: { collegeId: 'c1' }, attachmentHint: 'some attachment text', images: [], media: [],
-  }));
+  assert.doesNotThrow(() =>
+    logAttachmentTokenPreflight({
+      adapter,
+      aiConfig: {},
+      identityContext: { collegeId: 'c1' },
+      attachmentHint: 'some attachment text',
+      images: [],
+      media: [],
+    }),
+  );
 });
 
 test('logAttachmentTokenPreflight: nothing attached (no hint, no images, no media) never calls countTokens', () => {
   let callCount = 0;
-  const adapter = { countTokens: async () => { callCount += 1; return { totalTokens: 1 }; } };
+  const adapter = {
+    countTokens: async () => {
+      callCount += 1;
+      return { totalTokens: 1 };
+    },
+  };
   logAttachmentTokenPreflight({
-    adapter, aiConfig: {}, identityContext: { collegeId: 'c1' }, attachmentHint: '', images: [], media: [],
+    adapter,
+    aiConfig: {},
+    identityContext: { collegeId: 'c1' },
+    attachmentHint: '',
+    images: [],
+    media: [],
   });
   assert.equal(callCount, 0);
 });
@@ -43,25 +60,51 @@ test('logAttachmentTokenPreflight: an attachmentHint present calls countTokens w
     },
   };
   logAttachmentTokenPreflight({
-    adapter, aiConfig: { model: 'm' }, identityContext: { collegeId: 'c1' }, attachmentHint: 'the document says X', images: [], media: [],
+    adapter,
+    aiConfig: { model: 'm' },
+    identityContext: { collegeId: 'c1' },
+    attachmentHint: 'the document says X',
+    images: [],
+    media: [],
   });
   assert.equal(flattenToPrompts(capturedContext).userPrompt, 'the document says X');
 });
 
 test('logAttachmentTokenPreflight: images/media alone (no text hint) still triggers a measurement', () => {
   let callCount = 0;
-  const adapter = { countTokens: async () => { callCount += 1; return { totalTokens: 10 }; } };
+  const adapter = {
+    countTokens: async () => {
+      callCount += 1;
+      return { totalTokens: 10 };
+    },
+  };
   logAttachmentTokenPreflight({
-    adapter, aiConfig: {}, identityContext: { collegeId: 'c1' }, attachmentHint: '', images: [{ mimeType: 'image/png', base64: 'x' }], media: [],
+    adapter,
+    aiConfig: {},
+    identityContext: { collegeId: 'c1' },
+    attachmentHint: '',
+    images: [{ mimeType: 'image/png', base64: 'x' }],
+    media: [],
   });
   assert.equal(callCount, 1);
 });
 
 test('logAttachmentTokenPreflight: a countTokens rejection is swallowed, never surfaces as an unhandled rejection or a throw', async () => {
-  const adapter = { countTokens: async () => { throw new Error('boom'); } };
-  assert.doesNotThrow(() => logAttachmentTokenPreflight({
-    adapter, aiConfig: {}, identityContext: { collegeId: 'c1' }, attachmentHint: 'x', images: [], media: [],
-  }));
+  const adapter = {
+    countTokens: async () => {
+      throw new Error('boom');
+    },
+  };
+  assert.doesNotThrow(() =>
+    logAttachmentTokenPreflight({
+      adapter,
+      aiConfig: {},
+      identityContext: { collegeId: 'c1' },
+      attachmentHint: 'x',
+      images: [],
+      media: [],
+    }),
+  );
   // Let the rejected promise's own .catch() handler actually run before
   // the test process moves on — otherwise a real bug (no .catch at all)
   // would only surface as a flaky "unhandled rejection" on a LATER test.

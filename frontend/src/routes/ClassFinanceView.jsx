@@ -83,7 +83,7 @@ export function ClassFinanceView() {
       pending: CLASS_ROSTER.filter((s) => s.feeTier === 'pending').length,
       noReceipt: CLASS_ROSTER.filter((s) => s.feeTier === 'paid' && !s.feeReceipt).length,
     }),
-    []
+    [],
   );
 
   function record(studentId, { eligible, reason }) {
@@ -124,7 +124,7 @@ export function ClassFinanceView() {
                 'flex-none h-[27px] px-[10px] border-0 rounded-[8px] bg-transparent font-sans text-[12.5px] cursor-pointer transition-colors duration-200',
                 tab === t.key
                   ? 'bg-accent-soft text-accent font-[600]'
-                  : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2'
+                  : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2',
               )}
             >
               {t.label}
@@ -169,7 +169,7 @@ export function ClassFinanceView() {
                   <span
                     className={cn(
                       'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-                      FEE_TONE[s.feeTier]
+                      FEE_TONE[s.feeTier],
                     )}
                   >
                     {FEE_LABEL[s.feeTier]}
@@ -216,7 +216,7 @@ export function ClassFinanceView() {
                 aria-label={`Scholarship eligibility for ${s.name}`}
                 className={cn(
                   SCH_GRID,
-                  'w-full h-[46px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2'
+                  'w-full h-[46px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2',
                 )}
               >
                 <span className="text-[12.5px] text-ink-muted tabular-nums">{s.roll}</span>
@@ -229,7 +229,7 @@ export function ClassFinanceView() {
                     <span
                       className={cn(
                         'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-                        d.eligible ? 'text-success bg-success-soft' : 'text-ink-muted bg-tint2'
+                        d.eligible ? 'text-success bg-success-soft' : 'text-ink-muted bg-tint2',
                       )}
                     >
                       {d.eligible ? 'Eligible' : 'Not eligible'}
@@ -238,9 +238,7 @@ export function ClassFinanceView() {
                     <span className="text-[12px] text-ink-faint">Not assessed</span>
                   )}
                 </span>
-                <span className="text-[12px] text-ink-faint truncate">
-                  {d ? `${d.by} · ${d.position}` : '—'}
-                </span>
+                <span className="text-[12px] text-ink-faint truncate">{d ? `${d.by} · ${d.position}` : '—'}</span>
                 <span className="flex justify-end text-ink-faint">
                   <ChevronRight size={15} strokeWidth={2} aria-hidden="true" />
                 </span>

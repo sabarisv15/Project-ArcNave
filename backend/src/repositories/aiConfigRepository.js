@@ -20,9 +20,7 @@ async function findByCollegeId(client, collegeId) {
 // single-statement upsert shape configurationRepository.upsertConfiguration
 // already uses, minus that function's own optimistic-concurrency
 // version column (nothing in this task asked for one here).
-async function upsert(client, {
-  collegeId, provider, apiKey, model, embeddingModel, fastModel, baseUrl,
-}) {
+async function upsert(client, { collegeId, provider, apiKey, model, embeddingModel, fastModel, baseUrl }) {
   const result = await client.query(
     `INSERT INTO college_ai_config (college_id, provider, api_key, model, embedding_model, fast_model, base_url)
      VALUES ($1, $2, $3, $4, $5, $6, $7)

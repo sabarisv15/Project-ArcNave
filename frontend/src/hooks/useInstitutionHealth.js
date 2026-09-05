@@ -1,17 +1,10 @@
 import { useMemo } from 'react';
-import {
-  DEPARTMENTS,
-  FACULTY_BY_ID,
-  INSTITUTION,
-  departmentLabel,
-} from '../lib/institutionData';
+import { DEPARTMENTS, FACULTY_BY_ID, INSTITUTION, departmentLabel } from '../lib/institutionData';
 import { PROVISIONING } from '../lib/provisioning';
 import { INSTITUTION_ATTENTION, departmentHealth } from '../lib/institutionSignals';
 import { deriveInstitutionReadiness } from '../lib/institutionReadiness';
 import { buildLiveSnapshot, deriveInstitutionSetup } from '../lib/institutionSetupData';
-import { useAcademicTerm } from '../store/AcademicTermProvider';
-import { useAcademicRoster } from '../store/AcademicRosterProvider';
-import { useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import { useAcademicTerm, useAcademicRoster, useInstitutionalLifecycle } from '@/features/institution';
 
 /**
  * The institution as it currently is, rather than as it was when the fixtures
@@ -36,8 +29,7 @@ import { useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvid
 export function useInstitutionHealth() {
   const { term, activeClasses, timetableStateOf, attendanceLiveFor } = useAcademicTerm();
   const { studentsOfClass } = useAcademicRoster();
-  const { coverage, hodCoverage, hodSeatOf, seatOf, reviewProgressByDepartment } =
-    useInstitutionalLifecycle();
+  const { coverage, hodCoverage, hodSeatOf, seatOf, reviewProgressByDepartment } = useInstitutionalLifecycle();
 
   const enrolledOf = useMemo(() => (classId) => studentsOfClass(classId).length, [studentsOfClass]);
 
@@ -60,21 +52,15 @@ export function useInstitutionHealth() {
         const holderId = seat?.state === 'active' ? seat.holderId : null;
         return departmentHealth(
           { ...d, hodId: holderId, hodSeatState: seat?.state ?? 'vacant' },
-          { seat, hod: holderId ? FACULTY_BY_ID[holderId] ?? null : null }
+          { seat, hod: holderId ? (FACULTY_BY_ID[holderId] ?? null) : null },
         );
       }),
-    [hodSeatOf]
+    [hodSeatOf],
   );
 
-  const departmentById = useMemo(
-    () => Object.fromEntries(departments.map((d) => [d.id, d])),
-    [departments]
-  );
+  const departmentById = useMemo(() => Object.fromEntries(departments.map((d) => [d.id, d])), [departments]);
 
-  const promotionProgress = useMemo(
-    () => reviewProgressByDepartment(),
-    [reviewProgressByDepartment]
-  );
+  const promotionProgress = useMemo(() => reviewProgressByDepartment(), [reviewProgressByDepartment]);
 
   const readiness = useMemo(
     () =>
@@ -93,16 +79,7 @@ export function useInstitutionHealth() {
         attendanceLiveFor,
         attention: INSTITUTION_ATTENTION,
       }),
-    [
-      term,
-      activeClasses,
-      enrolledOf,
-      coverage,
-      hodCoverage,
-      promotionProgress,
-      timetableStateOf,
-      attendanceLiveFor,
-    ]
+    [term, activeClasses, enrolledOf, coverage, hodCoverage, promotionProgress, timetableStateOf, attendanceLiveFor],
   );
 
   /**
@@ -131,9 +108,9 @@ export function useInstitutionHealth() {
             reviewed: readiness.promotion.reviewed,
             pending: readiness.promotion.pending,
           },
-        })
+        }),
       ),
-    [activeClasses, hodSeatOf, readiness, seatOf, term, timetableStateOf]
+    [activeClasses, hodSeatOf, readiness, seatOf, term, timetableStateOf],
   );
 
   return { readiness, setup, departments, departmentById };

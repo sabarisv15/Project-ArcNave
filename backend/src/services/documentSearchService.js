@@ -224,9 +224,9 @@ async function ingestDocument(client, documentId, { actorUserId } = {}) {
     });
   } else {
     throw new DocumentSearchUnsupportedContentError(
-      `document ${JSON.stringify(documentId)} has mime_type ${JSON.stringify(document.mime_type)}, which this `
-      + 'slice cannot extract text from (only text/* content, OCR-supported images '
-      + `[${[...OCR_IMAGE_MIME_TYPES].join(', ')}], and application/pdf are supported)`,
+      `document ${JSON.stringify(documentId)} has mime_type ${JSON.stringify(document.mime_type)}, which this ` +
+        'slice cannot extract text from (only text/* content, OCR-supported images ' +
+        `[${[...OCR_IMAGE_MIME_TYPES].join(', ')}], and application/pdf are supported)`,
     );
   }
 
@@ -239,9 +239,7 @@ async function ingestDocument(client, documentId, { actorUserId } = {}) {
   // this same value).
   const model = embeddingService.currentModel();
 
-  const embeddings = chunks.length > 0
-    ? await embeddingService.embed(chunks, { inputType: 'passage' })
-    : [];
+  const embeddings = chunks.length > 0 ? await embeddingService.embed(chunks, { inputType: 'passage' }) : [];
 
   for (let i = 0; i < chunks.length; i += 1) {
     await aiDocumentChunkRepository.create(client, {
@@ -300,9 +298,7 @@ async function searchDocuments(client, { query, limit } = {}, actor) {
   // (principal); see aiDocumentChunkRepository.search's own comment.
   const classIds = await visibilityService.getVisibleClassIds(
     client,
-    'actorId' in actor
-      ? actor
-      : { actorUserId: actor.userId, actorRole: actor.role, collegeId: actor.collegeId },
+    'actorId' in actor ? actor : { actorUserId: actor.userId, actorRole: actor.role, collegeId: actor.collegeId },
   );
   // Same model value ingestDocument recorded on each chunk — passed
   // through to the repository so a query only ever ranks against chunks

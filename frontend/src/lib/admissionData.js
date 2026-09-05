@@ -57,7 +57,14 @@ export const DOCUMENT_KINDS = [
  */
 export const ADMISSION_FIELDS = [
   { key: 'name', label: 'Full name', required: true, placeholder: 'As printed on the certificate', type: 'text' },
-  { key: 'reg', label: 'Register number', required: true, placeholder: 'REG-2024-0000', type: 'text', hint: 'Used to check this student is not already placed in the class' },
+  {
+    key: 'reg',
+    label: 'Register number',
+    required: true,
+    placeholder: 'REG-2024-0000',
+    type: 'text',
+    hint: 'Used to check this student is not already placed in the class',
+  },
   { key: 'phone', label: 'Student phone', required: false, placeholder: '+91 …', type: 'tel' },
   { key: 'guardianPhone', label: 'Guardian phone', required: false, placeholder: '+91 …', type: 'tel' },
 ];
@@ -124,7 +131,5 @@ export function emptyAdmission() {
 
 /** Which required fields are still missing — the wizard's own Next gate. */
 export function missingRequired(values) {
-  return ADMISSION_FIELDS.filter((f) => f.required && !String(values[f.key] ?? '').trim()).map(
-    (f) => f.label
-  );
+  return ADMISSION_FIELDS.filter((f) => f.required && !String(values[f.key] ?? '').trim()).map((f) => f.label);
 }

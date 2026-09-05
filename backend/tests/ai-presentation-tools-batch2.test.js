@@ -32,10 +32,7 @@ test.describe('present_featured (consumer-tool-adaptation: featured_card_display
   const fields = [{ label: 'Attendance', value: '61%' }];
 
   test('requires an objective basis — the card cannot exist without one', () => {
-    assert.throws(
-      () => aiInteractionService.buildFeaturedCard('III-ECE-A', '', fields),
-      AiInteractionValidationError,
-    );
+    assert.throws(() => aiInteractionService.buildFeaturedCard('III-ECE-A', '', fields), AiInteractionValidationError);
   });
 
   test('has no rank, score or recommended field to fill (RS-AIG-013 is structural here)', () => {
@@ -51,10 +48,7 @@ test.describe('present_featured (consumer-tool-adaptation: featured_card_display
 
   test('rejects more than 8 fields', () => {
     const tooMany = Array.from({ length: 9 }, (_, i) => ({ label: `L${i}`, value: `V${i}` }));
-    assert.throws(
-      () => aiInteractionService.buildFeaturedCard('X', 'basis', tooMany),
-      AiInteractionValidationError,
-    );
+    assert.throws(() => aiInteractionService.buildFeaturedCard('X', 'basis', tooMany), AiInteractionValidationError);
   });
 });
 
@@ -63,10 +57,11 @@ test.describe('present_comparison (consumer-tool-adaptation: comparison_card_dis
 
   test('rejects an item that does not answer every declared attribute', () => {
     assert.throws(
-      () => aiInteractionService.buildComparisonCard(null, attributes, [
-        { name: 'III-ECE-A', values: ['61%', '12'] },
-        { name: 'III-ECE-B', values: ['77%'] },
-      ]),
+      () =>
+        aiInteractionService.buildComparisonCard(null, attributes, [
+          { name: 'III-ECE-A', values: ['61%', '12'] },
+          { name: 'III-ECE-B', values: ['77%'] },
+        ]),
       AiInteractionValidationError,
     );
   });
@@ -99,7 +94,8 @@ test.describe('present_comparison (consumer-tool-adaptation: comparison_card_dis
 test.describe('present_carousel (consumer-tool-adaptation: product_carousel_display_v0)', () => {
   test('renders unnumbered, so presentation order carries no ranking claim', () => {
     const card = aiInteractionService.buildCarousel('Electives', [
-      { name: 'Machine Learning' }, { name: 'VLSI Design', subtitle: '3 credits' },
+      { name: 'Machine Learning' },
+      { name: 'VLSI Design', subtitle: '3 credits' },
     ]);
     const markdown = render('present_carousel', card);
     assert.doesNotMatch(markdown, /^1\. /m);
@@ -157,10 +153,7 @@ test.describe('present_places / present_map (consumer-tool-adaptation: places_*_
   });
 
   test('a map does not — it requires coordinates', () => {
-    assert.throws(
-      () => aiInteractionService.buildPlacesMap(null, [{ name: 'Block A' }]),
-      AiInteractionValidationError,
-    );
+    assert.throws(() => aiInteractionService.buildPlacesMap(null, [{ name: 'Block A' }]), AiInteractionValidationError);
   });
 
   test('rejects out-of-range coordinates', () => {
@@ -182,7 +175,8 @@ test.describe('present_recipe (consumer-tool-adaptation: recipe_display_v0)', ()
 
   test('rejects a free-text quantity, which would make rescaling impossible', () => {
     assert.throws(
-      () => aiInteractionService.buildRecipe('Pongal', 40, [{ name: 'Rice', quantity: 'a handful', unit: 'kg' }], ['Cook']),
+      () =>
+        aiInteractionService.buildRecipe('Pongal', 40, [{ name: 'Rice', quantity: 'a handful', unit: 'kg' }], ['Cook']),
       AiInteractionValidationError,
     );
   });
@@ -202,7 +196,8 @@ test.describe('present_recipe (consumer-tool-adaptation: recipe_display_v0)', ()
 });
 
 test.describe('present_diagram (consumer-tool-adaptation: visualize:show_widget)', () => {
-  const safeSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" fill="#333"/></svg>';
+  const safeSvg =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" fill="#333"/></svg>';
 
   test('accepts a static allowlisted picture', () => {
     const diagram = aiDiagramService.buildDiagram('Flow', safeSvg);
@@ -233,14 +228,22 @@ test.describe('present_diagram (consumer-tool-adaptation: visualize:show_widget)
 
   test('rejects foreignObject, the usual SVG-to-HTML escape hatch', () => {
     assert.throws(
-      () => aiDiagramService.buildDiagram(null, '<svg xmlns="x" viewBox="0 0 1 1"><foreignObject><div/></foreignObject></svg>'),
+      () =>
+        aiDiagramService.buildDiagram(
+          null,
+          '<svg xmlns="x" viewBox="0 0 1 1"><foreignObject><div/></foreignObject></svg>',
+        ),
       AiDiagramValidationError,
     );
   });
 
   test('rejects an external reference via xlink:href', () => {
     assert.throws(
-      () => aiDiagramService.buildDiagram(null, '<svg xmlns="x" viewBox="0 0 1 1"><image xlink:href="https://evil/x.png"/></svg>'),
+      () =>
+        aiDiagramService.buildDiagram(
+          null,
+          '<svg xmlns="x" viewBox="0 0 1 1"><image xlink:href="https://evil/x.png"/></svg>',
+        ),
       AiDiagramValidationError,
     );
   });
@@ -254,14 +257,22 @@ test.describe('present_diagram (consumer-tool-adaptation: visualize:show_widget)
 
   test('rejects an ENTITY declaration (billion-laughs / SSRF vector)', () => {
     assert.throws(
-      () => aiDiagramService.buildDiagram(null, '<!DOCTYPE svg [<!ENTITY x SYSTEM "file:///etc/passwd">]><svg xmlns="x" viewBox="0 0 1 1"/>'),
+      () =>
+        aiDiagramService.buildDiagram(
+          null,
+          '<!DOCTYPE svg [<!ENTITY x SYSTEM "file:///etc/passwd">]><svg xmlns="x" viewBox="0 0 1 1"/>',
+        ),
       AiDiagramValidationError,
     );
   });
 
   test('rejects a payload hidden in CDATA', () => {
     assert.throws(
-      () => aiDiagramService.buildDiagram(null, '<svg xmlns="x" viewBox="0 0 1 1"><text><![CDATA[<script>x</script>]]></text></svg>'),
+      () =>
+        aiDiagramService.buildDiagram(
+          null,
+          '<svg xmlns="x" viewBox="0 0 1 1"><text><![CDATA[<script>x</script>]]></text></svg>',
+        ),
       AiDiagramValidationError,
     );
   });
@@ -279,14 +290,8 @@ test.describe('present_diagram (consumer-tool-adaptation: visualize:show_widget)
 test.describe('describe_diagram_constraints (consumer-tool-adaptation: visualize:read_me)', () => {
   test('names the allowlists it actually enforces, not a prose approximation', () => {
     const constraints = aiDiagramService.describeConstraints();
-    assert.deepStrictEqual(
-      constraints.allowedElements,
-      Array.from(aiDiagramService.ALLOWED_ELEMENTS).sort(),
-    );
-    assert.deepStrictEqual(
-      constraints.allowedAttributes,
-      Array.from(aiDiagramService.ALLOWED_ATTRIBUTES).sort(),
-    );
+    assert.deepStrictEqual(constraints.allowedElements, Array.from(aiDiagramService.ALLOWED_ELEMENTS).sort());
+    assert.deepStrictEqual(constraints.allowedAttributes, Array.from(aiDiagramService.ALLOWED_ATTRIBUTES).sort());
     assert.strictEqual(constraints.maxChars, aiDiagramService.MAX_SVG_CHARS);
     assert.ok(!constraints.allowedElements.includes('script'));
     assert.ok(!constraints.allowedElements.includes('foreignObject'));
@@ -304,7 +309,8 @@ test.describe('present_diagram tool handler (F14: rejection must not crash the t
   const tool = () => aiToolRegistry.getTool('present_diagram');
 
   test('an invalid SVG (e.g. the live gradient-fill case) returns a structured rejection, never throws', () => {
-    const rejectingSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect fill="url(#gradient1)"/></svg>';
+    const rejectingSvg =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect fill="url(#gradient1)"/></svg>';
     const result = tool().handler(null, { svg: rejectingSvg }, {});
     assert.deepStrictEqual(result, {
       rejected: true,
@@ -313,13 +319,18 @@ test.describe('present_diagram tool handler (F14: rejection must not crash the t
   });
 
   test('a script-carrying SVG is rejected the same structured way', () => {
-    const result = tool().handler(null, { svg: '<svg xmlns="x" viewBox="0 0 1 1"><script>alert(1)</script></svg>' }, {});
+    const result = tool().handler(
+      null,
+      { svg: '<svg xmlns="x" viewBox="0 0 1 1"><script>alert(1)</script></svg>' },
+      {},
+    );
     assert.strictEqual(result.rejected, true);
     assert.match(result.reason, /not an allowed element/);
   });
 
   test('a valid diagram still returns the normal buildDiagram shape, unaffected by the catch', () => {
-    const validSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" fill="#333"/></svg>';
+    const validSvg =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" fill="#333"/></svg>';
     const result = tool().handler(null, { svg: validSvg }, {});
     assert.strictEqual(result.sanitized, true);
     assert.ok(!('rejected' in result));
@@ -327,7 +338,9 @@ test.describe('present_diagram tool handler (F14: rejection must not crash the t
 
   test('a non-AiDiagramValidationError still propagates — this catch is scoped to that one class only', () => {
     const original = aiDiagramService.buildDiagram;
-    aiDiagramService.buildDiagram = () => { throw new Error('unrelated crash'); };
+    aiDiagramService.buildDiagram = () => {
+      throw new Error('unrelated crash');
+    };
     try {
       assert.throws(() => tool().handler(null, { svg: '<svg xmlns="x" viewBox="0 0 1 1"/>' }, {}), /unrelated crash/);
     } finally {

@@ -37,14 +37,15 @@ async function identityMiddleware(req, res, next) {
   // Institutional Identity Context, never resolveCapabilities — there
   // is structurally no userId in this claim to accidentally union
   // against whatever else the current occupant personally holds.
-  req.capabilities = claims.type === 'position_access'
-    ? await identityService.resolveCapabilitiesForPosition(req.dbClient, {
-      positionAccountId: claims.sub,
-    })
-    : await identityService.resolveCapabilities(req.dbClient, {
-      userId: claims.sub,
-      collegeId: req.collegeId,
-    });
+  req.capabilities =
+    claims.type === 'position_access'
+      ? await identityService.resolveCapabilitiesForPosition(req.dbClient, {
+          positionAccountId: claims.sub,
+        })
+      : await identityService.resolveCapabilities(req.dbClient, {
+          userId: claims.sub,
+          collegeId: req.collegeId,
+        });
 
   // Same "mutate the existing AsyncLocalStorage store in place" pattern
   // db/tenantTransaction.js already uses for req.collegeId — this is

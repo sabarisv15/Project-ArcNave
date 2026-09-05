@@ -70,7 +70,7 @@ export function SeatSwitcher() {
                 'flex-none h-[30px] px-[11px] border rounded-[9px] font-sans text-[12.5px] cursor-pointer transition-colors duration-200',
                 selected
                   ? 'border-accent-line bg-accent-soft text-accent font-[600]'
-                  : 'border-line bg-paper text-ink-muted font-[500] hover:bg-tint2 hover:text-ink'
+                  : 'border-line bg-paper text-ink-muted font-[500] hover:bg-tint2 hover:text-ink',
               )}
             >
               {seatTitle(key)}
@@ -80,8 +80,7 @@ export function SeatSwitcher() {
         })}
       </div>
       <p className="m-0 mt-[9px] text-[12px] font-[400] text-ink-faint">
-        Changes the prototype view only. In the product, the active workspace comes from the account you
-        signed in with.
+        Changes the prototype view only. In the product, the active workspace comes from the account you signed in with.
       </p>
     </div>
   );

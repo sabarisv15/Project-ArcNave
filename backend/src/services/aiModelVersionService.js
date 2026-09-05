@@ -42,10 +42,16 @@ function recordObservedVersion(collegeId, provider, configuredModel, observedVer
     return { drifted: false, observedVersion };
   }
   logWarn('ai_model_version_drift_detected', {
-    collegeId, provider, configuredModel, previousVersion: previous, observedVersion,
+    collegeId,
+    provider,
+    configuredModel,
+    previousVersion: previous,
+    observedVersion,
   });
   return {
-    drifted: true, previousVersion: previous, observedVersion,
+    drifted: true,
+    previousVersion: previous,
+    observedVersion,
   };
 }
 

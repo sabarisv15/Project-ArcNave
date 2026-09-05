@@ -35,10 +35,7 @@ const DATABASE_URL = process.env.DATABASE_URL;
 async function seedFixture(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const collegeId = `wfrace${suffix}`;
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $1)',
-    [collegeId],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $1)', [collegeId]);
   const requester = await adminPool.query(
     `INSERT INTO users (college_id, username, email, password_hash, role)
      VALUES ($1, 'wfracerequester', 'wfracerequester@example.com', 'x', 'staff') RETURNING id`,
@@ -87,14 +84,16 @@ test('workflowService.approveRequest is race-safe under two genuinely concurrent
     await appPool.end();
   });
 
-  const request = await withTransaction(appPool, fixture.collegeId, (client) => workflowService.submitRequest(client, {
-    collegeId: fixture.collegeId,
-    entityType: 'test_entity',
-    entityId: crypto.randomUUID(),
-    requestedByUserId: fixture.requesterId,
-    origin: 'human',
-    approverChain: [{ step: 1, role: 'hod', user_id: fixture.approverId }],
-  }));
+  const request = await withTransaction(appPool, fixture.collegeId, (client) =>
+    workflowService.submitRequest(client, {
+      collegeId: fixture.collegeId,
+      entityType: 'test_entity',
+      entityId: crypto.randomUUID(),
+      requestedByUserId: fixture.requesterId,
+      origin: 'human',
+      approverChain: [{ step: 1, role: 'hod', user_id: fixture.approverId }],
+    }),
+  );
 
   // Deterministically forces the exact TOCTOU window the bug lived in,
   // instead of hoping two Promise.all'd requests happen to race on
@@ -173,10 +172,9 @@ test('workflowService.approveRequest is race-safe under two genuinely concurrent
   // loser must never have written one at all (this is what the
   // approve-before-recordAction reordering, not just the guard,
   // buys — see workflowService.js's own comment).
-  const historyRows = await adminPool.query(
-    "SELECT action FROM approval_history WHERE workflow_request_id = $1",
-    [request.id],
-  );
+  const historyRows = await adminPool.query('SELECT action FROM approval_history WHERE workflow_request_id = $1', [
+    request.id,
+  ]);
   assert.equal(historyRows.rows.length, 1, `expected exactly 1 approval_history row, got ${historyRows.rows.length}`);
   assert.equal(historyRows.rows[0].action, 'Approved');
 

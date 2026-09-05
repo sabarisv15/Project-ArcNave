@@ -1,10 +1,13 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { ChatMessage } from '../components/ChatMessage';
+import { ChatMessage } from '@/features/chat';
 
 const MESSAGE = {
-  id: '3f2504e0-4f89-11d3-9a0c-0305e82c3301', role: 'user', text: 'original question', createdAt: new Date().toISOString(),
+  id: '3f2504e0-4f89-11d3-9a0c-0305e82c3301',
+  role: 'user',
+  text: 'original question',
+  createdAt: new Date().toISOString(),
 };
 
 // Regression: editing a message previously only ever mutated local React
@@ -32,7 +35,12 @@ describe('MessageEditor — real rewind save', () => {
   it('shows a pending state while the save is in flight, and closes the editor once it resolves true', async () => {
     const user = userEvent.setup();
     let resolveSave;
-    const onEdit = vi.fn(() => new Promise((resolve) => { resolveSave = resolve; }));
+    const onEdit = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
     render(<ChatMessage message={MESSAGE} onEdit={onEdit} />);
 
     await user.click(screen.getByRole('button', { name: 'Edit message' }));

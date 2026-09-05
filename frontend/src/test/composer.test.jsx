@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { ComposerProvider, composerScope, isEmptyComposer, useComposer } from '../store/ComposerProvider';
+import { ComposerProvider, composerScope, isEmptyComposer, useComposer } from '../features/chat';
 import { draftKey, readDraft } from '../lib/draftStore';
 import { ME } from '../lib/substituteData';
 
@@ -15,14 +15,18 @@ const storageFor = (scope) => draftKey(ME.id, 'composer', scope);
 
 /** One provider, two composers — exactly the "two surfaces mounted at once" case. */
 function renderPair(keyA, keyB) {
-  return renderHook(
-    ({ a, b }) => ({ a: useComposer(a), b: useComposer(b) }),
-    { wrapper, initialProps: { a: keyA, b: keyB } }
-  );
+  return renderHook(({ a, b }) => ({ a: useComposer(a), b: useComposer(b) }), {
+    wrapper,
+    initialProps: { a: keyA, b: keyB },
+  });
 }
 
 beforeEach(() => {
-  try { window.sessionStorage.clear(); } catch { /* storage unavailable — the store degrades to memory only */ }
+  try {
+    window.sessionStorage.clear();
+  } catch {
+    /* storage unavailable — the store degrades to memory only */
+  }
 });
 
 describe('composer scope keys', () => {

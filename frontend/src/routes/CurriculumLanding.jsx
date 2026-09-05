@@ -32,7 +32,7 @@ export function CurriculumLanding() {
               className={({ isActive }) =>
                 cn(
                   'flex items-center gap-[10px] h-[34px] px-[10px] rounded-[9px] text-[13px] font-[500] text-ink-soft no-underline hover:no-underline transition-colors duration-200 hover:bg-hoverline',
-                  isActive && 'bg-accent-soft text-accent font-[600]'
+                  isActive && 'bg-accent-soft text-accent font-[600]',
                 )
               }
             >

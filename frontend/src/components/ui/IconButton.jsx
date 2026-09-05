@@ -10,7 +10,7 @@ export function IconButton({ label, tooltip, className, children, ...props }) {
       className={cn(
         'grid place-items-center border-0 bg-transparent text-ink-faint cursor-pointer',
         'transition-colors duration-200 hover:bg-accent-soft hover:text-accent',
-        className
+        className,
       )}
       {...props}
     >

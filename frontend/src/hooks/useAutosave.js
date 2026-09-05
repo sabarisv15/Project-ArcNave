@@ -43,7 +43,12 @@ export const CELL_DEBOUNCE_MS = 400;
  *        only a fallback for a save that never landed.
  */
 export function useAutosave({
-  value, onSave, storageKey, delay = TEXT_DEBOUNCE_MS, enabled = true, keepLocalDraft = false,
+  value,
+  onSave,
+  storageKey,
+  delay = TEXT_DEBOUNCE_MS,
+  enabled = true,
+  keepLocalDraft = false,
 }) {
   // 'idle' | 'saving' | 'saved' | 'error'
   const [status, setStatus] = useState('idle');
@@ -123,7 +128,10 @@ export function useAutosave({
 
   /** Called after an explicit action (Submit/Publish/Send) has taken the data. */
   const markClean = useCallback(() => {
-    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
     dirty.current = false;
     setStatus('idle');
     if (storageKey) clearDraft(storageKey);
@@ -131,13 +139,16 @@ export function useAutosave({
 
   // Unmount is the last chance: flush whatever is pending. The local mirror is
   // already written, so even a save that never lands is recoverable.
-  useEffect(() => () => {
-    if (timer.current) {
-      clearTimeout(timer.current);
-      timer.current = null;
-      if (dirty.current) run();
-    }
-  }, [run]);
+  useEffect(
+    () => () => {
+      if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+        if (dirty.current) run();
+      }
+    },
+    [run],
+  );
 
   return { status, savedAt, schedule, flush, retry, markClean };
 }

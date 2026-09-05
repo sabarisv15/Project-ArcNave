@@ -1,14 +1,18 @@
 'use strict';
 
-// AI chat-attachment text extraction — a pure "buffer + mimeType in, plain
-// text out" module, no DB/identity/audit concerns (those live in aiService.js's
-// resolveChatAttachments, same separation documentExtractionService.js already
-// keeps between OCR mechanics and the admission-wizard business logic that
-// calls it). Distinct from documentSearchService.ingestDocument (RAG
-// chunking/embedding for institutional documents) and documentExtractionService
-// (OCR-first, for the admission-wizard review/extraction flow) — this module
-// exists specifically to turn a fresh AI chat attachment into plain text for
-// one turn's prompt, never persisted, never chunked/embedded.
+// AI chat-attachment text extraction — a "buffer + mimeType in, plain
+// text out" module. Every branch except the scanned-PDF one is pure CPU-
+// bound parsing with no DB/identity/audit concerns of its own (those live
+// in aiService.js's resolveChatAttachments); the scanned-PDF branch is the
+// one exception (ADL-074/2.4) — it needs `client`/`collegeId` to resolve
+// this college's AI config for a vision transcription call, same
+// separation documentExtractionService.js already keeps between OCR/vision
+// mechanics and the admission-wizard business logic that calls it.
+// Distinct from documentSearchService.ingestDocument (RAG chunking/
+// embedding for institutional documents) and documentExtractionService
+// (OCR/vision-first, for the admission-wizard review/extraction flow) —
+// this module exists specifically to turn a fresh AI chat attachment into
+// plain text for one turn's prompt, never persisted, never chunked/embedded.
 //
 // CLAUDE.md rule 9: every extracted string here is untrusted, human-authored
 // document content — this module only ever returns text; the caller
@@ -75,11 +79,11 @@ function truncateToMax(text) {
   return text.slice(0, MAX_RAW_EXTRACTED_CHARS);
 }
 
-// Text-first, OCR fallback — never OCR-by-default. An ordinary text-layer
-// PDF is fast (no rasterization/Tesseract cost); only a genuinely
-// scanned/image-only PDF pays the OCR cost, and only up to
-// MAX_OCR_FALLBACK_PAGES.
-async function extractPdfText(buffer, { lang } = {}) {
+// Text-first, vision/OCR fallback — never rasterized-page reading by
+// default. An ordinary text-layer PDF is fast (no rasterization/AI cost
+// at all); only a genuinely scanned/image-only PDF pays that cost, and
+// only up to MAX_OCR_FALLBACK_PAGES.
+async function extractPdfText(buffer, { lang, client, collegeId } = {}) {
   let parser;
   let result;
   try {
@@ -94,7 +98,10 @@ async function extractPdfText(buffer, { lang } = {}) {
     if (parser) await parser.destroy();
   }
 
-  const text = (result.pages || []).map((page) => page.text || '').join('\n\n').trim();
+  const text = (result.pages || [])
+    .map((page) => page.text || '')
+    .join('\n\n')
+    .trim();
   const numPages = result.total || Math.max((result.pages || []).length, 1);
   const avgCharsPerPage = text.length / Math.max(numPages, 1);
   if (text.length >= MIN_TEXT_LAYER_CHARS && avgCharsPerPage >= MIN_AVG_CHARS_PER_PAGE) {
@@ -105,15 +112,48 @@ async function extractPdfText(buffer, { lang } = {}) {
   }
 
   // Empty/near-empty embedded text -> treat as scanned/image-only and fall
-  // back to the existing rasterize+OCR path, but only within a chat-turn-
+  // back to a real page-reading path, but only within a chat-turn-
   // appropriate page budget.
   if (numPages > MAX_OCR_FALLBACK_PAGES) {
     return { text: null, failureReason: 'extraction_failed' };
   }
+
+  // ADL-074 (2.4) — vision transcription is the DEFAULT for a genuinely
+  // scanned PDF, not a confidence-gated fallback behind Tesseract
+  // (measured live twice; decided explicitly, not to be re-opened on a
+  // cost argument alone — see the ledger entry). Tesseract below is
+  // reached only when vision itself is unavailable for this college
+  // (no client/collegeId to resolve an AI config against — e.g. a
+  // caller outside a chat-turn context — or the configured
+  // provider/model has no image capability) or the vision call itself
+  // fails (network/API error) — a resilience fallback, not a cost one.
+  // Falls through to Tesseract below on ANY failure here — both "this
+  // college's configured provider can't see images"
+  // (DocumentExtractionVisionTranscriptionUnsupportedError) and a real
+  // network/API failure land the same way: Tesseract still gets a real
+  // try rather than the whole attachment failing outright. A network/API
+  // failure here is not separately logged — the caller
+  // (aiService.resolveChatAttachments) already logs an audit entry if
+  // the OVERALL extraction ends up failing (i.e. Tesseract fails too).
+  if (client && collegeId) {
+    try {
+      const vision = await documentExtractionService.transcribeWithVision(client, {
+        collegeId,
+        fileBuffer: buffer,
+        mimeType: PDF_MIME_TYPE,
+      });
+      return { text: truncateToMax(vision.text || ''), method: 'vision_transcription' };
+    } catch {
+      // Fall through to Tesseract, see comment above.
+    }
+  }
+
   try {
     const ocr = await documentExtractionService.runOcr(buffer, PDF_MIME_TYPE, { lang });
     return {
-      text: truncateToMax(ocr.text || ''), method: 'ocr_fallback', ocrConfidence: ocr.ocrConfidence,
+      text: truncateToMax(ocr.text || ''),
+      method: 'ocr_fallback',
+      ocrConfidence: ocr.ocrConfidence,
     };
   } catch {
     return { text: null, failureReason: 'extraction_failed' };
@@ -156,15 +196,18 @@ function htmlToLines(html) {
     if (block.startsWith('<table')) {
       const rows = block.match(/<tr[\s\S]*?<\/tr>/g) || [];
       rows.forEach((rowHtml) => {
-        const cells = (rowHtml.match(/<t[dh][\s\S]*?<\/t[dh]>/g) || [])
-          .map((cellHtml) => stripXmlTags(cellHtml).replace(/\s+/g, ' ').trim());
+        const cells = (rowHtml.match(/<t[dh][\s\S]*?<\/t[dh]>/g) || []).map((cellHtml) =>
+          stripXmlTags(cellHtml).replace(/\s+/g, ' ').trim(),
+        );
         if (cells.some((c) => c !== '')) lines.push(cells.join(' | '));
       });
       return;
     }
     const paragraphs = block.match(/<p[\s\S]*?<\/p>/g) || [];
     paragraphs.forEach((paragraphHtml) => {
-      const text = stripXmlTags(paragraphHtml).replace(/[ \t]+/g, ' ').trim();
+      const text = stripXmlTags(paragraphHtml)
+        .replace(/[ \t]+/g, ' ')
+        .trim();
       if (text) lines.push(text);
     });
   });
@@ -391,8 +434,13 @@ async function extractOdsText(buffer) {
 // mimeType is the server-sniffed value stored on the document row
 // (routes/documents.js's sniffing — never the client's declared type), same
 // trust boundary every other caller of this pipeline already relies on.
-async function extractPlainText(buffer, mimeType, { lang } = {}) {
-  if (mimeType === PDF_MIME_TYPE) return extractPdfText(buffer, { lang });
+//
+// client/collegeId are optional and used ONLY by the PDF branch's
+// scanned-page vision transcription (ADL-074/2.4) — every other branch
+// is pure CPU-bound parsing with no AI call, so they need no AI config
+// and are unaffected by whether these are supplied.
+async function extractPlainText(buffer, mimeType, { lang, client, collegeId } = {}) {
+  if (mimeType === PDF_MIME_TYPE) return extractPdfText(buffer, { lang, client, collegeId });
   if (mimeType === DOCX_MIME_TYPE) return extractDocxText(buffer);
   if (mimeType === XLSX_MIME_TYPE) return extractXlsxText(buffer);
   if (mimeType === PPTX_MIME_TYPE) return extractPptxText(buffer);
@@ -400,7 +448,9 @@ async function extractPlainText(buffer, mimeType, { lang } = {}) {
   if (mimeType === ODS_MIME_TYPE) return extractOdsText(buffer);
   if (mimeType === CSV_MIME_TYPE) return extractCsvText(buffer);
   if (PLAIN_TEXT_MIME_TYPES.has(mimeType)) return extractPlainTextDirect(buffer);
-  throw new DocumentTextExtractionUnsupportedTypeError(`mimeType ${JSON.stringify(mimeType)} is not supported for text extraction`);
+  throw new DocumentTextExtractionUnsupportedTypeError(
+    `mimeType ${JSON.stringify(mimeType)} is not supported for text extraction`,
+  );
 }
 
 module.exports = {

@@ -17,15 +17,27 @@ test('ConversationService (no DB)', async (t) => {
     const listMock = t.mock.method(conversationRepository, 'listByUser', async (client, userId, opts) => {
       assert.equal(userId, 'u1');
       assert.deepEqual(opts, {
-        projectId: 'p1', search: 'exam', archived: true, limit: 10, offset: 5,
+        projectId: 'p1',
+        search: 'exam',
+        archived: true,
+        limit: 10,
+        offset: 5,
       });
       return [];
     });
     t.after(() => listMock.mock.restore());
 
-    await conversationService.listOwnConversations({}, {
-      userId: 'u1', projectId: 'p1', search: 'exam', archived: true, limit: 10, offset: 5,
-    });
+    await conversationService.listOwnConversations(
+      {},
+      {
+        userId: 'u1',
+        projectId: 'p1',
+        search: 'exam',
+        archived: true,
+        limit: 10,
+        offset: 5,
+      },
+    );
     assert.equal(listMock.mock.calls.length, 1);
   });
 
@@ -36,24 +48,33 @@ test('ConversationService (no DB)', async (t) => {
       assert.deepEqual(opts, { limit: 20, offset: 10 });
       return [];
     });
-    t.after(() => { findMock.mock.restore(); listMock.mock.restore(); });
+    t.after(() => {
+      findMock.mock.restore();
+      listMock.mock.restore();
+    });
 
     await conversationService.listMessages({}, 'conv1', { userId: 'u1', limit: 20, offset: 10 });
     assert.equal(listMock.mock.calls.length, 1);
   });
 
-  await t.test('listMessages with no limit/offset passes undefined through, not a default — the full transcript is still returned', async () => {
-    const findMock = t.mock.method(conversationRepository, 'findById', async () => ({ id: 'conv1', user_id: 'u1' }));
-    const listMock = t.mock.method(messageRepository, 'listByConversation', async (client, conversationId, opts) => {
-      assert.deepEqual(opts, { limit: undefined, offset: undefined });
-      return [];
-    });
-    t.after(() => { findMock.mock.restore(); listMock.mock.restore(); });
+  await t.test(
+    'listMessages with no limit/offset passes undefined through, not a default — the full transcript is still returned',
+    async () => {
+      const findMock = t.mock.method(conversationRepository, 'findById', async () => ({ id: 'conv1', user_id: 'u1' }));
+      const listMock = t.mock.method(messageRepository, 'listByConversation', async (client, conversationId, opts) => {
+        assert.deepEqual(opts, { limit: undefined, offset: undefined });
+        return [];
+      });
+      t.after(() => {
+        findMock.mock.restore();
+        listMock.mock.restore();
+      });
 
-    await conversationService.listMessages({}, 'conv1', { userId: 'u1' });
-  });
+      await conversationService.listMessages({}, 'conv1', { userId: 'u1' });
+    },
+  );
 
-  await t.test('resolveOwnConversation throws ConversationForbiddenError for another user\'s conversation', async () => {
+  await t.test("resolveOwnConversation throws ConversationForbiddenError for another user's conversation", async () => {
     const findMock = t.mock.method(conversationRepository, 'findById', async () => ({ id: 'conv1', user_id: 'OTHER' }));
     t.after(() => findMock.mock.restore());
 
@@ -68,7 +89,13 @@ test('ConversationService (no DB)', async (t) => {
     t.after(() => findMock.mock.restore());
 
     await assert.rejects(
-      () => conversationService.addMessage({}, 'conv1', { role: 'system', content: 'hi' }, { userId: 'u1', collegeId: 'c1' }),
+      () =>
+        conversationService.addMessage(
+          {},
+          'conv1',
+          { role: 'system', content: 'hi' },
+          { userId: 'u1', collegeId: 'c1' },
+        ),
       conversationService.ConversationValidationError,
     );
   });
@@ -78,7 +105,8 @@ test('ConversationService (no DB)', async (t) => {
     t.after(() => findMock.mock.restore());
 
     await assert.rejects(
-      () => conversationService.addMessage({}, 'conv1', { role: 'user', content: '  ' }, { userId: 'u1', collegeId: 'c1' }),
+      () =>
+        conversationService.addMessage({}, 'conv1', { role: 'user', content: '  ' }, { userId: 'u1', collegeId: 'c1' }),
       conversationService.ConversationValidationError,
     );
   });
@@ -102,11 +130,22 @@ test('ConversationService (no DB)', async (t) => {
       });
       return { id: 'm1', ...fields };
     });
-    t.after(() => { findMock.mock.restore(); createMock.mock.restore(); });
+    t.after(() => {
+      findMock.mock.restore();
+      createMock.mock.restore();
+    });
 
-    const result = await conversationService.addMessage({}, 'conv1', {
-      role: 'user', content: 'invoke a tool', toolUsed: 'list_students', toolParams: { classId: 'cls1' },
-    }, { userId: 'u1', collegeId: 'c1' });
+    const result = await conversationService.addMessage(
+      {},
+      'conv1',
+      {
+        role: 'user',
+        content: 'invoke a tool',
+        toolUsed: 'list_students',
+        toolParams: { classId: 'cls1' },
+      },
+      { userId: 'u1', collegeId: 'c1' },
+    );
     assert.equal(result.id, 'm1');
   });
 
@@ -118,30 +157,60 @@ test('ConversationService (no DB)', async (t) => {
   // it to return. This only proves the service layer forwards it
   // correctly to messageRepository.create; the frontend fix is a
   // separate, already-verified change.
-  await t.test('addMessage forwards attachments through to the repository, and omits an empty/absent list as null', async () => {
-    const findMock = t.mock.method(conversationRepository, 'findById', async () => ({ id: 'conv1', user_id: 'u1' }));
-    const calls = [];
-    const createMock = t.mock.method(messageRepository, 'create', async (client, fields) => {
-      calls.push(fields.attachments);
-      return { id: 'm1', ...fields };
-    });
-    t.after(() => { findMock.mock.restore(); createMock.mock.restore(); });
+  await t.test(
+    'addMessage forwards attachments through to the repository, and omits an empty/absent list as null',
+    async () => {
+      const findMock = t.mock.method(conversationRepository, 'findById', async () => ({ id: 'conv1', user_id: 'u1' }));
+      const calls = [];
+      const createMock = t.mock.method(messageRepository, 'create', async (client, fields) => {
+        calls.push(fields.attachments);
+        return { id: 'm1', ...fields };
+      });
+      t.after(() => {
+        findMock.mock.restore();
+        createMock.mock.restore();
+      });
 
-    const ATTACHMENT = {
-      id: 'doc-1', serverId: 'doc-1', name: 'arrears.pdf', type: 'application/pdf', size: 1024,
-    };
-    await conversationService.addMessage({}, 'conv1', {
-      role: 'user', content: 'see attached', attachments: [ATTACHMENT],
-    }, { userId: 'u1', collegeId: 'c1' });
-    await conversationService.addMessage({}, 'conv1', {
-      role: 'user', content: 'no attachment',
-    }, { userId: 'u1', collegeId: 'c1' });
-    await conversationService.addMessage({}, 'conv1', {
-      role: 'user', content: 'empty array', attachments: [],
-    }, { userId: 'u1', collegeId: 'c1' });
+      const ATTACHMENT = {
+        id: 'doc-1',
+        serverId: 'doc-1',
+        name: 'arrears.pdf',
+        type: 'application/pdf',
+        size: 1024,
+      };
+      await conversationService.addMessage(
+        {},
+        'conv1',
+        {
+          role: 'user',
+          content: 'see attached',
+          attachments: [ATTACHMENT],
+        },
+        { userId: 'u1', collegeId: 'c1' },
+      );
+      await conversationService.addMessage(
+        {},
+        'conv1',
+        {
+          role: 'user',
+          content: 'no attachment',
+        },
+        { userId: 'u1', collegeId: 'c1' },
+      );
+      await conversationService.addMessage(
+        {},
+        'conv1',
+        {
+          role: 'user',
+          content: 'empty array',
+          attachments: [],
+        },
+        { userId: 'u1', collegeId: 'c1' },
+      );
 
-    assert.deepEqual(calls, [[ATTACHMENT], null, null]);
-  });
+      assert.deepEqual(calls, [[ATTACHMENT], null, null]);
+    },
+  );
 
   await t.test('addMessage writes an assistant message with a real parentMessageId', async () => {
     const findMock = t.mock.method(conversationRepository, 'findById', async () => ({ id: 'conv1', user_id: 'u1' }));
@@ -150,11 +219,21 @@ test('ConversationService (no DB)', async (t) => {
       assert.equal(fields.role, 'assistant');
       return { id: 'm2', ...fields };
     });
-    t.after(() => { findMock.mock.restore(); createMock.mock.restore(); });
+    t.after(() => {
+      findMock.mock.restore();
+      createMock.mock.restore();
+    });
 
-    await conversationService.addMessage({}, 'conv1', {
-      role: 'assistant', content: 'here are the students', parentMessageId: 'm1',
-    }, { userId: 'u1', collegeId: 'c1' });
+    await conversationService.addMessage(
+      {},
+      'conv1',
+      {
+        role: 'assistant',
+        content: 'here are the students',
+        parentMessageId: 'm1',
+      },
+      { userId: 'u1', collegeId: 'c1' },
+    );
     assert.equal(createMock.mock.calls.length, 1);
   });
 
@@ -172,11 +251,17 @@ test('ConversationService (no DB)', async (t) => {
     const findMock = t.mock.method(conversationRepository, 'findById', async () => ({ id: 'conv1', user_id: 'u1' }));
     const updateMock = t.mock.method(conversationRepository, 'update', async (client, id, fields) => {
       assert.deepEqual(fields, {
-        title: undefined, projectId: undefined, pinned: true, archived: undefined,
+        title: undefined,
+        projectId: undefined,
+        pinned: true,
+        archived: undefined,
       });
       return { id, ...fields };
     });
-    t.after(() => { findMock.mock.restore(); updateMock.mock.restore(); });
+    t.after(() => {
+      findMock.mock.restore();
+      updateMock.mock.restore();
+    });
 
     await conversationService.updateConversation({}, 'conv1', { pinned: true }, { userId: 'u1' });
     assert.equal(updateMock.mock.calls.length, 1);
@@ -196,9 +281,15 @@ test('ConversationService (no DB)', async (t) => {
   });
 
   await t.test('editMessage rejects a messageId that does not exist', async () => {
-    const findConvMock = t.mock.method(conversationRepository, 'findById', async () => ({ id: 'conv1', user_id: 'u1' }));
+    const findConvMock = t.mock.method(conversationRepository, 'findById', async () => ({
+      id: 'conv1',
+      user_id: 'u1',
+    }));
     const findMsgMock = t.mock.method(messageRepository, 'findById', async () => null);
-    t.after(() => { findConvMock.mock.restore(); findMsgMock.mock.restore(); });
+    t.after(() => {
+      findConvMock.mock.restore();
+      findMsgMock.mock.restore();
+    });
 
     await assert.rejects(
       () => conversationService.editMessage({}, 'conv1', 'missing', { content: 'hi' }, { userId: 'u1' }),
@@ -207,11 +298,20 @@ test('ConversationService (no DB)', async (t) => {
   });
 
   await t.test('editMessage rejects a message that belongs to a DIFFERENT conversation', async () => {
-    const findConvMock = t.mock.method(conversationRepository, 'findById', async () => ({ id: 'conv1', user_id: 'u1' }));
-    const findMsgMock = t.mock.method(messageRepository, 'findById', async () => ({
-      id: 'm1', conversation_id: 'OTHER-CONV', role: 'user', created_at: '2026-01-01T00:00:00Z',
+    const findConvMock = t.mock.method(conversationRepository, 'findById', async () => ({
+      id: 'conv1',
+      user_id: 'u1',
     }));
-    t.after(() => { findConvMock.mock.restore(); findMsgMock.mock.restore(); });
+    const findMsgMock = t.mock.method(messageRepository, 'findById', async () => ({
+      id: 'm1',
+      conversation_id: 'OTHER-CONV',
+      role: 'user',
+      created_at: '2026-01-01T00:00:00Z',
+    }));
+    t.after(() => {
+      findConvMock.mock.restore();
+      findMsgMock.mock.restore();
+    });
 
     await assert.rejects(
       () => conversationService.editMessage({}, 'conv1', 'm1', { content: 'hi' }, { userId: 'u1' }),
@@ -220,11 +320,20 @@ test('ConversationService (no DB)', async (t) => {
   });
 
   await t.test('editMessage rejects editing an assistant message — only a user message can be rewound', async () => {
-    const findConvMock = t.mock.method(conversationRepository, 'findById', async () => ({ id: 'conv1', user_id: 'u1' }));
-    const findMsgMock = t.mock.method(messageRepository, 'findById', async () => ({
-      id: 'm1', conversation_id: 'conv1', role: 'assistant', created_at: '2026-01-01T00:00:00Z',
+    const findConvMock = t.mock.method(conversationRepository, 'findById', async () => ({
+      id: 'conv1',
+      user_id: 'u1',
     }));
-    t.after(() => { findConvMock.mock.restore(); findMsgMock.mock.restore(); });
+    const findMsgMock = t.mock.method(messageRepository, 'findById', async () => ({
+      id: 'm1',
+      conversation_id: 'conv1',
+      role: 'assistant',
+      created_at: '2026-01-01T00:00:00Z',
+    }));
+    t.after(() => {
+      findConvMock.mock.restore();
+      findMsgMock.mock.restore();
+    });
 
     await assert.rejects(
       () => conversationService.editMessage({}, 'conv1', 'm1', { content: 'hi' }, { userId: 'u1' }),
@@ -232,36 +341,69 @@ test('ConversationService (no DB)', async (t) => {
     );
   });
 
-  await t.test('editMessage updates the message content and deletes everything strictly after its own created_at, never itself', async () => {
-    const findConvMock = t.mock.method(conversationRepository, 'findById', async () => ({ id: 'conv1', user_id: 'u1' }));
-    const findMsgMock = t.mock.method(messageRepository, 'findById', async () => ({
-      id: 'm1', conversation_id: 'conv1', role: 'user', content: 'old text', created_at: '2026-01-01T00:00:00Z',
-    }));
-    const updateMock = t.mock.method(messageRepository, 'update', async (client, id, fields) => {
-      assert.equal(id, 'm1');
-      assert.deepEqual(fields, { content: 'new text' });
-      return {
-        id: 'm1', conversation_id: 'conv1', role: 'user', content: 'new text', created_at: '2026-01-01T00:00:00Z',
-      };
-    });
-    const deleteAfterMock = t.mock.method(messageRepository, 'deleteAfter', async (client, conversationId, createdAt) => {
-      assert.equal(conversationId, 'conv1');
-      assert.equal(createdAt, '2026-01-01T00:00:00Z');
-    });
-    t.after(() => {
-      findConvMock.mock.restore(); findMsgMock.mock.restore(); updateMock.mock.restore(); deleteAfterMock.mock.restore();
-    });
+  await t.test(
+    'editMessage updates the message content and deletes everything strictly after its own created_at, never itself',
+    async () => {
+      const findConvMock = t.mock.method(conversationRepository, 'findById', async () => ({
+        id: 'conv1',
+        user_id: 'u1',
+      }));
+      const findMsgMock = t.mock.method(messageRepository, 'findById', async () => ({
+        id: 'm1',
+        conversation_id: 'conv1',
+        role: 'user',
+        content: 'old text',
+        created_at: '2026-01-01T00:00:00Z',
+      }));
+      const updateMock = t.mock.method(messageRepository, 'update', async (client, id, fields) => {
+        assert.equal(id, 'm1');
+        assert.deepEqual(fields, { content: 'new text' });
+        return {
+          id: 'm1',
+          conversation_id: 'conv1',
+          role: 'user',
+          content: 'new text',
+          created_at: '2026-01-01T00:00:00Z',
+        };
+      });
+      const deleteAfterMock = t.mock.method(
+        messageRepository,
+        'deleteAfter',
+        async (client, conversationId, createdAt) => {
+          assert.equal(conversationId, 'conv1');
+          assert.equal(createdAt, '2026-01-01T00:00:00Z');
+        },
+      );
+      t.after(() => {
+        findConvMock.mock.restore();
+        findMsgMock.mock.restore();
+        updateMock.mock.restore();
+        deleteAfterMock.mock.restore();
+      });
 
-    const result = await conversationService.editMessage({}, 'conv1', 'm1', { content: 'new text' }, { userId: 'u1' });
-    assert.equal(result.content, 'new text');
-    assert.equal(updateMock.mock.calls.length, 1);
-    assert.equal(deleteAfterMock.mock.calls.length, 1);
-  });
+      const result = await conversationService.editMessage(
+        {},
+        'conv1',
+        'm1',
+        { content: 'new text' },
+        { userId: 'u1' },
+      );
+      assert.equal(result.content, 'new text');
+      assert.equal(updateMock.mock.calls.length, 1);
+      assert.equal(deleteAfterMock.mock.calls.length, 1);
+    },
+  );
 
   await t.test('editMessage still enforces ownership before touching the message', async () => {
-    const findConvMock = t.mock.method(conversationRepository, 'findById', async () => ({ id: 'conv1', user_id: 'OTHER' }));
+    const findConvMock = t.mock.method(conversationRepository, 'findById', async () => ({
+      id: 'conv1',
+      user_id: 'OTHER',
+    }));
     const findMsgMock = t.mock.method(messageRepository, 'findById');
-    t.after(() => { findConvMock.mock.restore(); findMsgMock.mock.restore(); });
+    t.after(() => {
+      findConvMock.mock.restore();
+      findMsgMock.mock.restore();
+    });
 
     await assert.rejects(
       () => conversationService.editMessage({}, 'conv1', 'm1', { content: 'hi' }, { userId: 'u1' }),

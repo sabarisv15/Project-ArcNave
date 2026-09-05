@@ -5905,3 +5905,2318 @@ migration.
 **Migration impact.** None — both decisions preserve the status quo.
 
 **Verification.** N/A — decision-only entry, nothing built.
+
+---
+
+## ADL-070
+
+### C3 (PDF 1.1 / modernization P2) — tool-search benchmark re-run: NO-GO, `TOOL_SEARCH_ENABLED` stays off
+
+**What prompted this.** The ARCNAVE modernization plan
+(`ARCNAVE-modernization-english.md`, P2, clash C3) requires the
+tool-search GO/NO-GO benchmark to be re-run against the real `demo`
+college with real (billable) Vertex calls before `TOOL_SEARCH_ENABLED`
+is flipped — "the app never flips it on itself" (config.js). Owner
+authorised the paid run this session (2026-08-31) and confirmed the
+MaaS tool-search model `qwen/qwen3-next-80b-a3b-thinking-maas` is
+enabled in the project.
+
+**How it was run.** `backend/scripts/tool-search-benchmark.js` inside
+the app container, `TOOL_SEARCH_MODEL=qwen/qwen3-next-80b-a3b-thinking-maas`,
+reasoning model `gemini-3.7-flash` (Vertex, location `global` — the only
+region this project's `gemini-3.7-flash` publisher model resolves in;
+`us-east1`/`us-central1` both 404). 3 tests × 3 reps × 2 paths (OLD =
+Tool Search disabled, NEW = enabled), same reasoning model both paths.
+`demo`'s `ai_quota.monthlyTokenQuota` was temporarily widened to
+500,000,000 for the run via `backend/scripts/set-college-ai-quota.js`
+and restored to the 2,000,000 platform default afterward.
+
+**Result (averages across reps, real `ai_llm_call` usage rows):**
+
+| test | path | toolSearch in/out | reasoning in/out | synthesis in/out | grand total | calls | latency ms | coverage | recall | precision |
+|---|---|---|---|---|---|---|---|---|---|---|
+| A | old | 0 | 3768 / 10 | 1687 / 20 | **5455** | 2 | 6396 | 100% | 1.00 | 1.00 |
+| A | new | 2805 / ~0 | 2335 / 10 | 1688 / 20 | **6829** | 3 | 4967 | 100% | 1.00 | 1.00 |
+| B | old | 0 | 3728 | 1884 | **5612** | 2 | 8610 | 100% | 1.00 | 1.00 |
+| B | new | 0 | 3724 | 1881 | **5605** | 3 | 8132 | 100% | 1.00 | 1.00 |
+| C | old | 0 | 3633 | 2020 | **5653** | 2 | 8264 | 100% | 1.00 | 1.00 |
+| C | new | 0 | 3635 | 2022 | **5657** | 3 | 8368 | 100% | 1.00 | 1.00 |
+
+**Reading it.**
+- On the ONE test where Tool Search actually engaged (Test A), it cut
+  the reasoning-call input by ~1,400 tokens (no full catalogue) but the
+  tool-search call itself cost **2,805 input tokens**, for a net
+  **+1,373 tokens (+25%)** and one extra LLM call per turn. Latency
+  improved (~1.4s faster) but token cost is the benchmark's GO/NO-GO
+  axis.
+- On Tests B and C, `toolSearch in/out = 0` on the NEW path: Tool Search
+  was attempted and the service **distrusted the MaaS response and fell
+  back** to the normal path (its designed safety behaviour), so those
+  rows are the OLD path plus a wasted call — no real NEW measurement.
+- **Zero accuracy gain**: every path on every test already scored 100%
+  coverage / recall 1.00 / precision 1.00. This 3-test set gives Tool
+  Search no headroom to demonstrate the retrieval-miss recovery that is
+  its actual reason to exist.
+
+**Decision: NO-GO.** Tool Search adds ~25% token cost and a call per
+turn on the case where it runs, falls back 2 of 3 times, and shows no
+accuracy improvement on this set. `config.toolSearch.enabled` stays
+`false`; `TOOL_SEARCH_ENABLED` is not set. Consistent with the prior
+NO-GO the config comment already references.
+
+**Re-open condition.** A measured retrieval-accuracy gap on the normal
+path (a real turn where semantic retrieval misses a needed tool and the
+answer is wrong) against a larger, harder tool set — not this
+already-saturated 3-test set. The catalogue-routing work (ADL-064) and
+the P2 1.2/C4 margin-cutoff item are the more promising levers for the
+same "smaller decision-call payload" goal without a second model in the
+loop.
+
+**Affected artefacts.** `bka/70-checkpoint/CURRENT-STATE.md` (P2 banner —
+C3 marked resolved NO-GO). New operator script
+`backend/scripts/set-college-ai-quota.js`. No app code change, no
+migration.
+
+**Verification.** The benchmark run itself is the verification. `demo`
+`ai_quota` confirmed restored to `{monthlyTokenQuota: 2000000}` after
+the run.
+
+---
+
+## ADL-071
+
+### C2 (PDF 1.4 / modernization P2) — explicit Vertex prompt caching: mechanism built, OFF by default; real prefix is below Vertex's 4,096-token floor today
+
+**What prompted this.** ADL-054/055 closed "build explicit caching" as
+not-yet-justified (implicit Vertex caching returns ~0 signal for this
+deployment; a controlled experiment exonerated tool-declaration variance
+as a cache-miss cause). The ARCNAVE modernization plan (clash C2)
+re-opens it on the "hi = 4,500 words" cost observation. Owner authorised
+the paid measurement this session (2026-08-31).
+
+**Measured, real Vertex calls.**
+1. `backend/scripts/explicit-cache-viability-probe.js` — a ~4,674-token
+   synthetic prefix: `gemini-3.7-flash` @ `global` **accepts an explicit
+   `cachedContents` resource** and referencing it on the next
+   `generateContent` cut **billed input from ~4,678 to ~13 tokens
+   (99.7%)** on the cached portion. `us-central1`/`us-east1` 404 for this
+   model — `global` is the only endpoint it serves from.
+2. `backend/scripts/explicit-cache-live-turn-probe.js` — the REAL
+   askAgent decision-call prefix (mode prefix + curriculum policy +
+   tool-routing catalogue) for a `principal` on a real question is
+   **2,578 tokens**. Vertex rejects a cache create below **4,096 tokens**
+   (`HTTP 400 INVALID_ARGUMENT, "minimum token count to start explicit
+   caching is 4096"`). So on real traffic today the create is refused and
+   the adapter degrades to the inline system prompt — billed input
+   unchanged at ~3,924, **no turn failure, no regression** (verified
+   across 3 live turns).
+
+**Decision: build the mechanism, ship it OFF (`config.aiExplicitCache`,
+`AI_EXPLICIT_CACHE=true` to enable), do NOT enable it now.**
+- `backend/src/services/aiExplicitCache.js` (new) — in-memory handle
+  store keyed by `sha256(model + location + systemPrompt)`, 60-min TTL
+  with proactive refresh, `MIN_CACHEABLE_CHARS = 17_500` (~4,300 tokens,
+  above Vertex's floor so a doomed create is never even attempted),
+  degrade-to-null on any failure (never throws).
+- `gemini.js` `completeWithTools` — references `cachedContent` instead of
+  re-sending `systemInstruction` when a handle is supplied; a stale
+  handle (4xx) is invalidated and retried once inline.
+- `aiService.js` — resolves ONE handle per turn from the stable system
+  prefix and hands the same name to every `completeWithTools` call in the
+  loop, preserving ADL-050's "system prefix byte-identical across a turn"
+  guarantee structurally. Gemini/Vertex only; the greeting/zero-tool
+  path's short prefix is below the floor and never caches.
+- `aiContextAssembly` — `cachedSystemInstructionName` threaded through
+  `buildContext`/`contextFromFlatPrompts`/`flattenToPrompts`.
+
+**Why keep it if it no-ops today.** It is the prerequisite for PDF 1.6
+(fold conversation history into the cached front block) — once history
+joins the stable prefix it crosses the 4,096-token floor and this
+mechanism starts paying the 99.7% cut measured above. A very large role's
+catalogue can also cross it. Turning it on is a per-deploy decision once
+1.6 lands.
+
+**Re-open / enable condition.** The stable per-turn prefix (system
+segments, optionally + history once 1.6 ships) exceeds ~4,096 tokens for
+real roles, measured — then flip `AI_EXPLICIT_CACHE=true` and re-run
+`explicit-cache-live-turn-probe.js` to confirm `cachedTokens > 0` on the
+`tool_select` audit rows.
+
+**Affected artefacts.** New: `aiExplicitCache.js`, `config.aiExplicitCache`,
+3 probe/operator scripts, `tests/ai-explicit-cache.test.js`, 2 gemini
+adapter tests. Modified: `gemini.js`, `aiService.js`, `aiContextAssembly.js`.
+No migration.
+
+**Verification.** Unit + adapter tests green; full backend suite in
+Docker (see CURRENT-STATE P2 banner). `demo` `ai_quota` confirmed
+restored to `{monthlyTokenQuota: 2000000}` after the paid runs.
+
+## ADL-072
+
+### C7 (modernization P3, 4.3/5.2) — start the typed-code migration: reverses ADR-016's "TypeScript for now, rejected"
+
+**What prompted this.** ADR-016 (original ADR estate, still governing —
+see `bka/90-appendix/traceability.md`) chose plain JavaScript for the
+backend, explicitly rejecting TypeScript "for now," with its own stated
+revisit trigger: "once the lack of static types is a demonstrated
+maintenance cost." The modernization plan's P3 item 4.3/5.2 proposes
+starting a typed-code migration; clash C7 (Part 6 of the plan) flags
+this as a genuine reversal of that stance, not a routine implementation
+step, and requires "re-weigh the reason behind that decision and write a
+new decision entry before starting" rather than silently building it.
+Per the standing P0-P5 mandate (session memory
+`arcnave-p0-p5-rewrite-mandate.md`), this is exactly the class of
+decision the mandate does NOT let an agent make unilaterally — asked in
+chat; owner said yes, 2026-09-01.
+
+**Decision: start the migration, gradual, additive-only, new files
+only.** Not a demonstrated-cost-driven reversal (ADR-016's own trigger
+condition is not independently re-verified here) — a deliberate,
+owner-authorised policy change instead, consistent with the mandate's
+explicit allowance to bypass a `bka/` "decided" banner for this specific
+rewrite effort.
+
+**What actually shipped, this pass.**
+- `backend/tsconfig.json` (new) — `noEmit: true`, `allowJs: true`,
+  `checkJs: false`, `strict: true`. Type-CHECK only; changes nothing
+  about what Node actually runs (`node src/index.js`, unchanged) — every
+  existing `.js` file is untouched and un-typechecked (`checkJs: false`
+  deliberately). `typescript`, `tsx`, `@types/node` added as
+  devDependencies. `npm run typecheck` (new script) verified clean
+  against the current all-`.js` tree (zero `.ts` files exist yet, so
+  this is a trivial pass, not yet a real signal). `npx tsx` verified
+  live: executes a real `.ts` file end-to-end (a throwaway smoke script,
+  not committed) — the runtime path for a new `.ts` *script* (not yet
+  application request-path code) is real, not just configured.
+- `frontend/tsconfig.json` (new) — same `noEmit`/`allowJs`/`strict`
+  posture. Vite (`@vitejs/plugin-react`, esbuild) already transpiles
+  `.ts`/`.tsx` with **zero config change** — verified live: a throwaway
+  `.tsx` smoke component built cleanly via `npx vite build` (not
+  committed), so a new frontend file can be genuine TypeScript today
+  with no additional tooling. `typescript`, `@types/react`,
+  `@types/react-dom` added as devDependencies (`--legacy-peer-deps` —
+  pre-existing React 19 vs. `next-themes`/Radix peer-range conflict,
+  already tracked in `dependency-scan-baseline.md` and the CI workflow's
+  own `npm ci --legacy-peer-deps` comment; not introduced by this
+  change). `npm run typecheck` (new script) clean.
+- `.github/workflows/ci.yml` — `npm run typecheck` added to both the
+  backend and frontend jobs, **blocking** (not informational like the
+  `npm audit` step) — safe to block immediately because today's baseline
+  is trivially clean (no `.ts` files exist), so it can only ever fail on
+  a real new type error introduced going forward, never pre-existing
+  debt. NOT verified inside the real Docker `app` container this
+  session (host has no Docker available for a live run per this
+  project's own established constraint) — the backend Dockerfile's own
+  `npm install` step should pick up the new devDependencies on next
+  build; flag this as unverified-in-Docker if it's the first thing that
+  breaks after this lands.
+- `bka/30-decisions/adr-register.md` — ADR-016 gained "Amendment 1
+  (typed-code migration, ADL-072)" pointing here, same pattern
+  ADR-009/ADR-024/ADR-021 amendments already use. ADR-016's original
+  text is preserved unchanged (history), not rewritten.
+
+**Explicitly NOT done this pass (own future passes, not silently
+assumed).** No existing `.js` file was converted or typechecked
+(`checkJs: false` is deliberate, not an oversight) — this is scaffolding
+only, proving the tooling works, not a migration of real code. No
+backend *application* (request-path) code runs as `.ts` yet — only a
+`.ts` *script* run via `tsx` was proven; wiring `tsx`/a build step into
+the actual `node src/index.js` production runtime is its own decision
+(changes the deploy artifact) and its own pass. Which files/modules
+migrate first, and on what cadence, is not decided here.
+
+**Affected artefacts.** New: `backend/tsconfig.json`,
+`frontend/tsconfig.json`. Modified: `backend/package.json`,
+`backend/package-lock.json`, `frontend/package.json`,
+`frontend/package-lock.json`, `.github/workflows/ci.yml`,
+`bka/30-decisions/adr-register.md` (ADR-016 Amendment 1). No migration,
+no runtime behavior change for any existing file.
+
+**Verification.** `npm run typecheck` clean in both `backend/` and
+`frontend/` (host). `npx tsc --noEmit` and `npx tsx <file>.ts`
+(backend) and `npx vite build` on a real `.tsx` file (frontend) each
+verified live, then the throwaway proof files removed — not committed,
+by design (this slice ships tooling, not a first real TypeScript
+file). Full backend suite NOT re-run in Docker for this slice
+specifically (devDependency-only change, no runtime `.js` file
+touched) — due before the next Docker-verified P3 checkpoint regardless.
+
+## ADL-073
+
+### D3 (modernization P3) — hybrid keyword + meaning tool search: mechanism built, shipped OFF, needs its own live probe before enabling
+
+**What prompted this.** Plan bullet "Blend keyword + meaning search +
+re-ranking (1.5 / D3)" — the "1.5" tag is a plan inconsistency (1.5's
+own table row is about prompt-caching reuse order, unrelated to
+search); D3's own row ("meaning-search only -> blend with keyword
+search + re-ranking") is the unambiguous match this was built against.
+
+**What shipped, real code, all in `aiToolRetrievalService.js`/
+`aiToolRegistry.js`:**
+- `aiToolRegistry.rankToolsByKeywordOverlap(tools, question)` (new,
+  exported) — the SAME scoring `filterToolsByRelevance` already used,
+  extracted out unchanged so a caller can rank by keyword overlap
+  WITHOUT that function's own `RANK_CAP`/zero-overlap-fill policy
+  (which exists for a fallback-tier ceiling, not a ranking signal to
+  feed a fusion algorithm). `filterToolsByRelevance` itself now calls
+  the extracted function — behavior-preserving refactor, confirmed by
+  its own pre-existing test suite passing byte-unchanged (236/236 in
+  `ai-service.test.js`, including the 4 tests that already covered it).
+- `reciprocalRankFusion(semanticRankedTools, lexicalRankedTools)` (new,
+  exported) — standard Reciprocal Rank Fusion (Cormack, Clarke &
+  Buettcher 2009), `RRF_K = 60` (the technique's own standard constant,
+  not tuned against this project's data). Combines two rankings whose
+  raw scores aren't comparable (cosine distance vs. keyword-overlap
+  count) via rank POSITION instead.
+- `retrieveHybrid(client, roleTools, question)` (new) — semantic
+  candidates from the same `aiToolEmbeddingRepository.search` call
+  `retrieveSemantic` already makes, still gated by `ABSOLUTE_CEILING`
+  alone (NOT the relative `MARGIN` — margin is what fusion exists to
+  relax) so a genuinely irrelevant question can still return zero tools
+  (embedding search always returns its nearest TOP_K neighbours
+  regardless of actual distance — dropping the ceiling entirely would
+  have resurrected the exact "never returns empty" bug 1.2/C4, this
+  same session, just fixed). Lexical candidates from
+  `rankToolsByKeywordOverlap`. Fused result capped at `TOP_K` (8).
+- `config.aiHybridToolRetrieval` (new, `AI_HYBRID_TOOL_RETRIEVAL=true`
+  to enable) — **OFF by default.** `retrieveRelevantTools` reads it
+  once per call to choose `retrieveHybrid` vs. the existing
+  `retrieveSemantic` when embeddings are available; the "embedding call
+  failed -> lexical fallback" degrade path is shared unchanged by both.
+- `scripts/tool-retrieval-hybrid-probe.js` (new) — same `PROBES` set as
+  `tool-retrieval-margin-probe.js` (1.2/C4's own probe), shows the
+  pure-semantic/pure-lexical/hybrid ranking side by side per question
+  plus a RECOVERED/DROPPED diff against today's live default, so a
+  future run can judge concretely whether fusion helps before flipping
+  the flag.
+
+**Decision: build the mechanism, ship it OFF, do not enable now.** Same
+posture `config.toolSearch`/`config.aiExplicitCache` already
+established in this modernization effort. Reasoning: 1.2/C4's
+margin-based semantic-only cutoff was JUST live-measured against real
+Gemini embeddings this same day (ADL entry for that commit,
+`5f6d4a1`); this hybrid fusion tier has NOT been — RRF's constants
+(`RRF_K = 60`) are the technique's standard default, not something this
+project measured, and this touches the tool-selection path for every
+single real AI turn. Shipping it live without a probe run first would
+repeat exactly the mistake ADL-054/055/070 already corrected course on
+elsewhere in this same effort (build first, measure never).
+
+**Re-open / enable condition.** Run
+`scripts/tool-retrieval-hybrid-probe.js` against real Gemini
+embeddings, review every RECOVERED/DROPPED line against what the
+actually-correct tool set for that question should be — then set
+`AI_HYBRID_TOOL_RETRIEVAL=true` only if the fused ranking is a real,
+demonstrated improvement over today's margin-cutoff tier, not just a
+plausible-sounding mechanism.
+
+**Affected artefacts.** New: `aiToolRegistry.rankToolsByKeywordOverlap`,
+`aiToolRetrievalService.reciprocalRankFusion`/`retrieveHybrid`,
+`config.aiHybridToolRetrieval`,
+`scripts/tool-retrieval-hybrid-probe.js`. Modified:
+`aiToolRegistry.filterToolsByRelevance` (refactored, behavior-preserving),
+`aiToolRetrievalService.retrieveRelevantTools` (flag-gated branch
+added). No migration.
+
+**Verification.** 22 tests in `ai-tool-retrieval-service.test.js`
+(10 new: `reciprocalRankFusion` x5, `retrieveHybrid` x3, flag-gated
+`retrieveRelevantTools` x2), 4 new tests in `ai-service.test.js`
+(`rankToolsByKeywordOverlap` x3, a refactor-safety test confirming
+`filterToolsByRelevance` still pads zero-overlap fill) — all passing,
+run standalone (dummy env vars, no Docker on this host) —
+236/236 in `ai-service.test.js`, 22/22 in
+`ai-tool-retrieval-service.test.js`. `node --check` + eslint clean (0
+errors) on every touched file. NOT re-run through the full Docker suite
+this pass — due at the next Docker checkpoint.
+
+## ADL-074
+
+### 2.4 (modernization P3) — Tesseract vs. Gemini vision on real handwritten scans: measured twice, DECIDED — vision is the default, not a confidence-gated fallback
+
+**What prompted this.** Plan item 2.4 ("Scanned-page reading uses a weak
+in-app engine, 30-page cap — poor on tables and handwriting — use a
+vision model") had been flagged pending in every P3 checkpoint banner
+since 2026-09-01, each time deferred for lack of GCP/Vertex access.
+Before spending anything, the codebase was read first: `2.5`'s sibling
+concern (complex-PDF fallback) turned out to already be fully decided
+and shipped — see `ADL-058`'s CORE-replacement entry above (pdfplumber
+fallback, verified against `documentTableExtractionService.assessCoverage`,
+full trust). `documentExtractionService.js` also already has a live
+vision-model path, but only for the admission-wizard's structured
+field extraction (bounding boxes + confidence) — the **chat-attachment**
+path (`documentTextExtractionService.js` → `ocr/tesseractOcr.js`) still
+runs Tesseract only. That is 2.4's real, unresolved gap.
+
+**The experiment.** The owner supplied a real photo (not a synthetic
+test file) of a handwritten exam question paper — curved page, uneven
+lighting, cursive handwriting, the exact "poor on tables and
+handwriting" case the plan names, not the clean/illustrative sample
+tried first and rejected as unrepresentative. Free half run standalone
+(`backend/scripts/handwriting-ocr-quick-probe.js`, no `--vertex` flag):
+`ocr/tesseractOcr.js`'s own `extractTextFromImage`, the exact function
+`documentTextExtractionService.js` calls today, unmodified. Billable
+half (`--vertex`): one `gemini-3.7-flash` `generateContent` call, same
+`GoogleAuth`-ADC-discovery / `modelUrl()` pattern every other probe in
+this folder already uses (e.g. `native-pdf-vs-deterministic-probe.js`),
+temperature 0 (a single transcription call, not a self-consistency
+measurement — no need to vary the sample).
+
+**Result — decisive, one run, both sides real:**
+
+| engine | confidence / tokens | latency | output |
+|---|---|---|---|
+| Tesseract (current) | 29.0/100 | 4.4 s | unreadable garbage — e.g. `"ert (20 ran Tsne Rot 2025 [W026 / Aa peracc Lessons i Pd Cr ey iT..."` |
+| Gemini 3.7 Flash (vision) | 1,158 in / 317 out tokens | 10.5 s | a clean, correctly-numbered, essentially verbatim transcription of all 8 questions and their A–D options |
+
+Tesseract's output is not merely lower-quality — it is unusable for any
+downstream purpose (search, an AI answer grounded in it, a human
+reading it back). Gemini's transcription needed no correction to be
+usable; the one debatable word (option C of question 7, "staying" vs.
+the model's "stamina") is a plausible reading of ambiguous cursive, not
+a structural failure. Cost is trivial (well under a cent per image at
+published Vertex pricing for ~1,500 tokens) and latency (~10 s) is
+within what an interactive `/ai/ask` attachment turn already tolerates
+for other tool calls.
+
+**Second measurement — a harder, multi-page real document.** The owner
+supplied a genuinely scanned 262-page PDF (`Analog Electronics EE`, a
+real GATE-exam study-notes scan — confirmed via `pdf-parse` to carry no
+real text layer, only a one-line watermark per early page). First 15
+pages rasterized via `pdftoppm` (run inside a throwaway `alpine`
+container with `poppler-utils` installed on demand, this host having no
+`pdftoppm` outside Docker) at the same 200 DPI
+`ocr/pdfRasterizer.js` already uses.
+
+- **Tesseract**, all 15 pages via `extractTextFromPages`: confidence
+  28.0–38.0 (**average 32.8/100**), every single page's output
+  unreadable garbage (e.g. `"BE BE Co / | £ he mobility of an unbond
+  ( [res e) u alae..."`) — handwritten technical notes (equations,
+  circuit/tree diagrams, Greek letters, subscripts) are, if anything,
+  harder for Tesseract than the first sample's exam paper.
+- **Gemini 3.7 Flash**, all 15 pages in ONE batched multimodal call
+  (not 15 separate calls): **16,598 in / 2,924 out tokens, 90.5 s**.
+  Output was not just readable but semantically correct and
+  well-structured: equations rendered as real LaTeX, the semiconductor
+  classification tree reproduced as an actual tree structure, specific
+  numeric values (electron/hole mobility, energy gaps, doping types)
+  transcribed correctly — requiring the model to understand the
+  diagrams, not just recognize characters. Cost for the whole 15-page
+  batch is a small fraction of a cent.
+- **Architecture finding, not just an accuracy one:** batching every
+  page of a document into a single vision call (rather than one call
+  per page) is both cheaper and faster than a per-page loop — worth
+  carrying into the real implementation.
+
+**Decision: Gemini vision is the DEFAULT engine for scanned chat
+attachments, not a confidence-gated fallback behind Tesseract.**
+Raised and argued the opposite way first — Tesseract is free, and
+gating on its confidence score would avoid paying for the (assumed)
+majority of clean/already-readable scans. **The owner explicitly
+rejected that framing and decided default, not fallback-gated,
+after hearing the argument** — recorded here as the settled decision,
+not re-opened by a future session on cost-optimization grounds alone.
+Two measured real documents (a single exam paper, a 15-page technical
+notebook) both show the same shape: Tesseract's failure is not
+occasional or borderline (confidence never exceeded 38/100 across 16
+total pages measured), and Gemini's real cost is trivial at the
+volumes involved. A confidence-based gate was also never fully
+trustworthy on its own terms — Tesseract's confidence score measures
+character-level certainty, not semantic correctness, so a "clean-looking
+but wrong" high-confidence misread was always a real failure mode a
+gate could hide.
+
+**Affected artefacts.** New: `backend/scripts/handwriting-ocr-quick-probe.js`
+(ad-hoc, not part of the tracked probe suite — kept for re-running
+against a different sample; the 15-page batch script used for the
+second measurement was a throwaway, not committed). No production code
+touched yet — implementing "vision is default" in
+`documentTextExtractionService.js`'s OCR branch is its own next,
+scoped pass.
+
+**Verification.** Live-run three times this session: Tesseract-only,
+then Tesseract+Vertex, against
+`C:\Users\HAI\Pictures\Screenshots\Screenshot 2026-09-03 080707.png`
+(not committed); then Tesseract+Vertex again against 15 rasterized
+pages of `C:\Users\HAI\Downloads\Analog Electronics EE(www.gatenotes.in).pdf`
+(not committed, neither the source PDF nor the rasterized pages). Not a
+unit test — these are one-off measurement scripts, same category as
+`native-pdf-scale-probe.js`/`pdf-geometry-probe.js`.
+
+**Update — built, same day.** The decision above was implemented:
+`documentExtractionService.transcribeWithVision` (new) + wiring into
+`documentTextExtractionService.extractPdfText`/`extractPlainText` +
+the one call-site change needed in `aiService.resolveChatAttachments`.
+7 new unit tests, full Docker suite **2873/2873**, lint 0 errors. Full
+implementation detail in `CURRENT-STATE.md`'s own banner for this
+build — not restated here per this file's own scope (decisions and
+their reasoning, not ongoing task/build state).
+
+## ADL-075
+
+### D1 (modernization P3) — connection pooler: `pg.Pool` already IS the pooler; the real gap was exhaustion observability, not a missing pooling layer
+
+**What prompted this.** Plan item D1, "Connection pooler," listed flat in
+P3 alongside genuinely unbuilt infrastructure. Read directly against
+code before assuming a pgbouncer-shaped deliverable was needed (this
+session's owner-flagged discipline, see `verify-code-not-docs` — a
+`bka/` line item's wording is not proof of what's actually missing).
+
+**What the code already had.** `backend/src/db/pool.js` constructs two
+`pg.Pool` instances (`appPool`/`platformPool`, ADR-015's three-role
+separation) with an explicit, reasoned `max`/`min`/timeout
+configuration (`config.dbPool`, `src/config.js` — raised from `pg`'s
+default 10 to 20 specifically because every request holds one client
+for its whole lifetime, see that config block's own comment). This
+already IS a real connection pooler for a single Node process — there
+is no multi-instance fan-out problem here for pgbouncer to solve, and
+`circuitBreaker.js`'s own comment already states the adjacent
+reasoning ("do not build multi-instance coordination ahead of actually
+running multiple app processes") for C8/D1 alike. What was actually
+missing: zero observability into pool exhaustion — nothing recorded
+when a request had to queue behind `config.dbPool.max` already-checked-
+out connections, and `pool.waitingCount`/`totalCount`/`idleCount` (real
+live gauges `pg.Pool` already exposes) were read nowhere in the
+codebase.
+
+**Decision: keep `pg.Pool` as the pooler; add the missing
+observability, do not stand up pgbouncer.** Standing up a separate
+pooler process for a single app instance would be pure overhead with
+no problem it actually solves today — the same build-ahead-of-real-
+need pattern this modernization effort has explicitly avoided
+elsewhere (ADL-054/055/070's "build first, measure never" corrections
+apply by the same logic here). Revisit only once this deployment
+genuinely runs multiple app processes.
+
+**What shipped, real code.**
+- `backend/src/db/tenantConnection.js`'s `_begin()` (the sole
+  `appPool.connect()` call site — every request's transaction opens
+  through here) now reads `appPool.waitingCount` immediately before
+  connecting; when `> 0`, logs `db_pool_contention` (`pool: 'app'`,
+  `waitingCount`, `totalCount`, `idleCount`) via the existing
+  `logWarn`. Per-request, not a new background timer or polling loop —
+  consistent with this codebase's existing "check inline, log if
+  abnormal" idiom (e.g. `logAttachmentTokenPreflight`).
+- `GET /api/v1/health` (`backend/src/tenantApp.js`) additively returns
+  `pool: { total, idle, waiting }` alongside its existing `status: 'ok'`
+  — a pull-based view of the same gauges, no new query, no behavior
+  change for any existing caller.
+
+**Verification.** 3 new tests in
+`backend/tests/db-pool-observability.test.js`: `/health`'s new field
+shape; `db_pool_contention` fires with the right fields when
+`waitingCount > 0` (proven via a scoped `Object.defineProperty`
+override of the live `appPool` singleton's gauge — a real getter on
+`pg.Pool`'s own prototype, restored after the test, never touching real
+pool behavior); and confirms silence in the normal (`waitingCount ===
+0`) case. Full Docker suite and lint due at the next Docker checkpoint
+alongside 4.9 (contract tests, same session).
+
+## ADL-076
+
+### 4.9 (modernization P3) — contract tests on the noisiest routes: zod schemas + `validate()` on all 8 route files, one real Express-5 bug and two real crash classes found and fixed along the way
+
+**What prompted this.** Plan item 4.9, the last open P3 line item
+alongside D1 (ADL-075, same session). Scope: extend
+`middleware/validate.js`'s zod-schema pattern (already proven on
+`routes/auth.js`) to the 8 highest-real-risk route files, in
+owner-chosen priority order: `ai.js` → `students.js` → `staff.js` →
+`attendance.js` → `documents.js` → `platform.js` → `classes.js` →
+`assessments.js`. Verify-after-each discipline held for all 8 — a full
+Docker suite + lint run immediately after each file, before moving to
+the next, the owner's explicit pacing choice.
+
+**Per-file route/subtest counts, permissive-schema discipline held
+throughout:** never re-assert a requiredness/format check the route or
+service already owns and returns its OWN specific message for — that
+field stays `.optional()`/untyped (`z.any()`) at the schema layer, so
+`validate()` never intercepts ahead of the business check.
+
+| File | Routes | Test file | Subtests |
+|---|---|---|---|
+| `ai.js` | 5 | `tests/ai-contract.test.js` | 10 |
+| `students.js` | 23 | `tests/students-contract.test.js` | 14 |
+| `staff.js` | 16 | `tests/staff-contract.test.js` | 14 |
+| `attendance.js` | 12 | `tests/attendance-contract.test.js` | 10 |
+| `documents.js` | 31 | `tests/documents-contract.test.js` | 12 |
+| `platform.js` | 29 | `tests/platform-contract.test.js` | 11 |
+| `classes.js` | 18 | `tests/classes-contract.test.js` | 10 |
+| `assessments.js` | 20 | `tests/assessments-contract.test.js` | 9 |
+
+**One real pre-existing bug found and fixed (`students.js`, first
+file):** `middleware/validate.js`'s `req.query = result.data.query`
+threw `TypeError: Cannot set property query of #<IncomingMessage>
+which has only a getter` on Express 5 — no schema before
+`listStudentsSchema` had ever validated `query`, so the bug was
+latent since the Express 5 migration. Fixed with
+`Object.defineProperty(req, 'query', {value, writable, configurable,
+enumerable})`, overriding Express 5's getter-only accessor with a real
+own-property. Load-bearing for every later file's query schemas —
+proven working in students.js/staff.js/attendance.js/documents.js/
+platform.js/classes.js/assessments.js.
+
+**Two real crash classes found and fixed along the way (not just
+type-safety theater):**
+- `classes.js`'s `generate-timetable`/`revise-timetable` routes
+  `.map()`-ed `requirements` unconditionally
+  (`((req.body || {}).requirements || []).map(...)`) — a non-array
+  `requirements` (string/object) threw a raw `TypeError` 500 today.
+  Fixed by typing `requirements: z.array(z.any()).optional()` in
+  `generateTimetableSchema`/`reviseTimetableSchema`.
+- `assessments.js`'s `assessment_types.max_marks`/
+  `assessment_marks.marks_obtained` are NUMERIC columns with no type
+  check anywhere in `assessmentService` (only presence checks) — a
+  non-numeric value passed every existing check and then failed as a
+  raw, unhandled Postgres "invalid input syntax for type numeric" 500.
+  Fixed by typing those fields `z.number().optional()` in
+  `createAssessmentTypeSchema`/`updateAssessmentTypeSchema`/
+  `recordMarkSchema`/`updateMarkSchema`/
+  `requestMarkCorrectionSchema`/`requestMarkReevaluationSchema`.
+
+**`platform.js` is structurally different from the other 7 files** —
+gated by `requirePlatformAdmin` (a separate token type/secret, not
+`requireAuth`/`requirePermission`) and mounted under a genuinely
+separate sub-app (`/api/v1/platform`, ADR-010 isolation). Its
+`.schemas` map uses a `/platform/...` path prefix (the other 7 files
+use bare paths) when registered in `routes/openapi.js`, since
+`GET /api/v1/openapi.json` is served from the tenant app — this is
+documentation-only static registration, no cross-app request ever
+happens, so it doesn't violate the isolation boundary
+`tests/platform.test.js` already proves.
+
+**Verification, every file.** `docker compose exec app node --test
+tests/<file>-contract.test.js` (new file, clean pass) → `node --test
+tests/<file>.test.js` (pre-existing file, zero diff/behavior change,
+confirmed unaffected) → `npm test` (full suite, growing by each file's
+new subtest count) → `npm run lint` (0 errors, 123 warnings throughout,
+matching baseline every time). Final full-suite count: 2979/2979
+passing, 0 lint errors, 123 warnings (unchanged baseline).
+
+**P3 (Structural cleanup) is now fully closed** — D1 (ADL-075) and 4.9
+(this entry) were the last two open items; every other P3 line item
+was already re-verified against code in the 1.16 banner
+(`bka/70-checkpoint/CURRENT-STATE.md`). Next: P4 (Maturity — staging +
+gradual rollout) per `ARCNAVE-modernization-english.md`'s own P0-P5
+plan.
+
+---
+
+## ADL-077
+
+### O3 (modernization P4) — staging environment + smoke tests: GCP Cloud Run chosen, code/config landed, real infra deliberately not provisioned this session
+
+**What prompted this.** P3 closed (ADL-075/076); P4's first item per
+the plan's own build order. No hosting platform existed anywhere in
+the repo before this session — CI (`ci.yml`) lints/tests/migrates but
+has never deployed anywhere. Owner chose **GCP Cloud Run** (option
+presented alongside Fly.io/Render), consistent with the existing
+Vertex AI + `sandbox-service` GCP footprint — the only existing Cloud
+Run precedent in this repo (`sandbox-service/build-log.txt:1298`: built
+via Cloud Build, pushed to `asia-south1-docker.pkg.dev/project-8bcf740a-a7bd-4aea-974/arcnave`).
+Owner separately chose **code/config only this session** — real Cloud
+SQL/Cloud Run/Secret Manager resources are billed and hard to reverse;
+`STAGING-DEPLOY-RUNBOOK.md` documents the exact one-time `gcloud`
+commands for a human to run separately.
+
+**Architecture decision: Cloud Run Volume Mounts (GCS FUSE), not a
+`DocumentService` storage rewrite.** ADR-017's local-disk storage has a
+documented revisit trigger ("a second application instance is
+provisioned," `bka/30-decisions/adr-register.md`). Cloud Run containers
+are ephemeral on every fresh revision/cold restart regardless of
+instance count, so local-disk storage would silently lose uploaded
+files on the very first redeploy. Rather than rewriting
+`DocumentService`'s storage backend — a real architecture change, out
+of scope for a staging-environment slice — `deploy-staging.yml` mounts
+a GCS bucket at the exact same `DOCUMENT_STORAGE_ROOT`/
+`DOCUMENT_BACKUP_ROOT` paths the app already writes to
+(`--execution-environment=gen2`, `--add-volume type=cloud-storage`).
+`DocumentService`'s code and both env var semantics are byte-identical
+to dev; only the physical device backing those two paths changes, and
+only in Cloud Run deploy config. This satisfies ADR-017's revisit
+trigger for staging without touching `ArtifactService`/
+`DocumentService` code — the CLAUDE.md rule 2 boundary (DocumentService
+owns persistent binary storage) is unaffected.
+
+**`BYPASSRLS`, not literal `SUPERUSER`, is the property Cloud SQL
+bootstrap preserves for ADR-015.** In dev, `arcnave_admin` IS
+`$POSTGRES_USER` — the official postgres/pgvector image's own bootstrap
+superuser, named `arcnave_admin` only because `docker-compose.yml` sets
+`POSTGRES_USER` to that value. Cloud SQL's bootstrap user is always
+literally `postgres`, and even that is `cloudsqlsuperuser`, not a true
+Postgres `SUPERUSER`. Read `docker/postgres/init/01-app-role.sh`/
+`02-platform-role.sh` directly before writing the Cloud SQL equivalent
+(`backend/scripts/bootstrap-cloud-sql-roles.js`): both scripts do
+nothing beyond `CREATE ROLE ... LOGIN PASSWORD` — every GRANT
+(`arcnave_app`/`arcnave_platform`'s actual table privileges) lives in
+the Module 0 migration and runs later via `npm run migrate`, unchanged.
+The new bootstrap script mirrors that exactly and additionally grants
+`arcnave_admin` `BYPASSRLS CREATEDB` explicitly — per ADR-015's own
+reasoning, `BYPASSRLS` (not the `SUPERUSER` label) is the actual
+property that makes `FORCE ROW LEVEL SECURITY` meaningful, so this
+preserves the real security property regardless of Cloud SQL's
+superuser naming.
+
+**What shipped, real code (no real GCP resources created).**
+- `backend/Dockerfile.prod` (new) — multi-stage Cloud Run image
+  (`npm ci` deps stage, non-root `arcnave` user mirroring
+  `sandbox-service/Dockerfile:114-117`'s existing pattern, respects
+  `$PORT` already read in `backend/src/index.js:9`). Deliberately
+  separate from `backend/Dockerfile`, which CI's `docker compose exec
+  app npm run lint/typecheck/test` depends on having devDependencies
+  installed — untouched.
+- `backend/.dockerignore` — extended (`tests/`, `*.test.js`,
+  `coverage/`, `.env`) so `Dockerfile.prod`'s `COPY . .` doesn't ship
+  test files into the deploy image.
+- `backend/scripts/bootstrap-cloud-sql-roles.js` (new) — idempotent
+  (`DO $$ ... $$` catalog-check blocks, Postgres has no native `CREATE
+  ROLE IF NOT EXISTS`) three-role bootstrap + `CREATE EXTENSION IF NOT
+  EXISTS vector`/`pg_stat_statements`.
+- `backend/scripts/smoke-test.js` (new) — non-mutating, plain
+  unauthenticated `fetch` against a deployed `SMOKE_TEST_BASE_URL`:
+  `GET /api/v1/health` (`status: 'ok'` + pool stats,
+  `backend/src/tenantApp.js:143-157`), `GET /api/v1/openapi.json`
+  (routes registered, ADR-010), `GET /api/v1/students` with no token →
+  `401` not `500`/`502` (a verified concrete `requireAuth`-gated route,
+  `backend/src/routes/students.js:405-408` — catches boot
+  misconfiguration, e.g. a missing secret crashing a handler instead of
+  failing auth cleanly).
+- `.github/workflows/deploy-staging.yml` (new) — `workflow_dispatch`
+  only, **not** on every push, matching the existing
+  `ai-behavioral-suite` precedent (`ci.yml:129-148`) for a real
+  external-cost dependency staying manual until proven. Auth via
+  Workload Identity Federation (no long-lived JSON key). Migrations run
+  as a distinct Cloud Run Job execution, separate from the served
+  container's boot path — same "migrate is a distinct step from start"
+  pattern `ci.yml:71-78` already establishes locally/CI, packaged for
+  Cloud Run. `--min-instances=1 --max-instances=1` — same "don't build
+  multi-instance coordination ahead of actually running multiple
+  processes" reasoning D1/C8 already used (ADL-075). Cloud Run service
+  deployed `--allow-unauthenticated` (Cloud Run's own IAM layer is not
+  the access boundary here — `smoke-test.js` makes plain
+  unauthenticated requests, same as a real user's browser would; the
+  app's own `authMiddleware`/`requireAuth` is the real security
+  boundary, identical to what the deployed app will rely on in
+  production). Every value this session's research did not directly
+  verify against live `gcloud` output (Cloud SQL's pgvector/
+  pg_stat_statements flag names, WIF binding syntax) is marked
+  `# VERIFY:` rather than stated as settled fact.
+- `STAGING-DEPLOY-RUNBOOK.md` (new, repo root — same convention as
+  `dependency-scan-baseline.md`) — the exact one-time `gcloud` setup
+  this workflow assumes: Artifact Registry (reusing sandbox-service's
+  repo), 2 GCS buckets, Cloud SQL instance, the 6 Secret Manager
+  entries (verified names from `docker-compose.yml`'s `:?` required
+  vars, plus 3 full-connection-string secrets), deploy service account
+  + WIF binding.
+
+**Explicitly out of scope this slice** — separate P4 line items, not
+started: O2 (gradual rollout/feature switches, gated on multiple server
+processes actually running), O8 (reliability targets/error budget/auto
+rollback — this slice only gets a manual smoke-test signal, no
+auto-rollback). No `gcloud` provisioning command was run.
+
+**Verification.** `backend/Dockerfile.prod` builds locally
+(`docker build -f backend/Dockerfile.prod ./backend`); real Cloud SQL
+bootstrap/deploy verification is impossible until the runbook's
+`gcloud` steps are actually run — full Docker suite/lint confirmed
+unaffected since none of these changes touch `backend/Dockerfile` or
+any file the existing suite covers.
+
+---
+
+## ADL-078
+
+### 5.5/5.6 (modernization P4) — bundle-size limit in CI: evidence-driven budgets, an entry-chunk naming fix, no chunking-structure changes
+
+**What prompted this.** O3 (ADL-077) landed; owner asked to work
+through the rest of P4. Triaged: O2 (gradual rollout) and O8
+(auto-rollback) are genuinely blocked on infra that doesn't exist yet
+(O2 explicitly gated on "multiple server processes actually running,"
+O8 needs real staging traffic to roll back from); "internal-use loop"
+and "score live traffic" are operational activities, not code. Started
+with 5.5/5.6 — the plan's own P4 bullet list scopes it specifically as
+"bundle-size limit in CI" (`ARCNAVE-modernization-english.md:638`),
+narrower than 5.5's other framing at line 640 ("build-tool and styling
+upgrades," a separate future Vite/Tailwind major-version slice) and
+5.3's router migration (also deferred — high blast radius, touches
+every route). 5.6's own text ("fine for an internal dashboard — just
+split the bundle") already matches what `vite.config.js` does today
+(`build.rollupOptions.output.manualChunks`); this closes it by
+guarding that outcome against silent regression, not by writing new
+splitting logic.
+
+**Evidence-driven budgets, not guessed ones — owner's own correction
+mid-plan.** The first plan draft proposed setting `size-limit` budgets
+before ever running a real build. Owner required running `npm run
+build` first and configuring against the actual measured artifacts,
+with headroom stated and derived from real numbers — and explicitly
+required NOT touching `vite.config.js`'s chunking to make the check
+pass (an implementation agent "solving" a budget failure by
+restructuring `manualChunks` would defeat the guardrail's entire
+point).
+
+**Real problem found during the measurement step.** The actual eager
+entry chunk builds to `index-[hash].js` by Vite's default naming — but
+an unrelated *lazy* chunk (some component's own `index.jsx`) also
+builds to `index-[hash].js`. A `size-limit` glob for "the entry
+bundle" would ambiguously match both, and new same-named lazy chunks
+will keep appearing over time as more `index.jsx` files get added —
+not a one-off fluke. Flagged to the owner rather than silently
+resolved either way (guess-glob past the collision, or skip the
+entry-chunk budget entirely) — owner chose the fix: one line in
+`vite.config.js`, `build.rollupOptions.output.entryFileNames:
+'assets/app-entry-[hash].js'`. This renames ONLY the entry's output
+file; confirmed byte-identical size before/after the rename
+(701.94kB/206.74kB gzip both times) — proof it's a naming change, not
+a chunking change, and doesn't cross the owner's own stated line.
+
+**What shipped, real code, Docker/local-verified.**
+- `frontend/vite.config.js` — the one-line `entryFileNames` addition
+  above, with a comment distinguishing it from `manualChunks`
+  (untouched).
+- `frontend/package.json` — `size-limit`/`@size-limit/file`
+  devDependencies (installed with `--legacy-peer-deps`, matching the
+  existing react19/next-themes peer-conflict workaround
+  `.github/workflows/ci.yml`'s frontend job already uses), a `"size":
+  "size-limit"` script, and a `size-limit` config array: 5 budgets
+  (app-entry chunk, vendor-radix, vendor-query, vendor-react, main
+  CSS), each the real measured gzip size from an actual `npm run
+  build` plus ~20% headroom (entry 206.74kB→248KB, vendor-radix
+  44.27kB→54KB, vendor-query 25.74kB→31KB, vendor-react 12.45kB→15KB,
+  CSS 23.14kB→28KB) — documented in `ci.yml`'s new step comment since
+  `package.json` (JSON) can't hold comments itself.
+- `.github/workflows/ci.yml` — new `Bundle size limit` step in the
+  `frontend` job, after the existing `Build` step, running `npm run
+  size` against the build the previous step just produced.
+
+**Verification.** `npm run build && npx size-limit` — all 5 budgets
+pass against real output. Sanity-checked the gate actually fails:
+temporarily set the entry budget to `1 KB`, confirmed a real failure
+(`exit code 1`, "exceeded by 205.32 kB"), then restored the real
+248 KB value. Full frontend suite unaffected: `npm run lint` (0
+errors, 88 pre-existing warnings, none in changed files), `npm run
+typecheck` (clean), `npm test` (45/45 files, 552/552 tests passing).
+`npm run format:check`'s 68 pre-existing flagged files are untouched
+by this change (confirmed by filename, none are files this slice
+edited) — a pre-existing baseline issue, not a regression introduced
+here.
+
+
+---
+
+## ADL-079
+
+### 5.12 (modernization P4) -- isolated error boundaries: two layers, a mid-plan target correction, hand-rolled to protect the just-landed bundle budget
+
+**What prompted this.** 5.5/5.6 (ADL-078) landed; next P4 item. 5.12's
+own gap: "No layered error boundaries -- one broken widget can crash the
+whole app." Confirmed by grep: zero existing boundaries anywhere in
+`frontend/src/` before this session.
+
+**Design, approved before implementation.** Two layers, not one per
+route file -- `frontend/src/components/AppShell.jsx:275` already
+renders every route's content through a single `<Outlet />` while
+`AppShell` itself stays mounted across navigations, so wrapping that
+one `Outlet` isolates "this page crashed" from the persistent sidebar
+for all 31+ routes uniformly, without 31 near-identical wrappers.
+Hand-rolled (`getDerivedStateFromError`/`componentDidCatch`, no hook
+equivalent exists), not `react-error-boundary` as a dependency -- this
+session had just added a strict bundle-size CI gate (ADL-078)
+specifically to guard the existing bundle shape; adding a runtime
+dependency for a ~20-line class component the very next slice would be
+an odd first withdrawal from that new budget.
+
+**Reset mechanism deliberately left to inspection, not prescribed
+up front -- owner's own correction to the first plan draft.** The
+first draft specified `key={location.pathname}` and "keyed by `code`"
+before any code had been read. Owner required stating the *behavior*
+(navigating away must clear a caught error; a different Mermaid source
+must get a fresh attempt) and inspecting the real component structure
+before committing to a mechanism. Inspection confirmed `key` remounting
+was in fact the right fit both times, but for a reason only visible
+from the real code: `AppShell.jsx:75` already destructures `const {
+pathname } = useLocation()` in the same function scope the `Outlet` is
+rendered in -- the value was already there, not something to newly wire
+up.
+
+**Real target correction found during inspection, not assumed.** The
+original plan's widget-level candidate was `MermaidDiagram` (wrapping
+`frontend/src/components/Markdown.jsx:170-171`'s `<MermaidDiagram
+code={code} />` call). Reading `MermaidDiagram.jsx` in full first
+(the same discipline O3 established) showed it already catches its own
+`mermaid.render()` failures in a `.catch()` and falls back to showing
+the raw source text -- it can never throw during React's render phase,
+so a boundary around it would be dead code. The actually-fragile
+surface, found by reading `Markdown.jsx` completely rather than
+stopping at the first plausible-looking `dangerouslySetInnerHTML`
+match: `remark-math`/`rehype-katex` (both already dependencies,
+wired at `Markdown.jsx:4-5,211-212`) parse arbitrary AI- or
+user-authored markdown/LaTeX synchronously inside `<ReactMarkdown>`'s
+own render call and can throw on malformed input -- a real "untrusted
+input crashes a widget" shape CLAUDE.md rule 9 already names. Retargeted
+the widget-level boundary to wrap `<ReactMarkdown>` itself rather than
+`MermaidDiagram` specifically; `MermaidDiagram` sits inside that same
+tree, so it's still covered as a bonus, not left unguarded.
+
+**What shipped, real code, local-verified.**
+- `frontend/src/components/ErrorBoundary.jsx` (new) -- class component,
+  `fallback`/`label` props, logs via `console.error` (no new logging
+  abstraction). No built-in retry-counter state -- resets purely via the
+  caller's own `key` change, documented in the component's own comment
+  so a future reader doesn't wonder where "reset" logic went.
+- `frontend/src/components/AppShell.jsx` -- `<Outlet />` wrapped in
+  `<ErrorBoundary key={pathname} label="page">`.
+- `frontend/src/components/Markdown.jsx` -- `<ReactMarkdown>` wrapped in
+  `<ErrorBoundary key={children} label="content">` (`children` is the
+  raw markdown source string at every real call site, confirmed by
+  grep across `ArtifactEditor.jsx`/`ChatMessage.jsx`/
+  `CollapsibleContent.jsx` before using it as a `key`).
+- 3 new test files: `ErrorBoundary.test.jsx` (fallback on throw,
+  normal children unaffected, key-change clears a caught error);
+  `AppShell.test.jsx` (a custom `<Routes>` tree with a throwing test
+  route, reusing `renderApp.jsx`'s own provider stack -- sidebar-equivalent
+  nav stays mounted and clickable when the routed page throws, and
+  navigating away recovers); `Markdown.test.jsx` (`react-markdown`
+  mocked to throw on a specific input -- proves the wiring directly
+  rather than depending on a specific real malformed-LaTeX string
+  reliably throwing in whatever KaTeX version is installed today).
+
+**Verification.** `npm run lint` (0 errors, 88 warnings, unchanged
+baseline), `npm run typecheck` (clean), `npm test` (48/48 files,
+560/560 tests -- 552 pre-existing + 8 new, all passing), `npm run build
+&& npm run size` (all 5 ADL-078 budgets still pass; entry chunk grew
+206.32kB->206.59kB gzip, comfortably inside the 248KB budget -- the two
+new small components did not meaningfully move it).
+
+
+---
+
+## ADL-080
+
+### 5.10 (modernization P4) -- accessibility audit: root-cause config fix (57->9 warnings), then real per-site fixes for the rest
+
+**What prompted this.** 5.12 (ADL-079) landed; next P4 item. 5.10's own
+plan text: "P0 (lint), P4 (full)" -- P0 already turned
+`eslint-plugin-jsx-a11y`'s ruleset on in `frontend/eslint.config.js`,
+kept at `warn` with its own comment naming ~10 findings as deferred to
+this phase. Real count at start of this session, measured not
+guessed: 57 `jsx-a11y` warnings across 23 files.
+
+**Root cause found before fixing individual sites, not assumed.**
+`eslint.config.js:58`'s own transform was `Object.keys(jsxA11y.configs.recommended.rules).map((rule) => [rule, 'warn'])`
+-- reading every rule NAME from jsx-a11y's own recommended config but
+discarding the VALUE entirely. Confirmed by reading
+`node_modules/eslint-plugin-jsx-a11y/lib/index.js` directly (same
+verify-the-actual-installed-behavior discipline as O3/5.5-5.6/5.12):
+this threw away two things upstream deliberately set.
+1. `label-has-for` is `'off'` in the real recommended config
+   (superseded by `label-has-associated-control`) -- re-enabling it
+   picked up its unconfigured strict default, `required: { every:
+   ['nesting', 'id'] }`, which demands BOTH an htmlFor/id pair AND DOM
+   nesting on every label, stricter than real accessibility needs.
+   This alone accounted for 18 of the 57 warnings.
+2. `control-has-associated-label`'s real recommended entry is `['off',
+   { ignoreElements: ['input', 'textarea', 'audio', 'canvas', 'embed',
+   'tr', 'video'], ... }]` -- deliberately excluding `<input>`/
+   `<textarea>` because their labeling is `label-has-associated-
+   control`'s job, not this rule's (meant for icon-only buttons/custom
+   controls with no `<label>` available). Losing that option list made
+   this rule wrongly flag every properly `<label>`-associated `<input>`
+   in the app.
+
+**Fixed at the root, not per-symptom.** `eslint.config.js`'s transform
+now preserves each rule's own recommended severity AND options,
+downgrading `'error'`->`'warn'` (matching this file's stated intent —
+"kept at warn so CI is green") without ever upgrading a rule upstream
+deliberately left `'off'`. This single change dropped the count from
+57 to 9 with zero markup changes — confirmed by re-running the exact
+count command used to scope the session before touching a single
+component file.
+
+**The remaining 9 got individual, per-site judgment, not a mechanical
+pass** (matching the approved plan's explicit instruction: never
+manufacture a fake role/tabIndex/keyboard handler where a real
+alternative already exists).
+- `AppShell.jsx` (2 sites) — a hover-reveal panel (`onMouseEnter`/
+  `onMouseLeave` only) turned out to need NO change at all once the
+  config was fixed: upstream's own `no-static-element-interactions`
+  `handlers` option (`onClick`/`onMouseDown`/`onMouseUp`/`onKeyPress`/
+  `onKeyDown`/`onKeyUp`) never included hover events in the first
+  place — confirming the earlier reasoning (EdgeTrigger is the real
+  keyboard entry point) without needing a disable comment; one was
+  added then removed once this became clear. The mobile-drawer close
+  div (`onClick={() => setMobileNav(false)}`) kept a disable comment:
+  its `onClick` only ever fires via bubbling from Sidebar's own real,
+  keyboard-activatable links, and `Dialog.Root` already provides
+  Escape/focus-trap dismissal independently.
+- `ComposerAttachmentStrip.jsx` — a `tabIndex={0}` scrollable `<ul>`
+  is the WAI-ARIA APG's own recommended technique for keyboard-
+  operable horizontal scroll regions; disabled with that reasoning
+  rather than adding a role that would cost the list its real `list`
+  semantics.
+- `CorrectionRequestDrawer.jsx` — a `<label>` with no real associated
+  control (a section heading text, not describing any single input —
+  the search box and each student checkbox already carry their own
+  `aria-label`) was mislabeled semantically; changed to a plain
+  `<span>` rather than inventing a fake association.
+- `PersonalDocuments.jsx` (2 sites, list + grid view) —
+  `aria-selected` on `role="button"` is a real ARIA/role mismatch
+  (`aria-selected` is only valid on selection-modeling roles like
+  option/row/tab, not button); changed to `aria-pressed`, button's own
+  toggle-state attribute, matching what clicking these rows actually
+  does.
+- `StaffView.jsx`/`StudentsView.jsx` — an overlay backdrop div missing
+  `aria-hidden="true"`, the same pattern `AppShell.jsx`'s own backdrop
+  already used correctly one component over; added it.
+- `AdmissionWizard.jsx`/`BulkImportDrawer.jsx` — the two label sites
+  fixed mechanically (id/htmlFor pairing) before the root-cause
+  transform was found; left as-is since the extra explicit pairing is
+  still fully correct, just no longer strictly required by the fixed
+  config.
+
+**Verified by more than the linter.** `getByLabelText` (Testing
+Library's own DOM label-association algorithm, not jsx-a11y's static
+analysis) confirmed the id/htmlFor pattern actually resolves an
+accessible name in an isolated render; `getByRole('button', {
+pressed: true })` confirmed the `aria-pressed` fix produces a real,
+queryable pressed state.
+
+**Out of scope, as planned:** no manual screen-reader/keyboard-only
+testing (code can't self-certify that); `react-hooks/exhaustive-deps`
+and `no-unused-vars` warnings in the same files left untouched
+(different rule category); `jsx-a11y` rules left at `warn`, not
+promoted to `error` (a separate later decision once this baseline is
+proven clean over time).
+
+**Verification.** `npm run lint` — 0 `jsx-a11y` warnings (57→0), 31
+total warnings remaining (all pre-existing `react-hooks/exhaustive-
+deps`/`no-unused-vars`, untouched), 0 errors. `npm run typecheck`
+clean. `npm test` — 48/48 files, 560/560 tests, no regression. `npm
+run build && npm run size` — all 5 ADL-078 budgets still pass (entry
+206.59kB, unchanged from the 5.12 checkpoint — markup-only changes, no
+bundle growth). `npm run format:check` clean on every file this slice
+touched.
+
+
+---
+
+## ADL-081
+
+### 5.11 (modernization P4) -- design-system doc: color/type/shadow token reference + honest 3-primitive component catalogue
+
+**What prompted this.** 5.10 (ADL-080) landed; next P4 item. Owner had
+already approved this slice's plan in a prior session (with two
+corrections: preserve `tint`/`mist`/`active`'s real distinct-surface
+semantics when compressing the token comments for scanability, rather
+than flattening them into one "light blue" entry; document the 3 real
+`components/ui/` primitives exactly as they are today, not as a
+conventional design-system catalogue would assume). That plan was
+never written to disk, so this session re-verified everything against
+current code rather than trusting the remembered summary.
+
+**Re-verified against code, not assumed from the prior session's
+recall.** Read `frontend/src/index.css`'s `:root` block and
+`frontend/tailwind.config.js` in full; read all 3 files in
+`frontend/src/components/ui/` (`CopyButton.jsx`, `Drawer.jsx`,
+`IconButton.jsx`) in full. Confirmed by direct grep, not memory: `grep
+-rn "cva(" frontend/src` returns zero matches (`class-variance-
+authority` is an installed dependency, used nowhere); no shared
+`Button`/`Badge` primitive exists -- four separate feature-specific
+badge components stand in for it (`SeatStateBadge.jsx`,
+`StaffNavCountBadge.jsx`, `StudentNavCountBadge.jsx`,
+`StudentOriginBadge.jsx`); a `FIELD`/`MENU_ITEM`/`TOOL_BTN`-shaped
+local style-constant pattern is duplicated (not shared) across 14
+files, named as a "Known gap," not fixed here -- that's a separate
+multi-file refactor.
+
+**Also fixed while in the area.** `CLAUDE.md` cited
+`frontend/src/components/ui/badge.test.jsx` as an existing
+behavior-testing pattern reference -- that file does not exist (no
+`Badge` primitive exists to test). Repointed the citation to
+`frontend/src/components/AppShell.test.jsx`, which is a real file and
+follows the same behavior-not-markup pattern.
+
+**Output.** New `bka/50-frontend/DESIGN-SYSTEM.md` -- current source
+of truth for the token system (ground plane, tinted fields, text ramp,
+accent, warm, lines, status families, typography, shadows) and the
+3-primitive component catalogue, distilled from the code's own
+in-source rationale comments rather than replacing them. Does not
+supersede `bka/50-frontend/design-tokens.md`, which was already marked
+superseded on 2026-08-07 and kept only as historical record.
+
+**Out of scope, as planned:** the `FIELD`/`MENU_ITEM`/`TOOL_BTN`
+duplication (documented as a known gap, not fixed); no `cva()`
+migration (nothing currently uses it, so there is nothing to migrate);
+no new `Badge` primitive (the 4 existing feature-specific components
+are documented as-is, per the owner's "document reality, not a
+conventional catalogue" correction).
+
+**Verification.** Documentation-only change (`bka/50-frontend/
+DESIGN-SYSTEM.md` new, `CLAUDE.md` one-line citation fix) -- no
+frontend source touched, so `npm test`/`npm run build` are not
+applicable to this slice; every specific claim in the new doc (file
+counts, grep results, file lists) was verified directly against
+current code before being written, not carried over from the prior
+session's unwritten plan.
+
+
+---
+
+## ADL-082
+
+### 5.4 (modernization P4) — scope narrowed to notifications-only; sidebar bell placement — Resolved, pending implementation
+
+**What prompted this.** Owner asked to "start 5.4." Checkpoint's newest
+banner (2026-09-03) listed 5.4 as still remaining; an earlier banner
+(2026-09-01) said "5.4 BOTH HALVES SHIPPED." Verified against code, not
+docs, before acting on either claim: both SSE backend routes
+(`GET /background-jobs/:id/stream`, `GET /notifications/stream`) exist
+and are committed (`0fc6cda`/`899c738`), confirming the backend half is
+genuinely done — but `grep -rn "/notifications" frontend/src` and
+`grep -rn "background-jobs" frontend/src` both return nothing: no
+frontend feature consumes either stream, and no frontend feature even
+creates a background job. The checkpoint's "remaining" framing and the
+plan's own "notifications are polled today" wording (`ARCNAVE-
+modernization-english.md` row 5.4) don't match what's actually in the
+frontend — there's no polling to replace because there's no
+notifications UI at all.
+
+**Decision 1 — scope.** Asked the owner via `AskUserQuestion` whether to
+build a notifications UI (the only one of the two SSE routes with a real
+data-producing feature already using it — AI tools already draft/submit
+notifications) and leave background-job SSE as unwired backend capacity
+until something actually creates a background job to watch, or to
+attempt both. **Owner chose notifications-only.**
+
+**Decision 2 — placement.** The redesigned shell deliberately has no top
+header bar (`FRONTEND-REDESIGN-HANDOFF.md` §1: "no top header bar... old
+`TopBar.jsx`'s omnibox/notifications/settings" was separate legacy
+chrome, since removed — confirmed via `find` returning zero `TopBar*`
+files today). No locked pattern determines where a live notification
+affordance goes. Asked the owner; **chose a sidebar bell icon with an
+unread-since-last-open badge, opening a popover** — closest fit to the
+locked Claude-style sidebar shell, reusing `SourcesPopover.jsx`'s
+existing Radix `Popover` + token-class convention rather than inventing
+new chrome.
+
+**Ran a full Product Reasoning pass before implementing** (per
+`CLAUDE.md`'s "new feature touching frontend+backend" rule) — no visual
+mockup exists for this, so Source A was "none supplied," reasoned from
+Sources B/C/D instead. Page contract:
+[`60-product-reasoning/notification-bell.md`](../60-product-reasoning/notification-bell.md).
+Approved Spec:
+[`60-product-reasoning/notification-bell-approved-spec.md`](../60-product-reasoning/notification-bell-approved-spec.md)
+— OUT OF SCOPE there records background-job UI, a manual draft-
+notification compose form, the Settings/Notifications tab, server-
+tracked read state, and a full-page notification history view, all
+`EXISTING CAPABILITY / RELATED / UNWIRED` or `FUTURE`, none built here.
+
+**Real constraint found during spec-writing, not assumed:** the
+`notifications` table (`backend/migrations/1753100000000_module-8-
+notification-ledger.js`) has no `read_at` or per-recipient row — it is a
+college-wide outbound-announcement ledger (Draft → Approved → Rejected →
+Dispatched), not a personal inbox. The Approved Spec's "unread" badge is
+therefore explicitly scoped as a client-side, session-local
+"changed-since-I-last-opened-this" affordance (`localStorage`,
+per-user-id), not a claim about server-tracked read state — avoids
+inventing a read-state contract the schema doesn't have.
+
+**Status:** Resolved — pending implementation. Next: build
+`frontend/src/api/notifications.js` (list + fetch-based SSE reader, GET
+variant of `ai.js`'s existing `streamRequest` pattern — native
+`EventSource` can't carry the required Bearer `Authorization` header)
+and `frontend/src/components/NotificationBell.jsx`, wired into
+`Sidebar.jsx` beside `SidebarUtilityCluster`, gated by
+`useAuth().can('notifications.read')`.
+
+
+---
+
+## ADL-083
+
+### 5.3 (modernization P4) — TanStack Router scaffold, isolated island, real cutover strategy deferred as its own decision
+
+**What prompted this.** Owner asked to "start 5.3." Real blast radius,
+measured not guessed: `react-router-dom@6.27` (latest `7.18.3`),
+classic declarative `<Routes>/<Route>` (no data router), 33 route
+files, ~140 call-sites of router hooks/`Link`, 47 `<Route>` entries in
+`App.jsx` alone. Already flagged in the checkpoint as needing its own
+scoping pass, same caution as 1.16/4.6 — not attempted blind.
+
+**Decision 1 — which router.** [ADL-072](#adl-072) already decided the
+TS migration is gradual, additive-only, new-files-only. A genuine
+"type-safe router" only pays off if route files are real TypeScript,
+which puts React Router v7's *Framework mode* (its only mode with real
+route typegen) off the table on its own: Framework mode is Remix's
+SSR/full-stack convention set, and 5.5's own plan text ("fine for an
+internal dashboard — just split the bundle") already rejected SSR for
+this app. Asked the owner in Tanglish what the genuinely modern 2026
+choice is for a Vite SPA that explicitly isn't doing SSR; recommended
+**TanStack Router** — real compile-time type inference for paths/
+params/search-params, framework-agnostic, no SSR requirement — and the
+owner agreed. TanStack's own route *tree* can live entirely in new
+`.tsx` files that import existing `.jsx` page components as leaf
+elements, so adopting it does not by itself force converting any
+existing page component to TypeScript — additive-only compliant.
+
+**Decision 2 — how much this session.** Offered three sizes: full
+migration in one pass, a scaffold-plus-verified-slice, or stopping for
+a lower-risk path-constants module instead. Owner picked the scaffold.
+
+**Real architectural risk found while building the scaffold, not
+assumed going in — this is the actual reason "migrate a route" and
+"migrate the whole app" can't be split into small independent slices
+the way most of this thread's other P4 items have been:** swapping the
+app's root provider from react-router-dom's `<BrowserRouter>` to
+TanStack's `<RouterProvider>` breaks every one of the ~140 existing
+router-hook call-sites **app-wide**, the instant it happens, regardless
+of which individual routes were "migrated" yet — `useNavigate`/
+`useParams`/`useLocation` throw outside a react-router `<Router>`
+context, and running two independently-owned History-API listeners
+against the same browser history at once is not a documented, verified-
+safe pattern (each side calls `pushState`/reacts to `popstate` on its
+own). Neither risk was worth taking on unverified inside a scaffolding
+pass.
+
+**What actually shipped, given that constraint.** `@tanstack/react-
+router@^1.170` added. `frontend/src/router-preview/routeTree.tsx` (new,
+real `.tsx` — root route + an index route + a `/students/$studentId`
+typed-param route, `Link`/`useParams` both compile-time checked against
+the route tree's own types) and `RouterPreviewIsland.jsx` (mounts
+`RouterProvider`). Registered as its **own isolated, unauthenticated
+top-level route** (`/router-preview/*`, alongside `/login`, outside
+`ProtectedRoute`) in `App.jsx` — a real, live, browser-verified proof
+that TanStack Router genuinely works with this app's actual Vite/React
+19/Tailwind stack and real `tsc --noEmit` type-checking, without
+touching the real route tree, without swapping the root provider, and
+without any coexistence risk (the wildcard leaf means react-router-dom
+matches `/router-preview/*` once and never re-evaluates as TanStack
+navigates beneath it).
+
+**Explicitly NOT decided or done this pass — the real cutover strategy
+is its own separate, still-open decision, not silently assumed:** how
+the eventual swap actually happens (all-at-once root-provider swap
+timed with a full call-site migration in one release, vs. some other
+coexistence mechanism not yet identified as safe) is unresolved. This
+scaffold proves the destination is real and reachable; it does not
+prove a safe path to it, and that path is what the next 5.3 pass has to
+scope before touching any real route.
+
+**Verified live.** `npm run typecheck` clean (the route tree's own
+types check for real — a wrong `Link` `to`/`params` pair would be a
+real `tsc` error here, verified by reading the file, not just "no
+errors reported"). `npm run lint` unchanged baseline (32 warnings, 0
+errors, none in new files). `npm test` 49/49 files, 564/564 tests, no
+regressions. Live in the browser (Vite dev server, no Docker needed —
+the island is unauthenticated): `/router-preview` renders the index
+route; direct navigation to `/router-preview/students/demo-001` renders
+the typed param route with `studentId` correctly resolved; `/login`
+still renders exactly as before, confirming zero interference with the
+real app. Console/network showed only the pre-existing, expected `/api/
+v1/auth/refresh` 500s (no backend running on this host, same standing
+constraint every other slice this session has hit) — nothing from the
+new files.
+
+
+---
+
+## ADL-084
+
+### 3.4 (modernization P4) — reinterpreted correctly, then fixed a real live-caught bug: list_institutional_documents crashed the whole agent turn on a bad filter name
+
+**What prompted this.** Owner asked to "start 3.4." An earlier session's
+own checkpoint claimed 3.4 = "the Documents Institutional/Personal
+tab-merge, still-mockup-only." Verified against code, not docs, before
+acting: `frontend/src/features/documents/routes/DocumentsView.jsx`
+already has that exact tab merge, built and working — one route
+(`/curriculum/documents`), Institutional/Personal as tabs in a single
+page. The earlier interpretation was simply wrong.
+
+**Re-read the plan doc's own placement, not just its one-line text.**
+`ARCNAVE-modernization-english.md` row 231 ("Merge the document paths
+into one clear route") sits inside **Part 3 — AI "skills"**, directly
+under a flowchart whose stated problem is "Several overlapping ways to
+handle a document, so the AI gets confused." That context — not a
+frontend nav merge — points at the AI's own document-handling tool
+paths (`search_documents`, `list_institutional_documents`,
+`personal_notes_*`, `manage_project_document`, `generate_document`,
+plus the separate chat-attachment extraction path items 2.1-2.5 already
+describe).
+
+**Static read found no real ambiguity in the tool definitions
+themselves** — each institutional-document tool's `description` already
+cross-references its siblings clearly (`get_document_version_history`:
+"use after list_institutional_documents/search_documents has already
+resolved a document id"). Reported this back to the owner rather than
+assuming the plan's complaint was baseless; owner asked to check real
+AI behavior before deciding, not settle for static analysis alone.
+
+**Docker is available on this host now** (was not, per every earlier
+banner's standing constraint this session — `docker version` confirmed
+a live Docker Desktop 4.82.0 daemon; flagged to the owner as a real
+environment change before using it, since a live run means real,
+billable Vertex/Gemini calls — owner approved).
+
+**Added category M (`scripts/ai-behavioral-suite.js`) — 4 scenarios
+checking which document tool a real model picks for a request that
+could plausibly map to more than one.** First live run surfaced a real,
+concrete bug, not fixture noise: `m2` ("show me every circular filed
+under ECE") correctly had the model call `list_institutional_documents`
+with `category: "Circulars"` — but that category doesn't exist in the
+suite's seeded tenant, and the tool's own resolver rejected, which
+propagated uncaught out of the whole agent turn (`answer: null`, no
+graceful message at all). Read the code to find why: this tool's own
+sibling, `resolve_document_destination` (registered directly above it
+in `aiToolRegistry.js`), was already built with `resolveOptionalField`
+— never throws, returns `{ value, error }` per field — specifically so
+a guessed/wrong destination name becomes a clear message the model can
+relay, not a crash. `list_institutional_documents` took the identical
+kind of category/department/academic_year params but never got that
+same treatment. Two tools doing the same conceptual thing, one safe one
+not, is exactly a real, live instance of "overlapping document paths"
+causing confusion — just at the code-robustness layer, not the tool-
+selection layer the plan's wording suggested.
+
+**Fix — `aiToolRegistry.js`'s `list_institutional_documents` handler.**
+Switched to the same `resolveOptionalField` pattern
+`resolve_document_destination` already uses; an unresolved filter now
+degrades to an empty result instead of throwing.
+
+**Real regression caught and avoided before shipping, not assumed
+safe.** First draft returned `{ documents, filterErrors }` on an
+unresolved filter — read `aiExperience/sectionBuilder.js` before
+shipping and found its table/chart rendering keys off
+`Array.isArray(data)` generically for every tool's result; wrapping
+this one tool's result in an object would have silently broken its
+rendered table into a raw key-value dump in the chat UI. Reverted to a
+bare array on every path (success or unresolved filter) — the contract
+every existing renderer already expects — and added one sentence to
+the tool's own `description` telling the model an empty result can mean
+a named filter didn't match, so it doesn't need the result shape itself
+to carry that.
+
+**Also fixed:** `scripts/ai-behavioral-suite.js`'s `cleanupTenant` was
+missing `personal_notes` in its delete order — `m3` (correctly calling
+`personal_notes_create`) left a row that broke teardown with a real FK
+violation, caught live on the first run.
+
+**Verified live, before and after.** Before the fix: `m2` — `[FAIL]
+unexpected error: no document category found named "Circulars" in this
+college`, `answer: null`. After: `m2`'s `list_institutional_documents`
+call shows `"status":"ok"` (no crash); the run's actual pass/fail outcome
+for `m2`/`m4` after the fix is limited by the suite's fixture seeding no
+real institutional documents at all (a separate, known, undecided gap —
+not this fix's job to close), not by the crash this fix targeted. Full
+backend suite in Docker: **2979/2979, clean, no regressions.**
+`npm run lint`/`typecheck` clean in both `backend/` and (unrelated to
+this specific fix but re-verified) `frontend/`.
+
+**Out of scope, not assumed:** seeding real institutional-document
+fixture data into the suite's tenant (would make M's own pass/fail
+signal fully clean, not attempted this pass — a scoped addition of its
+own); the weaker, fixture-limited `m1` double-tool-call observation from
+the first run did not reproduce on the second (LLM run-to-run variance,
+same category this project's other behavioral scenarios already
+document) — not chased further as a separate finding.
+
+
+---
+
+## ADL-085
+
+### O2/O3 (modernization P4) — deferred indefinitely, owner decision — Resolved
+
+**What prompted this.** Every P4 banner since O3's own code-complete
+checkpoint (ADL-077) has repeated the same unresolved flag: O2 (gradual
+rollout) and O3 (staging environment)'s real GCP infra — Cloud SQL,
+Cloud Run, Secret Manager — was never provisioned, deliberately, and
+`STAGING-DEPLOY-RUNBOOK.md` was written for a human to run those
+`gcloud` commands themselves, not for an agent to run unattended. Owner
+asked to "check O2/O3 status with owner" — asked directly, in chat, per
+the standing P0-P5 mandate's own new-investment stop condition (real
+infra spend is exactly the class of decision that mandate does not let
+an agent make unilaterally).
+
+**Decision: defer O2/O3 indefinitely, not a gap to keep re-flagging.**
+ARCNAVE is still pre-launch — real staging infra is an ongoing cost with
+no live users yet to justify it. This is a deliberate, recorded
+deferral, the same status this project already gives other declined-
+for-now infra (off-host backup storage, a Langfuse tracing stack — both
+cited by O2/O3's own earlier banner text as the same "no deploy target
+exists" reasoning).
+
+**What this changes going forward.** O2/O3 stay code-complete
+(`backend/Dockerfile.prod`, `bootstrap-cloud-sql-roles.js`,
+`smoke-test.js`, `deploy-staging.yml`, `STAGING-DEPLOY-RUNBOOK.md`, all
+already committed per ADL-077) and infra-not-provisioned, by design —
+future sessions should NOT re-ask about O2/O3 status each time P4 comes
+up; the runbook is ready whenever the owner decides to run it
+themselves (or asks for it again explicitly), but this is not a standing
+open question to surface unprompted.
+
+**No code changed this pass** — decision-only.
+
+---
+
+## ADL-086
+
+### O5 (modernization P5, first item) — SBOM + dependency policy gate + keyless build signing — Resolved
+
+**What prompted this.** P4 closed (ADL-085); the standing P0-P5
+mandate's own plan (`ARCNAVE-modernization-english.md` P5 section) has
+no further ordering within P5 — O5 was picked first because it is the
+one item in that list provably buildable with zero new investment (free
+tooling only) and no infra dependency on the O2/O3 staging deferral.
+
+**Built:**
+1. **SBOM (Software Bill of Materials, CycloneDX 1.6 JSON), one per
+   package, generated in CI.** Backend: `@cyclonedx/cyclonedx-npm`
+   (pinned `6.0.0` exactly, not `^6.0.1` — see the version note below),
+   new `npm run sbom` script. Frontend: **not** the same tool — see
+   below.
+2. **Dependency policy gate**, real CI regression signal on top of the
+   already-informational `npm audit` step (P0). New
+   `<package>/scripts/audit-policy-gate.js` (backend) /`.cjs`
+   (frontend) reads `npm audit --json`, fails only on a HIGH/CRITICAL
+   advisory not already in that package's new `audit-allowlist.json`
+   (GHSA-URL-keyed, dated, reasoned). Every advisory
+   `dependency-scan-baseline.md` already called "informational, not
+   blocking" for a real reason (breaking major-version bump, dev-only
+   exposure) is now formally allowlisted with that same reasoning
+   duplicated into the allowlist file itself — `dependency-scan-
+   baseline.md` was also found stale during this pass (re-verified
+   against real `npm audit --json`, several entries had drifted since
+   2026-08-31) and refreshed alongside.
+3. **Keyless build-artifact signing (Sigstore/cosign, GitHub Actions
+   OIDC).** `.github/workflows/ci.yml` gained workflow-level
+   `permissions: { contents: read, id-token: write }`, a
+   `sigstore/cosign-installer@v3` step, and `cosign sign-blob --yes`
+   on each package's SBOM — no signing key generated, stored, or
+   rotated (the P0-P5 mandate's "new investment" stop condition does
+   not apply; Sigstore's keyless flow is free). Both SBOM + `.sig` +
+   `.crt` are uploaded as CI artifacts per package.
+
+**Real bug found and worked around, not papered over: cyclonedx-npm
+crashes against this repo's own already-tracked frontend peer-
+dependency conflict.** `frontend/`'s real, pre-existing (documented in
+`dependency-scan-baseline.md`/CI comments since P0) react19-vs-
+`@radix-ui` peer mismatch makes `npm ls` report `ELSPROBLEMS`.
+cyclonedx-npm's own documented escape hatch for exactly this
+(`--ignore-npm-errors`) instead throws `TypeError: Cannot read
+properties of undefined (reading 'code')` internally on this repo's
+npm/Node versions (Node 22 in CI, confirmed live, not assumed — tried
+`--ignore-npm-errors`, `--package-lock-only`, `--omit peer`, and
+combinations, all either the same crash or the graceful-but-still-
+failing `ELSPROBLEMS` exit). **Resolved by not using the same tool for
+both packages**: frontend's CI SBOM step uses `anchore/sbom-action`
+(syft) instead — it scans the filesystem directly, never shells out to
+`npm ls`, so the crash never triggers. Backend has no such conflict;
+its local `cyclonedx-npm`-based `npm run sbom` stays and works
+reliably (confirmed via a real `docker compose exec` run, not just
+locally). This is a genuine per-package tooling split, not
+inconsistency for its own sake — recorded here so a future session
+doesn't "fix" the asymmetry by forcing one tool onto both.
+
+**Why `6.0.0` pinned exactly, not `^6.0.1` (the actual latest) for
+backend's local script:** `6.0.1` was tried first and does not error at
+all for backend (no peer conflict there) — the exact pin exists only so
+a future `npm update` doesn't silently pull in a version whose
+`--ignore-npm-errors` behavior might regress further for anyone who
+later tries reusing this same script for frontend-shaped conflicts;
+not itself required by any observed backend-side bug.
+
+**Verified:** both `audit-policy-gate` scripts tested against real
+`npm audit --json` output (pass on current known advisories, correctly
+allowlist-scoped). Both SBOMs generated successfully end-to-end
+(backend via `docker compose exec app npm run sbom`, confirmed the
+container's `./backend:/app` bind mount lands the file on the host
+directly, no `docker cp` needed; frontend's syft path verified via the
+tool's own documented CLI shape, not yet run inside this exact CI
+runner image — the actual GitHub Actions execution is real net-new
+behavior for this workflow, first live-verified proof happens on the
+next real PR/push, same as every other new CI step this project has
+ever added). Full Docker backend suite: **2979/2979**, unchanged from
+before this pass. `npm run lint`: backend 0 errors/123 warnings
+(unchanged baseline); frontend 0 errors/32 warnings (unchanged
+baseline) after a real fix — see below. Frontend `npm test`:
+**564/564**. Frontend build + `npm run size`: clean, within budget.
+
+**One real, if minor, bug caught and fixed before it shipped:**
+frontend's `eslint.config.js` had no Node-globals override for a
+`scripts/` directory (only for three named root config files) —
+`scripts/audit-policy-gate.cjs`'s first lint run threw 8 real
+`no-undef` errors on `process`/`console`. Fixed by extending the
+existing Node-context block pattern to `scripts/**/*.{js,cjs}` rather
+than special-casing this one file, so any future Node CLI script under
+`frontend/scripts/` inherits the same override automatically.
+
+**Not built this pass, explicitly out of scope:** signing/verifying the
+backend's *container image* itself (not just its SBOM) — that needs a
+real image registry to push to, which doesn't exist yet (O2/O3 deferred
+per ADL-085); SBOM/signing for `sandbox-service/` (a separate package,
+not touched by this P5 pass, no plan doc line item names it); enabling
+`cosign verify-blob` as its own CI gate (nothing consumes these
+signatures downstream yet — this pass produces verifiable provenance,
+it does not yet enforce anyone check it, matching the plan's own O5
+wording, "list every dependency + sign build outputs + policy checks,"
+which does not itself demand a verification gate).
+
+---
+
+## ADL-087
+
+### 4.10 (modernization P5) — API version / retirement policy — Resolved, decision-only
+
+**What prompted this.** Second P5 item this session, picked next after
+O5 ([ADL-086](#adl-086)) because it is doc-only (no code, no infra,
+zero investment question) and independently startable.
+
+**Decision, full text: [ADR-031](adr-register.md#adr-031).** Summary:
+CLAUDE.md rule 5 (`/api/v1/` only) stays exactly as-is — this ADR does
+not introduce a `v2` prefix or touch any route. It specifies, for the
+day a genuinely breaking change is needed: what counts as breaking
+(vs. additive, never a version bump), the `Deprecation`/`Sunset` RFC
+8594 header mechanism plus a same-day `CHANGES.md` entry, and a
+6-month minimum support window (this internal tool's only real API
+consumer today is its own frontend — a full academic term to migrate
+every call site). Deliberately **no code shipped**: no route is
+deprecated today, so there is nothing real to attach header middleware
+to yet — matches this project's own "don't build speculatively"
+pattern (LaTeX/Mermaid, O2 gradual-rollout tooling).
+
+**No code changed this pass** — decision-only, no test suite to
+re-run.
+
+---
+
+## ADL-088
+
+### Prompt/model version registry + gradual-rollout primitive (modernization P5) — Resolved
+
+**What prompted this.** Third P5 item this session, picked next after
+O5 ([ADL-086](#adl-086)) and 4.10 ([ADL-087](#adl-087)) — code-only,
+no infra, independently startable. The plan's own "How the best teams
+actually write it" §4: "Reproducible. Same input and tools give the
+same result. Pin prompt versions and model versions."
+
+**Found before building anything: half of this already existed.**
+`aiModelVersionService.js` (CEO Vertex/Gemini audit #41) already
+detects MODEL version drift, and `GET /ai-config/ops-status` already
+surfaces it. `documentExtractionService.js` already versions its four
+extraction prompts (`*_PROMPT_VERSION` constants, already at v2 for
+two of them). What was genuinely missing: ADR-030's six real chat
+system-prompt modules (`aiPolicyAssembly.js`'s `CORE`/`CONTINUITY`/
+`TOOL_SELECTION`/`PLAN`/`FILE`/`ARTIFACT` — confirmed these are real,
+live code, not just the ADR's aspirational module names, by reading
+`aiPolicyAssembly.js` directly) carried no version identifier at all,
+and no single place existed to see every prompt version — chat and
+document-extraction — at once.
+
+**Built:**
+1. **`aiPolicyAssembly.js`** — non-invasive refactor: `buildPolicy`'s
+   six gating conditions now live in one shared internal
+   `resolveActiveModules(state)`, with `buildPolicy` and a new
+   `getActiveModuleNames` as thin projections of it — `buildPolicy`'s
+   return value is byte-identical to before (verified: `ai-policy-
+   assembly.test.js`'s existing ~15 assertions all still pass
+   unmodified), so this is additive, not a rewrite of live behavior.
+2. **`aiPromptVersionRegistry.js`** (new) — `CHAT_MODULE_VERSIONS`
+   (all six seeded `v1`, an honest baseline — no prior version history
+   existed to recover), `computePromptVersionTag(activeModuleNames)`
+   (e.g. `CORE@v1+TOOL_SELECTION@v1`), and `describePromptVersions()`
+   (same read-only-introspection shape as `featureFlags.js`'s own
+   `describeFeatureFlags`), which reads `documentExtractionService.js`'s
+   four existing version constants directly (newly exported for this,
+   never re-declared as a second copy) rather than duplicating their
+   literal values.
+3. **`GET /ai-config/prompt-versions`** (new route, `ai_config.read`,
+   same platform-wide/no-tenant-resolution posture as the sibling
+   `GET /ai-config/feature-flags` immediately above it in
+   `routes/aiConfig.js`).
+4. **Wired into `aiService.js`**: `buildDecisionContext` computes
+   `promptVersionTag` once (from the same `policyState` object already
+   passed to `buildPolicy`, never a second copy of those five fields —
+   avoids exactly the two-copies-drift risk `resolveActiveModules`
+   itself was built to avoid one layer down) and threads it through to
+   `decide`, which now logs one `ai_decision_versions` line carrying
+   both halves — `promptVersionTag` and the model/modelVersion
+   `aiModelVersionService`'s own drift check already reads.
+   Diagnostics-only (`logInfo`, never read back by any code path) —
+   confirmed via the full `ai-service.test.js`/`ai-service-media-
+   support.test.js`/`ai-service-token-preflight.test.js`/`ai-
+   providers.test.js`/`ai-service-guardrail-reinforcement.test.js`
+   suites (330 tests) that this cannot have touched the ADL-050
+   segment-sharing invariant — it adds a plain string field to a
+   returned data object, never touches a segment.
+5. **`resolveRolloutBucket(seed, percent)`** (new, in `featureFlags.js`)
+   — a deterministic FNV-1a hash-bucketing primitive for "gradual
+   rollout for prompt and model changes." Distinct from O2's general
+   app-version gradual rollout (deferred indefinitely, ADL-085 — that
+   needs multiple server processes actually running to shift traffic
+   between): a prompt/model variant choice happens inside one
+   already-running process, so it needs no new infra. **Not wired to
+   any real flag yet** — same "mechanism specified and ready, not
+   forced onto anything real" posture [ADR-031](adr-register.md#adr-031)
+   (API deprecation headers) just established: nothing currently needs
+   a partial rollout. Explicitly scoped `seed`-based, not per-tenant —
+   `featureFlags.js`'s own stated design boundary ("PROCESS-LEVEL
+   BEHAVIOUR TRIAL, never tenant-facing") is preserved, not revisited.
+
+**Real, pre-existing bug found and deliberately NOT fixed here, out of
+scope:** while blob-checking the true staged (LF) content of every
+touched file against `prettier --check` (to separate real formatting
+debt from this Windows checkout's own CRLF noise — `core.autocrlf=true`
+was independently confirmed to make ~40-70 untouched files across the
+repo falsely appear to need reformatting, purely a local-disk artifact,
+not a real repo problem), `aiService.js` was found to carry **genuine,
+pre-existing** formatting debt in four blocks this session never
+touched (`arcnaveContext`'s `buildContext` call in
+`executeWorkflowPlan`, `resolveTurnContext`'s and `fetchTools`'s
+function signatures, and one destructure in `askAgent`) — confirmed
+real (not CRLF noise) by running `prettier --check` against the exact
+git-staged blob content inside the Linux container. This means
+`npm run format:check` would currently fail in real CI for this file,
+independent of this session's changes — flagged here rather than
+silently fixed (would have bloated this P5 diff with unrelated
+reformatting) or silently ignored. **Also newly discovered this
+session: `gh run list` shows this repo's CI has never actually executed
+on real GitHub Actions** (P0's own `.github/workflows/ci.yml` exists
+and has been Docker-verified locally every round since, but zero real
+runs exist) — every prior round's "format:check clean" claim was true
+against a local Docker/Linux check, never against an actual GitHub
+Actions run. Neither of these is this pass's to fix; both are real,
+worth a future session's attention.
+
+**Verified:** `ai-policy-assembly.test.js` — the existing suite
+unmodified/passing plus 3 new tests confirming `getActiveModuleNames`
+never disagrees with `buildPolicy` across every gate combination.
+`ai-prompt-version-registry.test.js` (new, 7 tests). `feature-
+flags.test.js` — 6 new `resolveRolloutBucket` tests (determinism, 0/100
+edge cases, real ~N% distribution over 5,000 seeds, non-constant
+output). Full Docker backend suite: **2994/2994** (2979 + 15 new).
+`npm run lint`: 0 errors, 123 warnings (unchanged baseline).
+`npm run typecheck`: clean. Migrate up/down not applicable (no schema
+change — every new field is additive JS, no migration).
+
+---
+
+## ADL-089
+
+### O7 (modernization P5) — Infrastructure-as-code (Terraform) — Resolved, code-only
+
+**What prompted this.** Fourth P5 item this session, picked next after
+O5/4.10/the prompt-model-registry item — code/config-only, same
+"provable without new investment" bar the earlier items used, and a
+natural fit given `STAGING-DEPLOY-RUNBOOK.md` (O3, ADL-077) already
+documents the exact resources needed as manual `gcloud` commands.
+
+**Built: `infra/terraform/`** — the same resources
+`STAGING-DEPLOY-RUNBOOK.md` already names, as Terraform instead of
+prose-plus-commands: 2 GCS buckets (`storage.tf`), a Cloud SQL Postgres
+16 instance + database with the same pgvector/pg_stat_statements flags
+and point-in-time recovery enabled (`cloud_sql.tf`), 6 Secret Manager
+secret **containers only, never a value** (`secrets.tf` — committing
+real secret material into a `.tf` file would defeat the entire point
+O6 exists to solve), and a deploy service account + 5 least-privilege
+IAM role bindings + Workload Identity Federation scoped to this exact
+GitHub repo, no downloaded JSON key ever (`iam.tf`).
+
+**Deliberately not duplicated into Terraform:** the three DB roles
+(`arcnave_admin`/`arcnave_app`/`arcnave_platform`, ADR-015) —
+`backend/scripts/bootstrap-cloud-sql-roles.js` already owns that
+idempotently; recreating it in HCL would create two sources of truth
+for the same three-role separation. The Artifact Registry repo — reused
+from `sandbox-service`'s existing one, no new repo needed (matches the
+runbook's own section 1).
+
+**Code-only, not applied — same status as O3 itself.** ARCNAVE is
+pre-launch (ADL-085's own reasoning: real GCP infra cost isn't
+justified without live users yet). Nothing here was run against real
+GCP. **Stronger verification than O3 had, though**: this session
+downloaded the Terraform CLI (`terraform_1.9.8_windows_amd64`, network
+access only, no GCP credentials) and ran `terraform fmt`/`terraform
+init -backend=false`/`terraform validate` — the last of these actually
+checks every resource argument against the real `hashicorp/google`
+provider's schema (v6.50.0), catching a real typo class (wrong
+attribute name, wrong type) that a human proofreading `gcloud` commands
+alone cannot. `terraform validate`: **Success.** Still not a
+`terraform plan` against a live project — no credentials for
+`project-8bcf740a-a7bd-4aea-974` exist in this environment, the same
+honest limitation O3's own scripts already carried.
+
+**No `.terraform/` state or provider binaries committed** — new
+`infra/terraform/.gitignore` excludes them; `.terraform.lock.hcl` (the
+provider version pin) IS committed, standard Terraform practice. Full
+apply instructions, and the explicit reminder to keep this in sync with
+`STAGING-DEPLOY-RUNBOOK.md` if either changes: `infra/terraform/README.md`.
+
+**Verified:** `terraform fmt -check` clean, `terraform validate`
+Success. No backend test suite applies — no backend/frontend code
+touched this pass.
+
+---
+
+## ADL-090
+
+### 5.13 (modernization P5) — npm workspaces + Turborepo build cache — Resolved
+
+**What prompted this.** Fifth P5 item this session ("go ahead for
+remaining" — the owner's own instruction to keep working through the
+list). Plan text: "No multi-package tooling: plain npm -> workspace +
+build cache tools."
+
+**Scoped deliberately conservative: a local-dev/DX convenience layer
+only, zero change to the actually-verified pipeline.** New root
+`package.json` (`"workspaces": ["backend", "frontend"]`) + `turbo.json`
+add `npm install` once at the root (symlinks
+`node_modules/arcnave-backend`/`arcnave-frontend` to the real
+directories, confirmed — no files moved or duplicated) and
+`turbo run <task>` for local lint/typecheck/format:check/build/test
+across both packages, with real content-hash-keyed local caching
+(measured: a repeated `turbo run lint` dropped from 10.7s to 49ms,
+`>>> FULL TURBO`). **`.github/workflows/ci.yml` and both Dockerfiles
+are byte-for-byte unchanged** — `git status` after this pass shows only
+the two new root files, `turbo.json`, and one `.gitignore` line
+(`.turbo/`). This was a deliberate choice, not an oversight: Docker's
+`backend` build context is `./backend` (docker-compose.yml), invisible
+to anything at the repo root, and CI's `frontend` job already installs
+independently via `actions/setup-node` — rewiring either to be
+workspace-aware would be exactly the kind of destabilizing structural
+change this project's own "measure before designing" discipline argues
+against for two packages with genuinely little cross-package coupling
+today (confirmed: no shared internal module exists between
+backend/frontend, per ADL-086's own note on this same question for
+SBOM tooling). If real coupling ever emerges, revisit whether Docker/CI
+should become workspace-aware then — not speculatively now.
+
+**`test` task explicitly marked `"cache": false`** in `turbo.json` —
+backend's test suite hits a real (Docker) Postgres; caching its result
+keyed only on source-file hashes would produce a false "cache hit" for
+a change in seed/fixture data the hash never captures. Every other task
+(lint/typecheck/format:check/build) is a pure function of source files
+and safely cached.
+
+**Real, expected non-issue caught and NOT chased further:** `turbo run
+format:check` fails on `arcnave-frontend` — this is the exact same,
+already-diagnosed Windows `core.autocrlf=true` checkout artifact this
+session's own O5/prompt-registry passes already confirmed is not real
+(the true git-staged LF blob passes `prettier --check` cleanly);
+turbo surfacing it is expected behavior (it runs the real
+`npm run format:check` script unmodified), not a new bug turbo
+introduced.
+
+**Verified:** `npm install` at root (added 4 packages — `turbo` +
+transitive — existing `backend`/`frontend` `node_modules` untouched,
+confirmed via `git status` showing zero diff on either package's own
+`package.json`/`package-lock.json`). `turbo run lint`: both packages
+run, 0 errors (same 123-warning baseline). `turbo run typecheck`:
+clean. `turbo run build`: frontend builds correctly (backend has no
+`build` script — turbo correctly skips it, standard documented
+behavior, not an error). Full Docker backend suite re-confirmed
+unaffected by the root-level addition: **2994/2994**, run from inside
+the already-running container, exactly as before this pass.
+
+---
+
+## ADL-091
+
+### D8 (modernization P5) — table partitioning — Resolved, deferred with measured baseline
+
+**What prompted this.** Sixth P5 item this session. Queried the real
+running `demo`-seeded Docker Postgres (`pg_stat_user_tables`) before
+designing anything, per this project's own "measure before designing"
+discipline. Largest table in the whole database: `audit_log`, 1,840
+rows / 1.28 MB. Everything else is smaller — several orders of
+magnitude below where PostgreSQL partitioning starts paying for its own
+complexity.
+
+**Decision: [ADR-032](adr-register.md#adr-032) — defer the build,
+record the analysis.** Building partitioning against zero real
+production data would be exactly the speculative-build pattern this
+project avoids elsewhere. What's recorded instead, so a future session
+doesn't re-derive it: `audit_log` is the clear candidate (append-only,
+every row has `created_at`, structurally the fastest grower by design);
+monthly RANGE partitioning on `created_at` is the named strategy;
+~10M rows/10GB or a real traced query-performance problem is the named
+trigger to actually build it. Neither condition exists today.
+
+**No code changed this pass** — decision-only, no test suite to
+re-run.
+
+---
+
+## ADL-092
+
+### O6/D1 (modernization P5) — deferred indefinitely, owner decision — P5 thread closed
+
+**What prompted this.** Both of P5's remaining items (O6 — secrets
+manager; D1's remaining read-replica half, the connection-pooler half
+already closed in P3 per ADL-075) need real, billed GCP infrastructure
+that doesn't exist yet. Asked the owner directly, per the standing
+P0-P5 mandate's own new-investment stop condition (real infra spend is
+exactly the class of decision this mandate does not let an agent make
+unilaterally) — offered three options (defer both, provision both now,
+or split — O6 now/D1 deferred).
+
+**Decision: defer both indefinitely — owner picked the same call as
+O2/O3 (ADL-085).** ARCNAVE is still pre-launch; real ongoing GCP cost
+(a Secret Manager instance, a second billed Postgres read-replica) has
+no live users yet to justify it. Same treatment as every other
+declined-for-now infra this project already carries (O2/O3, off-host
+backup storage, a Langfuse tracing stack).
+
+**What this changes going forward.** O6's groundwork already exists
+code-only (O7's Terraform, ADL-089, created the Secret Manager secret
+*containers* — no real values, no app wiring); D1's connection-pooler
+half stays closed (ADL-075), only the read-replica half is deferred.
+Neither should be re-asked about in a future P5/P6 banner unless the
+owner raises it again — same "stop re-asking" precedent ADL-085 already
+set for O2/O3.
+
+**P5 thread status: CLOSED.** Every item is now either shipped (O5,
+4.10, prompt/model version registry, O7, 5.13) or a deliberate, recorded
+deferral (D8 — ADR-032/ADL-091; O6/D1 — this entry). The standing
+P0-P5 modernization plan (`ARCNAVE-modernization-english.md`) has no
+further phase after P5.
+
+**No code changed this pass** — decision-only, no test suite to
+re-run.
+
+---
+
+## ADL-093
+
+### aiService.js Prettier formatting debt (flagged in ADL-088) — Fixed
+
+**What prompted this.** The owner asked to fix the pre-existing
+formatting debt ADL-088 found and deliberately left unfixed (four
+blocks — `executeWorkflowPlan`'s `arcnaveContext` build, `resolveTurn
+Context`'s and `fetchTools`'s function signatures, one destructure in
+`askAgent` — none touched by that session's own edits).
+
+**Fixed without the Windows CRLF-checkout noise this session's earlier
+work already diagnosed:** extracted the real git-committed (LF) blob
+directly (`git show HEAD:...`), ran `prettier --write` on THAT inside
+the Linux container, confirmed the diff touched only the same four
+already-named blocks (122 diff lines, 4 hunks — matches exactly),
+confirmed the result passes `prettier --check` cleanly, then replaced
+the working file with it via a plain byte copy (never `git checkout`,
+which would reintroduce CRLF and risk masking the fix under this
+checkout's own line-ending conversion). Purely cosmetic — no logic
+changed, confirmed by running the exact ADL-050-sensitive suites this
+project always re-checks after touching `aiService.js`
+(`ai-service.test.js` + 4 siblings, 352 tests) plus the full backend
+suite.
+
+**Verified:** `npm run lint` 0 errors/123 warnings (unchanged),
+`npm run typecheck` clean, full Docker backend suite **2994/2994**
+(unchanged from before this fix — confirms it's genuinely
+formatting-only).
+
+---
+
+## ADL-094
+
+### First real GitHub Actions run — two genuine bugs found and fixed, CI confirmed working for real
+
+**What prompted this.** ADL-088's other flagged finding (`gh run list`
+showed CI had never actually executed on GitHub Actions) — the owner
+asked to check whether it runs now. It didn't: `gh workflow run
+ci.yml --ref p0-modernization-foundation` returned `HTTP 404: workflow
+ci.yml not found on the default branch`. Root cause traced, not
+guessed: `.github/workflows/ci.yml` has only ever existed on
+`p0-modernization-foundation`, never on `master` (this repo's default
+branch) — GitHub Actions requires a workflow file to exist on the
+default branch before it's even discoverable for `workflow_dispatch`,
+and separately, `ci.yml`'s own `push`/`pull_request` triggers are
+scoped to `branches: [master]`, a branch this 79-commit effort has
+never merged into or opened a PR against. Repo-level Actions
+permissions were already fine (`allowed_actions: "all"`) — nothing
+needed re-enabling, the workflow simply never had a triggering event.
+
+**Resolved by opening [PR #2](https://github.com/sabarisv15/Project-ArcNave/pull/2)** (`p0-modernization-foundation` → `master`, explicitly NOT for merge — opening a PR is enough to fire the `pull_request` trigger using this branch's own `ci.yml`, without merging anything). Owner picked this option directly (over "just diagnose, don't act" or "merge to master now").
+
+**This produced ARCNAVE's first-ever real GitHub Actions run — and it
+found two genuine bugs immediately, both invisible to every prior
+Docker-only verification this whole P0-P5 effort has relied on:**
+
+1. **`docker-compose.yml`'s `GEMINI_ADC_PATH` volume mount had no
+   default fallback**, unlike the identical-shaped
+   `SANDBOX_INVOKER_KEY_PATH` line five lines below it, which already
+   used the correct `${VAR:-/dev/null}` pattern. With `GEMINI_ADC_PATH`
+   unset (true for CI — no `.env` exists there — and true for any
+   fresh dev machine before its first `gcloud auth application-default
+   login`), the mount evaluated to `:/app/.gcp/adc.json:ro`, which
+   Docker Compose can't even parse (`invalid spec: ... empty section
+   between colons`) — the `app` container never started, failing the
+   `backend` job at its very first real step. This was never
+   CI-specific: every session so far happened to already have
+   `GEMINI_ADC_PATH` set locally, so the bug was latent, not absent.
+   Fixed by applying the exact same `:-/dev/null}` fallback the
+   sibling line already modeled. Verified locally by explicitly
+   unsetting `GEMINI_ADC_PATH` (`env -u GEMINI_ADC_PATH docker compose
+   up -d app`) — container starts cleanly now, confirmed via the full
+   backend suite (2994/2994) run inside it.
+
+2. **11 frontend files genuinely failed `prettier --check` on the real
+   Linux runner** — a real, pre-existing bug this session's own earlier
+   local investigation (ADL-088/CURRENT-STATE's Windows
+   `core.autocrlf=true` diagnosis) had explicitly, correctly ruled out
+   as CRLF noise for every OTHER file it checked, but had not checked
+   these specific 11 against. Confirmed genuinely real (not another
+   CRLF false alarm) by extracting each file's true git blob and
+   running the pinned Prettier version (3.9.6, matching
+   `frontend/package.json`) inside a real `node:22-slim` Linux
+   container — same failure, same files, matching CI exactly. Fixed by
+   formatting those exact blobs and replacing the working files with
+   the result (never `git checkout`, which would reintroduce this
+   session's own CRLF checkout and risk masking the fix). Every diff
+   confirmed cosmetic only (re-indentation, line-wrap-at-120) before
+   applying — spot-checked `DocumentsView.jsx` (a re-indented JSX
+   block) and `routeTree.tsx` (JSX text re-wrap) directly.
+
+**Real methodological lesson, worth keeping:** a Windows checkout with
+`core.autocrlf=true` can produce BOTH false positives (this session's
+earlier ~40-70 file "failures" that don't exist in the real repo) AND
+mask true positives if never cross-checked against a real Linux
+environment — the 11 files here were part of that same noisy set
+locally, so nothing distinguished them from the ~57 false positives
+without actually running on Linux. Local CRLF-checkout `prettier
+--check` output is not sufficient evidence either way; only the real
+git blob (via `git show`/`git archive`, or a genuine Linux CI run)
+tells the truth.
+
+**Verified:** frontend `npm run lint` 0 errors/32 warnings (unchanged
+baseline), `npm run typecheck` clean, `npm test` **564/564** (unchanged
+baseline), `npm run build` clean. Backend: full Docker suite
+**2994/2994** with the docker-compose fix in place, re-confirmed after
+explicitly unsetting `GEMINI_ADC_PATH` to reproduce the exact CI
+condition. Both fixes pushed to `p0-modernization-foundation`;
+PR #2's own CI run is the authoritative next check — watch it, don't
+assume clean from local verification alone this time, since that's
+exactly the gap this whole entry exists to close.
+
+---
+
+## ADL-095
+
+### Second real CI run — 5.13's npm workspaces broke frontend's tsc install; 26 more backend files had real Prettier debt
+
+**What prompted this.** ADL-094's fixes were pushed and PR #2's CI
+re-ran — this entry covers what THAT run found, since it surfaced two
+more real, previously-invisible problems.
+
+**1. `backend`: 26 MORE files (beyond ADL-088/ADL-093's four and
+ADL-094's frontend eleven) genuinely fail `prettier --check` on the
+real Linux runner.** Confirmed real (not this Windows checkout's CRLF
+noise) the same way as every prior fix in this thread: extracted each
+file's true git blob, formatted it inside a `node:22-slim` container
+with the pinned Prettier version, confirmed every diff is cosmetic
+(re-wrapped long lines/object literals — spot-checked
+`aiGuardrailService.js` and `claude.js` directly) before applying.
+**Two files in this same failing list were deliberately left
+unfixed**: `src/services/aiProviders/gemini.js` and
+`tests/ai-providers.test.js` are mid-edit, uncommitted, by a concurrent
+session (a real Gemini model swap, "owner direction 2026-09-03",
+discovered live in the shared working tree — `git status` showed
+modifications to files this session never touched). Reformatting a
+file someone else is actively editing risks corrupting their
+in-progress work; left for that session (or a future pass) to fix
+alongside its own commit. `backend/src/routes/ai.js` and two untracked
+scratch files (`scripts/tmp-excel-export-probe.js`,
+`tmp-excel-probe-attachment.pdf`) were also found modified/created by
+that same concurrent session and were likewise left completely
+untouched, never staged.
+
+**2. A real regression, introduced by this session's OWN earlier work:
+5.13 (npm workspaces, [ADL-090](#adl-090)) broke the frontend CI job's
+`tsc` install.** The `frontend` job's `Typecheck` step failed with
+`Error: Unable to resolve @typescript/typescript-linux-x64` —
+TypeScript 7's native per-platform binary (an `optionalDependency`,
+`os`/`cpu`-gated) never got installed. Root-caused, not guessed: the
+root `package.json` 5.13 added declares `frontend`/`backend` as npm
+workspace members; running `npm ci` from INSIDE `frontend/` (exactly
+what `ci.yml`'s `working-directory: frontend` does, unchanged since
+before 5.13) now auto-infers `--workspace=frontend` from that ancestor
+file, and npm's workspace-hoisted install silently drops this specific
+class of `os`/`cpu`-gated optional dependency — a real, reproducible
+npm behavior, not flaky CI. **This is exactly the kind of regression
+ADL-090 explicitly claimed couldn't happen** ("zero risk to Docker/CI,
+confirmed via `git status`... only root files changed") — that claim
+was true for the FILES touched, but not for npm's own runtime
+behavior change once those files existed; a real gap in that earlier
+verification, worth naming plainly rather than glossing over.
+
+**Diagnosed and fixed with real evidence, not the first plausible
+guess:** tried (a) a nested `frontend/.npmrc` with `workspaces=false` —
+npm explicitly ignores it (`npm warn config ignoring workspace config
+at .../frontend/.npmrc`); (b) `npm_config_workspaces=false` as an env
+var — conflicts with npm's own auto-inferred `--workspace=frontend`
+(`Can not use --no-workspaces and --workspace at the same time`); (c)
+running `npm ci` from the monorepo ROOT instead of `frontend/` (with a
+COMPLETE, correct 3-lockfile repro — an earlier attempt at this was
+invalidated by a missing `backend/package-lock.json` and discarded, not
+reported as evidence) — still no `@typescript/typescript-linux-x64`,
+so moving the install location doesn't fix it either; (d) **the
+explicit CLI flag `--workspaces=false`, still run from inside
+`frontend/`** — this one worked, confirmed live in a clean container.
+`.github/workflows/ci.yml`'s frontend install step is now `npm ci
+--legacy-peer-deps --workspaces=false` — the minimal possible change
+(one flag, same command, same working directory), restoring this
+step's exact pre-5.13 standalone-install behavior. Documented as a
+real gotcha in root `package.json`'s own description, since a
+developer running a bare `npm ci` inside `frontend/` locally (the
+natural "reinstall this one package" instinct) would hit the identical
+failure.
+
+**Verified:** all 26 backend files pass `prettier --check` against
+their true blobs. Full Docker backend suite (with the concurrent
+session's own uncommitted `ai.js`/`gemini.js` changes still present,
+untouched) re-confirmed: **2994/2994**, `npm run lint` 0 errors/123
+warnings (unchanged). The `--workspaces=false` fix itself confirmed
+live in a clean `node:22-slim` container reproducing CI's exact
+`working-directory: frontend` + full workspace-root context — the
+platform TypeScript binary installs correctly. PR #2's next CI run is
+the authoritative confirmation this thread has been building toward —
+watch that, not this local verification, as the final signal.
+
+## ADL-096
+
+### D7 backup restore actually run for the first time — this is what turns "tooling exists" into "a tested backup"
+
+**What prompted this.** A code-level fact-check of the whole P0-P5
+plan (requested against the attached modernization PDF directly, not
+against this ledger's own "done" claims) found `scripts/restore-
+database.js`'s own header comment admitting it had never actually been
+run: "MUST be run at least once against a real restore target before
+this is considered 'a tested backup,' not just 'a backup that exists.'"
+D7 was marked done in `CURRENT-STATE.md` on the strength of the
+tooling existing, not on a real restore ever happening — exactly the
+kind of doc/code gap this fact-check was hunting for.
+
+**What was actually done, live, against the running Docker stack
+(`gstack-db-1`, `gstack-app-1`):**
+1. `docker compose exec app node scripts/backup-database.js` — real
+   `pg_dump -Fc` against the admin role, wrote
+   `storage-backups/arcnave-db-backup-2026-09-04T02-12-07-323Z.dump`
+   (1.07 MB).
+2. `docker compose exec app node scripts/restore-database.js --latest
+   arcnave_restore_test` — restored that dump into a fresh disposable
+   database. Real result: **98 tables in the public schema, `colleges`
+   table with 190 rows** — not an empty schema, real tenant data
+   round-tripped through dump→restore correctly.
+3. Disposable `arcnave_restore_test` database dropped immediately
+   after verification (no lingering state).
+
+**Verified:** the restore path works end-to-end against this repo's
+actual schema/data shape, using the actual scripts as they exist in
+the repo today — no script changes were needed, the tooling was
+already correct. D7 is now genuinely "a tested backup," not just "a
+backup that exists." Off-host storage remains the one deliberately
+deferred half (per the script's own header comment) — no change to
+that, still correctly scoped to "once there's a real deploy target to
+protect."
+
+## ADL-097
+
+### 2.1 native PDF reading actually built — additive only, RS-AIG-019 kept intact
+
+**What prompted this.** The same code-level fact-check found `2.1`
+(clash C9, "send PDFs as real documents... counting stays on the exact-
+maths path") was marked done in `CURRENT-STATE.md` on the strength of
+`fileIntelligenceRouter.js` classifying a PDF into
+`NATIVE_MULTIMODAL_DOCUMENT` — but `aiService.js`'s
+`resolveChatAttachments` never actually branched on that category.
+Every chat-attached PDF silently fell straight through to the old
+text-extraction-only path; the router's classification was dead for
+this category. Corrected in `CURRENT-STATE.md` directly (see that
+file's 2.4/2.5 entry).
+
+**Why this isn't a simple "just wire it up."** `ADL-058 addendum`
+(2026-08-26) already measured native PDF reading and found it
+**cannot count** (2 vs 23 rows, 7 vs 839, 16 vs 1,603) and **does not
+scale** (a 400-page PDF failed outright after 300s). The
+`ai-chat-file-intelligence-router-approved-spec.md` Approved Spec
+explicitly marks "any change to `verifyNumericClaims`'s advisory-only
+nature, or to the PDF/table trust architecture (ADL-055 through
+ADL-065)" as **BARRED**, citing `RS-AIG-019` — a real governance rule
+(10-specification, not just an ADL preference): the numeric-claim
+verifier re-parses "the data already retrieved for that same answer,"
+which only works if that data is the deterministic extracted text
+ARCNAVE controls. Sending only the raw PDF (replacing extraction)
+would have broken that mechanism outright — a business-rule conflict,
+one of the P0-P5 mandate's own two stop conditions, not merely an
+architecture decision the mandate's standing ADL-bypass covers. Owner
+was asked directly; answer: **native PDF reading is now the default
+for every college**, additive only.
+
+**What was actually built.** `backend/src/services/aiService.js`
+`resolveChatAttachments`: a PDF classified `NATIVE_MULTIMODAL_DOCUMENT`
+now, in addition to (never instead of) the unchanged text-extraction
+call below it, also gets pushed into the `media` array as
+`{ mimeType: 'application/pdf', base64, capability: 'multimodal_pdf' }`
+— gated by:
+- **Size** — `MAX_NATIVE_PDF_BYTES` (15 MB), a real bound tied to
+  ADL-058's own measurement (the working 23-row exam-fees PDF vs. the
+  failing 400-page sheet), not a guess.
+- **Per-college opt-out** (`native_pdf_attachments` configuration
+  category) — **inverted from the audio/video precedent on purpose**:
+  audio/video is opt-IN (no row = disabled); native PDF is opt-OUT (no
+  row, or a row without `enabled: false`, = enabled). Owner direction,
+  2026-09-04.
+- **Provider capability** — `resolveMediaSupport` now filters `media`
+  per-item by a `capability` tag (`multimodal_audio`/`multimodal_video`/
+  `multimodal_pdf`) instead of one blanket boolean, so a provider
+  lacking PDF support doesn't wrongly gate out audio/video or vice
+  versa. Gemini already carries `multimodal_pdf: true` in
+  `vertexCapabilityRegistry.js` for both curated models — no adapter
+  change needed there. An unsupported PDF item is dropped **silently**
+  (no `buildMediaUnavailableNote`-style user-facing note) — unlike
+  audio/video, a dropped native PDF part is harmless: the text
+  extraction that already ran unconditionally still carries the turn.
+
+**Verified.** 3 new tests in `backend/tests/ai-service.test.js`: default
+opt-out-enabled + extraction still runs; explicit `enabled: false`
+drops only the native part; an oversized PDF skips native (and never
+pays for the config read) while extraction is unaffected. Full
+`ai-service.test.js` (241/241), `ai-service-media-support.test.js`
+(4/4, confirms the per-item capability filter doesn't regress existing
+untagged audio/video items), `ai-providers.test.js` +
+`file-intelligence-router.test.js` (96/96) all green in Docker.
+
+## ADL-098
+
+### P0 item 1 (CI pipeline) — first real green run on GitHub Actions
+
+**What prompted this.** The same code-level fact-check flagged CI as
+the one P0 item that had never actually gone green on real GitHub
+Actions (7 of 8 runs on PR #2 had failed), despite `CURRENT-STATE.md`
+treating the pipeline itself as "done" since it was built. The two real
+backend test failures blocking every prior run were in
+`web-search-weather-service.test.js` (see line ~4702 of this file) —
+already fixed on this branch by the time this entry was written.
+
+**Result — run `33827703280` (PR #2, `p0-modernization-foundation`):
+both `backend` and `frontend` jobs passed in full**, including every
+step the plan's P0/P5 items depend on (lint, format check, typecheck,
+dependency audit gate, SBOM generation + cosign signing, migrate
+up→down→up, the full test suite, build, bundle-size limit). This is
+the authoritative confirmation this thread was waiting on — P0 item 1
+is now genuinely, not just structurally, done.
+
+## ADL-099
+
+### RS-AIG-008 amendment — user-facing, named per-turn model choice in the AI Composer
+
+**What prompted this.** Owner direction (2026-09-04): the AI Composer's
+static "Auto" label (`AIComposer.jsx`, next to `ScopeToggle`/
+`ThinkingLevelToggle`) becomes a real three-way picker — Gemini 3.8
+Flash / Claude Sonnet 5 / Claude Opus 5 — shown to the user **by real,
+named model**, replacing the always-server-decided default. A live
+Vertex probe the same session (this branch, 2026-09-04) confirmed both
+`claude-sonnet-5` and `claude-opus-5` are real, callable Vertex Model
+Garden ids on this project (200 responses), alongside the existing
+`gemini-3.8-flash` default (`vertexCapabilityRegistry.js`).
+
+**Why this needed a decision, not just code.** `RS-AIG-008` ("provider
+selection lives in configuration, per tenant") and `RS-AIG-027` ("no
+capability may ever be sourced from a frontend-supplied value") were
+read together by an initial research pass as barring this outright.
+On closer reading, `RS-AIG-027` governs *capability flags* (e.g. never
+trust a frontend claim that a model supports vision) — a caller
+choosing *which* curated, server-validated model to use is a different
+axis and doesn't trip it, since the resolved config is still built
+entirely server-side from a fixed allowlist, never from arbitrary
+frontend data. `RS-AIG-008` is the one that actually needed amending:
+its text scoped provider/model selection to tenant-level configuration
+only, with no per-turn, per-user axis. Owner explicitly chose the
+"amend governance, show real names" option over a neutral-tier-label
+alternative that would have kept `RS-AIG-008` untouched.
+
+**What was decided.** `RS-AIG-008` is amended (see that section's own
+text in `RS-AIG-ai-governance.md`) to add: per-turn model choice, from
+a fixed, server-side curated allowlist the user picks from in the
+Composer, is a second legitimate axis alongside per-tenant
+configuration — never an arbitrary frontend-supplied provider/model
+string. The CORE system-prompt provider-masking rule
+(`aiPolicyAssembly.js` — the assistant must never itself confirm which
+provider/model answered, even under direct/repeated questioning) is
+**unchanged and unrelated**: that rule governs what the model says
+inside its own answer; a user explicitly picking a labeled option in
+the Composer UI is a different, legitimate channel and doesn't weaken
+that in-conversation rule at all.
+
+**What was actually built.** `configurationService.js`'s new
+`MODEL_CHOICES` allowlist (`gemini-3.8-flash`/`claude-sonnet-5`/
+`claude-opus-5`) plus `resolveAiConfig`'s new `modelChoice` option,
+which — only when the label is in that allowlist — overrides the
+tenant's own provider/model resolution for that one turn (never
+persisted, never trusted past this one request). Threaded from
+`routes/ai.js`'s `askSchema`/`resolveAskContext` (new optional
+`model` field, same `.optional().nullable()` shape as
+`thinkingLevel`) through `aiService.askAgent` → `agentLoop.js` (both
+the Research-mode and Curriculum-mode config-resolution call sites) →
+`turnSetup.js`'s `fetchTools`. Frontend: `ModelSelectorToggle.jsx`
+(sibling to `ThinkingLevelToggle.jsx`, same segmented-button visual
+language), `EMPTY_COMPOSER.model` (`ComposerProvider.jsx`, `null` =
+let the tenant's own config decide — zero behavior change for a
+composer nobody has touched), threaded through `AIComposer.jsx`/
+`ChatView.jsx`/`ChatRoute.jsx`/`WorkspaceProvider.jsx`'s
+`sendMessage`/`editMessage`/`runAiTurn` the same way `thinkingLevel`
+already is, replacing the static "Auto" `<span>`.
+
+## ADL-100
+
+### claude.js: explicit prompt caching on the system prompt, both transports — live-verified real cache hit
+
+**What prompted this.** Investigating why the AI Composer's own token
+counter showed ~1,300–2,700 input tokens for a bare "hi"/"hai" turn
+(same session, following up on the greeting-fast-path measurement
+above): ADL-071 already built explicit Vertex prompt caching for
+**Gemini**, deliberately shipped OFF because the real system-prompt
+prefix (~2,578 tokens measured then) was below Vertex's ~4,096-token
+floor to even create a cache. Checking whether the same applied to
+**Claude** (newly reachable via today's Sonnet-5/Opus-5 model picker,
+[ADL-099](#adl-099)) found a structurally different, and better,
+situation: Anthropic's own minimum cacheable prefix is **1,024 tokens
+for Sonnet 5, 512 for Opus 5** — both comfortably below this
+codebase's own measured ~1,300–2,200 token system-prompt floor
+(`CORE`+`CONTINUITY`, `aiPolicyAssembly.js`). But `claude.js` never
+attached `cache_control` to the system prompt at all — only to the
+`tools` array's last entry (P1.2), so a zero-tool/greeting turn
+(`askGeneralChat`, or Curriculum's own greeting-classified fast path)
+had literally no cache breakpoint anywhere in the request, on either
+transport.
+
+**What was decided.** Wrap `system` in Anthropic's content-block array
+shape (`[{ type: 'text', text: systemPrompt, cache_control: { type:
+'ephemeral' } }]`) unconditionally, on every non-streaming and
+streaming call site (`completeWithMeta`, `completeStream`,
+`completeWithTools`) — never gated on prompt length, since Anthropic's
+own behavior for a below-minimum prefix is a silent no-op (inference
+still succeeds, prefix just isn't cached), the same graceful-degrade
+posture ADL-071's Gemini-side handle already follows. No Vertex-vs-
+direct-API branch needed for `cache_control` itself — confirmed via
+Google's own Claude-on-Vertex docs that the ONLY transport difference
+is the `anthropic-beta` header, which Vertex rejects outright and
+which `buildRequest` already only ever sends on the direct-API branch.
+
+**Live-verified, real Vertex calls** (`project-8bcf740a-a7bd-4aea-974`,
+`claude-sonnet-5`, this session): two back-to-back `rawPredict` calls
+with the real `MODE_PREFIX.curriculum + CORE + CONTINUITY` text
+(5,362 chars, ~1,341 tokens) as the system prompt. Call 1:
+`cache_creation_input_tokens: 1715`. Call 2, identical prefix:
+`cache_creation_input_tokens: 0`, **`cache_read_input_tokens: 1715`**
+— a real cache hit, on a prefix size this codebase's own repeat-turn
+traffic already produces today, no padding needed.
+
+**Telemetry.** New `extractUsage(payload)` helper (replacing three
+duplicated `payload.usage ? {...} : undefined` blocks) adds
+`cachedTokens: payload.usage.cache_read_input_tokens` — a real
+0-or-positive number once wired at all, unlike Gemini's
+`cachedContentTokenCount` which is only present on an actual hit.
+`llmCall.js`'s `logLlmCall` already had a generic `cachedTokens` audit
+field (ADR-030 P3, previously Gemini-only) — this needed no schema
+change, just a stale comment correction noting Claude now populates it
+too, with the two providers' differing 0-vs-undefined semantics called
+out explicitly so a future query over that column doesn't conflate
+them.
+
+**Not done.** Gemini's own explicit-caching floor problem (ADL-071) is
+untouched — still below Vertex's 4,096-token minimum at today's real
+prompt sizes, still deliberately OFF. `completeStream`'s streaming
+`onUsage` path is wired but not independently live-verified against a
+real streaming Vertex call this session (only the non-streaming
+`rawPredict` probe above was run) — the code path is identical in
+shape to the already-verified non-streaming one (same `message_start`
+usage block Anthropic's SSE format documents), but flagged here rather
+than silently claimed as re-verified.
+
+**Verified.** `ai-providers.test.js` (72/72, one pre-existing test
+updated for the new `cachedTokens` key in the usage shape),
+`ai-service.test.js` + `ai-cost-control-service.test.js` +
+`ai-explicit-cache.test.js` (260/260) — all green in Docker.
+
+## ADL-101
+
+### `AI_EXPLICIT_CACHE` turned on — real telemetry, not a re-guess, meets ADL-071's own re-open condition
+
+**What prompted this.** Following ADL-100 (Claude-side caching), the
+owner asked directly whether the same re-open condition ADL-071 already
+set for Gemini's own explicit cache had actually been met — rather than
+re-run another synthetic estimate. ADL-071 (2026-08-31) shipped
+`AI_EXPLICIT_CACHE` OFF because its own synthetic measurement of a real
+`askAgent` decision-call prefix (principal role) was 2,578 tokens,
+below Vertex's hard ~4,096-token minimum to create a cache. A follow-up
+synthetic worst-case check earlier this session (Principal, all 100
+tools, no tool-search shortlist, every policy module active) reached
+only 3,725 tokens — still short, reinforcing the "not yet" read.
+
+**What changed the answer.** Queried the real `audit_log` table
+(`gstack-db-1`, this dev/test environment's own DB — 869 real
+`ai_llm_call` rows from actual LLM calls made during development and
+testing, not a synthetic estimate, though also not literal live-
+production end-user traffic since ARCNAVE is pre-launch) instead of
+guessing further:
+
+| purpose | n | count > 4,096 tok | % | median tok | p90 tok |
+|---|---|---|---|---|---|
+| tool_select | 504 | **161** | **31.9%** | 3,071 | **5,073** |
+| plan_synthesis | 197 | 0 | 0% | 1,734 | 1,734 |
+| tool_answer | 133 | 0 | 0% | 1,535 | 1,535 |
+| general_chat | 20 | 0 | 0% | 1,516 | 1,571 |
+
+Nearly a third of real `tool_select` (the main DECIDE-step) calls
+already exceed Vertex's floor, with a p90 well past it — real usage
+patterns (larger tool-search shortlists, longer real identity/focus
+context) produce bigger prefixes than either synthetic estimate
+captured. ADL-071's own re-open condition — "the stable per-turn
+prefix exceeds ~4,096 tokens for real roles, measured" — is met.
+
+**What was decided and built.** Turned `AI_EXPLICIT_CACHE` on:
+- `docker-compose.yml`'s `app` service `environment:` block had NO
+  mapping for this var at all before this change — `config.js` read
+  `process.env.AI_EXPLICIT_CACHE` but Compose only forwards vars it
+  explicitly lists, so setting it in `.env` alone would have silently
+  done nothing. Added `AI_EXPLICIT_CACHE: ${AI_EXPLICIT_CACHE:-false}`
+  alongside the existing `DEFAULT_AI_PROVIDER` mapping.
+- `.env` (this environment, not committed — gitignored) and
+  `.env.example` (committed, documents the var + this decision) both
+  set to `true`.
+- Container recreated (`docker compose up -d --force-recreate app`) and
+  confirmed live: `AI_EXPLICIT_CACHE=true` inside the running container.
+
+**Live-verified, real Vertex calls**
+(`explicit-cache-live-turn-probe.js`, 3 identical curriculum turns for
+the seeded `demo` college's principal): all 3 turns showed
+`cached=0` — this specific probe's real prefix (3,296 tokens,
+single-tool `students_low_attendance` shortlist) fell below the floor,
+same graceful no-op ADL-071 already documented, no errors. A second,
+broader multi-tool probe (3 tools shortlisted) reached 3,689 tokens —
+still short. Neither probe run happened to reproduce the >4,096-token
+tail the real `audit_log` telemetry shows 32% of the time; the caching
+mechanism itself was already separately proven at floor-crossing size
+by ADL-071's own original probe (a 4,678-token synthetic prefix cut to
+~13 billed tokens, 99.7%) and by ADL-100's live Claude proof this same
+session. Flipping the flag on for real traffic is expected to start
+hitting real cache reads specifically on the ~32% of `tool_select`
+calls already measured above the floor — not independently re-confirmed
+against a real >4,096-token production call this session, flagged here
+rather than silently claimed as proven at that specific size for
+Gemini.
+
+**Real bug this exposed and fixed.**
+`ai-explicit-cache.test.js`'s "off by default" test asserted
+`config.aiExplicitCache === false` against the ambient module value
+instead of forcing it for the test's own duration — passed only by
+accident of the environment happening to have the flag unset. Broke
+the moment this flag turned on. Fixed to explicitly set/restore
+`config.aiExplicitCache = false` around itself, the same save/restore
+pattern the adjacent "flag on" test already used — isolates the test's
+own claim from whatever a given environment has configured.
+
+**Verified.** `ai-explicit-cache.test.js` (5/5), full backend suite
+(3,034/3,035 — the one remaining failure is `aiProviders: every
+registered adapter implements the full common interface` /
+`perplexity_web_answer` role rejection, both caused by a concurrent,
+unrelated, mid-flight Perplexity-provider addition in this same working
+directory, not by this change; left untouched, not this session's
+scope).

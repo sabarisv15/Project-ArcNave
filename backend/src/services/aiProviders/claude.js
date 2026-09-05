@@ -13,12 +13,18 @@
 //                    location's plain aiplatform.googleapis.com host (no
 //                    region prefix, same real exception gemini.js already
 //                    documents) were live-verified against a real project
-//                    (project-8bcf740a-a7bd-4aea-974, claude-sonnet-5): a
-//                    429 RESOURCE_EXHAUSTED naming the real base model
-//                    confirms the request reached and was correctly
-//                    routed by the real endpoint — this project's Vertex
-//                    quota for Claude is 0 pending a Google-reviewed
-//                    increase, not a shape/auth problem.
+//                    (project-8bcf740a-a7bd-4aea-974). 2026-09-04 live
+//                    rawPredict probe: claude-sonnet-5 and claude-opus-5
+//                    both returned real 200 responses (quota is live and
+//                    usable — the previous 0-quota/429 state this comment
+//                    used to document has been resolved by a Google-side
+//                    quota increase). claude-sonnet-4-6/claude-opus-4-6/
+//                    claude-opus-4-5/claude-opus-4-1 were also tried as
+//                    candidate Model Garden ids and all 404'd — the GCP
+//                    Quotas page's "anthropic-claude-sonnet-4-6" base_model
+//                    label does not correspond to a real, callable Vertex
+//                    model id; claude-sonnet-5/claude-opus-5 are the real
+//                    ids for this project.
 //
 // If both are present, projectId wins — Vertex is configurationService's
 // only mechanism for this provider today (see its own globalClaudeConfig
@@ -90,7 +96,9 @@ async function getAccessToken(cfg) {
   const client = await getAuth().getClient();
   const { token } = await client.getAccessToken();
   if (!token) {
-    throw new LlmRequestError('Google ADC did not return an access token for Claude-on-Vertex — run `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS');
+    throw new LlmRequestError(
+      'Google ADC did not return an access token for Claude-on-Vertex — run `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS',
+    );
   }
   return token;
 }
@@ -129,6 +137,52 @@ function baseUrl(cfg) {
   return cfg.baseUrl || DEFAULT_BASE_URL;
 }
 
+// Prompt caching, system-prompt side (ADL-100, 2026-09-04) — the
+// `tools` array already had its own cache_control breakpoint (P1.2,
+// below); the system prompt itself never did, which meant a plain
+// conversational turn (askGeneralChat, or Curriculum's own
+// greeting-classified zero-tool path — turnSetup.js's own
+// zeroToolFastPathActive) had NO cache_control anywhere in the request
+// at all, on either transport. Anthropic requires `system` to be a
+// content-block array (never a bare string) for a block to carry its
+// own `cache_control` — this wraps the single system string this
+// adapter has always built into that one-block array shape, byte-
+// identical content, just addressable. Applied UNCONDITIONALLY (no
+// minimum-length gate here): per Anthropic's own docs, a prefix below
+// this model's real minimum (1,024 tokens for Sonnet 5, 512 for Opus
+// 5 — both comfortably below this codebase's own measured ~1,300–2,200
+// token system-prompt floor, aiPolicyAssembly's CORE+CONTINUITY) simply
+// isn't cached — the call still succeeds, same graceful-degrade
+// posture ADL-071's Gemini-side cache handle already follows (degrade
+// to inline, never throw). No Vertex-vs-direct-API branch needed here
+// either — the ONLY documented Vertex difference is that the
+// `anthropic-beta` header must be OMITTED (buildRequest above already
+// only ever sends it on the direct-API branch, never Vertex's), not
+// that `cache_control` itself works differently.
+function buildSystemField(systemPrompt) {
+  if (!systemPrompt) return systemPrompt;
+  return [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }];
+}
+
+// ADL-100 — cachedTokens alongside the existing inputTokens/outputTokens
+// extraction, sourced from Anthropic's own usage.cache_read_input_tokens
+// (a real 0-or-positive count Anthropic always reports once caching is
+// wired at all, unlike Gemini's cachedContentTokenCount which is only
+// present when a hit actually occurred — llmCall.js's own cachedTokens
+// field already tolerates either "a real number" or "undefined = no
+// signal" per-provider, so this honest difference needs no adapter-side
+// normalization). Centralized here (used by every non-streaming call
+// site below) so the three previously-duplicated `payload.usage ? {...}
+// : undefined` blocks can't drift on which fields they extract.
+function extractUsage(payload) {
+  if (!payload || !payload.usage) return undefined;
+  return {
+    inputTokens: payload.usage.input_tokens,
+    outputTokens: payload.usage.output_tokens,
+    cachedTokens: payload.usage.cache_read_input_tokens,
+  };
+}
+
 // bodyFields: { model, max_tokens, system, messages, tools? } — the
 // transport-agnostic request shape both completeWithMeta and
 // completeWithTools already build. Vertex's rawPredict/streamRawPredict
@@ -136,8 +190,11 @@ function baseUrl(cfg) {
 // difference from the direct API, which takes it from the body and has
 // no per-model URL segment at all) and needs anthropic_version as a body
 // field instead of a header; prompt-caching's anthropic-beta header has
-// no Vertex equivalent in this adapter yet (not exercised — this project
-// has zero Vertex quota for Claude to verify caching behavior against).
+// no Vertex equivalent — Vertex actually REJECTS that header outright
+// (confirmed against Google's own Claude-on-Vertex docs, ADL-100), which
+// is exactly why this branch never adds it below. cache_control itself
+// (buildSystemField, the tools-array breakpoint in completeWithTools)
+// needs no such branch — it works identically on both transports.
 async function buildRequest(cfg, bodyFields, verb) {
   if (isVertexMode(cfg)) {
     // model: encoded in the URL, never the body, on Vertex. stream: the
@@ -174,7 +231,10 @@ async function doFetch(url, headers, body) {
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
       return await fetch(url, {
-        method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal,
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
       });
     } catch (err) {
       throw new LlmRequestError(`request to Claude failed: ${err.message}`);
@@ -203,8 +263,29 @@ async function postJson(cfg, bodyFields) {
 // Token/cost telemetry (P1.1) — see openai.js's own comment for the
 // shared reasoning. Claude's usage block uses input_tokens/output_tokens,
 // not the OpenAI-compatible prompt_tokens/completion_tokens naming.
+// ARCNAVE modernization P2 / 1.6 — see gemini.js's own buildHistoryContents
+// comment for the shared reasoning (real prior turns, placed before the
+// current user turn, never after). Claude's own text-content-block shape.
+function buildHistoryMessages(historyTurns) {
+  if (!Array.isArray(historyTurns)) return [];
+  return historyTurns.map((turn) => ({ role: turn.role, content: [{ type: 'text', text: turn.content }] }));
+}
+
+// P3 1.12 — "forced-format replies only half-supported ... only two
+// providers enforce it natively." Anthropic's Messages API has no
+// OpenAI/Gemini-style responseSchema/response_format field — the
+// documented mechanism for forcing schema-conformant JSON output is a
+// single synthetic tool whose input_schema IS the desired schema, with
+// tool_choice forced to it (Anthropic's own recommended structured-
+// output pattern before they had a dedicated feature). Reuses
+// completeWithTools' own real `tools`/`input_schema` request shape
+// below, just with exactly one forced tool instead of the caller's real
+// tool list. NOT live-verified against a real Anthropic key (same
+// caveat this whole file's header already carries).
+const STRUCTURED_OUTPUT_TOOL_NAME = 'structured_output';
+
 async function completeWithMeta(cfg, arcnaveContext) {
-  const { systemPrompt, userPrompt, images } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, images, responseSchema, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey/projectId)');
   }
@@ -212,18 +293,43 @@ async function completeWithMeta(cfg, arcnaveContext) {
   const payload = await postJson(cfg, {
     model: cfg.model,
     max_tokens: MAX_TOKENS,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: buildUserContent(userPrompt, images) }],
+    system: buildSystemField(systemPrompt),
+    messages: [...buildHistoryMessages(historyTurns), { role: 'user', content: buildUserContent(userPrompt, images) }],
+    ...(responseSchema
+      ? {
+          tools: [
+            {
+              name: STRUCTURED_OUTPUT_TOOL_NAME,
+              description: 'Return the result as structured data matching the required schema.',
+              input_schema: responseSchema,
+            },
+          ],
+          tool_choice: { type: 'tool', name: STRUCTURED_OUTPUT_TOOL_NAME },
+        }
+      : {}),
   });
+
+  const usage = extractUsage(payload);
+
+  if (responseSchema) {
+    const blocks = Array.isArray(payload && payload.content) ? payload.content : [];
+    const toolUse = blocks.find((b) => b.type === 'tool_use' && b.name === STRUCTURED_OUTPUT_TOOL_NAME);
+    if (!toolUse) {
+      throw new LlmRequestError('Claude response did not contain the forced structured_output tool call');
+    }
+    // Callers of every other adapter's responseSchema path (gemini.js/
+    // openai.js) already expect a JSON-serialized STRING back (they
+    // JSON.parse it themselves, e.g. documentTextExtractionService's own
+    // safeJsonParse) — Anthropic parses tool_use.input into a real
+    // object for us, so it's re-serialized here to keep that same
+    // string contract rather than changing what every caller expects.
+    return { text: JSON.stringify(toolUse.input), usage };
+  }
 
   const block = payload && Array.isArray(payload.content) ? payload.content.find((b) => b.type === 'text') : null;
   if (!block || typeof block.text !== 'string') {
     throw new LlmRequestError('Claude response did not contain a text content block');
   }
-
-  const usage = payload && payload.usage
-    ? { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens }
-    : undefined;
   return { text: block.text, usage };
 }
 
@@ -250,18 +356,25 @@ async function complete(cfg, prompts) {
 // simply keeps overwriting rather than summing. Never called if neither
 // event carried a usage block, rather than reporting a fabricated zero.
 async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
-  const { systemPrompt, userPrompt, images } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, images, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey/projectId)');
   }
 
-  const { url, headers, body } = await buildRequest(cfg, {
-    model: cfg.model,
-    max_tokens: MAX_TOKENS,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: buildUserContent(userPrompt, images) }],
-    stream: true,
-  }, 'stream');
+  const { url, headers, body } = await buildRequest(
+    cfg,
+    {
+      model: cfg.model,
+      max_tokens: MAX_TOKENS,
+      system: buildSystemField(systemPrompt),
+      messages: [
+        ...buildHistoryMessages(historyTurns),
+        { role: 'user', content: buildUserContent(userPrompt, images) },
+      ],
+      stream: true,
+    },
+    'stream',
+  );
   const response = await doFetch(url, headers, body);
 
   if (!response.ok) {
@@ -272,6 +385,7 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
   let full = '';
   let inputTokens;
   let outputTokens;
+  let cachedTokens;
   for await (const payload of iterateSseLines(response)) {
     let event;
     try {
@@ -287,12 +401,17 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
       }
     } else if (event && event.type === 'message_start' && event.message && event.message.usage) {
       inputTokens = event.message.usage.input_tokens;
+      // ADL-100 — cache_read_input_tokens rides on the SAME message_start
+      // usage block as input_tokens (Anthropic reports it once, up front,
+      // never incrementally like output_tokens below), so it's captured
+      // here rather than needing its own event branch.
+      cachedTokens = event.message.usage.cache_read_input_tokens;
     } else if (event && event.type === 'message_delta' && event.usage) {
       outputTokens = event.usage.output_tokens;
     }
   }
   if (typeof onUsage === 'function' && (inputTokens !== undefined || outputTokens !== undefined)) {
-    onUsage({ inputTokens, outputTokens });
+    onUsage({ inputTokens, outputTokens, cachedTokens });
   }
   return full;
 }
@@ -310,9 +429,14 @@ function buildPriorTurnMessages(priorTurns) {
   return priorTurns.flatMap((turn) => [
     {
       role: 'assistant',
-      content: [turn.rawToolCall || {
-        type: 'tool_use', id: turn.callId, name: turn.toolName, input: turn.arguments || {},
-      }],
+      content: [
+        turn.rawToolCall || {
+          type: 'tool_use',
+          id: turn.callId,
+          name: turn.toolName,
+          input: turn.arguments || {},
+        },
+      ],
     },
     {
       role: 'user',
@@ -322,9 +446,7 @@ function buildPriorTurnMessages(priorTurns) {
 }
 
 async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
-  const {
-    systemPrompt, userPrompt, tools, images,
-  } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, tools, images, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey/projectId)');
   }
@@ -332,8 +454,9 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   const payload = await postJson(cfg, {
     model: cfg.model,
     max_tokens: MAX_TOKENS,
-    system: systemPrompt,
+    system: buildSystemField(systemPrompt),
     messages: [
+      ...buildHistoryMessages(historyTurns),
       { role: 'user', content: buildUserContent(userPrompt, images) },
       ...buildPriorTurnMessages(priorTurns),
     ],
@@ -359,11 +482,14 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   const toolUse = blocks.find((b) => b.type === 'tool_use');
   if (toolUse) {
     // ADR-030 P0 telemetry — see gemini.js's own equivalent comment.
-    const usage = payload && payload.usage
-      ? { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens }
-      : undefined;
+    const usage = extractUsage(payload);
     return {
-      type: 'tool_call', toolName: toolUse.name, arguments: toolUse.input || {}, callId: toolUse.id, rawToolCall: toolUse, usage,
+      type: 'tool_call',
+      toolName: toolUse.name,
+      arguments: toolUse.input || {},
+      callId: toolUse.id,
+      rawToolCall: toolUse,
+      usage,
     };
   }
 
@@ -371,21 +497,23 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
   if (!textBlock) {
     throw new LlmRequestError('Claude response contained neither a tool_use block nor a text block');
   }
-  const usage = payload && payload.usage
-    ? { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens }
-    : undefined;
+  const usage = extractUsage(payload);
   return { type: 'answer', text: textBlock.text, usage };
 }
 
 async function embed() {
-  throw new AiProviderCapabilityError('claude has no embeddings endpoint — configure a different provider for RAG/embedding features');
+  throw new AiProviderCapabilityError(
+    'claude has no embeddings endpoint — configure a different provider for RAG/embedding features',
+  );
 }
 
 // No image-generation endpoint (RS-AIG-025): Anthropic's Messages API has
 // no first-party image-generation capability, same honest-limitation
 // treatment embed() above already gets — never a silent no-op.
 async function generateImage() {
-  throw new AiProviderCapabilityError('claude has no image-generation endpoint — configure a different provider for this feature');
+  throw new AiProviderCapabilityError(
+    'claude has no image-generation endpoint — configure a different provider for this feature',
+  );
 }
 
 module.exports = {

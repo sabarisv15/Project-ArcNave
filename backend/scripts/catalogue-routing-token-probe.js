@@ -58,14 +58,19 @@ async function countTokens(body) {
 
 // --- Variant A: copied verbatim from aiService.js's real buildToolCatalogue/firstSentence (~lines 987-1002) ---
 function firstSentence(text) {
-  return String(text || '').split(/(?<=\.)\s/)[0].slice(0, 140).trim();
+  return String(text || '')
+    .split(/(?<=\.)\s/)[0]
+    .slice(0, 140)
+    .trim();
 }
 function buildCatalogueA(roleTools) {
   const lines = roleTools.map((t) => `${t.name} — ${firstSentence(t.description)}`).join('\n');
-  return 'EVERY tool available to you, by name. The ones already described in full above are ready to call '
-    + 'directly. For any OTHER name in this list, call describe_tools with that name first to get its '
-    + 'parameters — you cannot call it before doing so. If nothing here fits the question, say so plainly '
-    + `rather than answering as if you had checked.\n\n${lines}\n\nAlready described in full above: (n/a, floor measurement).`;
+  return (
+    'EVERY tool available to you, by name. The ones already described in full above are ready to call ' +
+    'directly. For any OTHER name in this list, call describe_tools with that name first to get its ' +
+    'parameters — you cannot call it before doing so. If nothing here fits the question, say so plainly ' +
+    `rather than answering as if you had checked.\n\n${lines}\n\nAlready described in full above: (n/a, floor measurement).`
+  );
 }
 
 // --- Variant B: "name + one-line when to use" — mechanically derived
@@ -86,8 +91,9 @@ function toWhenToUse(description, maxLen) {
 }
 function buildCatalogueB(roleTools) {
   const lines = roleTools.map((t) => `${t.name} — ${toWhenToUse(t.description, VARIANT_B_MAX)}`).join('\n');
-  return 'Tool routing guide — name and when to use it. If nothing below fits the question, say so plainly.\n\n'
-    + `${lines}`;
+  return (
+    'Tool routing guide — name and when to use it. If nothing below fits the question, say so plainly.\n\n' + `${lines}`
+  );
 }
 
 // --- Variant C: "ultra-short keywords" — Variant B's text with a
@@ -97,7 +103,8 @@ function buildCatalogueB(roleTools) {
 // re-cap shorter. Still derived from the real description, not
 // invented per tool. ---
 const VARIANT_C_MAX = 32;
-const LEADING_VERB_RE = /^(records?|returns?|lists?|shows?|fetches?|gets?|retrieves?|generates?|creates?|updates?|marks?|finds?|resolves?|drafts?)\s+(the\s+|a\s+|an\s+|one\s+)?/i;
+const LEADING_VERB_RE =
+  /^(records?|returns?|lists?|shows?|fetches?|gets?|retrieves?|generates?|creates?|updates?|marks?|finds?|resolves?|drafts?)\s+(the\s+|a\s+|an\s+|one\s+)?/i;
 function toKeywords(description) {
   const shortened = toWhenToUse(description, VARIANT_C_MAX + 25).replace(LEADING_VERB_RE, '');
   return toWhenToUse(shortened, VARIANT_C_MAX);
@@ -125,9 +132,15 @@ const CATEGORY_RULES = [
   [/^reports_/, 'REPORTS'],
   [/^draft_notification$|^request_notification_send$|^class_send_alert$/, 'NOTIFICATIONS'],
   [/^class_log_/, 'CLASS_LOG'],
-  [/document|^search_documents$|^upload_institutional_document$|^resolve_document_destination$|^analyze_document_table$|^manage_project_document$|^update_project_instructions$|^export_artifact|^list_own_artifacts$|^update_artifact_content$|^generate_document$/, 'DOCUMENTS'],
+  [
+    /document|^search_documents$|^upload_institutional_document$|^resolve_document_destination$|^analyze_document_table$|^manage_project_document$|^update_project_instructions$|^export_artifact|^list_own_artifacts$|^update_artifact_content$|^generate_document$/,
+    'DOCUMENTS',
+  ],
   [/^ai_memory_|^personal_notes_|^user_preferences_|^conversation_/, 'MEMORY_PREFS'],
-  [/^present_|^decide_output_format$|^decide_image_route$|^describe_diagram_constraints$|^generate_image$|^image_search$/, 'PRESENTATION'],
+  [
+    /^present_|^decide_output_format$|^decide_image_route$|^describe_diagram_constraints$|^generate_image$|^image_search$/,
+    'PRESENTATION',
+  ],
   [/^web_|^fetch_trusted_web_page$|^weather_fetch$/, 'WEB_EXTERNAL'],
 ];
 function categoryOf(name) {
@@ -141,9 +154,9 @@ function buildCatalogueD(roleTools) {
     if (!byCategory.has(cat)) byCategory.set(cat, []);
     byCategory.get(cat).push(t);
   });
-  const sections = [...byCategory.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(
-    ([cat, tools]) => `${cat}\n${tools.map((t) => `- ${t.name} — ${toKeywords(t.description)}`).join('\n')}`,
-  );
+  const sections = [...byCategory.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([cat, tools]) => `${cat}\n${tools.map((t) => `- ${t.name} — ${toKeywords(t.description)}`).join('\n')}`);
   return 'Tool routing guide, grouped by category.\n\n' + sections.join('\n\n');
 }
 
@@ -182,18 +195,25 @@ async function main() {
   console.log('\n\n=== SAMPLE Variant D output (Principal, first 12 lines) ===');
   console.log(rows[0].sampleVariantD);
 
-  console.log('\n\n=== SUMMARY TABLE (raw countTokens totals, floor NOT subtracted — includes the fixed DUMMY_CONTENTS) ===');
-  console.log('role       | tools | A(current) | B(one-line) | C(keywords) | D(category) | B saving | C saving | D saving');
+  console.log(
+    '\n\n=== SUMMARY TABLE (raw countTokens totals, floor NOT subtracted — includes the fixed DUMMY_CONTENTS) ===',
+  );
+  console.log(
+    'role       | tools | A(current) | B(one-line) | C(keywords) | D(category) | B saving | C saving | D saving',
+  );
   rows.forEach((r) => {
     const bSave = (((r.variantA_current - r.variantB_oneLine) / r.variantA_current) * 100).toFixed(1);
     const cSave = (((r.variantA_current - r.variantC_keywords) / r.variantA_current) * 100).toFixed(1);
     const dSave = (((r.variantA_current - r.variantD_category) / r.variantA_current) * 100).toFixed(1);
     console.log(
-      `${r.role.padEnd(11)}| ${String(r.totalTools).padEnd(6)}| ${String(r.variantA_current).padEnd(12)}| `
-      + `${String(r.variantB_oneLine).padEnd(13)}| ${String(r.variantC_keywords).padEnd(12)}| ${String(r.variantD_category).padEnd(12)}| `
-      + `${bSave}%     | ${cSave}%     | ${dSave}%`,
+      `${r.role.padEnd(11)}| ${String(r.totalTools).padEnd(6)}| ${String(r.variantA_current).padEnd(12)}| ` +
+        `${String(r.variantB_oneLine).padEnd(13)}| ${String(r.variantC_keywords).padEnd(12)}| ${String(r.variantD_category).padEnd(12)}| ` +
+        `${bSave}%     | ${cSave}%     | ${dSave}%`,
     );
   });
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

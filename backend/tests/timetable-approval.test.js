@@ -77,10 +77,10 @@ function hostFor(subdomain) {
 async function seedTenant(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const college = { collegeId: `tta${suffix}`, subdomain: `ttatenant${suffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [college.collegeId, college.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    college.collegeId,
+    college.subdomain,
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userIds = {};
   for (const [username, role] of [
@@ -175,11 +175,18 @@ async function seedTenant(adminPool) {
   // the class's Class Tutor position purely so this suite's own
   // attendance calls (unrelated to who owns the hour) stay authorized.
   const { officialEmail } = await seedClassTutorPosition(adminPool, {
-    collegeId: college.collegeId, userId: userIds.staffuser, classId: cls.rows[0].id, passwordHash,
+    collegeId: college.collegeId,
+    userId: userIds.staffuser,
+    classId: cls.rows[0].id,
+    passwordHash,
   });
 
   return {
-    ...college, userIds, departmentId, classId: cls.rows[0].id, classTutorEmail: officialEmail,
+    ...college,
+    userIds,
+    departmentId,
+    classId: cls.rows[0].id,
+    classTutorEmail: officialEmail,
   };
 }
 
@@ -226,12 +233,10 @@ test('timetable approval (Module 3->4 gap fix)', async (t) => {
   });
 
   async function login(username) {
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/auth/login',
-      'POST',
-      { headers: { host: hostFor(college.subdomain) }, body: { username, password: PASSWORD } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/auth/login', 'POST', {
+      headers: { host: hostFor(college.subdomain) },
+      body: { username, password: PASSWORD },
+    });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -243,12 +248,10 @@ test('timetable approval (Module 3->4 gap fix)', async (t) => {
   // requires the L4 Position Account login, not staffuser's personal
   // login — Position Occupancy alone no longer suffices.
   async function loginTutor() {
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/position-accounts/login',
-      'POST',
-      { headers: { host: hostFor(college.subdomain) }, body: { official_email: college.classTutorEmail, password: PASSWORD } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/position-accounts/login', 'POST', {
+      headers: { host: hostFor(college.subdomain) },
+      body: { official_email: college.classTutorEmail, password: PASSWORD },
+    });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -287,7 +290,12 @@ test('timetable approval (Module 3->4 gap fix)', async (t) => {
   let workflowRequestId;
 
   await t.test('submitting for approval creates a real workflow_requests row and sets Pending HOD', async () => {
-    const resp = await post(baseUrl, `/api/v1/classes/${college.classId}/submit-for-approval`, headersFor(staffToken), {});
+    const resp = await post(
+      baseUrl,
+      `/api/v1/classes/${college.classId}/submit-for-approval`,
+      headersFor(staffToken),
+      {},
+    );
     assert.equal(resp.status, 201);
     assert.equal(resp.body.entity_type, 'timetable_approval');
     assert.equal(resp.body.entity_id, college.classId);
@@ -305,7 +313,12 @@ test('timetable approval (Module 3->4 gap fix)', async (t) => {
   });
 
   await t.test('HOD approval advances the chain without closing it, sets Pending Principal', async () => {
-    const resp = await post(baseUrl, `/api/v1/workflow-requests/${workflowRequestId}/approve`, headersFor(hodToken), {});
+    const resp = await post(
+      baseUrl,
+      `/api/v1/workflow-requests/${workflowRequestId}/approve`,
+      headersFor(hodToken),
+      {},
+    );
     assert.equal(resp.status, 200);
     assert.equal(resp.body.workflowRequest.status, 'Pending');
     assert.equal(resp.body.workflowRequest.current_step, 2);
@@ -318,7 +331,12 @@ test('timetable approval (Module 3->4 gap fix)', async (t) => {
   });
 
   await t.test('Principal approval closes the chain and sets Approved', async () => {
-    const resp = await post(baseUrl, `/api/v1/workflow-requests/${workflowRequestId}/approve`, headersFor(principalToken), {});
+    const resp = await post(
+      baseUrl,
+      `/api/v1/workflow-requests/${workflowRequestId}/approve`,
+      headersFor(principalToken),
+      {},
+    );
     assert.equal(resp.status, 200);
     assert.equal(resp.body.workflowRequest.status, 'Approved');
     assert.equal(resp.body.class.timetable_status, 'Approved');
@@ -331,7 +349,12 @@ test('timetable approval (Module 3->4 gap fix)', async (t) => {
   });
 
   await t.test('a resolved workflow request cannot be approved again', async () => {
-    const resp = await post(baseUrl, `/api/v1/workflow-requests/${workflowRequestId}/approve`, headersFor(principalToken), {});
+    const resp = await post(
+      baseUrl,
+      `/api/v1/workflow-requests/${workflowRequestId}/approve`,
+      headersFor(principalToken),
+      {},
+    );
     assert.equal(resp.status, 409);
   });
 });
@@ -352,12 +375,10 @@ test('timetable approval rejection resets status to Rejected', async (t) => {
   });
 
   async function login(username) {
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/auth/login',
-      'POST',
-      { headers: { host: hostFor(college.subdomain) }, body: { username, password: PASSWORD } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/auth/login', 'POST', {
+      headers: { host: hostFor(college.subdomain) },
+      body: { username, password: PASSWORD },
+    });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -371,7 +392,12 @@ test('timetable approval rejection resets status to Rejected', async (t) => {
   const principalToken = await login('principaluser');
   const hodToken = await login('hoduser');
 
-  const submitted = await post(baseUrl, `/api/v1/classes/${college.classId}/submit-for-approval`, headersFor(principalToken), {});
+  const submitted = await post(
+    baseUrl,
+    `/api/v1/classes/${college.classId}/submit-for-approval`,
+    headersFor(principalToken),
+    {},
+  );
   assert.equal(submitted.status, 201);
 
   const rejected = await post(baseUrl, `/api/v1/workflow-requests/${submitted.body.id}/reject`, headersFor(hodToken), {

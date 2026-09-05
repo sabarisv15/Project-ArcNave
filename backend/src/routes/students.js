@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const { createUserScopedRateLimiter } = require('../middleware/rateLimit');
 const studentService = require('../services/studentService');
@@ -240,6 +242,92 @@ function mapPhoneVerificationServiceError(err, res) {
   return false;
 }
 
+// P3 4.9 — contract schemas, same permissive discipline ai.js's own
+// schema block established: never re-assert a requiredness/format
+// check the route/service already owns (studentService's own
+// createStudent/updateStudent/assertCanModifyStudent etc. are the real
+// validators — see mapStudentServiceError above), only describe the
+// real accepted wire shape so a genuinely wrong-typed field gets a
+// clean 400 instead of an unhandled crash downstream.
+//
+// POST/PUT /students bodies use a permissive z.record, not one entry
+// per STUDENT_BODY_FIELDS key (~50 fields, several of them numeric
+// (mark_10th/12th/iti, annual_income, current_semester, admission_year,
+// passing_year) or boolean (phone_verified, parent_phone_verified)
+// without a definitive type source at the route layer — studentService
+// itself is the real authority on shape, matching bodyToServiceFields'
+// own "pass whatever's present" posture). A record still rejects a
+// non-object body (e.g. an array or a bare string), the actual crash
+// class this schema exists to prevent.
+const studentIdParams = z.object({ id: z.string() });
+const studentTransferParams = z.object({ id: z.string(), transferRequestId: z.string() });
+const studentBodyRecordSchema = z.record(z.string(), z.any()).optional();
+
+const createStudentSchema = z.object({ body: studentBodyRecordSchema });
+const getStudentSchema = z.object({ params: studentIdParams });
+const listStudentsSchema = z.object({
+  query: z.object({ limit: z.string().optional(), offset: z.string().optional() }).optional(),
+});
+const updateStudentSchema = z.object({ params: studentIdParams, body: studentBodyRecordSchema });
+const deleteStudentSchema = z.object({ params: studentIdParams });
+const transferRequestSchema = z.object({
+  params: studentIdParams,
+  body: z
+    .object({
+      transfer_type: z.string().optional(),
+      destination_class_id: z.string().optional(),
+      destination_college_id: z.string().optional(),
+      reason: z.string().optional(),
+    })
+    .optional(),
+});
+const listTransferRequestsSchema = z.object({ params: studentIdParams });
+const transferDecisionSchema = z.object({ params: studentTransferParams });
+const flagSchema = z.object({
+  params: studentIdParams,
+  body: z.object({ remark: z.string().optional() }).optional(),
+});
+const flagClearSchema = z.object({ params: studentIdParams });
+const getFlagSchema = z.object({ params: studentIdParams });
+const flagHistorySchema = z.object({ params: studentIdParams });
+const semesterResultCreateSchema = z.object({
+  params: studentIdParams,
+  body: z
+    .object({
+      academic_year: z.string().optional(),
+      semester: z.string().optional(),
+      subject: z.string().optional(),
+      result_status: z.string().optional(),
+      document_id: z.string().optional(),
+    })
+    .optional(),
+});
+const semesterResultListSchema = z.object({ params: studentIdParams });
+const lifecycleStatusBodySchema = z
+  .object({
+    new_status: z.string().optional(),
+    reason: z.string().optional(),
+    effective_date: z.string().optional(),
+  })
+  .optional();
+const lifecycleStatusSchema = z.object({ params: studentIdParams, body: lifecycleStatusBodySchema });
+const lifecycleStatusRequestSchema = z.object({ params: studentIdParams, body: lifecycleStatusBodySchema });
+const lifecycleStatusApproveSchema = z.object({
+  params: studentIdParams,
+  body: z.object({ effective_date: z.string().optional() }).optional(),
+});
+const lifecycleStatusRejectSchema = z.object({ params: studentIdParams });
+const lifecycleEventsSchema = z.object({ params: studentIdParams });
+const timelineSchema = z.object({ params: studentIdParams });
+const phoneOtpRequestSchema = z.object({
+  params: studentIdParams,
+  body: z.object({ target: z.string().optional() }).optional(),
+});
+const phoneOtpVerifySchema = z.object({
+  params: studentIdParams,
+  body: z.object({ target: z.string().optional(), code: z.string().optional() }).optional(),
+});
+
 function createStudentsRouter() {
   const router = express.Router();
 
@@ -247,9 +335,7 @@ function createStudentsRouter() {
   // flags this as a known, previously-unsolved gap. Keyed on the
   // already-authenticated actor's own userId (requireAuth runs first),
   // not on the student/target phone — see middleware/rateLimit.js.
-  const otpRequestLimiter = createUserScopedRateLimiter(
-    (req) => identityService.resolveActorUserId(req.capabilities),
-  );
+  const otpRequestLimiter = createUserScopedRateLimiter((req) => identityService.resolveActorUserId(req.capabilities));
 
   // POST/PUT/DELETE /students: requirePermission maps each to the
   // roles that can EVER qualify (['staff'] for create; ['staff', 'hod',
@@ -264,118 +350,154 @@ function createStudentsRouter() {
   // route ever runs), just not sufficient on its own. Any authenticated
   // tenant user may still read.
 
-  router.post('/students', requirePermission('students.create'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const student = await studentService.createStudent(req.dbClient, {
-        collegeId: req.collegeId,
-        userId: identityService.resolveActorUserId(req.capabilities),
-        actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
-        ...bodyToServiceFields(req.body || {}),
-      });
-      res.status(201).json(student);
-    } catch (err) {
-      if (mapStudentServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/students',
+    requirePermission('students.create'),
+    validate(createStudentSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const student = await studentService.createStudent(req.dbClient, {
+          collegeId: req.collegeId,
+          userId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+          ...bodyToServiceFields(req.body || {}),
+        });
+        res.status(201).json(student);
+      } catch (err) {
+        if (mapStudentServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // GET /students/:id and GET /students are now tutor(own class)/
   // hod(own department)/principal(own college)-scoped (this session's
   // own task) — requireAuth still gates "must be logged in"; the real
   // scope is studentService's job (getStudent/listStudents), same
   // split students.update/delete already established.
-  router.get('/students/:id', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const student = await studentService.getStudent(req.dbClient, req.params.id, {
-        actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
-      });
-      if (student === null) {
-        res.status(404).json({ detail: `No student found with id ${JSON.stringify(req.params.id)}` });
-        return;
+  router.get(
+    '/students/:id',
+    requireAuth,
+    validate(getStudentSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const student = await studentService.getStudent(req.dbClient, req.params.id, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+        });
+        if (student === null) {
+          res.status(404).json({ detail: `No student found with id ${JSON.stringify(req.params.id)}` });
+          return;
+        }
+        res.json(student);
+      } catch (err) {
+        if (mapStudentServiceError(err, res)) return;
+        throw err;
       }
-      res.json(student);
-    } catch (err) {
-      if (mapStudentServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+    }),
+  );
 
   // limit/offset are passed through as-is — studentService/
   // studentRepository already default them to 50/0, not
   // re-implemented here.
-  router.get('/students', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { limit: rawLimit, offset: rawOffset } = req.query;
-    const students = await studentService.listStudents(req.dbClient, {
-      limit: rawLimit === undefined ? undefined : Number(rawLimit),
-      offset: rawOffset === undefined ? undefined : Number(rawOffset),
-    }, { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole, collegeId: req.collegeId });
-
-    // Students List page's Attendance %/Fee Status columns — composed
-    // here, not inside studentService.listStudents, because both
-    // AttendanceService and FinanceService already depend upward on
-    // StudentService (see their own file-level comments); calling
-    // back down from StudentService would be a circular require. Route
-    // handlers may freely call multiple services, so the composition
-    // happens here instead. Presentation-only: neither field is ever
-    // accepted back on create/update (not in studentService's own
-    // ALLOWED_FIELDS), and this is the only place either gets attached.
-    const studentRefs = students.map((student) => ({ id: student.id, classId: student.class_id }));
-    const [attendanceByStudentId, feeStatusByStudentId, backlogCountByStudentId] = await Promise.all([
-      attendanceService.computeAttendancePercentageForStudents(req.dbClient, studentRefs),
-      financeService.computeFeeStatusForStudents(req.dbClient, studentRefs),
-      studentService.computeBacklogCountForStudents(req.dbClient, studentRefs),
-    ]);
-    const enriched = students.map((student) => ({
-      ...student,
-      attendance_percentage: attendanceByStudentId.get(student.id) ?? null,
-      fee_status: feeStatusByStudentId.get(student.id) ?? 'no_fees',
-      backlog_count: backlogCountByStudentId.get(student.id) ?? 0,
-    }));
-
-    res.json(enriched);
-  }));
-
-  router.put('/students/:id', requirePermission('students.update'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const student = await studentService.updateStudent(
+  router.get(
+    '/students',
+    requireAuth,
+    validate(listStudentsSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { limit: rawLimit, offset: rawOffset } = req.query;
+      const students = await studentService.listStudents(
         req.dbClient,
-        req.params.id,
-        bodyToServiceFields(req.body || {}),
-        { userId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole },
+        {
+          limit: rawLimit === undefined ? undefined : Number(rawLimit),
+          offset: rawOffset === undefined ? undefined : Number(rawOffset),
+        },
+        {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+          collegeId: req.collegeId,
+        },
       );
-      if (student === null) {
-        res.status(404).json({ detail: `No student found with id ${JSON.stringify(req.params.id)}` });
-        return;
-      }
-      res.json(student);
-    } catch (err) {
-      if (mapStudentServiceError(err, res)) return;
-      throw err;
-    }
-  }));
 
-  router.delete('/students/:id', requirePermission('students.delete'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const student = await studentService.removeStudent(
-        req.dbClient,
-        req.params.id,
-        { userId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole },
-      );
-      if (student === null) {
-        res.status(404).json({ detail: `No student found with id ${JSON.stringify(req.params.id)}` });
-        return;
+      // Students List page's Attendance %/Fee Status columns — composed
+      // here, not inside studentService.listStudents, because both
+      // AttendanceService and FinanceService already depend upward on
+      // StudentService (see their own file-level comments); calling
+      // back down from StudentService would be a circular require. Route
+      // handlers may freely call multiple services, so the composition
+      // happens here instead. Presentation-only: neither field is ever
+      // accepted back on create/update (not in studentService's own
+      // ALLOWED_FIELDS), and this is the only place either gets attached.
+      const studentRefs = students.map((student) => ({ id: student.id, classId: student.class_id }));
+      const [attendanceByStudentId, feeStatusByStudentId, backlogCountByStudentId] = await Promise.all([
+        attendanceService.computeAttendancePercentageForStudents(req.dbClient, studentRefs),
+        financeService.computeFeeStatusForStudents(req.dbClient, studentRefs),
+        studentService.computeBacklogCountForStudents(req.dbClient, studentRefs),
+      ]);
+      const enriched = students.map((student) => ({
+        ...student,
+        attendance_percentage: attendanceByStudentId.get(student.id) ?? null,
+        fee_status: feeStatusByStudentId.get(student.id) ?? 'no_fees',
+        backlog_count: backlogCountByStudentId.get(student.id) ?? 0,
+      }));
+
+      res.json(enriched);
+    }),
+  );
+
+  router.put(
+    '/students/:id',
+    requirePermission('students.update'),
+    validate(updateStudentSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const student = await studentService.updateStudent(
+          req.dbClient,
+          req.params.id,
+          bodyToServiceFields(req.body || {}),
+          {
+            userId: identityService.resolveActorUserId(req.capabilities),
+            actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+          },
+        );
+        if (student === null) {
+          res.status(404).json({ detail: `No student found with id ${JSON.stringify(req.params.id)}` });
+          return;
+        }
+        res.json(student);
+      } catch (err) {
+        if (mapStudentServiceError(err, res)) return;
+        throw err;
       }
-      res.status(204).end();
-    } catch (err) {
-      if (mapStudentServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+    }),
+  );
+
+  router.delete(
+    '/students/:id',
+    requirePermission('students.delete'),
+    validate(deleteStudentSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const student = await studentService.removeStudent(req.dbClient, req.params.id, {
+          userId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+        });
+        if (student === null) {
+          res.status(404).json({ detail: `No student found with id ${JSON.stringify(req.params.id)}` });
+          return;
+        }
+        res.status(204).end();
+      } catch (err) {
+        if (mapStudentServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // requireAuth, not requirePermission: BusinessRules.md names no
   // specific submitter for a transfer request — same conservative
@@ -385,154 +507,235 @@ function createStudentsRouter() {
   // actually runs; body shape differs slightly between the two (see
   // studentService's own comment on why inter_college never touches
   // another tenant).
-  router.post('/students/:id/transfer-requests', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const {
-      transfer_type: transferType, destination_class_id: destinationClassId, destination_college_id: destinationCollegeId, reason,
-    } = req.body || {};
-    try {
-      let result;
-      if (transferType === 'inter_college') {
-        result = await studentService.requestInterCollegeTransfer(
-          req.dbClient, req.params.id, { destinationCollegeId, reason }, { requestedByUserId: identityService.resolveActorUserId(req.capabilities) },
-        );
-      } else {
-        result = await studentService.requestInternalTransfer(
-          req.dbClient, req.params.id, { destinationClassId, reason }, { requestedByUserId: identityService.resolveActorUserId(req.capabilities) },
-        );
+  router.post(
+    '/students/:id/transfer-requests',
+    requireAuth,
+    validate(transferRequestSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const {
+        transfer_type: transferType,
+        destination_class_id: destinationClassId,
+        destination_college_id: destinationCollegeId,
+        reason,
+      } = req.body || {};
+      try {
+        let result;
+        if (transferType === 'inter_college') {
+          result = await studentService.requestInterCollegeTransfer(
+            req.dbClient,
+            req.params.id,
+            { destinationCollegeId, reason },
+            { requestedByUserId: identityService.resolveActorUserId(req.capabilities) },
+          );
+        } else {
+          result = await studentService.requestInternalTransfer(
+            req.dbClient,
+            req.params.id,
+            { destinationClassId, reason },
+            { requestedByUserId: identityService.resolveActorUserId(req.capabilities) },
+          );
+        }
+        res.status(201).json(result);
+      } catch (err) {
+        if (mapStudentServiceError(err, res)) return;
+        throw err;
       }
-      res.status(201).json(result);
-    } catch (err) {
-      if (mapStudentServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+    }),
+  );
 
-  router.get('/students/:id/transfer-requests', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const requests = await studentService.listTransferRequestsForStudent(req.dbClient, req.params.id);
-    res.json(requests);
-  }));
+  router.get(
+    '/students/:id/transfer-requests',
+    requireAuth,
+    validate(listTransferRequestsSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const requests = await studentService.listTransferRequestsForStudent(req.dbClient, req.params.id);
+      res.json(requests);
+    }),
+  );
 
-  router.post('/students/:id/transfer-requests/:transferRequestId/approve', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const result = await studentService.approveStudentTransfer(
-        req.dbClient, req.params.id, req.params.transferRequestId, { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.json(result);
-    } catch (err) {
-      if (mapStudentServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/students/:id/transfer-requests/:transferRequestId/approve',
+    requireAuth,
+    validate(transferDecisionSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const result = await studentService.approveStudentTransfer(
+          req.dbClient,
+          req.params.id,
+          req.params.transferRequestId,
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.json(result);
+      } catch (err) {
+        if (mapStudentServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/students/:id/transfer-requests/:transferRequestId/reject', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const result = await studentService.rejectStudentTransfer(
-        req.dbClient, req.params.id, req.params.transferRequestId, { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.json(result);
-    } catch (err) {
-      if (mapStudentServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/students/:id/transfer-requests/:transferRequestId/reject',
+    requireAuth,
+    validate(transferDecisionSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const result = await studentService.rejectStudentTransfer(
+          req.dbClient,
+          req.params.id,
+          req.params.transferRequestId,
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.json(result);
+      } catch (err) {
+        if (mapStudentServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // Student flag (UAT discovery, Class Tutor dashboard, 2026-07-26) —
   // requireAuth only, not requirePermission: studentService.
   // assertCanModifyStudent is the real gate (same boundary as editing
   // the student), same "the service is the gate" split every other
   // student-scoped write route in this file already uses.
-  router.post('/students/:id/flag', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const flag = await studentService.flagStudent(
-        req.dbClient, req.params.id, { remark: (req.body || {}).remark },
-        { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole},
-      );
-      res.status(201).json(flag);
-    } catch (err) {
-      if (mapStudentServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/students/:id/flag',
+    requireAuth,
+    validate(flagSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const flag = await studentService.flagStudent(
+          req.dbClient,
+          req.params.id,
+          { remark: (req.body || {}).remark },
+          {
+            actorUserId: identityService.resolveActorUserId(req.capabilities),
+            actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+          },
+        );
+        res.status(201).json(flag);
+      } catch (err) {
+        if (mapStudentServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/students/:id/flag/clear', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const flag = await studentService.clearStudentFlag(
-        req.dbClient, req.params.id, { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole},
-      );
-      res.json(flag);
-    } catch (err) {
-      if (mapStudentServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/students/:id/flag/clear',
+    requireAuth,
+    validate(flagClearSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const flag = await studentService.clearStudentFlag(req.dbClient, req.params.id, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+        });
+        res.json(flag);
+      } catch (err) {
+        if (mapStudentServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.get('/students/:id/flag', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const flag = await studentService.getActiveFlag(
-        req.dbClient, req.params.id, { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole},
-      );
-      res.json(flag);
-    } catch (err) {
-      if (mapStudentServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.get(
+    '/students/:id/flag',
+    requireAuth,
+    validate(getFlagSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const flag = await studentService.getActiveFlag(req.dbClient, req.params.id, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+        });
+        res.json(flag);
+      } catch (err) {
+        if (mapStudentServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.get('/students/:id/flag-history', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const history = await studentService.listFlagHistory(
-        req.dbClient, req.params.id, { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole},
-      );
-      res.json(history);
-    } catch (err) {
-      if (mapStudentServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.get(
+    '/students/:id/flag-history',
+    requireAuth,
+    validate(flagHistorySchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const history = await studentService.listFlagHistory(req.dbClient, req.params.id, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+        });
+        res.json(history);
+      } catch (err) {
+        if (mapStudentServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // Semester result (Students List redesign, 2026-07-30) — requireAuth
   // only, same "the service is the gate" split the flag routes above
   // already use: studentService.recordSemesterResult's own
   // assertCanModifyStudent call is the real authorization boundary.
-  router.post('/students/:id/semester-results', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const body = req.body || {};
-      const row = await studentService.recordSemesterResult(
-        req.dbClient, req.params.id,
-        {
-          academicYear: body.academic_year, semester: body.semester, subject: body.subject, resultStatus: body.result_status, documentId: body.document_id,
-        },
-        { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole },
-      );
-      res.status(201).json(row);
-    } catch (err) {
-      if (mapStudentServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/students/:id/semester-results',
+    requireAuth,
+    validate(semesterResultCreateSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const body = req.body || {};
+        const row = await studentService.recordSemesterResult(
+          req.dbClient,
+          req.params.id,
+          {
+            academicYear: body.academic_year,
+            semester: body.semester,
+            subject: body.subject,
+            resultStatus: body.result_status,
+            documentId: body.document_id,
+          },
+          {
+            actorUserId: identityService.resolveActorUserId(req.capabilities),
+            actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+          },
+        );
+        res.status(201).json(row);
+      } catch (err) {
+        if (mapStudentServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.get('/students/:id/semester-results', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const rows = await studentService.listSemesterResultsForStudent(
-        req.dbClient, req.params.id,
-        { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole },
-      );
-      res.json(rows);
-    } catch (err) {
-      if (mapStudentServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.get(
+    '/students/:id/semester-results',
+    requireAuth,
+    validate(semesterResultListSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const rows = await studentService.listSemesterResultsForStudent(req.dbClient, req.params.id, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+        });
+        res.json(rows);
+      } catch (err) {
+        if (mapStudentServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // requireAuth, not requirePermission: BusinessRules.md names Class
   // Tutor as the actor for ordinary lifecycle changes but doesn't
@@ -541,111 +744,181 @@ function createStudentsRouter() {
   // (409, StudentLifecycleApprovalRequiredError) for any status that
   // actually requires approval, directing the caller to the request
   // endpoint below instead.
-  router.post('/students/:id/lifecycle-status', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { new_status: newStatus, reason, effective_date: effectiveDate } = req.body || {};
-    try {
-      const student = await studentService.updateStudentLifecycleStatus(
-        req.dbClient, req.params.id, { newStatus, reason, effectiveDate }, { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.json(student);
-    } catch (err) {
-      if (mapStudentServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/students/:id/lifecycle-status',
+    requireAuth,
+    validate(lifecycleStatusSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { new_status: newStatus, reason, effective_date: effectiveDate } = req.body || {};
+      try {
+        const student = await studentService.updateStudentLifecycleStatus(
+          req.dbClient,
+          req.params.id,
+          { newStatus, reason, effectiveDate },
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.json(student);
+      } catch (err) {
+        if (mapStudentServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/students/:id/lifecycle-status/request', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { new_status: newStatus, reason, effective_date: effectiveDate } = req.body || {};
-    try {
-      const result = await studentService.requestLifecycleStatusChange(
-        req.dbClient, req.params.id, { newStatus, reason, effectiveDate }, { requestedByUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(201).json(result);
-    } catch (err) {
-      if (mapStudentServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/students/:id/lifecycle-status/request',
+    requireAuth,
+    validate(lifecycleStatusRequestSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { new_status: newStatus, reason, effective_date: effectiveDate } = req.body || {};
+      try {
+        const result = await studentService.requestLifecycleStatusChange(
+          req.dbClient,
+          req.params.id,
+          { newStatus, reason, effectiveDate },
+          { requestedByUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.status(201).json(result);
+      } catch (err) {
+        if (mapStudentServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/students/:id/lifecycle-status/approve', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { effective_date: effectiveDate } = req.body || {};
-    try {
-      const student = await studentService.approveLifecycleStatusChange(
-        req.dbClient, req.params.id, { actorUserId: identityService.resolveActorUserId(req.capabilities), effectiveDate },
-      );
-      res.json(student);
-    } catch (err) {
-      if (mapStudentServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/students/:id/lifecycle-status/approve',
+    requireAuth,
+    validate(lifecycleStatusApproveSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { effective_date: effectiveDate } = req.body || {};
+      try {
+        const student = await studentService.approveLifecycleStatusChange(req.dbClient, req.params.id, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+          effectiveDate,
+        });
+        res.json(student);
+      } catch (err) {
+        if (mapStudentServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/students/:id/lifecycle-status/reject', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const student = await studentService.rejectLifecycleStatusChange(
-        req.dbClient, req.params.id, { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.json(student);
-    } catch (err) {
-      if (mapStudentServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/students/:id/lifecycle-status/reject',
+    requireAuth,
+    validate(lifecycleStatusRejectSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const student = await studentService.rejectLifecycleStatusChange(req.dbClient, req.params.id, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.json(student);
+      } catch (err) {
+        if (mapStudentServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.get('/students/:id/lifecycle-events', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const events = await studentService.listLifecycleEventsForStudent(req.dbClient, req.params.id);
-    res.json(events);
-  }));
+  router.get(
+    '/students/:id/lifecycle-events',
+    requireAuth,
+    validate(lifecycleEventsSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const events = await studentService.listLifecycleEventsForStudent(req.dbClient, req.params.id);
+      res.json(events);
+    }),
+  );
 
-  router.get('/students/:id/timeline', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const entries = await studentService.listTimelineForStudent(req.dbClient, req.params.id);
-    res.json(entries);
-  }));
+  router.get(
+    '/students/:id/timeline',
+    requireAuth,
+    validate(timelineSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const entries = await studentService.listTimelineForStudent(req.dbClient, req.params.id);
+      res.json(entries);
+    }),
+  );
 
   // Phone OTP verification — requireAuth gates "must be logged in";
   // phoneVerificationService.requestOtp/verifyOtp enforce the real
   // tutor(own class)/hod(own department)/principal(own college) scope
   // (this session's own task, same boundary as reads/update/delete).
-  router.post('/students/:id/phone-verification/otp', requireAuth, otpRequestLimiter, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const result = await phoneVerificationService.requestOtp(
-        req.dbClient,
-        req.params.id,
-        (req.body || {}).target,
-        { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole},
-      );
-      res.status(201).json(result);
-    } catch (err) {
-      if (mapPhoneVerificationServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/students/:id/phone-verification/otp',
+    requireAuth,
+    otpRequestLimiter,
+    validate(phoneOtpRequestSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const result = await phoneVerificationService.requestOtp(req.dbClient, req.params.id, (req.body || {}).target, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+        });
+        res.status(201).json(result);
+      } catch (err) {
+        if (mapPhoneVerificationServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/students/:id/phone-verification/verify', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const student = await phoneVerificationService.verifyOtp(
-        req.dbClient,
-        req.params.id,
-        (req.body || {}).target,
-        (req.body || {}).code,
-        { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole},
-      );
-      res.json(student);
-    } catch (err) {
-      if (mapPhoneVerificationServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/students/:id/phone-verification/verify',
+    requireAuth,
+    validate(phoneOtpVerifySchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const student = await phoneVerificationService.verifyOtp(
+          req.dbClient,
+          req.params.id,
+          (req.body || {}).target,
+          (req.body || {}).code,
+          {
+            actorUserId: identityService.resolveActorUserId(req.capabilities),
+            actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+          },
+        );
+        res.json(student);
+      } catch (err) {
+        if (mapPhoneVerificationServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   return router;
 }
 
 module.exports = createStudentsRouter;
+// P3 4.9 — same "attached to the factory function" convention as
+// routes/auth.js's own `.schemas`, read by routes/openapi.js.
+module.exports.schemas = {
+  '/students': { post: createStudentSchema, get: listStudentsSchema },
+  '/students/{id}': { get: getStudentSchema, put: updateStudentSchema, delete: deleteStudentSchema },
+  '/students/{id}/transfer-requests': { post: transferRequestSchema, get: listTransferRequestsSchema },
+  '/students/{id}/transfer-requests/{transferRequestId}/approve': { post: transferDecisionSchema },
+  '/students/{id}/transfer-requests/{transferRequestId}/reject': { post: transferDecisionSchema },
+  '/students/{id}/flag': { post: flagSchema, get: getFlagSchema },
+  '/students/{id}/flag/clear': { post: flagClearSchema },
+  '/students/{id}/flag-history': { get: flagHistorySchema },
+  '/students/{id}/semester-results': { post: semesterResultCreateSchema, get: semesterResultListSchema },
+  '/students/{id}/lifecycle-status': { post: lifecycleStatusSchema },
+  '/students/{id}/lifecycle-status/request': { post: lifecycleStatusRequestSchema },
+  '/students/{id}/lifecycle-status/approve': { post: lifecycleStatusApproveSchema },
+  '/students/{id}/lifecycle-status/reject': { post: lifecycleStatusRejectSchema },
+  '/students/{id}/lifecycle-events': { get: lifecycleEventsSchema },
+  '/students/{id}/timeline': { get: timelineSchema },
+  '/students/{id}/phone-verification/otp': { post: phoneOtpRequestSchema },
+  '/students/{id}/phone-verification/verify': { post: phoneOtpVerifySchema },
+};

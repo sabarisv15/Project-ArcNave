@@ -48,6 +48,7 @@ const OPT_IN_CAPABILITIES = {
   web_search: 'web_search',
   web_search_fast: 'web_search',
   image_search: 'web_search',
+  perplexity_web_answer: 'perplexity_web_answer',
   weather_fetch: 'weather',
   fetch_trusted_web_page: 'web_retrieval',
 };
@@ -57,15 +58,40 @@ const OPT_IN_CAPABILITIES = {
 // permanently, and this is a "list what matches" surface where a miss
 // costs a user one rephrase, not a wrong answer.
 const STOPWORDS = new Set([
-  'the', 'a', 'an', 'is', 'are', 'can', 'do', 'does', 'you', 'your', 'i', 'me', 'my',
-  'what', 'how', 'to', 'of', 'in', 'on', 'for', 'and', 'or', 'with', 'able', 'any',
+  'the',
+  'a',
+  'an',
+  'is',
+  'are',
+  'can',
+  'do',
+  'does',
+  'you',
+  'your',
+  'i',
+  'me',
+  'my',
+  'what',
+  'how',
+  'to',
+  'of',
+  'in',
+  'on',
+  'for',
+  'and',
+  'or',
+  'with',
+  'able',
+  'any',
 ]);
 
 function significantWords(text) {
-  return (text || '')
-    .toLowerCase()
-    .match(/[a-z]+/g)
-    ?.filter((word) => word.length > 2 && !STOPWORDS.has(word)) || [];
+  return (
+    (text || '')
+      .toLowerCase()
+      .match(/[a-z]+/g)
+      ?.filter((word) => word.length > 2 && !STOPWORDS.has(word)) || []
+  );
 }
 
 function scoreTool(tool, queryWords) {
@@ -84,11 +110,15 @@ function registryModule() {
 
 function capabilitySearch(role, query) {
   if (typeof query !== 'string' || query.trim().length < MIN_QUERY_CHARS) {
-    throw new AiCapabilityCatalogValidationError(`query is required and must be at least ${MIN_QUERY_CHARS} characters`);
+    throw new AiCapabilityCatalogValidationError(
+      `query is required and must be at least ${MIN_QUERY_CHARS} characters`,
+    );
   }
   const queryWords = significantWords(query);
   if (queryWords.length === 0) {
-    throw new AiCapabilityCatalogValidationError('query has no searchable words — describe the task in a few plain words');
+    throw new AiCapabilityCatalogValidationError(
+      'query has no searchable words — describe the task in a few plain words',
+    );
   }
   // excludeHumanOnly: a human-only tool is not something the AI can do
   // for the user, so listing it here would answer "what can you do"
@@ -129,7 +159,8 @@ async function capabilityExplain(client, collegeId, role, capabilityName) {
       capability: name,
       available: false,
       reason: 'human_only',
-      explanation: 'This action is deliberately reserved for a person to perform directly in ARCNAVE — the AI is not permitted to do it on anyone\'s behalf.',
+      explanation:
+        "This action is deliberately reserved for a person to perform directly in ARCNAVE — the AI is not permitted to do it on anyone's behalf.",
     };
   }
   if (!(tool.allowedRoles || []).includes(role)) {
@@ -137,7 +168,8 @@ async function capabilityExplain(client, collegeId, role, capabilityName) {
       capability: name,
       available: false,
       reason: 'role_not_permitted',
-      explanation: 'This capability is not available to your role. A colleague whose role does include it would need to do this.',
+      explanation:
+        'This capability is not available to your role. A colleague whose role does include it would need to do this.',
     };
   }
   const configCategory = OPT_IN_CAPABILITIES[name];
@@ -157,7 +189,8 @@ async function capabilityExplain(client, collegeId, role, capabilityName) {
     capability: name,
     available: true,
     reason: 'available',
-    explanation: 'This capability is available to you. If a specific attempt still failed, the reason will be in that attempt\'s own error, not in permissions.',
+    explanation:
+      "This capability is available to you. If a specific attempt still failed, the reason will be in that attempt's own error, not in permissions.",
   };
 }
 

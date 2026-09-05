@@ -20,7 +20,7 @@ const FILTER_MODES = new Set(['annotate', 'include']);
 const COMPARISON_OPERATORS = new Set(['lt', 'lte', 'gt', 'gte', 'between']);
 
 function recordText(record) {
-  return record.cells ? record.cells.join(' ') : (record.block || '');
+  return record.cells ? record.cells.join(' ') : record.block || '';
 }
 
 // filter.pattern is always word-boundary-wrapped and applied with the
@@ -33,7 +33,9 @@ function compilePattern(filter) {
   try {
     return new RegExp(`\\b(?:${filter.pattern})\\b`, 'g');
   } catch {
-    throw new DocumentAggregateValidationError(`filter.pattern is not a valid pattern: ${JSON.stringify(filter.pattern)}`);
+    throw new DocumentAggregateValidationError(
+      `filter.pattern is not a valid pattern: ${JSON.stringify(filter.pattern)}`,
+    );
   }
 }
 
@@ -70,8 +72,8 @@ function validateFilterPattern(filter) {
   } catch {
     const shown = JSON.stringify(filter.pattern);
     const flagNote = INLINE_FLAG_PATTERN.test(filter.pattern)
-      ? ' JavaScript does not support inline flags such as (?i). Note that filter.pattern is matched'
-        + ' case-sensitively by design — supply the exact casing you need, or an alternation like "RA|ra".'
+      ? ' JavaScript does not support inline flags such as (?i). Note that filter.pattern is matched' +
+        ' case-sensitively by design — supply the exact casing you need, or an alternation like "RA|ra".'
       : '';
     return `filter.pattern is not valid JavaScript regular expression syntax: ${shown}.${flagNote}`;
   }
@@ -174,7 +176,9 @@ function aggregate(records, { groupBy = 'key', filter, operation = 'count' } = {
   // row per record, so it has its own entry point rather than a fourth
   // branch whose return shape disagrees with the other three.
   if (operation === 'compare') {
-    throw new DocumentAggregateValidationError("operation 'compare' has its own entry point — call compareRecords, not aggregate");
+    throw new DocumentAggregateValidationError(
+      "operation 'compare' has its own entry point — call compareRecords, not aggregate",
+    );
   }
   if (groupBy !== 'key') {
     throw new DocumentAggregateValidationError("groupBy must be 'key' in this slice");
@@ -189,7 +193,11 @@ function aggregate(records, { groupBy = 'key', filter, operation = 'count' } = {
       const breakdown = matchBreakdown(record, filter);
       const total = breakdown.reduce((sum, entry) => sum + entry.count, 0);
       return {
-        key: record.key, serialNo: record.serialNo || null, regNo: record.regNo || null, breakdown, total,
+        key: record.key,
+        serialNo: record.serialNo || null,
+        regNo: record.regNo || null,
+        breakdown,
+        total,
       };
     });
     return mode === 'include' ? annotated.filter((row) => row.total > 0) : annotated;
@@ -255,12 +263,18 @@ function parseNumeric(text) {
 
 function passesComparison(value, comparison) {
   switch (comparison.operator) {
-    case 'lt': return value < comparison.value;
-    case 'lte': return value <= comparison.value;
-    case 'gt': return value > comparison.value;
-    case 'gte': return value >= comparison.value;
-    case 'between': return value >= comparison.value && value <= comparison.upperValue;
-    default: return false;
+    case 'lt':
+      return value < comparison.value;
+    case 'lte':
+      return value <= comparison.value;
+    case 'gt':
+      return value > comparison.value;
+    case 'gte':
+      return value >= comparison.value;
+    case 'between':
+      return value >= comparison.value && value <= comparison.upperValue;
+    default:
+      return false;
   }
 }
 
@@ -269,20 +283,29 @@ function validateComparison(comparison) {
     throw new DocumentAggregateValidationError("comparison is required when operation is 'compare'");
   }
   if (!COMPARISON_OPERATORS.has(comparison.operator)) {
-    throw new DocumentAggregateValidationError(`comparison.operator must be one of ${[...COMPARISON_OPERATORS].join(', ')}`);
+    throw new DocumentAggregateValidationError(
+      `comparison.operator must be one of ${[...COMPARISON_OPERATORS].join(', ')}`,
+    );
   }
   if (typeof comparison.value !== 'number' || !Number.isFinite(comparison.value)) {
     throw new DocumentAggregateValidationError('comparison.value must be a finite number');
   }
   const isBetween = comparison.operator === 'between';
   const hasUpper = comparison.upperValue !== undefined && comparison.upperValue !== null;
-  if (isBetween && (!hasUpper || typeof comparison.upperValue !== 'number' || !Number.isFinite(comparison.upperValue))) {
-    throw new DocumentAggregateValidationError("comparison.upperValue must be a finite number when comparison.operator is 'between'");
+  if (
+    isBetween &&
+    (!hasUpper || typeof comparison.upperValue !== 'number' || !Number.isFinite(comparison.upperValue))
+  ) {
+    throw new DocumentAggregateValidationError(
+      "comparison.upperValue must be a finite number when comparison.operator is 'between'",
+    );
   }
   // Rejected rather than ignored on the other four: an upperValue that
   // silently does nothing looks to the caller like a range it never got.
   if (!isBetween && hasUpper) {
-    throw new DocumentAggregateValidationError("comparison.upperValue is only valid when comparison.operator is 'between'");
+    throw new DocumentAggregateValidationError(
+      "comparison.upperValue is only valid when comparison.operator is 'between'",
+    );
   }
 }
 
@@ -300,8 +323,8 @@ function compileIdentityPattern(identityPattern) {
   } catch {
     const shown = JSON.stringify(identityPattern);
     const flagNote = INLINE_FLAG_PATTERN.test(identityPattern)
-      ? ' JavaScript does not support inline flags such as (?i). identityPattern is matched case-sensitively;'
-        + ' supply the exact casing you need, or an alternation.'
+      ? ' JavaScript does not support inline flags such as (?i). identityPattern is matched case-sensitively;' +
+        ' supply the exact casing you need, or an alternation.'
       : '';
     return { reason: `identityPattern is not valid JavaScript regular expression syntax: ${shown}.${flagNote}` };
   }
@@ -356,7 +379,10 @@ function compareRecords(records, { filter, comparison, identityPattern, sampleSi
     const text = recordText(record);
     re.lastIndex = 0;
     const matches = [...text.matchAll(re)];
-    if (matches.length === 0) { unmatchedRows += 1; continue; }
+    if (matches.length === 0) {
+      unmatchedRows += 1;
+      continue;
+    }
     // The FIRST match, matching matchSum's own capture rule. A pattern that
     // matches several numbers in one row is ambiguous for a threshold
     // question, so the count below makes that visible instead of letting
@@ -364,7 +390,10 @@ function compareRecords(records, { filter, comparison, identityPattern, sampleSi
     if (matches.length > 1) multiMatchRows += 1;
     const first = matches[0];
     const value = parseNumeric(first[1] !== undefined ? first[1] : first[0]);
-    if (value === null) { nonNumericRows += 1; continue; }
+    if (value === null) {
+      nonNumericRows += 1;
+      continue;
+    }
     if (!passesComparison(value, comparison)) continue;
 
     const identity = extractIdentity(record, identityPattern);
@@ -450,9 +479,7 @@ function rollupBySemester(rows) {
     }
   }
   if (totals.size === 0) return undefined;
-  return [...totals.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([semester, count]) => ({ semester, count }));
+  return [...totals.entries()].sort((a, b) => a[0] - b[0]).map(([semester, count]) => ({ semester, count }));
 }
 
 // Returns the shape the AI tool actually hands to the model: the

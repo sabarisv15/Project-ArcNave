@@ -17,6 +17,12 @@ const openai = require('./openai');
 const vertexMaas = require('./vertexMaas');
 const errors = require('./errors');
 
+// perplexity.js is deliberately NOT in this registry — see its own
+// header comment for why it's a standalone web-grounded-answer
+// capability (agentAnswer) rather than a swappable chat provider that
+// implements this file's common complete()/completeWithTools()
+// interface. perplexityAnswerService.js requires it directly instead
+// of reaching it through getAdapter().
 const ADAPTERS = {
   gemini,
   claude,

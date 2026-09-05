@@ -197,18 +197,39 @@ async function login(pool, { username, password }) {
 // invitePrincipal's own CollegeNotFoundError can't fire here — the
 // college this function just created always exists by the time this
 // runs.
-async function createCollege(pool, {
-  collegeId, name, subdomain, createdBy, ipAddress,
-  level1PositionTitle, level3PositionTitle, storageTier, subscriptionStatus, principalEmail,
-  principalFullName, principalDesignation, principalPhone, principalAddress,
-  ...profileFields
-}) {
+async function createCollege(
+  pool,
+  {
+    collegeId,
+    name,
+    subdomain,
+    createdBy,
+    ipAddress,
+    level1PositionTitle,
+    level3PositionTitle,
+    storageTier,
+    subscriptionStatus,
+    principalEmail,
+    principalFullName,
+    principalDesignation,
+    principalPhone,
+    principalAddress,
+    ...profileFields
+  },
+) {
   assertValidLicense(subscriptionStatus);
 
   let college;
   try {
     college = await platformRepository.createCollege(pool, {
-      collegeId, name, subdomain, createdBy, level1PositionTitle, level3PositionTitle, storageTier, subscriptionStatus,
+      collegeId,
+      name,
+      subdomain,
+      createdBy,
+      level1PositionTitle,
+      level3PositionTitle,
+      storageTier,
+      subscriptionStatus,
       ...profileFields,
     });
   } catch (err) {
@@ -257,9 +278,7 @@ async function createCollege(pool, {
 // tenant side (collegeProfileRepository.js / the `storage`
 // configuration category), so platformRepository.EDITABLE_COLUMNS no
 // longer accepts them even if a caller still sends them.
-async function updateCollege(pool, collegeId, {
-  subscriptionStatus, actorAdminId, ipAddress,
-}) {
+async function updateCollege(pool, collegeId, { subscriptionStatus, actorAdminId, ipAddress }) {
   assertValidLicense(subscriptionStatus);
 
   const existing = await platformRepository.findCollegeById(pool, collegeId);
@@ -314,15 +333,25 @@ async function sendPrincipalInviteVerificationCode(platformPool, { collegeId, em
   const code = generateInviteVerificationCode();
   const expiresAt = new Date(Date.now() + config.otp.expireMinutes * 60 * 1000);
   const challenge = await principalInviteVerificationRepository.create(platformPool, {
-    collegeId, email, codeHash: hashInviteVerificationCode(code), expiresAt,
+    collegeId,
+    email,
+    codeHash: hashInviteVerificationCode(code),
+    expiresAt,
   });
 
   const sendResult = await notificationService.sendMfaCodeEmail(platformPool, {
-    to: email, code, expireMinutes: config.otp.expireMinutes,
+    to: email,
+    code,
+    expireMinutes: config.otp.expireMinutes,
   });
 
   await platformAuditService.record(platformPool, {
-    actorAdminId: null, action: 'principal_invite_verification.sent', entity: 'principal_invite_verifications', entityId: challenge.id, ipAddress, metadata: { collegeId, email, deliveryStatus: sendResult.status },
+    actorAdminId: null,
+    action: 'principal_invite_verification.sent',
+    entity: 'principal_invite_verifications',
+    entityId: challenge.id,
+    ipAddress,
+    metadata: { collegeId, email, deliveryStatus: sendResult.status },
   });
 
   return { challengeId: challenge.id, expiresAt: challenge.expires_at };
@@ -359,15 +388,24 @@ async function sendWizardEmailVerificationCode(platformPool, { email, actorAdmin
   const code = generateInviteVerificationCode();
   const expiresAt = new Date(Date.now() + config.otp.expireMinutes * 60 * 1000);
   const challenge = await wizardEmailVerificationRepository.create(platformPool, {
-    email, codeHash: hashInviteVerificationCode(code), expiresAt,
+    email,
+    codeHash: hashInviteVerificationCode(code),
+    expiresAt,
   });
 
   const sendResult = await notificationService.sendMfaCodeEmail(platformPool, {
-    to: email, code, expireMinutes: config.otp.expireMinutes,
+    to: email,
+    code,
+    expireMinutes: config.otp.expireMinutes,
   });
 
   await platformAuditService.record(platformPool, {
-    actorAdminId, action: 'wizard_email_verification.sent', entity: 'wizard_email_verifications', entityId: challenge.id, ipAddress, metadata: { email, deliveryStatus: sendResult.status },
+    actorAdminId,
+    action: 'wizard_email_verification.sent',
+    entity: 'wizard_email_verifications',
+    entityId: challenge.id,
+    ipAddress,
+    metadata: { email, deliveryStatus: sendResult.status },
   });
 
   return { challengeId: challenge.id, expiresAt: challenge.expires_at };
@@ -397,9 +435,10 @@ async function verifyWizardEmailCode(platformPool, { email, code }) {
 // verifyPrincipalInviteCode above exist purely for the new 3-step UI to
 // call in sequence before this — an additive frontend flow, not a new
 // backend precondition on the underlying invite action.
-async function invitePrincipal(pool, {
-  collegeId, email, createdBy, ipAddress, fullName, designation, phone, address,
-}) {
+async function invitePrincipal(
+  pool,
+  { collegeId, email, createdBy, ipAddress, fullName, designation, phone, address },
+) {
   const rawToken = security.generateRefreshToken();
   const expiresAt = new Date(Date.now() + config.principalInvitationExpireHours * 60 * 60 * 1000);
   let invitation;
@@ -563,11 +602,12 @@ async function listColleges(pool, { limit, offset, search } = {}) {
 // Invitations screen list — principal-only, matching what this
 // backend actually provisions from the platform level (see the plan's
 // "Invitations: Principal-only" scoping decision).
-async function listInvitations(pool, {
-  limit, offset, status, search,
-} = {}) {
+async function listInvitations(pool, { limit, offset, status, search } = {}) {
   return principalInvitationRepository.listInvitations(pool, {
-    limit, offset, status, search,
+    limit,
+    offset,
+    status,
+    search,
   });
 }
 
@@ -576,11 +616,15 @@ async function getInvitationsSummary(pool) {
   return principalInvitationRepository.getInvitationsSummary(pool);
 }
 
-async function listAuditLogs(pool, {
-  limit, offset, action, actorAdminId, fromDate, toDate, search,
-} = {}) {
+async function listAuditLogs(pool, { limit, offset, action, actorAdminId, fromDate, toDate, search } = {}) {
   return platformAuditLogRepository.listEntries(pool, {
-    limit, offset, action, actorAdminId, fromDate, toDate, search,
+    limit,
+    offset,
+    action,
+    actorAdminId,
+    fromDate,
+    toDate,
+    search,
   });
 }
 
@@ -588,16 +632,31 @@ async function getSettings(pool) {
   return platformSettingsRepository.getSettings(pool);
 }
 
-async function updateSettings(pool, {
-  platformName, supportEmail, defaultTimezone, dateFormat, itemsPerPage, defaultLicense = 'trial', actorAdminId, ipAddress,
-}) {
+async function updateSettings(
+  pool,
+  {
+    platformName,
+    supportEmail,
+    defaultTimezone,
+    dateFormat,
+    itemsPerPage,
+    defaultLicense = 'trial',
+    actorAdminId,
+    ipAddress,
+  },
+) {
   if (!platformName) {
     throw new PlatformAdminValidationError('platformName is required');
   }
   assertValidLicense(defaultLicense);
 
   const settings = await platformSettingsRepository.updateSettings(pool, {
-    platformName, supportEmail, defaultTimezone, dateFormat, itemsPerPage, defaultLicense,
+    platformName,
+    supportEmail,
+    defaultTimezone,
+    dateFormat,
+    itemsPerPage,
+    defaultLicense,
   });
 
   await platformAuditService.record(pool, {
@@ -607,7 +666,11 @@ async function updateSettings(pool, {
     entityId: null,
     ipAddress,
     metadata: {
-      platformName, defaultTimezone, dateFormat, itemsPerPage, defaultLicense,
+      platformName,
+      defaultTimezone,
+      dateFormat,
+      itemsPerPage,
+      defaultLicense,
     },
   });
 
@@ -620,8 +683,16 @@ async function updateSettings(pool, {
 // guidance for this endpoint.
 async function getDashboardSummary(pool) {
   const [
-    organizationsCount, organizationsNewThisWeek, pendingInvitationsCount, pendingInvitationsExpiringSoon,
-    trialCollegesCount, trialCollegesExpiringSoon, activeUsersCount, recentColleges, recentActivity, systemHealth,
+    organizationsCount,
+    organizationsNewThisWeek,
+    pendingInvitationsCount,
+    pendingInvitationsExpiringSoon,
+    trialCollegesCount,
+    trialCollegesExpiringSoon,
+    activeUsersCount,
+    recentColleges,
+    recentActivity,
+    systemHealth,
   ] = [
     await platformCollegeRepository.countColleges(pool),
     await platformCollegeRepository.countNewThisWeek(pool),
@@ -662,7 +733,11 @@ class StructuralKeyNotUsableError extends Error {}
 class StructuralKeyActionMismatchError extends Error {}
 
 const STRUCTURAL_ACTION_TYPES = [
-  'l2_configuration', 'affiliation_change', 'add_campus', 'department_merge_rename', 'accreditation_change',
+  'l2_configuration',
+  'affiliation_change',
+  'add_campus',
+  'department_merge_rename',
+  'accreditation_change',
 ];
 const STRUCTURAL_KEY_EXPIRY_DAYS = 7;
 
@@ -671,9 +746,12 @@ const STRUCTURAL_KEY_EXPIRY_DAYS = 7;
 // input to the Readiness gate (RS-GOV-011). Post-onboarding additions
 // stay L1's own unrestricted action (routes/departments.js, unchanged
 // by this rule — see RS-GOV-008's table).
-async function createDepartmentAtOnboarding(tenantClient, platformPool, {
-  collegeId, name, approvedIntake, courseDuration, defaultSections,
-}, { actorAdminId, ipAddress }) {
+async function createDepartmentAtOnboarding(
+  tenantClient,
+  platformPool,
+  { collegeId, name, approvedIntake, courseDuration, defaultSections },
+  { actorAdminId, ipAddress },
+) {
   const college = await platformRepository.findCollegeById(platformPool, collegeId);
   if (college === null) {
     throw new CollegeNotFoundError(`no college with college_id ${JSON.stringify(collegeId)}`);
@@ -698,7 +776,12 @@ async function createDepartmentAtOnboarding(tenantClient, platformPool, {
   let department;
   try {
     department = await departmentRepository.create(tenantClient, {
-      collegeId, name, approvedIntake, courseDuration, defaultSections, createdAtOnboarding: true,
+      collegeId,
+      name,
+      approvedIntake,
+      courseDuration,
+      defaultSections,
+      createdAtOnboarding: true,
     });
   } catch (err) {
     if (err.code === '23505') {
@@ -708,15 +791,33 @@ async function createDepartmentAtOnboarding(tenantClient, platformPool, {
   }
 
   await auditLogRepository.createAuditLogEntry(tenantClient, {
-    collegeId, userId: null, action: 'department_created_onboarding', entity: 'departments', entityId: department.id, metadata: { name, actorAdminId },
+    collegeId,
+    userId: null,
+    action: 'department_created_onboarding',
+    entity: 'departments',
+    entityId: department.id,
+    metadata: { name, actorAdminId },
   });
   await platformAuditService.record(platformPool, {
-    actorAdminId, action: 'department.created_onboarding', entity: 'department', entityId: department.id, ipAddress, metadata: { collegeId, name },
+    actorAdminId,
+    action: 'department.created_onboarding',
+    entity: 'department',
+    entityId: department.id,
+    ipAddress,
+    metadata: { collegeId, name },
   });
 
-  const classes = await academicService.generateClassesForDepartment(tenantClient, {
-    departmentId: department.id, collegeId, name, courseDuration, defaultSections,
-  }, { actorUserId: null });
+  const classes = await academicService.generateClassesForDepartment(
+    tenantClient,
+    {
+      departmentId: department.id,
+      collegeId,
+      name,
+      courseDuration,
+      defaultSections,
+    },
+    { actorUserId: null },
+  );
 
   return { ...department, generatedClasses: classes };
 }
@@ -729,9 +830,12 @@ async function createDepartmentAtOnboarding(tenantClient, platformPool, {
 // effect (that's departments' own thing) and no file bytes stored —
 // see 1759500000000's own comment for why this doesn't touch
 // DocumentService.
-async function createTemplateAtOnboarding(tenantClient, platformPool, {
-  collegeId, name, fileType,
-}, { actorAdminId, ipAddress }) {
+async function createTemplateAtOnboarding(
+  tenantClient,
+  platformPool,
+  { collegeId, name, fileType },
+  { actorAdminId, ipAddress },
+) {
   const college = await platformRepository.findCollegeById(platformPool, collegeId);
   if (college === null) {
     throw new CollegeNotFoundError(`no college with college_id ${JSON.stringify(collegeId)}`);
@@ -753,10 +857,20 @@ async function createTemplateAtOnboarding(tenantClient, platformPool, {
   }
 
   await auditLogRepository.createAuditLogEntry(tenantClient, {
-    collegeId, userId: null, action: 'document_template_created_onboarding', entity: 'onboarding_document_templates', entityId: template.id, metadata: { name, fileType, actorAdminId },
+    collegeId,
+    userId: null,
+    action: 'document_template_created_onboarding',
+    entity: 'onboarding_document_templates',
+    entityId: template.id,
+    metadata: { name, fileType, actorAdminId },
   });
   await platformAuditService.record(platformPool, {
-    actorAdminId, action: 'document_template.created_onboarding', entity: 'onboarding_document_template', entityId: template.id, ipAddress, metadata: { collegeId, name, fileType },
+    actorAdminId,
+    action: 'document_template.created_onboarding',
+    entity: 'onboarding_document_template',
+    entityId: template.id,
+    ipAddress,
+    metadata: { collegeId, name, fileType },
   });
 
   return template;
@@ -764,13 +878,21 @@ async function createTemplateAtOnboarding(tenantClient, platformPool, {
 
 async function markCollegeReady(platformPool, collegeId, { actorAdminId, ipAddress }) {
   const college = await platformRepository.transitionProvisioningStatus(platformPool, collegeId, {
-    fromStatuses: ['provisioning'], toStatus: 'ready',
+    fromStatuses: ['provisioning'],
+    toStatus: 'ready',
   });
   if (college === null) {
-    throw new ProvisioningTransitionError(`college ${JSON.stringify(collegeId)} is not in 'provisioning' — cannot mark ready`);
+    throw new ProvisioningTransitionError(
+      `college ${JSON.stringify(collegeId)} is not in 'provisioning' — cannot mark ready`,
+    );
   }
   await platformAuditService.record(platformPool, {
-    actorAdminId, action: 'college.marked_ready', entity: 'college', entityId: collegeId, ipAddress, metadata: null,
+    actorAdminId,
+    action: 'college.marked_ready',
+    entity: 'college',
+    entityId: collegeId,
+    ipAddress,
+    metadata: null,
   });
   return college;
 }
@@ -781,13 +903,21 @@ async function markCollegeReady(platformPool, collegeId, { actorAdminId, ipAddre
 // terminal (no route back), same as `archived`.
 async function cancelOnboarding(platformPool, collegeId, { actorAdminId, ipAddress }) {
   const college = await platformRepository.transitionProvisioningStatus(platformPool, collegeId, {
-    fromStatuses: ['provisioning'], toStatus: 'cancelled',
+    fromStatuses: ['provisioning'],
+    toStatus: 'cancelled',
   });
   if (college === null) {
-    throw new ProvisioningTransitionError(`college ${JSON.stringify(collegeId)} is not in 'provisioning' — cannot cancel onboarding`);
+    throw new ProvisioningTransitionError(
+      `college ${JSON.stringify(collegeId)} is not in 'provisioning' — cannot cancel onboarding`,
+    );
   }
   await platformAuditService.record(platformPool, {
-    actorAdminId, action: 'college.onboarding_cancelled', entity: 'college', entityId: collegeId, ipAddress, metadata: null,
+    actorAdminId,
+    action: 'college.onboarding_cancelled',
+    entity: 'college',
+    entityId: collegeId,
+    ipAddress,
+    metadata: null,
   });
   return college;
 }
@@ -810,13 +940,19 @@ async function activateCollege(tenantClient, platformPool, collegeId, { actorAdm
   }
 
   const college = await platformRepository.transitionProvisioningStatus(platformPool, collegeId, {
-    fromStatuses: ['ready'], toStatus: 'active',
+    fromStatuses: ['ready'],
+    toStatus: 'active',
   });
   if (college === null) {
     throw new ProvisioningTransitionError(`college ${JSON.stringify(collegeId)} is not in 'ready' — cannot activate`);
   }
   await platformAuditService.record(platformPool, {
-    actorAdminId, action: 'college.activated', entity: 'college', entityId: collegeId, ipAddress, metadata: null,
+    actorAdminId,
+    action: 'college.activated',
+    entity: 'college',
+    entityId: collegeId,
+    ipAddress,
+    metadata: null,
   });
   return college;
 }
@@ -829,11 +965,18 @@ async function activateCollege(tenantClient, platformPool, collegeId, { actorAdm
 // the rule already names as the fallback.
 async function suspendCollege(platformPool, collegeId, { actorAdminId, ipAddress }) {
   const college = await platformRepository.transitionProvisioningStatus(platformPool, collegeId, {
-    fromStatuses: ['active'], toStatus: 'suspended',
+    fromStatuses: ['active'],
+    toStatus: 'suspended',
   });
-  if (college === null) throw new ProvisioningTransitionError(`college ${JSON.stringify(collegeId)} is not 'active' — cannot suspend`);
+  if (college === null)
+    throw new ProvisioningTransitionError(`college ${JSON.stringify(collegeId)} is not 'active' — cannot suspend`);
   await platformAuditService.record(platformPool, {
-    actorAdminId, action: 'college.suspended', entity: 'college', entityId: collegeId, ipAddress, metadata: null,
+    actorAdminId,
+    action: 'college.suspended',
+    entity: 'college',
+    entityId: collegeId,
+    ipAddress,
+    metadata: null,
   });
   return college;
 }
@@ -847,25 +990,43 @@ async function suspendCollege(platformPool, collegeId, { actorAdminId, ipAddress
 async function reactivateCollege(platformPool, collegeId, { actorAdminId, ipAddress, license }) {
   assertValidLicense(license);
   let college = await platformRepository.transitionProvisioningStatus(platformPool, collegeId, {
-    fromStatuses: ['suspended'], toStatus: 'active',
+    fromStatuses: ['suspended'],
+    toStatus: 'active',
   });
-  if (college === null) throw new ProvisioningTransitionError(`college ${JSON.stringify(collegeId)} is not 'suspended' — cannot reactivate`);
+  if (college === null)
+    throw new ProvisioningTransitionError(
+      `college ${JSON.stringify(collegeId)} is not 'suspended' — cannot reactivate`,
+    );
   if (license !== undefined) {
     college = await platformRepository.updateCollege(platformPool, collegeId, { subscriptionStatus: license });
   }
   await platformAuditService.record(platformPool, {
-    actorAdminId, action: 'college.reactivated', entity: 'college', entityId: collegeId, ipAddress, metadata: { license: license ?? null },
+    actorAdminId,
+    action: 'college.reactivated',
+    entity: 'college',
+    entityId: collegeId,
+    ipAddress,
+    metadata: { license: license ?? null },
   });
   return college;
 }
 
 async function archiveCollege(platformPool, collegeId, { actorAdminId, ipAddress }) {
   const college = await platformRepository.transitionProvisioningStatus(platformPool, collegeId, {
-    fromStatuses: ['active', 'suspended'], toStatus: 'archived',
+    fromStatuses: ['active', 'suspended'],
+    toStatus: 'archived',
   });
-  if (college === null) throw new ProvisioningTransitionError(`college ${JSON.stringify(collegeId)} is not 'active' or 'suspended' — cannot archive`);
+  if (college === null)
+    throw new ProvisioningTransitionError(
+      `college ${JSON.stringify(collegeId)} is not 'active' or 'suspended' — cannot archive`,
+    );
   await platformAuditService.record(platformPool, {
-    actorAdminId, action: 'college.archived', entity: 'college', entityId: collegeId, ipAddress, metadata: null,
+    actorAdminId,
+    action: 'college.archived',
+    entity: 'college',
+    entityId: collegeId,
+    ipAddress,
+    metadata: null,
   });
   return college;
 }
@@ -880,14 +1041,21 @@ async function archiveCollege(platformPool, collegeId, { actorAdminId, ipAddress
 async function restoreCollege(platformPool, collegeId, { actorAdminId, ipAddress, license }) {
   assertValidLicense(license);
   let college = await platformRepository.transitionProvisioningStatus(platformPool, collegeId, {
-    fromStatuses: ['archived'], toStatus: 'active',
+    fromStatuses: ['archived'],
+    toStatus: 'active',
   });
-  if (college === null) throw new ProvisioningTransitionError(`college ${JSON.stringify(collegeId)} is not 'archived' — cannot restore`);
+  if (college === null)
+    throw new ProvisioningTransitionError(`college ${JSON.stringify(collegeId)} is not 'archived' — cannot restore`);
   if (license !== undefined) {
     college = await platformRepository.updateCollege(platformPool, collegeId, { subscriptionStatus: license });
   }
   await platformAuditService.record(platformPool, {
-    actorAdminId, action: 'college.restored', entity: 'college', entityId: collegeId, ipAddress, metadata: { license: license ?? null },
+    actorAdminId,
+    action: 'college.restored',
+    entity: 'college',
+    entityId: collegeId,
+    ipAddress,
+    metadata: { license: license ?? null },
   });
   return college;
 }
@@ -903,9 +1071,11 @@ async function getOrganizationsSummary(platformPool) {
 // generation time; redemption never accepts a payload from Platform
 // Admin, only the token — "each key authorizes exactly one specific
 // change, named at generation time."
-async function generateStructuralAuthorizationKey(tenantClient, {
-  collegeId, actionType, actionPayload,
-}, { actorUserId }) {
+async function generateStructuralAuthorizationKey(
+  tenantClient,
+  { collegeId, actionType, actionPayload },
+  { actorUserId },
+) {
   if (!STRUCTURAL_ACTION_TYPES.includes(actionType)) {
     throw new StructuralKeyValidationError(`actionType must be one of ${JSON.stringify(STRUCTURAL_ACTION_TYPES)}`);
   }
@@ -920,11 +1090,21 @@ async function generateStructuralAuthorizationKey(tenantClient, {
   const rawToken = security.generateRefreshToken();
   const expiresAt = new Date(Date.now() + STRUCTURAL_KEY_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
   const key = await structuralAuthorizationKeyRepository.createKey(tenantClient, {
-    collegeId, actionType, actionPayload, tokenHash: security.hashRefreshToken(rawToken), generatedBy: actorUserId, expiresAt,
+    collegeId,
+    actionType,
+    actionPayload,
+    tokenHash: security.hashRefreshToken(rawToken),
+    generatedBy: actorUserId,
+    expiresAt,
   });
 
   await auditLogRepository.createAuditLogEntry(tenantClient, {
-    collegeId, userId: actorUserId, action: 'structural_authorization_key_generated', entity: 'structural_authorization_keys', entityId: key.id, metadata: { actionType },
+    collegeId,
+    userId: actorUserId,
+    action: 'structural_authorization_key_generated',
+    entity: 'structural_authorization_keys',
+    entityId: key.id,
+    metadata: { actionType },
   });
 
   return { keyId: key.id, rawToken, actionType: key.action_type, expiresAt: key.expires_at };
@@ -940,7 +1120,12 @@ async function cancelStructuralAuthorizationKey(tenantClient, collegeId, keyId, 
     throw new StructuralKeyNotUsableError(`key ${JSON.stringify(keyId)} is not in a cancellable state`);
   }
   await auditLogRepository.createAuditLogEntry(tenantClient, {
-    collegeId, userId: actorUserId, action: 'structural_authorization_key_cancelled', entity: 'structural_authorization_keys', entityId: keyId, metadata: null,
+    collegeId,
+    userId: actorUserId,
+    action: 'structural_authorization_key_cancelled',
+    entity: 'structural_authorization_keys',
+    entityId: keyId,
+    metadata: null,
   });
   return cancelled;
 }
@@ -958,7 +1143,10 @@ async function cancelStructuralAuthorizationKey(tenantClient, collegeId, keyId, 
 // currently passes it. Kept as an optional param for a future caller
 // that does want the old strict single-type match.
 async function loadRedeemableStructuralKey(platformPool, { rawToken, actionType }) {
-  const key = await structuralAuthorizationKeyRepository.findByTokenHash(platformPool, security.hashRefreshToken(rawToken));
+  const key = await structuralAuthorizationKeyRepository.findByTokenHash(
+    platformPool,
+    security.hashRefreshToken(rawToken),
+  );
   if (key === null) {
     throw new StructuralKeyNotFoundError('no structural authorization key matches this token');
   }
@@ -966,18 +1154,27 @@ async function loadRedeemableStructuralKey(platformPool, { rawToken, actionType 
     throw new StructuralKeyNotUsableError(`key is ${key.status === 'generated' ? 'expired' : key.status}, not usable`);
   }
   if (actionType !== undefined && key.action_type !== actionType) {
-    throw new StructuralKeyActionMismatchError(`key authorizes ${JSON.stringify(key.action_type)}, not ${JSON.stringify(actionType)}`);
+    throw new StructuralKeyActionMismatchError(
+      `key authorizes ${JSON.stringify(key.action_type)}, not ${JSON.stringify(actionType)}`,
+    );
   }
   return key;
 }
 
 async function markStructuralKeyRedeemed(platformPool, keyId, { actorAdminId, ipAddress }) {
-  const redeemed = await structuralAuthorizationKeyRepository.redeemKey(platformPool, keyId, { redeemedBy: actorAdminId });
+  const redeemed = await structuralAuthorizationKeyRepository.redeemKey(platformPool, keyId, {
+    redeemedBy: actorAdminId,
+  });
   if (redeemed === null) {
     throw new StructuralKeyNotUsableError(`key ${JSON.stringify(keyId)} was no longer redeemable at commit time`);
   }
   await platformAuditService.record(platformPool, {
-    actorAdminId, action: 'structural_authorization_key_redeemed', entity: 'structural_authorization_keys', entityId: keyId, ipAddress, metadata: { collegeId: redeemed.college_id, actionType: redeemed.action_type },
+    actorAdminId,
+    action: 'structural_authorization_key_redeemed',
+    entity: 'structural_authorization_keys',
+    entityId: keyId,
+    ipAddress,
+    metadata: { collegeId: redeemed.college_id, actionType: redeemed.action_type },
   });
   return redeemed;
 }
@@ -995,32 +1192,52 @@ async function markStructuralKeyRedeemed(platformPool, keyId, { actorAdminId, ip
 // platform_audit_log with the real actor_admin_id, and this entry's
 // metadata carries the same key/action facts to cross-reference.
 async function executeDepartmentMergeOrRename(tenantClient, collegeId, actionPayload, { actorAdminId }) {
-  const {
-    mode, approvedIntake, courseDuration, effectiveDate,
-  } = actionPayload;
+  const { mode, approvedIntake, courseDuration, effectiveDate } = actionPayload;
   if (mode === 'rename') {
     const { departmentId, name } = actionPayload;
     const department = await departmentRepository.renameDepartmentWithDetails(tenantClient, departmentId, {
-      name, approvedIntake, courseDuration, effectiveDate,
+      name,
+      approvedIntake,
+      courseDuration,
+      effectiveDate,
     });
     if (department === null) {
-      throw new StructuralKeyValidationError(`department ${JSON.stringify(departmentId)} no longer exists or was already merged away`);
+      throw new StructuralKeyValidationError(
+        `department ${JSON.stringify(departmentId)} no longer exists or was already merged away`,
+      );
     }
     await auditLogRepository.createAuditLogEntry(tenantClient, {
-      collegeId, userId: null, action: 'department_renamed', entity: 'departments', entityId: department.id, metadata: { name, actorAdminId },
+      collegeId,
+      userId: null,
+      action: 'department_renamed',
+      entity: 'departments',
+      entityId: department.id,
+      metadata: { name, actorAdminId },
     });
     return department;
   }
   if (mode === 'merge') {
     const { sourceDepartmentIds, targetDepartmentId, name } = actionPayload;
     const target = await departmentRepository.mergeDepartments(tenantClient, {
-      sourceDepartmentIds, targetDepartmentId, name, approvedIntake, courseDuration, effectiveDate,
+      sourceDepartmentIds,
+      targetDepartmentId,
+      name,
+      approvedIntake,
+      courseDuration,
+      effectiveDate,
     });
     if (target === null) {
-      throw new StructuralKeyValidationError(`target department ${JSON.stringify(targetDepartmentId)} no longer exists`);
+      throw new StructuralKeyValidationError(
+        `target department ${JSON.stringify(targetDepartmentId)} no longer exists`,
+      );
     }
     await auditLogRepository.createAuditLogEntry(tenantClient, {
-      collegeId, userId: null, action: 'departments_merged', entity: 'departments', entityId: target.id, metadata: { sourceDepartmentIds, actorAdminId },
+      collegeId,
+      userId: null,
+      action: 'departments_merged',
+      entity: 'departments',
+      entityId: target.id,
+      metadata: { sourceDepartmentIds, actorAdminId },
     });
     return target;
   }
@@ -1043,9 +1260,7 @@ async function executeDepartmentMergeOrRename(tenantClient, collegeId, actionPay
 // executes it, since there's no equivalent falsifiable-claim risk).
 
 async function executeL2Configuration(platformPool, collegeId, payload, { actorAdminId, ipAddress }) {
-  const {
-    l2Enabled, l3ReportsViaL2, l2PermittedModules, effectiveDate,
-  } = payload;
+  const { l2Enabled, l3ReportsViaL2, l2PermittedModules, effectiveDate } = payload;
   if (l2Enabled === undefined) {
     throw new StructuralKeyValidationError('l2Enabled is required');
   }
@@ -1062,7 +1277,12 @@ async function executeL2Configuration(platformPool, collegeId, payload, { actorA
   });
   if (college === null) throw new CollegeNotFoundError(`no college with college_id ${JSON.stringify(collegeId)}`);
   await platformAuditService.record(platformPool, {
-    actorAdminId, action: 'college.l2_configuration_changed', entity: 'college', entityId: collegeId, ipAddress, metadata: payload,
+    actorAdminId,
+    action: 'college.l2_configuration_changed',
+    entity: 'college',
+    entityId: collegeId,
+    ipAddress,
+    metadata: payload,
   });
   return college;
 }
@@ -1073,30 +1293,39 @@ async function executeAffiliationChange(platformPool, collegeId, payload, { acto
     throw new StructuralKeyValidationError('affiliatingUniversity is required');
   }
   const college = await platformRepository.updateStructuralFields(platformPool, collegeId, {
-    affiliatingUniversity, affiliationEffectiveDate: effectiveDate,
+    affiliatingUniversity,
+    affiliationEffectiveDate: effectiveDate,
   });
   if (college === null) throw new CollegeNotFoundError(`no college with college_id ${JSON.stringify(collegeId)}`);
   await platformAuditService.record(platformPool, {
-    actorAdminId, action: 'college.affiliation_changed', entity: 'college', entityId: collegeId, ipAddress, metadata: payload,
+    actorAdminId,
+    action: 'college.affiliation_changed',
+    entity: 'college',
+    entityId: collegeId,
+    ipAddress,
+    metadata: payload,
   });
   return college;
 }
 
 async function executeAccreditationChange(platformPool, collegeId, payload, { actorAdminId, ipAddress }) {
-  const {
-    accreditingBody, naacCgpa, nbaPoints, nbaValidTill, effectiveDate,
-  } = payload;
+  const { accreditingBody, naacCgpa, nbaPoints, nbaValidTill, effectiveDate } = payload;
   if (accreditingBody !== 'NAAC' && accreditingBody !== 'NBA') {
-    throw new StructuralKeyValidationError('accreditingBody must be "NAAC" or "NBA" — the only two with real tracked fields');
+    throw new StructuralKeyValidationError(
+      'accreditingBody must be "NAAC" or "NBA" — the only two with real tracked fields',
+    );
   }
-  const fields = accreditingBody === 'NAAC'
-    ? { naacAccredited: true, naacCgpa }
-    : { nbaPoints, nbaValidTill };
+  const fields = accreditingBody === 'NAAC' ? { naacAccredited: true, naacCgpa } : { nbaPoints, nbaValidTill };
   fields.accreditationEffectiveDate = effectiveDate;
   const college = await platformRepository.updateStructuralFields(platformPool, collegeId, fields);
   if (college === null) throw new CollegeNotFoundError(`no college with college_id ${JSON.stringify(collegeId)}`);
   await platformAuditService.record(platformPool, {
-    actorAdminId, action: 'college.accreditation_changed', entity: 'college', entityId: collegeId, ipAddress, metadata: payload,
+    actorAdminId,
+    action: 'college.accreditation_changed',
+    entity: 'college',
+    entityId: collegeId,
+    ipAddress,
+    metadata: payload,
   });
   return college;
 }
@@ -1104,15 +1333,22 @@ async function executeAccreditationChange(platformPool, collegeId, payload, { ac
 // Tenant-scoped (college_campuses has RLS, like departments) — runs
 // against the same tenant transaction as executeDepartmentMergeOrRename.
 async function executeAddCampus(tenantClient, collegeId, payload, { actorAdminId }) {
-  const {
-    name, city, campusType, effectiveDate,
-  } = payload;
+  const { name, city, campusType, effectiveDate } = payload;
   if (!name) throw new StructuralKeyValidationError('campus name is required');
   const campus = await collegeCampusRepository.create(tenantClient, {
-    collegeId, name, city, campusType, effectiveDate,
+    collegeId,
+    name,
+    city,
+    campusType,
+    effectiveDate,
   });
   await auditLogRepository.createAuditLogEntry(tenantClient, {
-    collegeId, userId: null, action: 'campus_added', entity: 'college_campuses', entityId: campus.id, metadata: { name, city, campusType, actorAdminId },
+    collegeId,
+    userId: null,
+    action: 'campus_added',
+    entity: 'college_campuses',
+    entityId: campus.id,
+    metadata: { name, city, campusType, actorAdminId },
   });
   return campus;
 }
@@ -1132,19 +1368,30 @@ async function executeAddCampus(tenantClient, collegeId, payload, { actorAdminId
 async function executeStructuralActions(tenantClient, platformPool, collegeId, sections, { actorAdminId, ipAddress }) {
   const results = {};
   if (sections.l2Config) {
-    results.l2Config = await executeL2Configuration(platformPool, collegeId, sections.l2Config, { actorAdminId, ipAddress });
+    results.l2Config = await executeL2Configuration(platformPool, collegeId, sections.l2Config, {
+      actorAdminId,
+      ipAddress,
+    });
   }
   if (sections.affiliation) {
-    results.affiliation = await executeAffiliationChange(platformPool, collegeId, sections.affiliation, { actorAdminId, ipAddress });
+    results.affiliation = await executeAffiliationChange(platformPool, collegeId, sections.affiliation, {
+      actorAdminId,
+      ipAddress,
+    });
   }
   if (sections.accreditation) {
-    results.accreditation = await executeAccreditationChange(platformPool, collegeId, sections.accreditation, { actorAdminId, ipAddress });
+    results.accreditation = await executeAccreditationChange(platformPool, collegeId, sections.accreditation, {
+      actorAdminId,
+      ipAddress,
+    });
   }
   if (sections.campus) {
     results.campus = await executeAddCampus(tenantClient, collegeId, sections.campus, { actorAdminId });
   }
   if (sections.department) {
-    results.department = await executeDepartmentMergeOrRename(tenantClient, collegeId, sections.department, { actorAdminId });
+    results.department = await executeDepartmentMergeOrRename(tenantClient, collegeId, sections.department, {
+      actorAdminId,
+    });
   }
   return results;
 }

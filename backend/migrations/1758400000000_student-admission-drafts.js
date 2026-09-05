@@ -126,7 +126,9 @@ exports.up = (pgm) => {
       updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
-  pgm.sql('CREATE INDEX student_admission_draft_documents_draft_id_idx ON student_admission_draft_documents (draft_id)');
+  pgm.sql(
+    'CREATE INDEX student_admission_draft_documents_draft_id_idx ON student_admission_draft_documents (draft_id)',
+  );
   pgm.sql('ALTER TABLE student_admission_draft_documents ENABLE ROW LEVEL SECURITY');
   pgm.sql('ALTER TABLE student_admission_draft_documents FORCE ROW LEVEL SECURITY');
   pgm.sql(`

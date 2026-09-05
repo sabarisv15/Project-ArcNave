@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DrawerShell } from './AttendanceActionDrawer';
+import { DrawerShell } from '@/components/ui/Drawer';
 import { ATTENDANCE_THRESHOLD, classLabel } from '../lib/classTutorData';
 import { DocumentsPendingBadge, StudentOriginBadge } from './StudentOriginBadge';
 import { cn } from '../lib/utils';
@@ -65,11 +65,7 @@ function ProfileTab({ s }) {
       <Row
         label="Joined this class"
         value={<StudentOriginBadge origin={s.origin} className="text-[12.5px] text-ink" />}
-        hint={
-          s.origin === 'promoted'
-            ? 'Placed by a confirmed promotion review — no onboarding is needed'
-            : undefined
-        }
+        hint={s.origin === 'promoted' ? 'Placed by a confirmed promotion review — no onboarding is needed' : undefined}
       />
       {s.documentsPending && (
         <Row
@@ -80,10 +76,12 @@ function ProfileTab({ s }) {
       )}
       <Row
         label="Attendance"
-        value={
-          <span className={cn('tabular-nums', atRisk && 'text-danger font-[500]')}>{s.attendance}%</span>
+        value={<span className={cn('tabular-nums', atRisk && 'text-danger font-[500]')}>{s.attendance}%</span>}
+        hint={
+          atRisk
+            ? `Below the ${ATTENDANCE_THRESHOLD}% eligibility threshold`
+            : `Meets the ${ATTENDANCE_THRESHOLD}% threshold`
         }
-        hint={atRisk ? `Below the ${ATTENDANCE_THRESHOLD}% eligibility threshold` : `Meets the ${ATTENDANCE_THRESHOLD}% threshold`}
       />
       <Row
         label="Academic"
@@ -127,9 +125,7 @@ function FlagsTab({ s }) {
         Who raised it, in what position, and when. A flag is a judgement about a
         person; a record of one that cannot say who made it is not a record.
       */}
-      <p className="m-0 mt-[6px] text-[11.5px] text-ink-faint">
-        Raised by You · Class Tutor · {s.flag.raisedAt}
-      </p>
+      <p className="m-0 mt-[6px] text-[11.5px] text-ink-faint">Raised by You · Class Tutor · {s.flag.raisedAt}</p>
     </div>
   );
 }
@@ -214,7 +210,7 @@ export function ClassStudentDrawer({ student, onClose }) {
                   'flex-none h-[27px] px-[10px] border-0 rounded-[8px] bg-transparent font-sans text-[12.5px] cursor-pointer transition-colors duration-200',
                   tab === t.key
                     ? 'bg-accent-soft text-accent font-[600]'
-                    : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2'
+                    : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2',
                 )}
               >
                 {t.label}

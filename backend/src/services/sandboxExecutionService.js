@@ -147,7 +147,9 @@ async function buildAuthHeaders() {
   // google-auth-library returns a plain object here in v11 and a
   // Headers instance in later majors — normalise both.
   if (typeof issued.forEach === 'function' && typeof issued.get === 'function') {
-    issued.forEach((value, key) => { headers[key] = value; });
+    issued.forEach((value, key) => {
+      headers[key] = value;
+    });
   } else {
     Object.assign(headers, issued);
   }
@@ -210,9 +212,7 @@ function assertValidRequest(code, files, outputFile, expectFormulasIn) {
 // array/null) even for a plain call with no `outputFile` — a caller
 // checking `result.files.length` never needs to know whether a file was
 // even requested.
-async function executeCode({
-  code, files, outputFile, expectFormulasIn,
-}) {
+async function executeCode({ code, files, outputFile, expectFormulasIn }) {
   assertConfigured();
   assertValidRequest(code, files, outputFile, expectFormulasIn);
 
@@ -231,7 +231,10 @@ async function executeCode({
       method: 'POST',
       headers,
       body: JSON.stringify({
-        code, files: files || [], outputFile, expectFormulasIn,
+        code,
+        files: files || [],
+        outputFile,
+        expectFormulasIn,
       }),
       signal: controller.signal,
     });
@@ -322,11 +325,14 @@ async function transcodeMedia({ buffer, fileName, targetFormat }) {
     throw new SandboxValidationError(`file exceeds the ${MAX_MEDIA_FILE_BYTES}-byte limit`);
   }
 
-  const result = await postSandboxOperation({
-    operation: 'transcode_media',
-    targetFormat,
-    files: [{ name: fileName || 'input', contentBase64: buffer.toString('base64') }],
-  }, TRANSCODE_TIMEOUT_MS);
+  const result = await postSandboxOperation(
+    {
+      operation: 'transcode_media',
+      targetFormat,
+      files: [{ name: fileName || 'input', contentBase64: buffer.toString('base64') }],
+    },
+    TRANSCODE_TIMEOUT_MS,
+  );
 
   if (result.status !== 'ok') {
     return { status: 'failed', reason: result.reason || 'transcode_failed', detail: result.detail || null };
@@ -363,11 +369,14 @@ async function extractArchive({ buffer, fileName, archiveKind }) {
     throw new SandboxValidationError(`file exceeds the ${MAX_MEDIA_FILE_BYTES}-byte limit`);
   }
 
-  const result = await postSandboxOperation({
-    operation: 'extract_archive',
-    archiveKind,
-    files: [{ name: fileName || 'archive', contentBase64: buffer.toString('base64') }],
-  }, ARCHIVE_EXTRACT_TIMEOUT_MS);
+  const result = await postSandboxOperation(
+    {
+      operation: 'extract_archive',
+      archiveKind,
+      files: [{ name: fileName || 'archive', contentBase64: buffer.toString('base64') }],
+    },
+    ARCHIVE_EXTRACT_TIMEOUT_MS,
+  );
 
   if (result.status !== 'ok') {
     return { status: 'failed', reason: result.reason || 'archive_extraction_failed', detail: result.detail || null };

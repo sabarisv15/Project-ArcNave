@@ -50,11 +50,13 @@ function createPlatformApp({ registerExtraRoutes } = {}) {
   // comment for why credentials stay false and why this origin is
   // never a wildcard.
   app.use(helmet());
-  app.use(cors({
-    origin: config.frontendOrigin,
-    credentials: false,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
-  }));
+  app.use(
+    cors({
+      origin: config.frontendOrigin,
+      credentials: false,
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
+    }),
+  );
   app.use(express.json());
   app.use(createPlatformRouter());
 

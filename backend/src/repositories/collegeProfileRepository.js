@@ -43,14 +43,12 @@ const COLUMNS = [
   ['address', 'address'],
 ];
 
-const RETURNING = 'college_id, name, level1_position_title, level3_position_title, '
-  + 'level4_position_title, affiliating_university, year_established, address';
+const RETURNING =
+  'college_id, name, level1_position_title, level3_position_title, ' +
+  'level4_position_title, affiliating_university, year_established, address';
 
 async function getByCollegeId(client, collegeId) {
-  const result = await client.query(
-    `SELECT ${RETURNING} FROM colleges WHERE college_id = $1`,
-    [collegeId],
-  );
+  const result = await client.query(`SELECT ${RETURNING} FROM colleges WHERE college_id = $1`, [collegeId]);
   return result.rows[0] || null;
 }
 
@@ -66,10 +64,7 @@ async function getByCollegeId(client, collegeId) {
 // deliberately not exposed through collegeProfileService/
 // routes/collegeProfile.js at all.
 async function getLevel1PositionTitle(client, collegeId) {
-  const result = await client.query(
-    'SELECT level1_position_title FROM colleges WHERE college_id = $1',
-    [collegeId],
-  );
+  const result = await client.query('SELECT level1_position_title FROM colleges WHERE college_id = $1', [collegeId]);
   return result.rows[0] ? result.rows[0].level1_position_title : null;
 }
 
@@ -78,10 +73,7 @@ async function getLevel1PositionTitle(client, collegeId) {
 // this college's Level 3 (HOD-equivalent) position, falling back to
 // DEFAULT_LEVEL3_POSITION_TITLE ('HOD') there when null.
 async function getLevel3PositionTitle(client, collegeId) {
-  const result = await client.query(
-    'SELECT level3_position_title FROM colleges WHERE college_id = $1',
-    [collegeId],
-  );
+  const result = await client.query('SELECT level3_position_title FROM colleges WHERE college_id = $1', [collegeId]);
   return result.rows[0] ? result.rows[0].level3_position_title : null;
 }
 
@@ -90,10 +82,7 @@ async function getLevel3PositionTitle(client, collegeId) {
 // / positionAccountInvitationService.ensureClassTutorPositionForInvite
 // fall back to 'Class Tutor' when null.
 async function getLevel4PositionTitle(client, collegeId) {
-  const result = await client.query(
-    'SELECT level4_position_title FROM colleges WHERE college_id = $1',
-    [collegeId],
-  );
+  const result = await client.query('SELECT level4_position_title FROM colleges WHERE college_id = $1', [collegeId]);
   return result.rows[0] ? result.rows[0].level4_position_title : null;
 }
 
@@ -101,10 +90,7 @@ async function getLevel4PositionTitle(client, collegeId) {
 // storage-quota enforcement (assertWithinStorageQuota) reading the
 // Platform-Admin-set tier from the tenant side, read-only.
 async function getStorageTier(client, collegeId) {
-  const result = await client.query(
-    'SELECT storage_tier FROM colleges WHERE college_id = $1',
-    [collegeId],
-  );
+  const result = await client.query('SELECT storage_tier FROM colleges WHERE college_id = $1', [collegeId]);
   return result.rows[0] ? result.rows[0].storage_tier : null;
 }
 
@@ -127,5 +113,10 @@ async function updateProfile(client, collegeId, fields) {
 }
 
 module.exports = {
-  getByCollegeId, updateProfile, getLevel1PositionTitle, getLevel3PositionTitle, getLevel4PositionTitle, getStorageTier,
+  getByCollegeId,
+  updateProfile,
+  getLevel1PositionTitle,
+  getLevel3PositionTitle,
+  getLevel4PositionTitle,
+  getStorageTier,
 };

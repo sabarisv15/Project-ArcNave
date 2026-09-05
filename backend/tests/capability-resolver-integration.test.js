@@ -31,9 +31,7 @@ const actorContextService = require('../src/services/actorContextService');
 const auditLogRepository = require('../src/repositories/auditLogRepository');
 const staffService = require('../src/services/staffService');
 const { runWithRequestContext } = require('../src/logging/context');
-const {
-  seedPrincipalPosition, seedHodPosition, cleanupPositionRows,
-} = require('./helpers/positionFixtures');
+const { seedPrincipalPosition, seedHodPosition, cleanupPositionRows } = require('./helpers/positionFixtures');
 
 const MIGRATION_DATABASE_URL = process.env.MIGRATION_DATABASE_URL;
 const PASSWORD = 'CapabilityResolverTestPass123!';
@@ -89,25 +87,27 @@ async function insertUser(adminPool, collegeId, username, role) {
 async function seedScenario(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const college = { collegeId: `capres${suffix}`, subdomain: `capres${suffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [college.collegeId, college.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    college.collegeId,
+    college.subdomain,
+  ]);
 
-  const deptA = await adminPool.query(
-    'INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id',
-    [college.collegeId, `Dept A ${suffix}`],
-  );
-  const deptB = await adminPool.query(
-    'INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id',
-    [college.collegeId, `Dept B ${suffix}`],
-  );
+  const deptA = await adminPool.query('INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id', [
+    college.collegeId,
+    `Dept A ${suffix}`,
+  ]);
+  const deptB = await adminPool.query('INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id', [
+    college.collegeId,
+    `Dept B ${suffix}`,
+  ]);
   const departmentAId = deptA.rows[0].id;
   const departmentBId = deptB.rows[0].id;
 
   const principal = await insertUser(adminPool, college.collegeId, 'principaluser', 'principal');
   await seedPrincipalPosition(adminPool, {
-    collegeId: college.collegeId, userId: principal.userId, passwordHash: principal.passwordHash,
+    collegeId: college.collegeId,
+    userId: principal.userId,
+    passwordHash: principal.passwordHash,
   });
 
   const permanentHod = await insertUser(adminPool, college.collegeId, 'permhoduser', 'hod');
@@ -212,12 +212,14 @@ test('Capability Resolver integration — Authorization, Workflow Routing, Visib
 
   await t.test('Authorization: principal, both HOD kinds, and plain staff (scoped) are all allowed', async () => {
     const principalResp = await requestJson(baseUrl, '/api/v1/analytics/attendance-rate', 'GET', {
-      host: hostFor(scenario.subdomain), authorization: bearerFor(scenario.principal.userId, 'principal'),
+      host: hostFor(scenario.subdomain),
+      authorization: bearerFor(scenario.principal.userId, 'principal'),
     });
     assert.equal(principalResp.status, 200);
 
     const permanentHodResp = await requestJson(baseUrl, '/api/v1/analytics/attendance-rate', 'GET', {
-      host: hostFor(scenario.subdomain), authorization: bearerFor(scenario.permanentHod.userId, 'hod'),
+      host: hostFor(scenario.subdomain),
+      authorization: bearerFor(scenario.permanentHod.userId, 'hod'),
     });
     assert.equal(permanentHodResp.status, 200);
 
@@ -227,12 +229,14 @@ test('Capability Resolver integration — Authorization, Workflow Routing, Visib
     // not the stale claim, since a plain 'staff' claim would otherwise
     // 403 here.
     const actingHodResp = await requestJson(baseUrl, '/api/v1/analytics/attendance-rate', 'GET', {
-      host: hostFor(scenario.subdomain), authorization: bearerFor(scenario.actingHod.userId, 'staff'),
+      host: hostFor(scenario.subdomain),
+      authorization: bearerFor(scenario.actingHod.userId, 'staff'),
     });
     assert.equal(actingHodResp.status, 200);
 
     const staffResp = await requestJson(baseUrl, '/api/v1/analytics/attendance-rate', 'GET', {
-      host: hostFor(scenario.subdomain), authorization: bearerFor(scenario.plainStaff.userId, 'staff'),
+      host: hostFor(scenario.subdomain),
+      authorization: bearerFor(scenario.plainStaff.userId, 'staff'),
     });
     assert.equal(staffResp.status, 200);
   });
@@ -244,7 +248,8 @@ test('Capability Resolver integration — Authorization, Workflow Routing, Visib
       // record_restoration's default chain is ['principal'] — isolates
       // the principal-resolution step with no departmentId needed.
       const principalChain = await workflowChainService.resolveApproverChain(client, {
-        collegeId: scenario.collegeId, entityType: 'record_restoration',
+        collegeId: scenario.collegeId,
+        entityType: 'record_restoration',
       });
       assert.equal(principalChain[0].user_id, scenario.principal.userId);
 
@@ -252,12 +257,16 @@ test('Capability Resolver integration — Authorization, Workflow Routing, Visib
       // step 1 isolates hod-resolution for whichever department is
       // passed.
       const permanentHodChain = await workflowChainService.resolveApproverChain(client, {
-        collegeId: scenario.collegeId, entityType: 'timetable_approval', departmentId: scenario.departmentAId,
+        collegeId: scenario.collegeId,
+        entityType: 'timetable_approval',
+        departmentId: scenario.departmentAId,
       });
       assert.equal(permanentHodChain[0].user_id, scenario.permanentHod.userId);
 
       const actingHodChain = await workflowChainService.resolveApproverChain(client, {
-        collegeId: scenario.collegeId, entityType: 'timetable_approval', departmentId: scenario.departmentBId,
+        collegeId: scenario.collegeId,
+        entityType: 'timetable_approval',
+        departmentId: scenario.departmentBId,
       });
       assert.equal(actingHodChain[0].user_id, scenario.actingHod.userId);
     });
@@ -265,94 +274,117 @@ test('Capability Resolver integration — Authorization, Workflow Routing, Visib
 
   // --- Visibility / Data Scope ---
 
-  await t.test('Visibility/Data Scope: college-wide for principal, own-department for both HOD kinds, self_assigned for staff', async () => {
-    await withTenantClient(async (client) => {
-      const principalCtx = await actorContextService.buildActorContext(client, {
-        actorId: scenario.principal.userId, tenantId: scenario.collegeId,
-      });
-      assert.equal(principalCtx.scopeLevel, 'college');
+  await t.test(
+    'Visibility/Data Scope: college-wide for principal, own-department for both HOD kinds, self_assigned for staff',
+    async () => {
+      await withTenantClient(async (client) => {
+        const principalCtx = await actorContextService.buildActorContext(client, {
+          actorId: scenario.principal.userId,
+          tenantId: scenario.collegeId,
+        });
+        assert.equal(principalCtx.scopeLevel, 'college');
 
-      const permanentHodCtx = await actorContextService.buildActorContext(client, {
-        actorId: scenario.permanentHod.userId, tenantId: scenario.collegeId,
-      });
-      assert.equal(permanentHodCtx.scopeLevel, 'department');
-      assert.deepEqual(permanentHodCtx.departmentIds, [scenario.departmentAId]);
+        const permanentHodCtx = await actorContextService.buildActorContext(client, {
+          actorId: scenario.permanentHod.userId,
+          tenantId: scenario.collegeId,
+        });
+        assert.equal(permanentHodCtx.scopeLevel, 'department');
+        assert.deepEqual(permanentHodCtx.departmentIds, [scenario.departmentAId]);
 
-      const actingHodCtx = await actorContextService.buildActorContext(client, {
-        actorId: scenario.actingHod.userId, tenantId: scenario.collegeId,
-      });
-      assert.equal(actingHodCtx.scopeLevel, 'department');
-      assert.deepEqual(actingHodCtx.departmentIds, [scenario.departmentBId]);
+        const actingHodCtx = await actorContextService.buildActorContext(client, {
+          actorId: scenario.actingHod.userId,
+          tenantId: scenario.collegeId,
+        });
+        assert.equal(actingHodCtx.scopeLevel, 'department');
+        assert.deepEqual(actingHodCtx.departmentIds, [scenario.departmentBId]);
 
-      const staffCtx = await actorContextService.buildActorContext(client, {
-        actorId: scenario.plainStaff.userId, tenantId: scenario.collegeId,
+        const staffCtx = await actorContextService.buildActorContext(client, {
+          actorId: scenario.plainStaff.userId,
+          tenantId: scenario.collegeId,
+        });
+        assert.equal(staffCtx.scopeLevel, 'self_assigned');
       });
-      assert.equal(staffCtx.scopeLevel, 'self_assigned');
-    });
-  });
+    },
+  );
 
   // --- Audit Identity ---
 
-  await t.test('Audit Identity: a principal-context action records position_account_id/position_id; a no-position action records neither', async () => {
-    await withTenantClient(async (client) => {
-      const capabilities = await identityService.resolveCapabilities(client, {
-        userId: scenario.principal.userId, collegeId: scenario.collegeId,
-      });
-      await runWithRequestContext({ requestId: 'test-req-1', collegeId: scenario.collegeId, capabilities }, async () => {
-        await auditLogRepository.createAuditLogEntry(client, {
-          collegeId: scenario.collegeId,
+  await t.test(
+    'Audit Identity: a principal-context action records position_account_id/position_id; a no-position action records neither',
+    async () => {
+      await withTenantClient(async (client) => {
+        const capabilities = await identityService.resolveCapabilities(client, {
           userId: scenario.principal.userId,
-          action: 'capability_resolver_integration_test',
-          entity: 'test',
-          entityId: 'principal-case',
-          metadata: null,
-        });
-      });
-
-      const noPositionCapabilities = await identityService.resolveCapabilities(client, {
-        userId: scenario.noPosition.userId, collegeId: scenario.collegeId,
-      });
-      await runWithRequestContext({ requestId: 'test-req-2', collegeId: scenario.collegeId, capabilities: noPositionCapabilities }, async () => {
-        await auditLogRepository.createAuditLogEntry(client, {
           collegeId: scenario.collegeId,
-          userId: scenario.noPosition.userId,
-          action: 'capability_resolver_integration_test',
-          entity: 'test',
-          entityId: 'no-position-case',
-          metadata: null,
         });
-      });
+        await runWithRequestContext(
+          { requestId: 'test-req-1', collegeId: scenario.collegeId, capabilities },
+          async () => {
+            await auditLogRepository.createAuditLogEntry(client, {
+              collegeId: scenario.collegeId,
+              userId: scenario.principal.userId,
+              action: 'capability_resolver_integration_test',
+              entity: 'test',
+              entityId: 'principal-case',
+              metadata: null,
+            });
+          },
+        );
 
-      const rows = await client.query(
-        `SELECT entity_id, position_account_id, position_id FROM audit_log
+        const noPositionCapabilities = await identityService.resolveCapabilities(client, {
+          userId: scenario.noPosition.userId,
+          collegeId: scenario.collegeId,
+        });
+        await runWithRequestContext(
+          { requestId: 'test-req-2', collegeId: scenario.collegeId, capabilities: noPositionCapabilities },
+          async () => {
+            await auditLogRepository.createAuditLogEntry(client, {
+              collegeId: scenario.collegeId,
+              userId: scenario.noPosition.userId,
+              action: 'capability_resolver_integration_test',
+              entity: 'test',
+              entityId: 'no-position-case',
+              metadata: null,
+            });
+          },
+        );
+
+        const rows = await client.query(
+          `SELECT entity_id, position_account_id, position_id FROM audit_log
          WHERE college_id = $1 AND action = 'capability_resolver_integration_test'
          ORDER BY entity_id`,
-        [scenario.collegeId],
-      );
-      const byEntityId = Object.fromEntries(rows.rows.map((r) => [r.entity_id, r]));
+          [scenario.collegeId],
+        );
+        const byEntityId = Object.fromEntries(rows.rows.map((r) => [r.entity_id, r]));
 
-      assert.ok(byEntityId['principal-case'].position_account_id !== null);
-      assert.ok(byEntityId['principal-case'].position_id !== null);
-      assert.equal(byEntityId['no-position-case'].position_account_id, null);
-      assert.equal(byEntityId['no-position-case'].position_id, null);
-    });
-  });
+        assert.ok(byEntityId['principal-case'].position_account_id !== null);
+        assert.ok(byEntityId['principal-case'].position_id !== null);
+        assert.equal(byEntityId['no-position-case'].position_account_id, null);
+        assert.equal(byEntityId['no-position-case'].position_id, null);
+      });
+    },
+  );
 
   // --- Capability Resolution / Effective Role (Level 2 default, no-position case) ---
 
-  await t.test('Capability Resolution: Level 2 with no configured policy defaults to staff/self_assigned; a user with no position at all is the ordinary staff case, not an error', async () => {
-    await withTenantClient(async (client) => {
-      const level2Capabilities = await identityService.resolveCapabilities(client, {
-        userId: scenario.level2.userId, collegeId: scenario.collegeId,
-      });
-      assert.equal(level2Capabilities.effectiveRole, 'staff');
-      assert.equal(level2Capabilities.scopeLevel, 'self_assigned');
+  await t.test(
+    'Capability Resolution: Level 2 with no configured policy defaults to staff/self_assigned; a user with no position at all is the ordinary staff case, not an error',
+    async () => {
+      await withTenantClient(async (client) => {
+        const level2Capabilities = await identityService.resolveCapabilities(client, {
+          userId: scenario.level2.userId,
+          collegeId: scenario.collegeId,
+        });
+        assert.equal(level2Capabilities.effectiveRole, 'staff');
+        assert.equal(level2Capabilities.scopeLevel, 'self_assigned');
 
-      const noPositionCapabilities = await identityService.resolveCapabilities(client, {
-        userId: scenario.noPosition.userId, collegeId: scenario.collegeId,
+        const noPositionCapabilities = await identityService.resolveCapabilities(client, {
+          userId: scenario.noPosition.userId,
+          collegeId: scenario.collegeId,
+        });
+        assert.equal(noPositionCapabilities.effectiveRole, 'staff');
+        assert.deepEqual(noPositionCapabilities.positions, []);
       });
-      assert.equal(noPositionCapabilities.effectiveRole, 'staff');
-      assert.deepEqual(noPositionCapabilities.positions, []);
-    });
-  });
+    },
+  );
 });

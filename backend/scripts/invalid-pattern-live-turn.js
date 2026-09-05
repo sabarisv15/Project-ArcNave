@@ -49,17 +49,24 @@ const LIVE_BAD_SECTION_PATTERN = '(?i)ELECTRONICS AND COMMUNICATION ENGINEERING 
 // addendum records a real defect where a refusal told the user to
 // re-upload a clearer copy, which is both forbidden and false.
 const BLAMES_THE_USER = [
-  're-upload', 'reupload', 'clearer copy', 'upload a clearer', 'document is unclear',
-  'file is corrupt', 'invalid document', 'problem with your file',
+  're-upload',
+  'reupload',
+  'clearer copy',
+  'upload a clearer',
+  'document is unclear',
+  'file is corrupt',
+  'invalid document',
+  'problem with your file',
 ];
 
 async function seedTenant(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const collegeId = `inv${suffix}`;
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain, address) VALUES ($1, $1, $2, $3)',
-    [collegeId, `invtenant${suffix}`, 'invalid-pattern-live-address'],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain, address) VALUES ($1, $1, $2, $3)', [
+    collegeId,
+    `invtenant${suffix}`,
+    'invalid-pattern-live-address',
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userResult = await adminPool.query(
     `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
@@ -123,16 +130,18 @@ async function main() {
   let failures = 0;
 
   try {
-    const attachment = await withTenantClient(appPool, collegeId, (client) => documentService.uploadChatAttachment(
-      client,
-      {
-        collegeId,
-        fileName: 'EXAM FEES ece(sw) III YR 7 SEM.pdf',
-        mimeType: 'application/pdf',
-        fileBuffer: fs.readFileSync(SAMPLE),
-      },
-      { actorUserId: userId },
-    ));
+    const attachment = await withTenantClient(appPool, collegeId, (client) =>
+      documentService.uploadChatAttachment(
+        client,
+        {
+          collegeId,
+          fileName: 'EXAM FEES ece(sw) III YR 7 SEM.pdf',
+          mimeType: 'application/pdf',
+          fileBuffer: fs.readFileSync(SAMPLE),
+        },
+        { actorUserId: userId },
+      ),
+    );
     const attachmentId = attachment.id || (attachment.document && attachment.document.id);
     console.log(`Seeded tenant ${collegeId}, attachment ${attachmentId}\n`);
 
@@ -144,12 +153,14 @@ async function main() {
     console.log('Check 1 — live turn, question names the bad pattern');
     let turn1;
     try {
-      turn1 = await withTenantClient(appPool, collegeId, (client) => aiService.askAgent(
-        client,
-        'Analyse the attached document. Use analyze_document_table with sectionPattern set to exactly '
-        + `${LIVE_BAD_SECTION_PATTERN} and filter pattern RA, operation count. Tell me what happens.`,
-        { identityContext, attachmentIds: [attachmentId] },
-      ));
+      turn1 = await withTenantClient(appPool, collegeId, (client) =>
+        aiService.askAgent(
+          client,
+          'Analyse the attached document. Use analyze_document_table with sectionPattern set to exactly ' +
+            `${LIVE_BAD_SECTION_PATTERN} and filter pattern RA, operation count. Tell me what happens.`,
+          { identityContext, attachmentIds: [attachmentId] },
+        ),
+      );
       if (!report('the turn completed without throwing (no HTTP 500)', true)) failures += 1;
     } catch (err) {
       report('the turn completed without throwing (no HTTP 500)', false, `threw ${err.name}: ${err.message}`);
@@ -175,19 +186,21 @@ async function main() {
     const realStatus = {
       status: 'invalid_pattern',
       parameter: 'sectionPattern',
-      reason: 'sectionPattern is not valid JavaScript regular expression syntax: '
-        + `${JSON.stringify(LIVE_BAD_SECTION_PATTERN)}. JavaScript does not support inline flags such as (?i), `
-        + 'and sectionPattern is already matched case-insensitively, so that flag is not needed here.',
+      reason:
+        'sectionPattern is not valid JavaScript regular expression syntax: ' +
+        `${JSON.stringify(LIVE_BAD_SECTION_PATTERN)}. JavaScript does not support inline flags such as (?i), ` +
+        'and sectionPattern is already matched case-insensitively, so that flag is not needed here.',
     };
     const originalAnalyze = documentAnalysisService.analyzeAttachment;
     documentAnalysisService.analyzeAttachment = async () => realStatus;
     let turn2;
     try {
-      turn2 = await withTenantClient(appPool, collegeId, (client) => aiService.askAgent(
-        client,
-        'How many arrears are there in the ECE Sandwich section of the attached document?',
-        { identityContext, attachmentIds: [attachmentId] },
-      ));
+      turn2 = await withTenantClient(appPool, collegeId, (client) =>
+        aiService.askAgent(client, 'How many arrears are there in the ECE Sandwich section of the attached document?', {
+          identityContext,
+          attachmentIds: [attachmentId],
+        }),
+      );
       if (!report('the turn completed without throwing', true)) failures += 1;
     } catch (err) {
       report('the turn completed without throwing', false, `threw ${err.name}: ${err.message}`);
@@ -200,7 +213,7 @@ async function main() {
       const answer = turn2.answer || '';
       if (!report('the turn produced a non-empty answer', answer.trim().length > 0)) failures += 1;
       const blames = BLAMES_THE_USER.filter((p) => answer.toLowerCase().includes(p));
-      if (!report('the answer does not blame the user\'s file', blames.length === 0, blames.join(', '))) failures += 1;
+      if (!report("the answer does not blame the user's file", blames.length === 0, blames.join(', '))) failures += 1;
       console.log(`      toolsUsed: ${JSON.stringify(turn2.toolsUsed || turn2.toolUsed)}`);
       console.log(`      answer: ${answer.slice(0, 700)}`);
     }
@@ -214,4 +227,7 @@ async function main() {
   process.exit(failures === 0 ? 0 : 1);
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

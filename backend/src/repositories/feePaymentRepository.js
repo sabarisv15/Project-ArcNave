@@ -53,10 +53,7 @@ async function create(client, fields) {
 }
 
 async function findById(client, id) {
-  const result = await client.query(
-    'SELECT * FROM fee_payments WHERE id = $1 AND deleted_at IS NULL',
-    [id],
-  );
+  const result = await client.query('SELECT * FROM fee_payments WHERE id = $1 AND deleted_at IS NULL', [id]);
   return result.rows[0] || null;
 }
 

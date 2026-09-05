@@ -44,7 +44,10 @@ export function FilterPopover({
             aria-expanded={open}
             aria-label={activeCount > 0 ? `${label} · ${activeCount} active` : label}
             title={label}
-            className={cn(ICON_BTN, open || activeCount > 0 ? 'bg-accent-soft text-accent' : 'text-ink-soft hover:bg-tint2')}
+            className={cn(
+              ICON_BTN,
+              open || activeCount > 0 ? 'bg-accent-soft text-accent' : 'text-ink-soft hover:bg-tint2',
+            )}
           >
             <SlidersHorizontal size={15} strokeWidth={1.9} />
             {activeCount > 0 && (
@@ -54,11 +57,7 @@ export function FilterPopover({
             )}
           </button>
         ) : (
-          <button
-            type="button"
-            aria-expanded={open}
-            className={cn(TOOL, open || activeCount > 0 ? TOOL_ON : TOOL_OFF)}
-          >
+          <button type="button" aria-expanded={open} className={cn(TOOL, open || activeCount > 0 ? TOOL_ON : TOOL_OFF)}>
             <SlidersHorizontal size={15} strokeWidth={1.9} />
             <span>
               {label}

@@ -54,7 +54,7 @@ function formatValue(key, value) {
   if (RATE_KEY_PATTERN.test(key) && typeof value === 'number') return formatPercent(value);
   if (COUNT_KEY_PATTERN.test(key) && typeof value === 'number') return String(value);
   if (AMOUNT_KEY_PATTERN.test(key) && typeof value === 'number') return formatCurrency(value);
-  if (DATE_KEY_PATTERN.test(key) && (typeof value === 'string')) {
+  if (DATE_KEY_PATTERN.test(key) && typeof value === 'string') {
     const formatted = formatDate(value);
     return formatted || String(value);
   }

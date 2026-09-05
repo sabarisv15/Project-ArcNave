@@ -14,7 +14,7 @@ import {
 import { ENDORSEMENT_STATES, chainProgress, endorsementChainLabel } from '../lib/endorsementChain';
 import { departmentLabel, hodOf } from '../lib/institutionData';
 import { timetableStateOf } from '../lib/institutionTimetableData';
-import { useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import { useInstitutionalLifecycle } from '@/features/institution';
 import { cn } from '../lib/utils';
 
 /**
@@ -106,8 +106,7 @@ function toRequest(r, scope, review) {
 
 export function DelegatedApprovalsView() {
   const scope = delegatedScope();
-  const { endorsementStateOf, delegatedReviewOf, reviewDelegated, returnFromDelegated } =
-    useInstitutionalLifecycle();
+  const { endorsementStateOf, delegatedReviewOf, reviewDelegated, returnFromDelegated } = useInstitutionalLifecycle();
   const [view, setView] = useState('pending');
   const [openId, setOpenId] = useState(null);
 
@@ -117,14 +116,11 @@ export function DelegatedApprovalsView() {
         timetableStateOf,
         departmentName: departmentLabel,
         hodName: (id) => hodOf(id)?.name ?? null,
-      })
-        .map((r) => toRequest(r, scope, delegatedReviewOf(r.departmentId))),
-    [scope, endorsementStateOf, delegatedReviewOf]
+      }).map((r) => toRequest(r, scope, delegatedReviewOf(r.departmentId))),
+    [scope, endorsementStateOf, delegatedReviewOf],
   );
 
-  const visible = requests.filter((r) =>
-    view === 'pending' ? r.status === 'pending' : r.status !== 'pending'
-  );
+  const visible = requests.filter((r) => (view === 'pending' ? r.status === 'pending' : r.status !== 'pending'));
   const pendingCount = requests.filter((r) => r.status === 'pending').length;
   const open = openId ? requests.find((r) => r.id === openId) : null;
 
@@ -139,17 +135,13 @@ export function DelegatedApprovalsView() {
         result.detail ??
           (result.reason === 'reason_required'
             ? 'Returning a revision needs a reason its author can act on.'
-            : 'That decision could not be recorded.')
+            : 'That decision could not be recorded.'),
       );
       return;
     }
 
     setOpenId(null);
-    toast.success(
-      outcome === 'approved'
-        ? 'Reviewed — routed to the institution head'
-        : 'Returned to the department'
-    );
+    toast.success(outcome === 'approved' ? 'Reviewed — routed to the institution head' : 'Returned to the department');
   }
 
   return (
@@ -171,7 +163,7 @@ export function DelegatedApprovalsView() {
                 'flex-none h-[27px] px-[10px] border-0 rounded-[8px] bg-transparent font-sans text-[12.5px] cursor-pointer transition-colors duration-200',
                 view === v.key
                   ? 'bg-accent-soft text-accent font-[600]'
-                  : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2'
+                  : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2',
               )}
             >
               {v.label}

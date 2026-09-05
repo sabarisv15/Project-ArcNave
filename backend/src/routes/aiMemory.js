@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth } = require('../middleware/rbac');
 const aiMemoryService = require('../services/aiMemoryService');
 const identityService = require('../services/identityService');
@@ -22,6 +24,15 @@ function mapAiMemoryServiceError(err, res) {
   return false;
 }
 
+// P4 route-validation pass — aiMemoryService.setConsent/forgetPreference/
+// forgetFact are the real validators; `consented` is passed straight
+// through with no type check at the route layer today, so it stays
+// z.any() here (a genuinely wrong-typed value still reaches the same
+// AiMemoryValidationError path it does now, not a new 400 source).
+const setConsentSchema = z.object({ body: z.object({ consented: z.any().optional() }).optional() });
+const forgetPreferenceSchema = z.object({ params: z.object({ memoryType: z.string() }) });
+const forgetFactSchema = z.object({ params: z.object({ factId: z.string() }) });
+
 // requireAuth only, always scoped to the caller's own account — same
 // ownership-only shape as routes/userPreferences.js and routes/personal-notes.js.
 // This is the ONLY place consent may be set (aiMemoryService.js's own file
@@ -29,47 +40,66 @@ function mapAiMemoryServiceError(err, res) {
 function createAiMemoryRouter() {
   const router = express.Router();
 
-  router.get('/ai/memory/consent', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const consent = await aiMemoryService.getConsent(req.dbClient, { actorUserId: identityService.resolveActorUserId(req.capabilities) });
-    res.json(consent);
-  }));
-
-  router.put('/ai/memory/consent', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const consent = await aiMemoryService.setConsent(
-        req.dbClient,
-        (req.body || {}).consented,
-        { actorUserId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
-      );
+  router.get(
+    '/ai/memory/consent',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const consent = await aiMemoryService.getConsent(req.dbClient, {
+        actorUserId: identityService.resolveActorUserId(req.capabilities),
+      });
       res.json(consent);
-    } catch (err) {
-      if (mapAiMemoryServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+    }),
+  );
 
-  router.get('/ai/memory', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const memories = await aiMemoryService.recallPreferences(req.dbClient, { actorUserId: identityService.resolveActorUserId(req.capabilities) });
-    res.json(memories);
-  }));
+  router.put(
+    '/ai/memory/consent',
+    requireAuth,
+    validate(setConsentSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const consent = await aiMemoryService.setConsent(req.dbClient, (req.body || {}).consented, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+          collegeId: req.collegeId,
+        });
+        res.json(consent);
+      } catch (err) {
+        if (mapAiMemoryServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.delete('/ai/memory/:memoryType', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      await aiMemoryService.forgetPreference(
-        req.dbClient,
-        req.params.memoryType,
-        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(204).end();
-    } catch (err) {
-      if (mapAiMemoryServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.get(
+    '/ai/memory',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const memories = await aiMemoryService.recallPreferences(req.dbClient, {
+        actorUserId: identityService.resolveActorUserId(req.capabilities),
+      });
+      res.json(memories);
+    }),
+  );
+
+  router.delete(
+    '/ai/memory/:memoryType',
+    requireAuth,
+    validate(forgetPreferenceSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        await aiMemoryService.forgetPreference(req.dbClient, req.params.memoryType, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.status(204).end();
+      } catch (err) {
+        if (mapAiMemoryServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // General freeform facts (product decision, this round) — a real path
   // segment ('/facts'), never colliding with the single-segment
@@ -78,23 +108,37 @@ function createAiMemoryRouter() {
   // ai_memory_remember_fact AI tool, same "no human-driven add" shape
   // the bounded preferences above already have — this route surface is
   // read + forget only.
-  router.get('/ai/memory/facts', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const facts = await aiMemoryService.recallGeneralFacts(req.dbClient, { actorUserId: identityService.resolveActorUserId(req.capabilities) });
-    res.json(facts);
-  }));
+  router.get(
+    '/ai/memory/facts',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const facts = await aiMemoryService.recallGeneralFacts(req.dbClient, {
+        actorUserId: identityService.resolveActorUserId(req.capabilities),
+      });
+      res.json(facts);
+    }),
+  );
 
-  router.delete('/ai/memory/facts/:factId', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    await aiMemoryService.forgetFact(
-      req.dbClient,
-      req.params.factId,
-      { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-    );
-    res.status(204).end();
-  }));
+  router.delete(
+    '/ai/memory/facts/:factId',
+    requireAuth,
+    validate(forgetFactSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      await aiMemoryService.forgetFact(req.dbClient, req.params.factId, {
+        actorUserId: identityService.resolveActorUserId(req.capabilities),
+      });
+      res.status(204).end();
+    }),
+  );
 
   return router;
 }
 
 module.exports = createAiMemoryRouter;
+module.exports.schemas = {
+  '/ai/memory/consent': { put: setConsentSchema },
+  '/ai/memory/{memoryType}': { delete: forgetPreferenceSchema },
+  '/ai/memory/facts/{factId}': { delete: forgetFactSchema },
+};

@@ -5,7 +5,9 @@
 // see routes/platform.js's /structural-authorization-keys/redeem.
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requirePermission } = require('../middleware/rbac');
 const platformService = require('../services/platformService');
 const identityService = require('../services/identityService');
@@ -34,39 +36,70 @@ function mapKeyError(err, res) {
   return false;
 }
 
+const createStructuralAuthorizationKeySchema = z.object({
+  body: z.object({ action_type: z.string().optional(), action_payload: z.any().optional() }).optional(),
+});
+const cancelStructuralAuthorizationKeySchema = z.object({ params: z.object({ id: z.string() }) });
+
 function createStructuralAuthorizationKeysRouter() {
   const router = express.Router();
 
-  router.post('/structural-authorization-keys', requirePermission('structural_authorization_keys.create'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { action_type: actionType, action_payload: actionPayload } = req.body || {};
-    try {
-      const key = await platformService.generateStructuralAuthorizationKey(req.dbClient, {
-        collegeId: req.collegeId, actionType, actionPayload,
-      }, { actorUserId: identityService.resolveActorUserId(req.capabilities) });
-      res.status(201).json({
-        key_id: key.keyId, token: key.rawToken, action_type: key.actionType, expires_at: key.expiresAt,
-      });
-    } catch (err) {
-      if (mapKeyError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/structural-authorization-keys',
+    requirePermission('structural_authorization_keys.create'),
+    validate(createStructuralAuthorizationKeySchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { action_type: actionType, action_payload: actionPayload } = req.body || {};
+      try {
+        const key = await platformService.generateStructuralAuthorizationKey(
+          req.dbClient,
+          {
+            collegeId: req.collegeId,
+            actionType,
+            actionPayload,
+          },
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.status(201).json({
+          key_id: key.keyId,
+          token: key.rawToken,
+          action_type: key.actionType,
+          expires_at: key.expiresAt,
+        });
+      } catch (err) {
+        if (mapKeyError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/structural-authorization-keys/:id/cancel', requirePermission('structural_authorization_keys.cancel'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const cancelled = await platformService.cancelStructuralAuthorizationKey(
-        req.dbClient, req.collegeId, req.params.id, { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.json({ id: cancelled.id, status: cancelled.status, cancelled_at: cancelled.cancelled_at });
-    } catch (err) {
-      if (mapKeyError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/structural-authorization-keys/:id/cancel',
+    requirePermission('structural_authorization_keys.cancel'),
+    validate(cancelStructuralAuthorizationKeySchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const cancelled = await platformService.cancelStructuralAuthorizationKey(
+          req.dbClient,
+          req.collegeId,
+          req.params.id,
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.json({ id: cancelled.id, status: cancelled.status, cancelled_at: cancelled.cancelled_at });
+      } catch (err) {
+        if (mapKeyError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   return router;
 }
 
 module.exports = createStructuralAuthorizationKeysRouter;
+module.exports.schemas = {
+  '/structural-authorization-keys': { post: createStructuralAuthorizationKeySchema },
+  '/structural-authorization-keys/{id}/cancel': { post: cancelStructuralAuthorizationKeySchema },
+};

@@ -56,7 +56,12 @@ async function createEvent(client, { collegeId, title, eventType, startDate, end
   return event;
 }
 
-async function updateEvent(client, id, { title, eventType, startDate, endDate, description }, { actorUserId, collegeId }) {
+async function updateEvent(
+  client,
+  id,
+  { title, eventType, startDate, endDate, description },
+  { actorUserId, collegeId },
+) {
   const existing = await calendarEventRepository.findById(client, id);
   if (existing === null) {
     throw new CalendarEventNotFoundError(`calendar event ${JSON.stringify(id)} does not exist`);
@@ -70,7 +75,11 @@ async function updateEvent(client, id, { title, eventType, startDate, endDate, d
   }
 
   const event = await calendarEventRepository.update(client, id, {
-    title, eventType, startDate, endDate, description,
+    title,
+    eventType,
+    startDate,
+    endDate,
+    description,
   });
 
   await auditLogRepository.createAuditLogEntry(client, {
@@ -111,11 +120,12 @@ async function getEvent(client, id) {
   return event;
 }
 
-async function listEvents(client, {
-  collegeId, fromDate, toDate, limit,
-} = {}) {
+async function listEvents(client, { collegeId, fromDate, toDate, limit } = {}) {
   return calendarEventRepository.list(client, {
-    collegeId, fromDate, toDate, limit,
+    collegeId,
+    fromDate,
+    toDate,
+    limit,
   });
 }
 

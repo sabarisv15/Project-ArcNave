@@ -84,7 +84,8 @@ export function buildSnapshot() {
   const departments = DEPARTMENTS.map((d) => ({
     id: d.id,
     name: d.name,
-    hod: hodSeat(d.id)?.state === 'active' ? 'active' : hodSeat(d.id)?.state === 'invite_pending' ? 'invited' : 'vacant',
+    hod:
+      hodSeat(d.id)?.state === 'active' ? 'active' : hodSeat(d.id)?.state === 'invite_pending' ? 'invited' : 'vacant',
   }));
 
   const classes = INST_CLASSES.map((c) => ({
@@ -271,10 +272,7 @@ export function deriveInstitutionSetup(snapshot) {
     {
       id: 'class_tutors',
       label: 'Class Tutor coverage',
-      value:
-        classCount === 0
-          ? 'No classes running yet'
-          : `${tutored} of ${classCount} classes have a Class Tutor`,
+      value: classCount === 0 ? 'No classes running yet' : `${tutored} of ${classCount} classes have a Class Tutor`,
       state: untutored > 0 ? progress(`${untutored} unassigned`) : complete('Covered'),
       // Reported, never actioned: this is the head of department's decision to
       // make, and the row exists to say so rather than to offer it here.
@@ -285,9 +283,7 @@ export function deriveInstitutionSetup(snapshot) {
       id: 'timetable',
       label: 'Timetable readiness',
       value:
-        classCount === 0
-          ? 'No classes to timetable yet'
-          : `${approved} of ${classCount} class timetables approved`,
+        classCount === 0 ? 'No classes to timetable yet' : `${approved} of ${classCount} class timetables approved`,
       state:
         notSubmitted > 0
           ? attention(`${notSubmitted} not submitted`)

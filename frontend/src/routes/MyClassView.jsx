@@ -18,7 +18,7 @@ import { ClassScopeHeader } from '../components/ClassScopeHeader';
 import { CapacityMeter } from '../components/CapacityMeter';
 import { PriorSemesterPanel } from '../components/PriorSemesterPanel';
 import { TIMETABLE_STATE_LABELS, TIMETABLE_STATE_TONE } from '../lib/timetableState';
-import { useAcademicRoster } from '../store/AcademicRosterProvider';
+import { useAcademicRoster } from '@/features/institution';
 import { NoAssignedClass, NoWatchlist, NothingPending } from '../components/InstitutionalState';
 import { TABLE_HEAD } from '../components/WorkspaceLayout';
 import { cn } from '../lib/utils';
@@ -38,7 +38,7 @@ function Metric({ label, value, caption, muted }) {
       <div
         className={cn(
           'mt-[6px] text-[20px] font-[600] tracking-[-.01em] tabular-nums',
-          muted ? 'text-ink-muted text-[15px] font-[500]' : 'text-ink'
+          muted ? 'text-ink-muted text-[15px] font-[500]' : 'text-ink',
         )}
       >
         {value}
@@ -104,7 +104,7 @@ function PendingList({ onOpen }) {
             <span
               className={cn(
                 'flex-none inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-                STATUS_TONE[r.status]
+                STATUS_TONE[r.status],
               )}
             >
               Pending
@@ -168,7 +168,7 @@ function AttendanceStrip() {
                 aria-hidden="true"
                 className={cn(
                   'absolute left-0 right-0 bottom-0 rounded-[6px]',
-                  w.pct < 75 ? 'bg-danger/70' : 'bg-accent/70'
+                  w.pct < 75 ? 'bg-danger/70' : 'bg-accent/70',
                 )}
                 style={{ height: `${Math.min(100, w.pct)}%` }}
               />
@@ -212,7 +212,7 @@ function TimetableStrip({ onOpen }) {
     <div
       className={cn(
         'flex items-center gap-[9px] flex-wrap px-[14px] py-[10px] border border-line rounded-[16px]',
-        live ? 'bg-paper' : 'bg-tint'
+        live ? 'bg-paper' : 'bg-tint',
       )}
     >
       {!live && <Lock size={14} strokeWidth={1.9} aria-hidden="true" className="flex-none text-ink-faint" />}
@@ -220,7 +220,7 @@ function TimetableStrip({ onOpen }) {
       <span
         className={cn(
           'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-          TIMETABLE_STATE_TONE[CLASS_TIMETABLE_STATE]
+          TIMETABLE_STATE_TONE[CLASS_TIMETABLE_STATE],
         )}
       >
         {TIMETABLE_STATE_LABELS[CLASS_TIMETABLE_STATE]}
@@ -334,9 +334,7 @@ export function MyClassView() {
             <div className="flex-1 min-w-[152px] bg-paper border border-line rounded-[16px] px-[14px] py-[12px] shadow-[inset_2px_0_0_rgb(var(--c-accent-line))]">
               <div className={TABLE_HEAD}>Enrolled</div>
               <CapacityMeter enrolled={fill.enrolled} capacity={fill.capacity} className="mt-[6px]" />
-              <div className="mt-[3px] text-[12px] text-ink-faint">
-                Section {OWNED_CLASS.section} provisioned seats
-              </div>
+              <div className="mt-[3px] text-[12px] text-ink-faint">Section {OWNED_CLASS.section} provisioned seats</div>
             </div>
             <Metric
               label="Attendance"

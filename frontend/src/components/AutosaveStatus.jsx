@@ -38,7 +38,10 @@ export function AutosaveStatus({ status, savedAt, onRetry, className }) {
 
   if (status === 'saved' || savedAt) {
     return (
-      <span className={cn('inline-flex items-center gap-[4px] text-[11px] text-ink-faint', className)} aria-live="polite">
+      <span
+        className={cn('inline-flex items-center gap-[4px] text-[11px] text-ink-faint', className)}
+        aria-live="polite"
+      >
         <Check size={11} strokeWidth={2.4} className="text-accent" aria-hidden="true" />
         Saved
       </span>

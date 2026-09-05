@@ -21,6 +21,11 @@
 
 const META_GRAPH_VERSION = 'v20.0';
 
+// Same reasoning (and same value) as msg91.js's own FETCH_TIMEOUT_MS —
+// a send-and-acknowledge REST POST, not an LLM generation. Without it,
+// a hung Graph API endpoint pins the calling request indefinitely.
+const FETCH_TIMEOUT_MS = 10_000;
+
 async function send(to, body, { credentials } = {}) {
   const { accessToken, phoneNumberId } = credentials || {};
 
@@ -28,28 +33,32 @@ async function send(to, body, { credentials } = {}) {
     return { channel: 'whatsapp', status: 'stubbed', to, body };
   }
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const response = await fetch(
-      `https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneNumberId}/messages`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          to,
-          type: 'text',
-          text: { body },
-        }),
+    const response = await fetch(`https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
       },
-    );
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'text',
+        text: { body },
+      }),
+      signal: controller.signal,
+    });
 
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       return {
-        channel: 'whatsapp', status: 'failed', to, body, error: data.error && data.error.message ? data.error.message : `Meta responded ${response.status}`,
+        channel: 'whatsapp',
+        status: 'failed',
+        to,
+        body,
+        error: data.error && data.error.message ? data.error.message : `Meta responded ${response.status}`,
       };
     }
 
@@ -62,8 +71,14 @@ async function send(to, body, { credentials } = {}) {
     };
   } catch (err) {
     return {
-      channel: 'whatsapp', status: 'failed', to, body, error: err.message,
+      channel: 'whatsapp',
+      status: 'failed',
+      to,
+      body,
+      error: err.name === 'AbortError' ? `Meta request timed out after ${FETCH_TIMEOUT_MS}ms` : err.message,
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

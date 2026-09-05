@@ -46,7 +46,9 @@ async function countByProvisioningStatus(pool) {
     'SELECT provisioning_status, count(*)::int AS count FROM colleges GROUP BY provisioning_status',
   );
   const counts = Object.fromEntries(PROVISIONING_STATUSES.map((status) => [status, 0]));
-  result.rows.forEach((row) => { counts[row.provisioning_status] = row.count; });
+  result.rows.forEach((row) => {
+    counts[row.provisioning_status] = row.count;
+  });
   return counts;
 }
 
@@ -68,9 +70,7 @@ async function countNewThisWeek(pool) {
 }
 
 async function countTrialColleges(pool) {
-  const result = await pool.query(
-    "SELECT count(*)::int AS count FROM colleges WHERE subscription_status = 'trial'",
-  );
+  const result = await pool.query("SELECT count(*)::int AS count FROM colleges WHERE subscription_status = 'trial'");
   return result.rows[0].count;
 }
 

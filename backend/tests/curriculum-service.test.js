@@ -20,16 +20,15 @@ test('CurriculumService.createRegulation', async (t) => {
   await t.test('rejects missing collegeId/name without touching the DB', async () => {
     const createMock = t.mock.method(regulationRepository, 'create');
     t.after(() => createMock.mock.restore());
-    await assert.rejects(
-      () => curriculumService.createRegulation({}, {}),
-      curriculumService.RegulationValidationError,
-    );
+    await assert.rejects(() => curriculumService.createRegulation({}, {}), curriculumService.RegulationValidationError);
     assert.equal(createMock.mock.callCount(), 0);
   });
 
   await t.test('maps a duplicate name constraint violation to RegulationNameConflictError', async () => {
     const err = Object.assign(new Error('dup'), { code: '23505', constraint: 'regulations_college_name_key' });
-    const createMock = t.mock.method(regulationRepository, 'create', async () => { throw err; });
+    const createMock = t.mock.method(regulationRepository, 'create', async () => {
+      throw err;
+    });
     t.after(() => createMock.mock.restore());
     await assert.rejects(
       () => curriculumService.createRegulation({}, { collegeId: 'c1', name: 'R2021' }),
@@ -54,9 +53,16 @@ test('CurriculumService.createSubject', async (t) => {
       createMock.mock.restore();
     });
     await assert.rejects(
-      () => curriculumService.createSubject({}, {
-        regulationId: 'missing', subjectCode: 'CS101', subjectName: 'Intro', semester: 1,
-      }),
+      () =>
+        curriculumService.createSubject(
+          {},
+          {
+            regulationId: 'missing',
+            subjectCode: 'CS101',
+            subjectName: 'Intro',
+            semester: 1,
+          },
+        ),
       curriculumService.SubjectRegulationNotFoundError,
     );
     assert.equal(createMock.mock.callCount(), 0);
@@ -64,16 +70,27 @@ test('CurriculumService.createSubject', async (t) => {
 
   await t.test('creates a subject and audit-logs it', async () => {
     const findRegMock = t.mock.method(regulationRepository, 'findById', async () => ({ id: 'r1', college_id: 'c1' }));
-    const createMock = t.mock.method(subjectRepository, 'create', async (client, fields) => ({ id: 'subj-1', ...fields }));
+    const createMock = t.mock.method(subjectRepository, 'create', async (client, fields) => ({
+      id: 'subj-1',
+      ...fields,
+    }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
       findRegMock.mock.restore();
       createMock.mock.restore();
       auditMock.mock.restore();
     });
-    const result = await curriculumService.createSubject({}, {
-      collegeId: 'c1', regulationId: 'r1', subjectCode: 'CS101', subjectName: 'Intro', semester: 1,
-    }, { actorUserId: 'u1' });
+    const result = await curriculumService.createSubject(
+      {},
+      {
+        collegeId: 'c1',
+        regulationId: 'r1',
+        subjectCode: 'CS101',
+        subjectName: 'Intro',
+        semester: 1,
+      },
+      { actorUserId: 'u1' },
+    );
     assert.equal(result.id, 'subj-1');
     assert.equal(auditMock.mock.calls[0].arguments[1].action, 'subject_created');
   });
@@ -81,15 +98,24 @@ test('CurriculumService.createSubject', async (t) => {
   await t.test('maps a duplicate subject_code constraint violation to SubjectCodeConflictError', async () => {
     const findRegMock = t.mock.method(regulationRepository, 'findById', async () => ({ id: 'r1', college_id: 'c1' }));
     const err = Object.assign(new Error('dup'), { code: '23505', constraint: 'subjects_regulation_subject_code_key' });
-    const createMock = t.mock.method(subjectRepository, 'create', async () => { throw err; });
+    const createMock = t.mock.method(subjectRepository, 'create', async () => {
+      throw err;
+    });
     t.after(() => {
       findRegMock.mock.restore();
       createMock.mock.restore();
     });
     await assert.rejects(
-      () => curriculumService.createSubject({}, {
-        regulationId: 'r1', subjectCode: 'CS101', subjectName: 'Intro', semester: 1,
-      }),
+      () =>
+        curriculumService.createSubject(
+          {},
+          {
+            regulationId: 'r1',
+            subjectCode: 'CS101',
+            subjectName: 'Intro',
+            semester: 1,
+          },
+        ),
       curriculumService.SubjectCodeConflictError,
     );
   });
@@ -139,10 +165,15 @@ test('CurriculumService curriculum migration workflow', async (t) => {
 
   await t.test('approveCurriculumMigration applies pending_regulation_id to regulation_id and clears it', async () => {
     const findStudentMock = t.mock.method(studentRepository, 'findById', async () => ({
-      id: 's1', college_id: 'c1', pending_regulation_id: 'r2',
+      id: 's1',
+      college_id: 'c1',
+      pending_regulation_id: 'r2',
     }));
     const findPendingMock = t.mock.method(workflowService, 'findPendingForEntity', async () => ({ id: 'wf-1' }));
-    const approveMock = t.mock.method(workflowService, 'approveRequest', async () => ({ id: 'wf-1', status: 'Approved' }));
+    const approveMock = t.mock.method(workflowService, 'approveRequest', async () => ({
+      id: 'wf-1',
+      status: 'Approved',
+    }));
     const updateMock = t.mock.method(studentRepository, 'update', async (client, id, fields) => ({ id, ...fields }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
@@ -158,16 +189,22 @@ test('CurriculumService curriculum migration workflow', async (t) => {
     assert.equal(result.pendingRegulationId, null);
   });
 
-  await t.test('approveCurriculumMigration with no pending request throws CurriculumMigrationNoPendingRequestError', async () => {
-    const findStudentMock = t.mock.method(studentRepository, 'findById', async () => ({ id: 's1', college_id: 'c1' }));
-    const findPendingMock = t.mock.method(workflowService, 'findPendingForEntity', async () => null);
-    t.after(() => {
-      findStudentMock.mock.restore();
-      findPendingMock.mock.restore();
-    });
-    await assert.rejects(
-      () => curriculumService.approveCurriculumMigration({}, 's1'),
-      curriculumService.CurriculumMigrationNoPendingRequestError,
-    );
-  });
+  await t.test(
+    'approveCurriculumMigration with no pending request throws CurriculumMigrationNoPendingRequestError',
+    async () => {
+      const findStudentMock = t.mock.method(studentRepository, 'findById', async () => ({
+        id: 's1',
+        college_id: 'c1',
+      }));
+      const findPendingMock = t.mock.method(workflowService, 'findPendingForEntity', async () => null);
+      t.after(() => {
+        findStudentMock.mock.restore();
+        findPendingMock.mock.restore();
+      });
+      await assert.rejects(
+        () => curriculumService.approveCurriculumMigration({}, 's1'),
+        curriculumService.CurriculumMigrationNoPendingRequestError,
+      );
+    },
+  );
 });

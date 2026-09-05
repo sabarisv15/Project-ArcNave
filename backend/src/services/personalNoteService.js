@@ -15,13 +15,13 @@ class PersonalNoteForbiddenError extends Error {}
 
 function assertOwnedBy(note, actorUserId) {
   if (note.user_id !== actorUserId) {
-    throw new PersonalNoteForbiddenError(`user ${JSON.stringify(actorUserId)} does not own note ${JSON.stringify(note.id)}`);
+    throw new PersonalNoteForbiddenError(
+      `user ${JSON.stringify(actorUserId)} does not own note ${JSON.stringify(note.id)}`,
+    );
   }
 }
 
-async function createNote(client, {
-  title, body, reminderAt, noteDate,
-}, { actorUserId, collegeId }) {
+async function createNote(client, { title, body, reminderAt, noteDate }, { actorUserId, collegeId }) {
   if (!body) {
     throw new PersonalNoteValidationError('body is required');
   }
@@ -44,15 +44,17 @@ async function findOwnedNote(client, id, actorUserId) {
   return note;
 }
 
-async function updateNote(client, id, {
-  title, body, reminderAt, isDone, noteDate,
-}, { actorUserId }) {
+async function updateNote(client, id, { title, body, reminderAt, isDone, noteDate }, { actorUserId }) {
   await findOwnedNote(client, id, actorUserId);
   if (body === '') {
     throw new PersonalNoteValidationError('body may not be cleared to empty');
   }
   return personalNoteRepository.update(client, id, {
-    title, body, reminderAt, isDone, noteDate,
+    title,
+    body,
+    reminderAt,
+    isDone,
+    noteDate,
   });
 }
 

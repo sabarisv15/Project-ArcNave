@@ -104,7 +104,12 @@ test('Organization provisioning lifecycle + structural authorization keys', asyn
   });
 
   async function platformToken() {
-    const resp = await post(baseUrl, '/api/v1/platform/auth/login', {}, { username: adminUsername, password: PLATFORM_PASSWORD });
+    const resp = await post(
+      baseUrl,
+      '/api/v1/platform/auth/login',
+      {},
+      { username: adminUsername, password: PLATFORM_PASSWORD },
+    );
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -141,9 +146,17 @@ test('Organization provisioning lifecycle + structural authorization keys', asyn
     const collegeId = await seedCollege('a');
     const token = await platformToken();
 
-    const resp = await post(baseUrl, `/api/v1/platform/colleges/${collegeId}/departments`, { authorization: `Bearer ${token}` }, {
-      name: 'CSE', approved_intake: 60, course_duration: 4, default_sections: 2,
-    });
+    const resp = await post(
+      baseUrl,
+      `/api/v1/platform/colleges/${collegeId}/departments`,
+      { authorization: `Bearer ${token}` },
+      {
+        name: 'CSE',
+        approved_intake: 60,
+        course_duration: 4,
+        default_sections: 2,
+      },
+    );
     assert.equal(resp.status, 201);
     assert.equal(resp.body.created_at_onboarding, true);
 
@@ -152,139 +165,247 @@ test('Organization provisioning lifecycle + structural authorization keys', asyn
     assert.equal(dept.rows[0].course_duration, 4);
   });
 
-  await t.test('readiness gate blocks activation until every onboarding department has a student, then allows it', async () => {
-    const collegeId = await seedCollege('b');
-    const token = await platformToken();
+  await t.test(
+    'readiness gate blocks activation until every onboarding department has a student, then allows it',
+    async () => {
+      const collegeId = await seedCollege('b');
+      const token = await platformToken();
 
-    const deptResp = await post(baseUrl, `/api/v1/platform/colleges/${collegeId}/departments`, { authorization: `Bearer ${token}` }, {
-      name: 'ECE', approved_intake: 30, course_duration: 4, default_sections: 1,
-    });
-    const departmentId = deptResp.body.id;
+      const deptResp = await post(
+        baseUrl,
+        `/api/v1/platform/colleges/${collegeId}/departments`,
+        { authorization: `Bearer ${token}` },
+        {
+          name: 'ECE',
+          approved_intake: 30,
+          course_duration: 4,
+          default_sections: 1,
+        },
+      );
+      const departmentId = deptResp.body.id;
 
-    const readyResp = await post(baseUrl, `/api/v1/platform/colleges/${collegeId}/mark-ready`, { authorization: `Bearer ${token}` }, {});
-    assert.equal(readyResp.status, 200);
-    assert.equal(readyResp.body.provisioning_status, 'ready');
+      const readyResp = await post(
+        baseUrl,
+        `/api/v1/platform/colleges/${collegeId}/mark-ready`,
+        { authorization: `Bearer ${token}` },
+        {},
+      );
+      assert.equal(readyResp.status, 200);
+      assert.equal(readyResp.body.provisioning_status, 'ready');
 
-    const blockedResp = await post(baseUrl, `/api/v1/platform/colleges/${collegeId}/activate`, { authorization: `Bearer ${token}` }, {});
-    assert.equal(blockedResp.status, 422, 'no enrolled student yet in the onboarding department — gate must block');
+      const blockedResp = await post(
+        baseUrl,
+        `/api/v1/platform/colleges/${collegeId}/activate`,
+        { authorization: `Bearer ${token}` },
+        {},
+      );
+      assert.equal(blockedResp.status, 422, 'no enrolled student yet in the onboarding department — gate must block');
 
-    const classResult = await adminPool.query(
-      'INSERT INTO classes (college_id, class_name, department_id) VALUES ($1, $2, $3) RETURNING id',
-      [collegeId, `ECE-Sem3-${crypto.randomUUID().slice(0, 6)}`, departmentId],
-    );
-    await adminPool.query(
-      'INSERT INTO students (college_id, roll_no, full_name, class_id) VALUES ($1, $2, $3, $4)',
-      [collegeId, `R${crypto.randomUUID().slice(0, 6)}`, 'Test Student', classResult.rows[0].id],
-    );
+      const classResult = await adminPool.query(
+        'INSERT INTO classes (college_id, class_name, department_id) VALUES ($1, $2, $3) RETURNING id',
+        [collegeId, `ECE-Sem3-${crypto.randomUUID().slice(0, 6)}`, departmentId],
+      );
+      await adminPool.query('INSERT INTO students (college_id, roll_no, full_name, class_id) VALUES ($1, $2, $3, $4)', [
+        collegeId,
+        `R${crypto.randomUUID().slice(0, 6)}`,
+        'Test Student',
+        classResult.rows[0].id,
+      ]);
 
-    const activateResp = await post(baseUrl, `/api/v1/platform/colleges/${collegeId}/activate`, { authorization: `Bearer ${token}` }, {});
-    assert.equal(activateResp.status, 200);
-    assert.equal(activateResp.body.provisioning_status, 'active');
-  });
+      const activateResp = await post(
+        baseUrl,
+        `/api/v1/platform/colleges/${collegeId}/activate`,
+        { authorization: `Bearer ${token}` },
+        {},
+      );
+      assert.equal(activateResp.status, 200);
+      assert.equal(activateResp.body.provisioning_status, 'active');
+    },
+  );
 
-  await t.test('suspend -> reactivate -> archive follow the guarded transitions, wrong-state attempts are rejected', async () => {
-    const collegeId = await seedCollege('c');
-    const token = await platformToken();
-    // No onboarding departments at all -> readiness gate trivially satisfied.
-    await post(baseUrl, `/api/v1/platform/colleges/${collegeId}/mark-ready`, { authorization: `Bearer ${token}` }, {});
-    await post(baseUrl, `/api/v1/platform/colleges/${collegeId}/activate`, { authorization: `Bearer ${token}` }, {});
+  await t.test(
+    'suspend -> reactivate -> archive follow the guarded transitions, wrong-state attempts are rejected',
+    async () => {
+      const collegeId = await seedCollege('c');
+      const token = await platformToken();
+      // No onboarding departments at all -> readiness gate trivially satisfied.
+      await post(
+        baseUrl,
+        `/api/v1/platform/colleges/${collegeId}/mark-ready`,
+        { authorization: `Bearer ${token}` },
+        {},
+      );
+      await post(baseUrl, `/api/v1/platform/colleges/${collegeId}/activate`, { authorization: `Bearer ${token}` }, {});
 
-    const suspendResp = await post(baseUrl, `/api/v1/platform/colleges/${collegeId}/suspend`, { authorization: `Bearer ${token}` }, {});
-    assert.equal(suspendResp.status, 200);
-    assert.equal(suspendResp.body.provisioning_status, 'suspended');
+      const suspendResp = await post(
+        baseUrl,
+        `/api/v1/platform/colleges/${collegeId}/suspend`,
+        { authorization: `Bearer ${token}` },
+        {},
+      );
+      assert.equal(suspendResp.status, 200);
+      assert.equal(suspendResp.body.provisioning_status, 'suspended');
 
-    const doubleSuspend = await post(baseUrl, `/api/v1/platform/colleges/${collegeId}/suspend`, { authorization: `Bearer ${token}` }, {});
-    assert.equal(doubleSuspend.status, 409, 'already suspended — cannot suspend again');
+      const doubleSuspend = await post(
+        baseUrl,
+        `/api/v1/platform/colleges/${collegeId}/suspend`,
+        { authorization: `Bearer ${token}` },
+        {},
+      );
+      assert.equal(doubleSuspend.status, 409, 'already suspended — cannot suspend again');
 
-    const reactivateResp = await post(baseUrl, `/api/v1/platform/colleges/${collegeId}/reactivate`, { authorization: `Bearer ${token}` }, {});
-    assert.equal(reactivateResp.status, 200);
-    assert.equal(reactivateResp.body.provisioning_status, 'active');
+      const reactivateResp = await post(
+        baseUrl,
+        `/api/v1/platform/colleges/${collegeId}/reactivate`,
+        { authorization: `Bearer ${token}` },
+        {},
+      );
+      assert.equal(reactivateResp.status, 200);
+      assert.equal(reactivateResp.body.provisioning_status, 'active');
 
-    const archiveResp = await post(baseUrl, `/api/v1/platform/colleges/${collegeId}/archive`, { authorization: `Bearer ${token}` }, {});
-    assert.equal(archiveResp.status, 200);
-    assert.equal(archiveResp.body.provisioning_status, 'archived');
-  });
+      const archiveResp = await post(
+        baseUrl,
+        `/api/v1/platform/colleges/${collegeId}/archive`,
+        { authorization: `Bearer ${token}` },
+        {},
+      );
+      assert.equal(archiveResp.status, 200);
+      assert.equal(archiveResp.body.provisioning_status, 'archived');
+    },
+  );
 
-  await t.test('structural authorization key: generate (L1) -> cancel (L1) — a cancelled key cannot be redeemed', async () => {
-    const collegeId = await seedCollege('d');
-    const userId = await seedPrincipal(collegeId);
-    const deptResult = await adminPool.query('INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id', [collegeId, 'Rename-Me']);
-    const departmentId = deptResult.rows[0].id;
+  await t.test(
+    'structural authorization key: generate (L1) -> cancel (L1) — a cancelled key cannot be redeemed',
+    async () => {
+      const collegeId = await seedCollege('d');
+      const userId = await seedPrincipal(collegeId);
+      const deptResult = await adminPool.query(
+        'INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id',
+        [collegeId, 'Rename-Me'],
+      );
+      const departmentId = deptResult.rows[0].id;
 
-    const genResp = await post(baseUrl, '/api/v1/structural-authorization-keys', tenantHeaders(collegeId, userId), {
-      action_type: 'department_merge_rename',
-      action_payload: { mode: 'rename', departmentId, name: 'Renamed' },
-    });
-    assert.equal(genResp.status, 201);
-    assert.ok(genResp.body.token);
+      const genResp = await post(baseUrl, '/api/v1/structural-authorization-keys', tenantHeaders(collegeId, userId), {
+        action_type: 'department_merge_rename',
+        action_payload: { mode: 'rename', departmentId, name: 'Renamed' },
+      });
+      assert.equal(genResp.status, 201);
+      assert.ok(genResp.body.token);
 
-    const cancelResp = await post(baseUrl, `/api/v1/structural-authorization-keys/${genResp.body.key_id}/cancel`, tenantHeaders(collegeId, userId), {});
-    assert.equal(cancelResp.status, 200);
-    assert.equal(cancelResp.body.status, 'cancelled');
+      const cancelResp = await post(
+        baseUrl,
+        `/api/v1/structural-authorization-keys/${genResp.body.key_id}/cancel`,
+        tenantHeaders(collegeId, userId),
+        {},
+      );
+      assert.equal(cancelResp.status, 200);
+      assert.equal(cancelResp.body.status, 'cancelled');
 
-    const platformAdminToken = await platformToken();
-    const redeemResp = await post(baseUrl, '/api/v1/platform/structural-authorization-keys/redeem', { authorization: `Bearer ${platformAdminToken}` }, {
-      token: genResp.body.token,
-      sections: { department: { mode: 'rename', departmentId, name: 'Renamed' } },
-    });
-    assert.equal(redeemResp.status, 409, 'a cancelled key must not be redeemable');
-  });
+      const platformAdminToken = await platformToken();
+      const redeemResp = await post(
+        baseUrl,
+        '/api/v1/platform/structural-authorization-keys/redeem',
+        { authorization: `Bearer ${platformAdminToken}` },
+        {
+          token: genResp.body.token,
+          sections: { department: { mode: 'rename', departmentId, name: 'Renamed' } },
+        },
+      );
+      assert.equal(redeemResp.status, 409, 'a cancelled key must not be redeemable');
+    },
+  );
 
-  await t.test('structural authorization key: generate -> redeem executes a department rename, and the key cannot be reused', async () => {
-    const collegeId = await seedCollege('e');
-    const userId = await seedPrincipal(collegeId);
-    const deptResult = await adminPool.query('INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id', [collegeId, 'OldName']);
-    const departmentId = deptResult.rows[0].id;
+  await t.test(
+    'structural authorization key: generate -> redeem executes a department rename, and the key cannot be reused',
+    async () => {
+      const collegeId = await seedCollege('e');
+      const userId = await seedPrincipal(collegeId);
+      const deptResult = await adminPool.query(
+        'INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id',
+        [collegeId, 'OldName'],
+      );
+      const departmentId = deptResult.rows[0].id;
 
-    const genResp = await post(baseUrl, '/api/v1/structural-authorization-keys', tenantHeaders(collegeId, userId), {
-      action_type: 'department_merge_rename',
-      action_payload: { mode: 'rename', departmentId, name: 'NewName' },
-    });
-    assert.equal(genResp.status, 201);
+      const genResp = await post(baseUrl, '/api/v1/structural-authorization-keys', tenantHeaders(collegeId, userId), {
+        action_type: 'department_merge_rename',
+        action_payload: { mode: 'rename', departmentId, name: 'NewName' },
+      });
+      assert.equal(genResp.status, 201);
 
-    const platformAdminToken = await platformToken();
-    const sections = { department: { mode: 'rename', departmentId, name: 'NewName' } };
-    const redeemResp = await post(baseUrl, '/api/v1/platform/structural-authorization-keys/redeem', { authorization: `Bearer ${platformAdminToken}` }, { token: genResp.body.token, sections });
-    assert.equal(redeemResp.status, 200);
+      const platformAdminToken = await platformToken();
+      const sections = { department: { mode: 'rename', departmentId, name: 'NewName' } };
+      const redeemResp = await post(
+        baseUrl,
+        '/api/v1/platform/structural-authorization-keys/redeem',
+        { authorization: `Bearer ${platformAdminToken}` },
+        { token: genResp.body.token, sections },
+      );
+      assert.equal(redeemResp.status, 200);
 
-    const dept = await adminPool.query('SELECT name FROM departments WHERE id = $1', [departmentId]);
-    assert.equal(dept.rows[0].name, 'NewName');
+      const dept = await adminPool.query('SELECT name FROM departments WHERE id = $1', [departmentId]);
+      assert.equal(dept.rows[0].name, 'NewName');
 
-    const reuseResp = await post(baseUrl, '/api/v1/platform/structural-authorization-keys/redeem', { authorization: `Bearer ${platformAdminToken}` }, { token: genResp.body.token, sections });
-    assert.equal(reuseResp.status, 409, 'a redeemed key must not be reusable');
-  });
+      const reuseResp = await post(
+        baseUrl,
+        '/api/v1/platform/structural-authorization-keys/redeem',
+        { authorization: `Bearer ${platformAdminToken}` },
+        { token: genResp.body.token, sections },
+      );
+      assert.equal(reuseResp.status, 409, 'a redeemed key must not be reusable');
+    },
+  );
 
-  await t.test('structural authorization key: merge reassigns every source-department class to the target, and marks sources merged', async () => {
-    const collegeId = await seedCollege('f');
-    const userId = await seedPrincipal(collegeId);
-    const sourceResult = await adminPool.query('INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id', [collegeId, 'SourceDept']);
-    const targetResult = await adminPool.query('INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id', [collegeId, 'TargetDept']);
-    const sourceId = sourceResult.rows[0].id;
-    const targetId = targetResult.rows[0].id;
-    const classResult = await adminPool.query(
-      'INSERT INTO classes (college_id, class_name, department_id) VALUES ($1, $2, $3) RETURNING id',
-      [collegeId, `Merge-Class-${crypto.randomUUID().slice(0, 6)}`, sourceId],
-    );
+  await t.test(
+    'structural authorization key: merge reassigns every source-department class to the target, and marks sources merged',
+    async () => {
+      const collegeId = await seedCollege('f');
+      const userId = await seedPrincipal(collegeId);
+      const sourceResult = await adminPool.query(
+        'INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id',
+        [collegeId, 'SourceDept'],
+      );
+      const targetResult = await adminPool.query(
+        'INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id',
+        [collegeId, 'TargetDept'],
+      );
+      const sourceId = sourceResult.rows[0].id;
+      const targetId = targetResult.rows[0].id;
+      const classResult = await adminPool.query(
+        'INSERT INTO classes (college_id, class_name, department_id) VALUES ($1, $2, $3) RETURNING id',
+        [collegeId, `Merge-Class-${crypto.randomUUID().slice(0, 6)}`, sourceId],
+      );
 
-    const genResp = await post(baseUrl, '/api/v1/structural-authorization-keys', tenantHeaders(collegeId, userId), {
-      action_type: 'department_merge_rename',
-      action_payload: { mode: 'merge', sourceDepartmentIds: [sourceId], targetDepartmentId: targetId },
-    });
-    assert.equal(genResp.status, 201);
+      const genResp = await post(baseUrl, '/api/v1/structural-authorization-keys', tenantHeaders(collegeId, userId), {
+        action_type: 'department_merge_rename',
+        action_payload: { mode: 'merge', sourceDepartmentIds: [sourceId], targetDepartmentId: targetId },
+      });
+      assert.equal(genResp.status, 201);
 
-    const platformAdminToken = await platformToken();
-    const redeemResp = await post(baseUrl, '/api/v1/platform/structural-authorization-keys/redeem', { authorization: `Bearer ${platformAdminToken}` }, {
-      token: genResp.body.token,
-      sections: { department: { mode: 'merge', sourceDepartmentIds: [sourceId], targetDepartmentId: targetId } },
-    });
-    assert.equal(redeemResp.status, 200);
+      const platformAdminToken = await platformToken();
+      const redeemResp = await post(
+        baseUrl,
+        '/api/v1/platform/structural-authorization-keys/redeem',
+        { authorization: `Bearer ${platformAdminToken}` },
+        {
+          token: genResp.body.token,
+          sections: { department: { mode: 'merge', sourceDepartmentIds: [sourceId], targetDepartmentId: targetId } },
+        },
+      );
+      assert.equal(redeemResp.status, 200);
 
-    const cls = await adminPool.query('SELECT department_id FROM classes WHERE id = $1', [classResult.rows[0].id]);
-    assert.equal(cls.rows[0].department_id, targetId, 'class must have followed its department into the merge');
+      const cls = await adminPool.query('SELECT department_id FROM classes WHERE id = $1', [classResult.rows[0].id]);
+      assert.equal(cls.rows[0].department_id, targetId, 'class must have followed its department into the merge');
 
-    const source = await adminPool.query('SELECT merged_into_department_id FROM departments WHERE id = $1', [sourceId]);
-    assert.equal(source.rows[0].merged_into_department_id, targetId, 'source department must be marked merged, never deleted (RS-DAT-001)');
-  });
+      const source = await adminPool.query('SELECT merged_into_department_id FROM departments WHERE id = $1', [
+        sourceId,
+      ]);
+      assert.equal(
+        source.rows[0].merged_into_department_id,
+        targetId,
+        'source department must be marked merged, never deleted (RS-DAT-001)',
+      );
+    },
+  );
 
   await t.test('a non-principal (staff) may not generate a structural authorization key', async () => {
     const collegeId = await seedCollege('g');
@@ -294,51 +415,83 @@ test('Organization provisioning lifecycle + structural authorization keys', asyn
        VALUES ($1, $2, $2 || '@example.test', $3, 'staff', true) RETURNING id`,
       [collegeId, `staff${crypto.randomUUID().slice(0, 8)}`, passwordHash],
     );
-    const resp = await post(baseUrl, '/api/v1/structural-authorization-keys', {
-      authorization: `Bearer ${security.createAccessToken({ userId: staffResult.rows[0].id, collegeId, role: 'staff' })}`,
-    }, {
-      action_type: 'department_merge_rename',
-      action_payload: { mode: 'rename', departmentId: crypto.randomUUID(), name: 'x' },
-    });
+    const resp = await post(
+      baseUrl,
+      '/api/v1/structural-authorization-keys',
+      {
+        authorization: `Bearer ${security.createAccessToken({ userId: staffResult.rows[0].id, collegeId, role: 'staff' })}`,
+      },
+      {
+        action_type: 'department_merge_rename',
+        action_payload: { mode: 'rename', departmentId: crypto.randomUUID(), name: 'x' },
+      },
+    );
     assert.equal(resp.status, 403);
   });
 
-  await t.test('RS-GOV-006: a failed redemption (target department gone) does NOT consume the key — it stays generated and redeemable once the payload is valid again', async () => {
-    const collegeId = await seedCollege('h');
-    const userId = await seedPrincipal(collegeId);
-    const deptResult = await adminPool.query('INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id', [collegeId, 'WillBeDeleted']);
-    const departmentId = deptResult.rows[0].id;
+  await t.test(
+    'RS-GOV-006: a failed redemption (target department gone) does NOT consume the key — it stays generated and redeemable once the payload is valid again',
+    async () => {
+      const collegeId = await seedCollege('h');
+      const userId = await seedPrincipal(collegeId);
+      const deptResult = await adminPool.query(
+        'INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id',
+        [collegeId, 'WillBeDeleted'],
+      );
+      const departmentId = deptResult.rows[0].id;
 
-    const genResp = await post(baseUrl, '/api/v1/structural-authorization-keys', tenantHeaders(collegeId, userId), {
-      action_type: 'department_merge_rename',
-      action_payload: { mode: 'rename', departmentId, name: 'Renamed' },
-    });
-    assert.equal(genResp.status, 201);
+      const genResp = await post(baseUrl, '/api/v1/structural-authorization-keys', tenantHeaders(collegeId, userId), {
+        action_type: 'department_merge_rename',
+        action_payload: { mode: 'rename', departmentId, name: 'Renamed' },
+      });
+      assert.equal(genResp.status, 201);
 
-    // Ordinary data-validation failure: the target no longer exists by
-    // the time Platform Admin redeems.
-    await adminPool.query('DELETE FROM departments WHERE id = $1', [departmentId]);
+      // Ordinary data-validation failure: the target no longer exists by
+      // the time Platform Admin redeems.
+      await adminPool.query('DELETE FROM departments WHERE id = $1', [departmentId]);
 
-    const platformAdminToken = await platformToken();
-    const failedResp = await post(baseUrl, '/api/v1/platform/structural-authorization-keys/redeem', { authorization: `Bearer ${platformAdminToken}` }, {
-      token: genResp.body.token,
-      sections: { department: { mode: 'rename', departmentId, name: 'Renamed' } },
-    });
-    assert.equal(failedResp.status, 400, 'department no longer exists — a validation error, not a crash');
+      const platformAdminToken = await platformToken();
+      const failedResp = await post(
+        baseUrl,
+        '/api/v1/platform/structural-authorization-keys/redeem',
+        { authorization: `Bearer ${platformAdminToken}` },
+        {
+          token: genResp.body.token,
+          sections: { department: { mode: 'rename', departmentId, name: 'Renamed' } },
+        },
+      );
+      assert.equal(failedResp.status, 400, 'department no longer exists — a validation error, not a crash');
 
-    const key = await adminPool.query('SELECT status FROM structural_authorization_keys WHERE id = $1', [genResp.body.key_id]);
-    assert.equal(key.rows[0].status, 'generated', 'the key must still be usable — an ordinary validation failure must not consume it');
-  });
+      const key = await adminPool.query('SELECT status FROM structural_authorization_keys WHERE id = $1', [
+        genResp.body.key_id,
+      ]);
+      assert.equal(
+        key.rows[0].status,
+        'generated',
+        'the key must still be usable — an ordinary validation failure must not consume it',
+      );
+    },
+  );
 
   await t.test('cancel-onboarding: only reachable from provisioning, terminal', async () => {
     const collegeId = await seedCollege('i');
     const token = await platformToken();
 
-    const cancelResp = await post(baseUrl, `/api/v1/platform/colleges/${collegeId}/cancel-onboarding`, { authorization: `Bearer ${token}` }, {});
+    const cancelResp = await post(
+      baseUrl,
+      `/api/v1/platform/colleges/${collegeId}/cancel-onboarding`,
+      { authorization: `Bearer ${token}` },
+      {},
+    );
     assert.equal(cancelResp.status, 200);
     assert.equal(cancelResp.body.provisioning_status, 'cancelled');
 
-    const readyAfterCancel = await post(baseUrl, `/api/v1/platform/colleges/${collegeId}/mark-ready`, { authorization: `Bearer ${token}` }, {});
+    const readyAfterCancel = await post(
+      baseUrl,
+      `/api/v1/platform/colleges/${collegeId}/mark-ready`,
+      { authorization: `Bearer ${token}` },
+      {},
+    );
     assert.equal(readyAfterCancel.status, 409, 'cancelled is terminal — no route back to provisioning/ready');
   });
 });

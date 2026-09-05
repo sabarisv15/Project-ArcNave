@@ -39,10 +39,7 @@ test('aiProviders: supportsVision is explicit per adapter, never inferred from n
 });
 
 test('aiProviders.getAdapter: an unknown provider name throws AiProviderUnknownError', () => {
-  assert.throws(
-    () => aiProviders.getAdapter('some_vendor_nobody_built'),
-    aiProviders.AiProviderUnknownError,
-  );
+  assert.throws(() => aiProviders.getAdapter('some_vendor_nobody_built'), aiProviders.AiProviderUnknownError);
 });
 
 test('Phase 8: gemini/vertex_maas adapters expose getCapabilityProfile/supportsCapability, routed through the shared registry', () => {
@@ -50,10 +47,16 @@ test('Phase 8: gemini/vertex_maas adapters expose getCapabilityProfile/supportsC
   const gemini = aiProviders.getAdapter('gemini');
   assert.equal(typeof gemini.getCapabilityProfile, 'function');
   assert.equal(typeof gemini.supportsCapability, 'function');
-  const profile = gemini.getCapabilityProfile({ projectId: 'p', location: 'global', model: 'gemini-3.7-flash' });
-  assert.equal(profile.modelId, 'gemini-3.7-flash');
-  assert.equal(gemini.supportsCapability({ projectId: 'p', location: 'global', model: 'gemini-3.7-flash' }, 'multimodal_audio'), true);
-  assert.equal(gemini.supportsCapability({ projectId: 'p', location: 'global', model: 'gemini-3.7-flash' }, 'batch_prediction'), false);
+  const profile = gemini.getCapabilityProfile({ projectId: 'p', location: 'global', model: 'gemini-3.8-flash' });
+  assert.equal(profile.modelId, 'gemini-3.8-flash');
+  assert.equal(
+    gemini.supportsCapability({ projectId: 'p', location: 'global', model: 'gemini-3.8-flash' }, 'multimodal_audio'),
+    true,
+  );
+  assert.equal(
+    gemini.supportsCapability({ projectId: 'p', location: 'global', model: 'gemini-3.8-flash' }, 'batch_prediction'),
+    false,
+  );
 
   const vertexMaas = aiProviders.getAdapter('vertex_maas');
   assert.equal(typeof vertexMaas.getCapabilityProfile, 'function');
@@ -61,7 +64,13 @@ test('Phase 8: gemini/vertex_maas adapters expose getCapabilityProfile/supportsC
   // No curated entry exists for any MaaS model — must fall back to
   // "nothing asserted", consistent with this adapter's own static
   // supportsVision=false/supportsAudioVideo=false, never contradicting it.
-  assert.equal(vertexMaas.supportsCapability({ projectId: 'p', location: 'global', model: 'qwen/qwen3-next-80b-a3b-thinking-maas' }, 'multimodal_image'), false);
+  assert.equal(
+    vertexMaas.supportsCapability(
+      { projectId: 'p', location: 'global', model: 'qwen/qwen3-next-80b-a3b-thinking-maas' },
+      'multimodal_image',
+    ),
+    false,
+  );
 });
 
 test('Phase 8: non-Vertex adapters (claude/openai/self_hosted) do not claim to export a capability registry function', () => {
@@ -104,14 +113,19 @@ test('claude adapter: embed() throws AiProviderCapabilityError — a real vendor
 test('claude/self_hosted adapters: generateImage() throws AiProviderCapabilityError, no fetch attempted', async () => {
   const originalFetch = global.fetch;
   let fetchCalled = false;
-  global.fetch = async () => { fetchCalled = true; };
+  global.fetch = async () => {
+    fetchCalled = true;
+  };
   try {
     await assert.rejects(
       () => aiProviders.getAdapter('claude').generateImage({ apiKey: 'k' }, { prompt: 'a red bicycle' }),
       aiProviders.AiProviderCapabilityError,
     );
     await assert.rejects(
-      () => aiProviders.getAdapter('self_hosted').generateImage({ baseUrl: 'https://example.com' }, { prompt: 'a red bicycle' }),
+      () =>
+        aiProviders
+          .getAdapter('self_hosted')
+          .generateImage({ baseUrl: 'https://example.com' }, { prompt: 'a red bicycle' }),
       aiProviders.AiProviderCapabilityError,
     );
   } finally {
@@ -148,7 +162,9 @@ test('openai adapter.generateImage: unconfigured -> LlmNotConfiguredError, no fe
   const openai = aiProviders.getAdapter('openai');
   const originalFetch = global.fetch;
   let fetchCalled = false;
-  global.fetch = async () => { fetchCalled = true; };
+  global.fetch = async () => {
+    fetchCalled = true;
+  };
   try {
     await assert.rejects(
       () => openai.generateImage({}, { prompt: 'a red bicycle' }),
@@ -170,7 +186,9 @@ test('gemini adapter.generateImage: posts to the Imagen :predict endpoint and de
     capturedBody = JSON.parse(options.body);
     return {
       ok: true,
-      json: async () => ({ predictions: [{ bytesBase64Encoded: Buffer.from('fake-png').toString('base64'), mimeType: 'image/png' }] }),
+      json: async () => ({
+        predictions: [{ bytesBase64Encoded: Buffer.from('fake-png').toString('base64'), mimeType: 'image/png' }],
+      }),
     };
   };
   try {
@@ -216,6 +234,64 @@ test('claude adapter.completeWithTools: a cache_control breakpoint is set on the
   assert.equal(capturedHeaders['anthropic-beta'], 'prompt-caching-2024-07-31');
   assert.equal(capturedBody.tools[0].cache_control, undefined, 'only the LAST tool gets the breakpoint');
   assert.deepEqual(capturedBody.tools[1].cache_control, { type: 'ephemeral' });
+});
+
+// ARCNAVE modernization P2 (PDF 1.4 / clash C2) — explicit Vertex prompt caching.
+test('gemini adapter.completeWithTools: a cachedSystemInstructionName references the cache and drops the inline systemInstruction', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const originalFetch = global.fetch;
+  let body;
+  global.fetch = async (_url, options) => {
+    body = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }) };
+  };
+  try {
+    await gemini.completeWithTools(
+      { projectId: 'p', accessToken: 't', model: 'gemini-3.8-flash', location: 'global' },
+      contextFromFlatPrompts({
+        systemPrompt: 'the big stable policy + catalogue prefix',
+        userPrompt: 'Question: attendance?',
+        tools: [{ name: 'attendance_summary', description: 'A', params: {} }],
+        cachedSystemInstructionName: 'projects/x/locations/global/cachedContents/42',
+      }),
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+  assert.equal(body.cachedContent, 'projects/x/locations/global/cachedContents/42');
+  assert.equal(body.systemInstruction, undefined, 'system text is not re-sent when the cache is referenced');
+  assert.ok(body.tools, 'tools are still sent inline (they can grow within a turn)');
+});
+
+test('gemini adapter.completeWithTools: a stale cachedContent (HTTP 404) is retried once inline, turn does not fail', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const originalFetch = global.fetch;
+  const bodies = [];
+  let n = 0;
+  global.fetch = async (_url, options) => {
+    bodies.push(JSON.parse(options.body));
+    n += 1;
+    if (n === 1) return { ok: false, status: 404, text: async () => 'CachedContent not found' };
+    return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: 'recovered' }] } }] }) };
+  };
+  try {
+    const res = await gemini.completeWithTools(
+      { projectId: 'p', accessToken: 't', model: 'gemini-3.8-flash', location: 'global' },
+      contextFromFlatPrompts({
+        systemPrompt: 'the big stable policy + catalogue prefix',
+        userPrompt: 'Question: attendance?',
+        tools: [{ name: 'attendance_summary', description: 'A', params: {} }],
+        cachedSystemInstructionName: 'projects/x/locations/global/cachedContents/stale',
+      }),
+    );
+    assert.equal(res.text, 'recovered');
+  } finally {
+    global.fetch = originalFetch;
+  }
+  assert.equal(bodies.length, 2, 'one cached attempt, one inline retry');
+  assert.equal(bodies[0].cachedContent, 'projects/x/locations/global/cachedContents/stale');
+  assert.equal(bodies[1].cachedContent, undefined);
+  assert.equal(bodies[1].systemInstruction.parts[0].text, 'the big stable policy + catalogue prefix');
 });
 
 // Claude-on-Vertex (added 2026-08-22) — the request-shape contract
@@ -291,7 +367,7 @@ test('claude adapter (Vertex mode): streaming uses :streamRawPredict and never s
   assert.equal(capturedBody.stream, undefined, 'Vertex has no body-level stream flag — the URL verb selects it');
 });
 
-test('claude adapter: projectId wins over apiKey when both are present (Vertex is configurationService\'s only mechanism for this provider today)', async () => {
+test("claude adapter: projectId wins over apiKey when both are present (Vertex is configurationService's only mechanism for this provider today)", async () => {
   const claude = aiProviders.getAdapter('claude');
   const originalFetch = global.fetch;
   let capturedHeaders;
@@ -314,7 +390,10 @@ test('claude adapter: projectId wins over apiKey when both are present (Vertex i
 test('gemini/selfHosted/openai adapters: complete()/embed() throw LlmNotConfiguredError when unconfigured, no fetch attempted', async () => {
   const originalFetch = global.fetch;
   let fetchCalled = false;
-  global.fetch = async () => { fetchCalled = true; return { ok: true, json: async () => ({}) }; };
+  global.fetch = async () => {
+    fetchCalled = true;
+    return { ok: true, json: async () => ({}) };
+  };
   try {
     for (const providerName of ['gemini', 'self_hosted', 'openai']) {
       const adapter = aiProviders.getAdapter(providerName);
@@ -332,7 +411,8 @@ test('gemini/selfHosted/openai adapters: complete()/embed() throw LlmNotConfigur
 
 // --- Vision content blocks (real chat-image attachment support) ---
 
-const ONE_PIXEL_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+const ONE_PIXEL_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
 async function capturedRequestBody(fn) {
   const originalFetch = global.fetch;
@@ -351,42 +431,57 @@ async function capturedRequestBody(fn) {
 
 test('claude adapter.completeWithTools: images build the real Anthropic multipart content shape (images first, text last)', async () => {
   const claude = aiProviders.getAdapter('claude');
-  const body = await capturedRequestBody(() => claude.completeWithTools(
-    { apiKey: 'k', model: 'claude-x' },
-    contextFromFlatPrompts({
-      systemPrompt: 's',
-      userPrompt: 'what is in this image?',
-      tools: [{ name: 'tool_a', description: 'A', params: {} }],
-      images: [{ mimeType: 'image/png', base64: ONE_PIXEL_PNG_BASE64 }],
-    }),
-  ).catch(() => {})); // response has no content[] block — the request shape is what's under test
+  const body = await capturedRequestBody(() =>
+    claude
+      .completeWithTools(
+        { apiKey: 'k', model: 'claude-x' },
+        contextFromFlatPrompts({
+          systemPrompt: 's',
+          userPrompt: 'what is in this image?',
+          tools: [{ name: 'tool_a', description: 'A', params: {} }],
+          images: [{ mimeType: 'image/png', base64: ONE_PIXEL_PNG_BASE64 }],
+        }),
+      )
+      .catch(() => {}),
+  ); // response has no content[] block — the request shape is what's under test
 
   const content = body.messages[0].content;
   assert.ok(Array.isArray(content));
-  assert.deepEqual(content[0], { type: 'image', source: { type: 'base64', media_type: 'image/png', data: ONE_PIXEL_PNG_BASE64 } });
+  assert.deepEqual(content[0], {
+    type: 'image',
+    source: { type: 'base64', media_type: 'image/png', data: ONE_PIXEL_PNG_BASE64 },
+  });
   assert.deepEqual(content[1], { type: 'text', text: 'what is in this image?' });
 });
 
 test('claude adapter.complete: with no images, content stays a plain string (unchanged shape)', async () => {
   const claude = aiProviders.getAdapter('claude');
-  const body = await capturedRequestBody(() => claude.completeWithMeta(
-    { apiKey: 'k', model: 'claude-x' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
-  ).catch(() => {}));
+  const body = await capturedRequestBody(() =>
+    claude
+      .completeWithMeta(
+        { apiKey: 'k', model: 'claude-x' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+      )
+      .catch(() => {}),
+  );
   assert.equal(body.messages[0].content, 'u');
 });
 
 test('gemini adapter.completeWithTools: images build the real Gemini inline_data parts shape (images first, text last)', async () => {
   const gemini = aiProviders.getAdapter('gemini');
-  const body = await capturedRequestBody(() => gemini.completeWithTools(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    contextFromFlatPrompts({
-      systemPrompt: 's',
-      userPrompt: 'what is in this image?',
-      tools: [{ name: 'tool_a', description: 'A', params: {} }],
-      images: [{ mimeType: 'image/png', base64: ONE_PIXEL_PNG_BASE64 }],
-    }),
-  ).catch(() => {}));
+  const body = await capturedRequestBody(() =>
+    gemini
+      .completeWithTools(
+        { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+        contextFromFlatPrompts({
+          systemPrompt: 's',
+          userPrompt: 'what is in this image?',
+          tools: [{ name: 'tool_a', description: 'A', params: {} }],
+          images: [{ mimeType: 'image/png', base64: ONE_PIXEL_PNG_BASE64 }],
+        }),
+      )
+      .catch(() => {}),
+  );
 
   const parts = body.contents[0].parts;
   assert.deepEqual(parts[0], { inline_data: { mime_type: 'image/png', data: ONE_PIXEL_PNG_BASE64 } });
@@ -395,10 +490,14 @@ test('gemini adapter.completeWithTools: images build the real Gemini inline_data
 
 test('gemini adapter.complete: with no images, parts stays text-only (unchanged shape)', async () => {
   const gemini = aiProviders.getAdapter('gemini');
-  const body = await capturedRequestBody(() => gemini.completeWithMeta(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
-  ).catch(() => {}));
+  const body = await capturedRequestBody(() =>
+    gemini
+      .completeWithMeta(
+        { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+      )
+      .catch(() => {}),
+  );
   assert.deepEqual(body.contents[0].parts, [{ text: 'u' }]);
 });
 
@@ -419,20 +518,22 @@ test('gemini adapter.complete: with no images, parts stays text-only (unchanged 
 test('gemini adapter.completeWithMeta: a hanging request is aborted well within the overall time budget, never the old ~90s worst case', async () => {
   const gemini = aiProviders.getAdapter('gemini');
   const originalFetch = global.fetch;
-  global.fetch = (url, options) => new Promise((resolve, reject) => {
-    options.signal.addEventListener('abort', () => {
-      const err = new Error('The operation was aborted');
-      err.name = 'AbortError';
-      reject(err);
+  global.fetch = (url, options) =>
+    new Promise((resolve, reject) => {
+      options.signal.addEventListener('abort', () => {
+        const err = new Error('The operation was aborted');
+        err.name = 'AbortError';
+        reject(err);
+      });
     });
-  });
   const startedAt = Date.now();
   try {
     await assert.rejects(
-      () => gemini.completeWithMeta(
-        { projectId: 'p', accessToken: 't', maxTotalLatencyMs: 150 },
-        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
-      ),
+      () =>
+        gemini.completeWithMeta(
+          { projectId: 'p', accessToken: 't', maxTotalLatencyMs: 150 },
+          contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+        ),
       aiProviders.LlmRequestError,
     );
   } finally {
@@ -444,45 +545,83 @@ test('gemini adapter.completeWithMeta: a hanging request is aborted well within 
 
 test('openai adapter.completeWithTools: images build the real OpenAI image_url content shape (text first, images after)', async () => {
   const openai = aiProviders.getAdapter('openai');
-  const body = await capturedRequestBody(() => openai.completeWithTools(
-    { apiKey: 'k', model: 'gpt-x' },
-    contextFromFlatPrompts({
-      systemPrompt: 's',
-      userPrompt: 'what is in this image?',
-      tools: [{ name: 'tool_a', description: 'A', params: {} }],
-      images: [{ mimeType: 'image/png', base64: ONE_PIXEL_PNG_BASE64 }],
-    }),
-  ).catch(() => {}));
+  const body = await capturedRequestBody(() =>
+    openai
+      .completeWithTools(
+        { apiKey: 'k', model: 'gpt-x' },
+        contextFromFlatPrompts({
+          systemPrompt: 's',
+          userPrompt: 'what is in this image?',
+          tools: [{ name: 'tool_a', description: 'A', params: {} }],
+          images: [{ mimeType: 'image/png', base64: ONE_PIXEL_PNG_BASE64 }],
+        }),
+      )
+      .catch(() => {}),
+  );
 
   const content = body.messages[1].content;
   assert.deepEqual(content[0], { type: 'text', text: 'what is in this image?' });
-  assert.deepEqual(content[1], { type: 'image_url', image_url: { url: `data:image/png;base64,${ONE_PIXEL_PNG_BASE64}` } });
+  assert.deepEqual(content[1], {
+    type: 'image_url',
+    image_url: { url: `data:image/png;base64,${ONE_PIXEL_PNG_BASE64}` },
+  });
+});
+
+// ADR-030 P3 follow-up (config.experimentalZeroToolFastPath) — Gemini's
+// real API rejects `tools: [{ functionDeclarations: [] }]` (a non-empty
+// outer array wrapping zero declarations is invalid; only OMITTING
+// `tools` entirely is), so a genuinely empty tools array must drop the
+// field, not send it empty. Regression guard for that exact bug: without
+// the `tools.length > 0` gate in gemini.js, this request body would carry
+// `tools: [{ functionDeclarations: [] }]` and fail against the real API.
+test('gemini adapter.completeWithTools: an empty tools array omits the `tools` field entirely, never `tools: [{ functionDeclarations: [] }]`', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const body = await capturedRequestBody(() =>
+    gemini
+      .completeWithTools(
+        { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', tools: [] }),
+      )
+      .catch(() => {}),
+  );
+
+  assert.equal(Object.prototype.hasOwnProperty.call(body, 'tools'), false);
 });
 
 test('gemini adapter.completeWithTools: additionalProperties is stripped (recursively) from every tool schema — real Gemini API rejects it (\'Unknown name "additionalProperties"\'), caught live against the actual endpoint', async () => {
   const gemini = aiProviders.getAdapter('gemini');
-  const body = await capturedRequestBody(() => gemini.completeWithTools(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    contextFromFlatPrompts({
-      systemPrompt: 's',
-      userPrompt: 'u',
-      tools: [{
-        name: 'tool_a',
-        description: 'A',
-        params: {
-          type: 'object',
-          properties: {
-            nested: { type: 'object', properties: { x: { type: 'string' } }, additionalProperties: false },
-          },
-          additionalProperties: false,
-        },
-      }],
-    }),
-  ).catch(() => {}));
+  const body = await capturedRequestBody(() =>
+    gemini
+      .completeWithTools(
+        { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+        contextFromFlatPrompts({
+          systemPrompt: 's',
+          userPrompt: 'u',
+          tools: [
+            {
+              name: 'tool_a',
+              description: 'A',
+              params: {
+                type: 'object',
+                properties: {
+                  nested: { type: 'object', properties: { x: { type: 'string' } }, additionalProperties: false },
+                },
+                additionalProperties: false,
+              },
+            },
+          ],
+        }),
+      )
+      .catch(() => {}),
+  );
 
   const parameters = body.tools[0].functionDeclarations[0].parameters;
   assert.equal('additionalProperties' in parameters, false, 'top-level additionalProperties must be stripped');
-  assert.equal('additionalProperties' in parameters.properties.nested, false, 'nested additionalProperties must be stripped too');
+  assert.equal(
+    'additionalProperties' in parameters.properties.nested,
+    false,
+    'nested additionalProperties must be stripped too',
+  );
   // Everything else in the schema survives unchanged.
   assert.equal(parameters.type, 'object');
   assert.equal(parameters.properties.nested.properties.x.type, 'string');
@@ -490,10 +629,11 @@ test('gemini adapter.completeWithTools: additionalProperties is stripped (recurs
 
 test('openai adapter.complete: with no images, content stays a plain string (unchanged shape)', async () => {
   const openai = aiProviders.getAdapter('openai');
-  const body = await capturedRequestBody(() => openai.completeWithMeta(
-    { apiKey: 'k', model: 'gpt-x' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
-  ).catch(() => {}));
+  const body = await capturedRequestBody(() =>
+    openai
+      .completeWithMeta({ apiKey: 'k', model: 'gpt-x' }, contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }))
+      .catch(() => {}),
+  );
   assert.equal(body.messages[1].content, 'u');
 });
 
@@ -504,10 +644,14 @@ test('openai adapter.complete: with no images, content stays a plain string (unc
 // regression for every existing caller that never sets it).
 test('gemini adapter.completeWithMeta: no responseSchema means no responseMimeType/responseSchema on the wire (unchanged shape)', async () => {
   const gemini = aiProviders.getAdapter('gemini');
-  const body = await capturedRequestBody(() => gemini.completeWithMeta(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
-  ).catch(() => {}));
+  const body = await capturedRequestBody(() =>
+    gemini
+      .completeWithMeta(
+        { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+      )
+      .catch(() => {}),
+  );
   assert.equal('responseMimeType' in body.generationConfig, false);
   assert.equal('responseSchema' in body.generationConfig, false);
 });
@@ -515,10 +659,14 @@ test('gemini adapter.completeWithMeta: no responseSchema means no responseMimeTy
 test('gemini adapter.completeWithMeta: an attached responseSchema sets responseMimeType/responseSchema without disturbing maxOutputTokens/thinkingConfig', async () => {
   const gemini = aiProviders.getAdapter('gemini');
   const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] };
-  const body = await capturedRequestBody(() => gemini.completeWithMeta(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
-  ).catch(() => {}));
+  const body = await capturedRequestBody(() =>
+    gemini
+      .completeWithMeta(
+        { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
+      )
+      .catch(() => {}),
+  );
   assert.equal(body.generationConfig.responseMimeType, 'application/json');
   assert.deepEqual(body.generationConfig.responseSchema, schema);
   assert.equal(body.generationConfig.maxOutputTokens, 65_536);
@@ -527,38 +675,156 @@ test('gemini adapter.completeWithMeta: an attached responseSchema sets responseM
 
 test('openai adapter.completeWithMeta: no responseSchema means no response_format on the wire (unchanged shape)', async () => {
   const openai = aiProviders.getAdapter('openai');
-  const body = await capturedRequestBody(() => openai.completeWithMeta(
-    { apiKey: 'k', model: 'gpt-x' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
-  ).catch(() => {}));
+  const body = await capturedRequestBody(() =>
+    openai
+      .completeWithMeta({ apiKey: 'k', model: 'gpt-x' }, contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }))
+      .catch(() => {}),
+  );
   assert.equal('response_format' in body, false);
 });
 
 test('openai adapter.completeWithMeta: an attached responseSchema maps to response_format: json_schema, strict', async () => {
   const openai = aiProviders.getAdapter('openai');
   const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] };
-  const body = await capturedRequestBody(() => openai.completeWithMeta(
-    { apiKey: 'k', model: 'gpt-x' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
-  ).catch(() => {}));
+  const body = await capturedRequestBody(() =>
+    openai
+      .completeWithMeta(
+        { apiKey: 'k', model: 'gpt-x' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
+      )
+      .catch(() => {}),
+  );
   assert.equal(body.response_format.type, 'json_schema');
   assert.equal(body.response_format.json_schema.strict, true);
   assert.deepEqual(body.response_format.json_schema.schema, schema);
 });
 
-test('claude/self_hosted adapters ignore an attached responseSchema harmlessly (no native support, no crash, unchanged request shape)', async () => {
-  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] };
-  const claudeBody = await capturedRequestBody(() => aiProviders.getAdapter('claude').completeWithMeta(
-    { apiKey: 'k', model: 'claude-x' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
-  ).catch(() => {}));
-  assert.equal(claudeBody.messages[0].content, 'u');
+// P3 1.12 — "forced-format replies only half-supported ... only two
+// providers enforce it natively." Every adapter now honors an attached
+// responseSchema natively; these replace the old
+// "claude/self_hosted ignore it harmlessly" test, which asserted the
+// exact gap this item closes.
+test('selfHosted/vertexMaas adapters (OpenAI-compatible): no responseSchema means no response_format on the wire (unchanged shape)', async () => {
+  const selfHostedBody = await capturedRequestBody(() =>
+    aiProviders
+      .getAdapter('self_hosted')
+      .completeWithMeta(
+        { baseUrl: 'http://x', model: 'm' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+      )
+      .catch(() => {}),
+  );
+  assert.equal('response_format' in selfHostedBody, false);
+});
 
-  const selfHostedBody = await capturedRequestBody(() => aiProviders.getAdapter('self_hosted').completeWithMeta(
-    { baseUrl: 'http://x', model: 'm' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
-  ).catch(() => {}));
-  assert.equal(selfHostedBody.messages[1].content, 'u');
+test('selfHosted adapter.completeWithMeta: an attached responseSchema maps to response_format: json_schema, strict (same OpenAI-compatible shape as openai.js)', async () => {
+  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] };
+  const body = await capturedRequestBody(() =>
+    aiProviders
+      .getAdapter('self_hosted')
+      .completeWithMeta(
+        { baseUrl: 'http://x', model: 'm' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
+      )
+      .catch(() => {}),
+  );
+  assert.equal(body.response_format.type, 'json_schema');
+  assert.equal(body.response_format.json_schema.strict, true);
+  assert.deepEqual(body.response_format.json_schema.schema, schema);
+  assert.equal(body.messages[1].content, 'u');
+});
+
+test('vertexMaas adapter.completeWithMeta: an attached responseSchema maps to response_format: json_schema, strict', async () => {
+  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] };
+  const body = await capturedRequestBody(() =>
+    aiProviders
+      .getAdapter('vertex_maas')
+      .completeWithMeta(
+        { projectId: 'p', accessToken: 't', model: 'qwen/qwen3-next-80b-a3b-thinking-maas' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
+      )
+      .catch(() => {}),
+  );
+  assert.equal(body.response_format.type, 'json_schema');
+  assert.deepEqual(body.response_format.json_schema.schema, schema);
+});
+
+test('claude adapter.completeWithMeta: no responseSchema means no tools/tool_choice on the wire (unchanged shape)', async () => {
+  const body = await capturedRequestBody(() =>
+    aiProviders
+      .getAdapter('claude')
+      .completeWithMeta(
+        { apiKey: 'k', model: 'claude-x' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+      )
+      .catch(() => {}),
+  );
+  assert.equal('tools' in body, false);
+  assert.equal('tool_choice' in body, false);
+  assert.equal(body.messages[0].content, 'u');
+});
+
+test('claude adapter.completeWithMeta: an attached responseSchema forces a single structured_output tool call (no native response_format field on Anthropic’s API)', async () => {
+  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] };
+  const body = await capturedRequestBody(() =>
+    aiProviders
+      .getAdapter('claude')
+      .completeWithMeta(
+        { apiKey: 'k', model: 'claude-x' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
+      )
+      .catch(() => {}),
+  );
+  assert.equal(body.tools.length, 1);
+  assert.equal(body.tools[0].name, 'structured_output');
+  assert.deepEqual(body.tools[0].input_schema, schema);
+  assert.deepEqual(body.tool_choice, { type: 'tool', name: 'structured_output' });
+  assert.equal(body.messages[0].content, 'u');
+});
+
+test('claude adapter.completeWithMeta: a forced tool_use response is re-serialized to a JSON string (same string contract as gemini/openai)', async () => {
+  const claude = aiProviders.getAdapter('claude');
+  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] };
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      content: [{ type: 'tool_use', name: 'structured_output', input: { x: 'value' } }],
+      usage: { input_tokens: 5, output_tokens: 3 },
+    }),
+  });
+  try {
+    const { text, usage } = await claude.completeWithMeta(
+      { apiKey: 'k', model: 'claude-x' },
+      contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
+    );
+    assert.equal(text, JSON.stringify({ x: 'value' }));
+    // ADL-100 — extractUsage now always includes cachedTokens (undefined
+    // here since this mocked response carries no cache_read_input_tokens,
+    // same as a real uncached Anthropic call).
+    assert.deepEqual(usage, { inputTokens: 5, outputTokens: 3, cachedTokens: undefined });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('claude adapter.completeWithMeta: a missing forced tool_use block throws rather than silently returning nothing', async () => {
+  const claude = aiProviders.getAdapter('claude');
+  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] };
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({ ok: true, json: async () => ({ content: [] }) });
+  try {
+    await assert.rejects(
+      () =>
+        claude.completeWithMeta(
+          { apiKey: 'k', model: 'claude-x' },
+          contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', responseSchema: schema }),
+        ),
+      /structured_output/,
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
 });
 
 // Mocks fetch and returns BOTH the request body sent and the real
@@ -586,21 +852,36 @@ async function capturedRequestAndResult(fn, responsePayload) {
 // CEO Vertex/Gemini audit #26 (2026-08-30) — Thinking Levels.
 test('gemini adapter.completeWithMeta: thinkingLevel overrides GENERATION_CONFIG.thinkingConfig.thinkingLevel on the wire', async () => {
   const gemini = aiProviders.getAdapter('gemini');
-  const { body } = await capturedRequestAndResult(() => gemini.completeWithMeta(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', thinkingLevel: 'HIGH' }),
-  ).catch(() => {}), {});
+  const { body } = await capturedRequestAndResult(
+    () =>
+      gemini
+        .completeWithMeta(
+          { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+          contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', thinkingLevel: 'HIGH' }),
+        )
+        .catch(() => {}),
+    {},
+  );
   assert.equal(body.generationConfig.thinkingConfig.thinkingLevel, 'HIGH');
 });
 
 test('gemini adapter.completeWithTools: thinkingLevel reaches the decision call too, not just plain complete()', async () => {
   const gemini = aiProviders.getAdapter('gemini');
-  const { body } = await capturedRequestAndResult(() => gemini.completeWithTools(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    contextFromFlatPrompts({
-      systemPrompt: 's', userPrompt: 'u', tools: [{ name: 'tool_a', description: 'A', params: {} }], thinkingLevel: 'MEDIUM',
-    }),
-  ).catch(() => {}), {});
+  const { body } = await capturedRequestAndResult(
+    () =>
+      gemini
+        .completeWithTools(
+          { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+          contextFromFlatPrompts({
+            systemPrompt: 's',
+            userPrompt: 'u',
+            tools: [{ name: 'tool_a', description: 'A', params: {} }],
+            thinkingLevel: 'MEDIUM',
+          }),
+        )
+        .catch(() => {}),
+    {},
+  );
   assert.equal(body.generationConfig.thinkingConfig.thinkingLevel, 'MEDIUM');
 });
 
@@ -611,19 +892,22 @@ test('gemini adapter.completeWithTools: thinkingLevel reaches the decision call 
 // visible answer.
 test('gemini adapter.completeWithMeta: a thought part is split out of the visible text and returned separately as thoughtSummary', async () => {
   const gemini = aiProviders.getAdapter('gemini');
-  const { body, result } = await capturedRequestAndResult(() => gemini.completeWithMeta(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', includeThoughts: true }),
-  ), {
-    candidates: [{
-      content: {
-        parts: [
-          { text: 'reasoning about the question...', thought: true },
-          { text: 'the real answer' },
-        ],
-      },
-    }],
-  });
+  const { body, result } = await capturedRequestAndResult(
+    () =>
+      gemini.completeWithMeta(
+        { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', includeThoughts: true }),
+      ),
+    {
+      candidates: [
+        {
+          content: {
+            parts: [{ text: 'reasoning about the question...', thought: true }, { text: 'the real answer' }],
+          },
+        },
+      ],
+    },
+  );
   assert.equal(body.generationConfig.thinkingConfig.includeThoughts, true);
   assert.equal(result.text, 'the real answer');
   assert.equal(result.thoughtSummary, 'reasoning about the question...');
@@ -631,33 +915,43 @@ test('gemini adapter.completeWithMeta: a thought part is split out of the visibl
 
 test('gemini adapter.completeWithMeta: no thought parts in the response means thoughtSummary is undefined, never an empty string', async () => {
   const gemini = aiProviders.getAdapter('gemini');
-  const { result } = await capturedRequestAndResult(() => gemini.completeWithMeta(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
-  ), {
-    candidates: [{ content: { parts: [{ text: 'the real answer' }] } }],
-  });
+  const { result } = await capturedRequestAndResult(
+    () =>
+      gemini.completeWithMeta(
+        { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+      ),
+    {
+      candidates: [{ content: { parts: [{ text: 'the real answer' }] } }],
+    },
+  );
   assert.equal(result.text, 'the real answer');
   assert.equal(result.thoughtSummary, undefined);
 });
 
 test('gemini adapter.completeWithTools: a thought part alongside a function call is split out and never becomes part of toolName/arguments', async () => {
   const gemini = aiProviders.getAdapter('gemini');
-  const { result } = await capturedRequestAndResult(() => gemini.completeWithTools(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    contextFromFlatPrompts({
-      systemPrompt: 's', userPrompt: 'u', tools: [{ name: 'tool_a', description: 'A', params: {} }], includeThoughts: true,
-    }),
-  ), {
-    candidates: [{
-      content: {
-        parts: [
-          { text: 'thinking...', thought: true },
-          { functionCall: { name: 'tool_a', args: { x: 1 } } },
-        ],
-      },
-    }],
-  });
+  const { result } = await capturedRequestAndResult(
+    () =>
+      gemini.completeWithTools(
+        { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+        contextFromFlatPrompts({
+          systemPrompt: 's',
+          userPrompt: 'u',
+          tools: [{ name: 'tool_a', description: 'A', params: {} }],
+          includeThoughts: true,
+        }),
+      ),
+    {
+      candidates: [
+        {
+          content: {
+            parts: [{ text: 'thinking...', thought: true }, { functionCall: { name: 'tool_a', args: { x: 1 } } }],
+          },
+        },
+      ],
+    },
+  );
   assert.equal(result.type, 'tool_call');
   assert.equal(result.toolName, 'tool_a');
   assert.equal(result.thoughtSummary, 'thinking...');
@@ -667,12 +961,16 @@ test('gemini adapter.completeWithTools: a thought part alongside a function call
 // diagnostics only.
 test('gemini adapter.completeWithMeta: logprobsTopK sets responseLogprobs/logprobs on the wire and surfaces logprobsResult on the return value', async () => {
   const gemini = aiProviders.getAdapter('gemini');
-  const { body, result } = await capturedRequestAndResult(() => gemini.completeWithMeta(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', logprobsTopK: 3 }),
-  ), {
-    candidates: [{ content: { parts: [{ text: 'answer' }] }, logprobsResult: { chosenCandidates: [] } }],
-  });
+  const { body, result } = await capturedRequestAndResult(
+    () =>
+      gemini.completeWithMeta(
+        { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u', logprobsTopK: 3 }),
+      ),
+    {
+      candidates: [{ content: { parts: [{ text: 'answer' }] }, logprobsResult: { chosenCandidates: [] } }],
+    },
+  );
   assert.equal(body.generationConfig.responseLogprobs, true);
   assert.equal(body.generationConfig.logprobs, 3);
   assert.deepEqual(result.logprobsResult, { chosenCandidates: [] });
@@ -680,12 +978,16 @@ test('gemini adapter.completeWithMeta: logprobsTopK sets responseLogprobs/logpro
 
 test('gemini adapter.completeWithMeta: no logprobsTopK means no responseLogprobs/logprobs on the wire and no logprobsResult on the return value', async () => {
   const gemini = aiProviders.getAdapter('gemini');
-  const { body, result } = await capturedRequestAndResult(() => gemini.completeWithMeta(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
-  ), {
-    candidates: [{ content: { parts: [{ text: 'answer' }] }, logprobsResult: { chosenCandidates: [] } }],
-  });
+  const { body, result } = await capturedRequestAndResult(
+    () =>
+      gemini.completeWithMeta(
+        { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+      ),
+    {
+      candidates: [{ content: { parts: [{ text: 'answer' }] }, logprobsResult: { chosenCandidates: [] } }],
+    },
+  );
   assert.equal('responseLogprobs' in body.generationConfig, false);
   assert.equal('logprobs' in body.generationConfig, false);
   assert.equal(result.logprobsResult, undefined);
@@ -694,12 +996,20 @@ test('gemini adapter.completeWithMeta: no logprobsTopK means no responseLogprobs
 // CEO Vertex/Gemini audit #34 (2026-08-30) — Token Counting Preflight.
 test('gemini adapter.countTokens: posts to the real :countTokens endpoint and returns totalTokens', async () => {
   const gemini = aiProviders.getAdapter('gemini');
-  const { body, result } = await capturedRequestAndResult(() => gemini.countTokens(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
-  ), { totalTokens: 12345 });
+  const { body, result } = await capturedRequestAndResult(
+    () =>
+      gemini.countTokens(
+        { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+      ),
+    { totalTokens: 12345 },
+  );
   assert.equal(body.contents[0].parts[0].text, 'u');
-  assert.equal('generationConfig' in body, false, 'countTokens must never send a generationConfig — it is not a generation call');
+  assert.equal(
+    'generationConfig' in body,
+    false,
+    'countTokens must never send a generationConfig — it is not a generation call',
+  );
   assert.equal(result.totalTokens, 12345);
 });
 
@@ -708,10 +1018,14 @@ test('gemini adapter.countTokens: a non-numeric totalTokens throws rather than r
   const originalFetch = global.fetch;
   global.fetch = async () => ({ ok: true, json: async () => ({}) }); // no totalTokens at all
   try {
-    await assert.rejects(() => gemini.countTokens(
-      { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-      contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
-    ), aiProviders.LlmRequestError);
+    await assert.rejects(
+      () =>
+        gemini.countTokens(
+          { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+          contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+        ),
+      aiProviders.LlmRequestError,
+    );
   } finally {
     global.fetch = originalFetch;
   }
@@ -728,10 +1042,14 @@ test('gemini adapter.countTokens: unconfigured -> LlmNotConfiguredError, no fetc
 // CEO Vertex/Gemini audit #37/C14 (2026-08-30) — Batch Prediction.
 test('gemini adapter.submitBatchPredictionJob: posts to the real batchPredictionJobs endpoint with gcsSource/gcsDestination', async () => {
   const gemini = aiProviders.getAdapter('gemini');
-  const { body, result } = await capturedRequestAndResult(() => gemini.submitBatchPredictionJob(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    { displayName: 'my-job', gcsInputUri: 'gs://bucket/in.jsonl', gcsOutputUriPrefix: 'gs://bucket/out/' },
-  ), { name: 'projects/p/locations/global/batchPredictionJobs/123', state: 'JOB_STATE_PENDING' });
+  const { body, result } = await capturedRequestAndResult(
+    () =>
+      gemini.submitBatchPredictionJob(
+        { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+        { displayName: 'my-job', gcsInputUri: 'gs://bucket/in.jsonl', gcsOutputUriPrefix: 'gs://bucket/out/' },
+      ),
+    { name: 'projects/p/locations/global/batchPredictionJobs/123', state: 'JOB_STATE_PENDING' },
+  );
   assert.equal(body.inputConfig.gcsSource.uris[0], 'gs://bucket/in.jsonl');
   assert.equal(body.outputConfig.gcsDestination.outputUriPrefix, 'gs://bucket/out/');
   assert.equal(body.model, 'publishers/google/models/gemini-x');
@@ -741,10 +1059,14 @@ test('gemini adapter.submitBatchPredictionJob: posts to the real batchPrediction
 
 test('gemini adapter.submitBatchPredictionJob: refuses without gcsInputUri/gcsOutputUriPrefix — this codebase has no GCS routing to supply them from', async () => {
   const gemini = aiProviders.getAdapter('gemini');
-  await assert.rejects(() => gemini.submitBatchPredictionJob(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    { displayName: 'my-job' },
-  ), aiProviders.LlmRequestError);
+  await assert.rejects(
+    () =>
+      gemini.submitBatchPredictionJob(
+        { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+        { displayName: 'my-job' },
+      ),
+    aiProviders.LlmRequestError,
+  );
 });
 
 // Round 10 P2/P3 finding: the round-8 output-token-bound fix (each
@@ -760,28 +1082,45 @@ test('gemini adapter.submitBatchPredictionJob: refuses without gcsInputUri/gcsOu
 // assertion per adapter, same capturedRequestBody helper every other
 // request-shape test in this file already uses.
 test('every provider adapter sends an explicit output-token bound on the wire (round 8 fix, previously only informally exercised)', async () => {
-  const geminiBody = await capturedRequestBody(() => aiProviders.getAdapter('gemini').completeWithMeta(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
-  ).catch(() => {}));
+  const geminiBody = await capturedRequestBody(() =>
+    aiProviders
+      .getAdapter('gemini')
+      .completeWithMeta(
+        { projectId: 'p', accessToken: 't', model: 'gemini-x' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+      )
+      .catch(() => {}),
+  );
   assert.equal(geminiBody.generationConfig.maxOutputTokens, 65_536);
 
-  const selfHostedBody = await capturedRequestBody(() => aiProviders.getAdapter('self_hosted').completeWithMeta(
-    { baseUrl: 'http://localhost:1', model: 'sh-x' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
-  ).catch(() => {}));
+  const selfHostedBody = await capturedRequestBody(() =>
+    aiProviders
+      .getAdapter('self_hosted')
+      .completeWithMeta(
+        { baseUrl: 'http://localhost:1', model: 'sh-x' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+      )
+      .catch(() => {}),
+  );
   assert.equal(selfHostedBody.max_tokens, 1024);
 
-  const openaiBody = await capturedRequestBody(() => aiProviders.getAdapter('openai').completeWithMeta(
-    { apiKey: 'k', model: 'gpt-x' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
-  ).catch(() => {}));
+  const openaiBody = await capturedRequestBody(() =>
+    aiProviders
+      .getAdapter('openai')
+      .completeWithMeta({ apiKey: 'k', model: 'gpt-x' }, contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }))
+      .catch(() => {}),
+  );
   assert.equal(openaiBody.max_tokens, 1024);
 
-  const claudeBody = await capturedRequestBody(() => aiProviders.getAdapter('claude').completeWithMeta(
-    { apiKey: 'k', model: 'claude-x' },
-    contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
-  ).catch(() => {}));
+  const claudeBody = await capturedRequestBody(() =>
+    aiProviders
+      .getAdapter('claude')
+      .completeWithMeta(
+        { apiKey: 'k', model: 'claude-x' },
+        contextFromFlatPrompts({ systemPrompt: 's', userPrompt: 'u' }),
+      )
+      .catch(() => {}),
+  );
   assert.equal(claudeBody.max_tokens, 1024);
 });
 
@@ -809,20 +1148,27 @@ async function capturedRequestBodyWithResponse(fn, responsePayload) {
 
 const P2C_TOOLS = [{ name: 'tool_a', description: 'A', params: {} }];
 const P2C_CONTEXT = contextFromFlatPrompts({
-  systemPrompt: 's', userPrompt: 'u', tools: P2C_TOOLS,
+  systemPrompt: 's',
+  userPrompt: 'u',
+  tools: P2C_TOOLS,
 });
 
 test('gemini adapter.completeWithTools: priorTurns appends functionCall/functionResponse turns after the unchanged base turn, no callId needed', async () => {
   const gemini = aiProviders.getAdapter('gemini');
   const priorTurns = [{ toolName: 'tool_a', arguments: { x: 1 }, resultText: 'RESULT_TEXT' }];
-  const body = await capturedRequestBody(() => gemini.completeWithTools(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' }, P2C_CONTEXT, priorTurns,
-  ).catch(() => {}));
+  const body = await capturedRequestBody(() =>
+    gemini
+      .completeWithTools({ projectId: 'p', accessToken: 't', model: 'gemini-x' }, P2C_CONTEXT, priorTurns)
+      .catch(() => {}),
+  );
 
   assert.equal(body.contents.length, 3, 'base user turn + one model/user pair');
   assert.deepEqual(body.contents[0], { role: 'user', parts: [{ text: 'u' }] });
   assert.deepEqual(body.contents[1], { role: 'model', parts: [{ functionCall: { name: 'tool_a', args: { x: 1 } } }] });
-  assert.deepEqual(body.contents[2], { role: 'user', parts: [{ functionResponse: { name: 'tool_a', response: { content: 'RESULT_TEXT' } } }] });
+  assert.deepEqual(body.contents[2], {
+    role: 'user',
+    parts: [{ functionResponse: { name: 'tool_a', response: { content: 'RESULT_TEXT' } } }],
+  });
 });
 
 // Live-caught regression (first real multi-tool-call ADR-030 P2(c) run
@@ -840,35 +1186,74 @@ test('gemini adapter.completeWithTools: a tool_call response carries rawToolCall
   const realPart = { functionCall: { name: 'tool_a', args: { x: 2 } }, thoughtSignature: 'opaque-signature-abc' };
 
   let decision;
-  await capturedRequestBodyWithResponse(async () => {
-    decision = await gemini.completeWithTools(
-      { projectId: 'p', accessToken: 't', model: 'gemini-x' }, P2C_CONTEXT,
-    );
-  }, {
-    candidates: [{ content: { parts: [realPart] } }],
-    usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 },
-  });
+  await capturedRequestBodyWithResponse(
+    async () => {
+      decision = await gemini.completeWithTools({ projectId: 'p', accessToken: 't', model: 'gemini-x' }, P2C_CONTEXT);
+    },
+    {
+      candidates: [{ content: { parts: [realPart] } }],
+      usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 },
+    },
+  );
   assert.deepEqual(decision.rawToolCall, realPart, 'the whole part, thoughtSignature included, not just {name, args}');
 
-  const priorTurns = [{
-    toolName: 'tool_a', arguments: { x: 2 }, resultText: 'R', rawToolCall: decision.rawToolCall,
-  }];
-  const body = await capturedRequestBody(() => gemini.completeWithTools(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' }, P2C_CONTEXT, priorTurns,
-  ).catch(() => {}));
-  assert.deepEqual(body.contents[1], { role: 'model', parts: [realPart] }, 'replays the exact part verbatim, thoughtSignature intact — never reconstructed');
+  const priorTurns = [
+    {
+      toolName: 'tool_a',
+      arguments: { x: 2 },
+      resultText: 'R',
+      rawToolCall: decision.rawToolCall,
+    },
+  ];
+  const body = await capturedRequestBody(() =>
+    gemini
+      .completeWithTools({ projectId: 'p', accessToken: 't', model: 'gemini-x' }, P2C_CONTEXT, priorTurns)
+      .catch(() => {}),
+  );
+  assert.deepEqual(
+    body.contents[1],
+    { role: 'model', parts: [realPart] },
+    'replays the exact part verbatim, thoughtSignature intact — never reconstructed',
+  );
 });
 
 test('gemini adapter.completeWithTools: priorTurns=[]/omitted produces a byte-identical base turn to today (regression lock)', async () => {
   const gemini = aiProviders.getAdapter('gemini');
-  const withEmpty = await capturedRequestBody(() => gemini.completeWithTools(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' }, P2C_CONTEXT, [],
-  ).catch(() => {}));
-  const omitted = await capturedRequestBody(() => gemini.completeWithTools(
-    { projectId: 'p', accessToken: 't', model: 'gemini-x' }, P2C_CONTEXT,
-  ).catch(() => {}));
+  const withEmpty = await capturedRequestBody(() =>
+    gemini.completeWithTools({ projectId: 'p', accessToken: 't', model: 'gemini-x' }, P2C_CONTEXT, []).catch(() => {}),
+  );
+  const omitted = await capturedRequestBody(() =>
+    gemini.completeWithTools({ projectId: 'p', accessToken: 't', model: 'gemini-x' }, P2C_CONTEXT).catch(() => {}),
+  );
   assert.deepEqual(withEmpty.contents, [{ role: 'user', parts: [{ text: 'u' }] }]);
   assert.deepEqual(withEmpty, omitted);
+});
+
+// ARCNAVE modernization P2 / 1.6 — historyTurns become real 'user'/'model'
+// contents turns, placed BEFORE the current user turn (never after —
+// that's where priorTurns' own same-turn functionCall/functionResponse
+// pairs belong).
+test('gemini adapter.completeWithTools: historyTurns become real user/model contents turns, placed before the current user turn', async () => {
+  const gemini = aiProviders.getAdapter('gemini');
+  const contextWithHistory = contextFromFlatPrompts({
+    systemPrompt: 's',
+    userPrompt: 'u',
+    tools: P2C_TOOLS,
+    historyTurns: [
+      { role: 'user', content: 'earlier question' },
+      { role: 'assistant', content: 'earlier answer' },
+    ],
+  });
+  const body = await capturedRequestBody(() =>
+    gemini
+      .completeWithTools({ projectId: 'p', accessToken: 't', model: 'gemini-x' }, contextWithHistory)
+      .catch(() => {}),
+  );
+  assert.deepEqual(body.contents, [
+    { role: 'user', parts: [{ text: 'earlier question' }] },
+    { role: 'model', parts: [{ text: 'earlier answer' }] },
+    { role: 'user', parts: [{ text: 'u' }] },
+  ]);
 });
 
 test('gemini adapter.completeWithTools: tool definitions are chain-equal across 3 iterations (0, 1, 2 prior turns) — a continuation never narrows the tool list', async () => {
@@ -878,7 +1263,9 @@ test('gemini adapter.completeWithTools: tool definitions are chain-equal across 
 
   const body0 = await capturedRequestBody(() => gemini.completeWithTools(cfg, P2C_CONTEXT, []).catch(() => {}));
   const body1 = await capturedRequestBody(() => gemini.completeWithTools(cfg, P2C_CONTEXT, [turn]).catch(() => {}));
-  const body2 = await capturedRequestBody(() => gemini.completeWithTools(cfg, P2C_CONTEXT, [turn, turn]).catch(() => {}));
+  const body2 = await capturedRequestBody(() =>
+    gemini.completeWithTools(cfg, P2C_CONTEXT, [turn, turn]).catch(() => {}),
+  );
 
   assert.deepEqual(body0.tools, body1.tools);
   assert.deepEqual(body1.tools, body2.tools);
@@ -892,43 +1279,86 @@ test('gemini adapter.completeWithTools: tool definitions are chain-equal across 
 
 test('claude adapter.completeWithTools: priorTurns appends tool_use/tool_result messages, and a tool_use response carries callId/rawToolCall', async () => {
   const claude = aiProviders.getAdapter('claude');
-  const priorTurns = [{
-    toolName: 'tool_a', arguments: { x: 1 }, callId: 'toolu_123', resultText: 'RESULT_TEXT',
-  }];
-  const body = await capturedRequestBody(() => claude.completeWithTools(
-    { apiKey: 'k', model: 'claude-x' }, P2C_CONTEXT, priorTurns,
-  ).catch(() => {}));
+  const priorTurns = [
+    {
+      toolName: 'tool_a',
+      arguments: { x: 1 },
+      callId: 'toolu_123',
+      resultText: 'RESULT_TEXT',
+    },
+  ];
+  const body = await capturedRequestBody(() =>
+    claude.completeWithTools({ apiKey: 'k', model: 'claude-x' }, P2C_CONTEXT, priorTurns).catch(() => {}),
+  );
 
   assert.equal(body.messages.length, 3);
   assert.deepEqual(body.messages[0], { role: 'user', content: 'u' });
   assert.deepEqual(body.messages[1], {
-    role: 'assistant', content: [{
-      type: 'tool_use', id: 'toolu_123', name: 'tool_a', input: { x: 1 },
-    }],
+    role: 'assistant',
+    content: [
+      {
+        type: 'tool_use',
+        id: 'toolu_123',
+        name: 'tool_a',
+        input: { x: 1 },
+      },
+    ],
   });
-  assert.deepEqual(body.messages[2], { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_123', content: 'RESULT_TEXT' }] });
+  assert.deepEqual(body.messages[2], {
+    role: 'user',
+    content: [{ type: 'tool_result', tool_use_id: 'toolu_123', content: 'RESULT_TEXT' }],
+  });
 
   const rawToolUse = {
-    type: 'tool_use', id: 'toolu_456', name: 'tool_a', input: { x: 2 },
+    type: 'tool_use',
+    id: 'toolu_456',
+    name: 'tool_a',
+    input: { x: 2 },
   };
   let decision;
-  await capturedRequestBodyWithResponse(async () => {
-    decision = await claude.completeWithTools({ apiKey: 'k', model: 'claude-x' }, P2C_CONTEXT);
-  }, { content: [rawToolUse] });
+  await capturedRequestBodyWithResponse(
+    async () => {
+      decision = await claude.completeWithTools({ apiKey: 'k', model: 'claude-x' }, P2C_CONTEXT);
+    },
+    { content: [rawToolUse] },
+  );
   assert.equal(decision.callId, 'toolu_456');
   assert.deepEqual(decision.rawToolCall, rawToolUse);
 });
 
 test('claude adapter.completeWithTools: priorTurns=[]/omitted produces a byte-identical base turn to today (regression lock)', async () => {
   const claude = aiProviders.getAdapter('claude');
-  const withEmpty = await capturedRequestBody(() => claude.completeWithTools(
-    { apiKey: 'k', model: 'claude-x' }, P2C_CONTEXT, [],
-  ).catch(() => {}));
-  const omitted = await capturedRequestBody(() => claude.completeWithTools(
-    { apiKey: 'k', model: 'claude-x' }, P2C_CONTEXT,
-  ).catch(() => {}));
+  const withEmpty = await capturedRequestBody(() =>
+    claude.completeWithTools({ apiKey: 'k', model: 'claude-x' }, P2C_CONTEXT, []).catch(() => {}),
+  );
+  const omitted = await capturedRequestBody(() =>
+    claude.completeWithTools({ apiKey: 'k', model: 'claude-x' }, P2C_CONTEXT).catch(() => {}),
+  );
   assert.deepEqual(withEmpty.messages, [{ role: 'user', content: 'u' }]);
   assert.deepEqual(withEmpty, omitted);
+});
+
+// ARCNAVE modernization P2 / 1.6 — see gemini's own equivalent test for
+// the shared reasoning. Claude's own text-content-block message shape.
+test('claude adapter.completeWithTools: historyTurns become real user/assistant messages, placed before the current user message', async () => {
+  const claude = aiProviders.getAdapter('claude');
+  const contextWithHistory = contextFromFlatPrompts({
+    systemPrompt: 's',
+    userPrompt: 'u',
+    tools: P2C_TOOLS,
+    historyTurns: [
+      { role: 'user', content: 'earlier question' },
+      { role: 'assistant', content: 'earlier answer' },
+    ],
+  });
+  const body = await capturedRequestBody(() =>
+    claude.completeWithTools({ apiKey: 'k', model: 'claude-x' }, contextWithHistory).catch(() => {}),
+  );
+  assert.deepEqual(body.messages, [
+    { role: 'user', content: [{ type: 'text', text: 'earlier question' }] },
+    { role: 'assistant', content: [{ type: 'text', text: 'earlier answer' }] },
+    { role: 'user', content: 'u' },
+  ]);
 });
 
 test('claude adapter.completeWithTools: tool definitions are chain-equal across 3 iterations', async () => {
@@ -938,7 +1368,9 @@ test('claude adapter.completeWithTools: tool definitions are chain-equal across 
 
   const body0 = await capturedRequestBody(() => claude.completeWithTools(cfg, P2C_CONTEXT, []).catch(() => {}));
   const body1 = await capturedRequestBody(() => claude.completeWithTools(cfg, P2C_CONTEXT, [turn]).catch(() => {}));
-  const body2 = await capturedRequestBody(() => claude.completeWithTools(cfg, P2C_CONTEXT, [turn, turn]).catch(() => {}));
+  const body2 = await capturedRequestBody(() =>
+    claude.completeWithTools(cfg, P2C_CONTEXT, [turn, turn]).catch(() => {}),
+  );
 
   assert.deepEqual(body0.tools, body1.tools);
   assert.deepEqual(body1.tools, body2.tools);
@@ -950,12 +1382,17 @@ test('claude adapter.completeWithTools: tool definitions are chain-equal across 
 
 test('openai adapter.completeWithTools: priorTurns appends tool_calls/role:tool messages, and a tool-call response carries callId/rawToolCall', async () => {
   const openai = aiProviders.getAdapter('openai');
-  const priorTurns = [{
-    toolName: 'tool_a', arguments: { x: 1 }, callId: 'call_123', resultText: 'RESULT_TEXT',
-  }];
-  const body = await capturedRequestBody(() => openai.completeWithTools(
-    { apiKey: 'k', model: 'gpt-x' }, P2C_CONTEXT, priorTurns,
-  ).catch(() => {}));
+  const priorTurns = [
+    {
+      toolName: 'tool_a',
+      arguments: { x: 1 },
+      callId: 'call_123',
+      resultText: 'RESULT_TEXT',
+    },
+  ];
+  const body = await capturedRequestBody(() =>
+    openai.completeWithTools({ apiKey: 'k', model: 'gpt-x' }, P2C_CONTEXT, priorTurns).catch(() => {}),
+  );
 
   assert.equal(body.messages.length, 4);
   assert.deepEqual(body.messages[2], {
@@ -966,29 +1403,66 @@ test('openai adapter.completeWithTools: priorTurns appends tool_calls/role:tool 
   assert.deepEqual(body.messages[3], { role: 'tool', tool_call_id: 'call_123', content: 'RESULT_TEXT' });
 
   const rawCall = {
-    id: 'call_456', type: 'function', function: { name: 'tool_a', arguments: '{"x":2}' },
+    id: 'call_456',
+    type: 'function',
+    function: { name: 'tool_a', arguments: '{"x":2}' },
   };
   let decision;
-  await capturedRequestBodyWithResponse(async () => {
-    decision = await openai.completeWithTools({ apiKey: 'k', model: 'gpt-x' }, P2C_CONTEXT);
-  }, { choices: [{ message: { tool_calls: [rawCall] } }] });
+  await capturedRequestBodyWithResponse(
+    async () => {
+      decision = await openai.completeWithTools({ apiKey: 'k', model: 'gpt-x' }, P2C_CONTEXT);
+    },
+    { choices: [{ message: { tool_calls: [rawCall] } }] },
+  );
   assert.equal(decision.callId, 'call_456');
   assert.deepEqual(decision.rawToolCall, rawCall);
 });
 
 test('openai adapter.completeWithTools: priorTurns=[]/omitted produces a byte-identical base turn to today (regression lock)', async () => {
   const openai = aiProviders.getAdapter('openai');
-  const withEmpty = await capturedRequestBody(() => openai.completeWithTools(
-    { apiKey: 'k', model: 'gpt-x' }, P2C_CONTEXT, [],
-  ).catch(() => {}));
-  const omitted = await capturedRequestBody(() => openai.completeWithTools(
-    { apiKey: 'k', model: 'gpt-x' }, P2C_CONTEXT,
-  ).catch(() => {}));
+  const withEmpty = await capturedRequestBody(() =>
+    openai.completeWithTools({ apiKey: 'k', model: 'gpt-x' }, P2C_CONTEXT, []).catch(() => {}),
+  );
+  const omitted = await capturedRequestBody(() =>
+    openai.completeWithTools({ apiKey: 'k', model: 'gpt-x' }, P2C_CONTEXT).catch(() => {}),
+  );
   assert.deepEqual(withEmpty.messages, [
     { role: 'system', content: 's' },
     { role: 'user', content: 'u' },
   ]);
   assert.deepEqual(withEmpty, omitted);
+});
+
+// ARCNAVE modernization P2 / 1.6 — see gemini's own equivalent test for
+// the shared reasoning. The OpenAI-compatible convention's own plain
+// {role, content} message shape needs no translation.
+test('openai adapter.completeWithTools: historyTurns become real user/assistant messages, placed between system and the current user message', async () => {
+  const openai = aiProviders.getAdapter('openai');
+  const contextWithHistory = contextFromFlatPrompts({
+    systemPrompt: 's',
+    userPrompt: 'u',
+    tools: P2C_TOOLS,
+    historyTurns: [
+      { role: 'user', content: 'earlier question' },
+      { role: 'assistant', content: 'earlier answer' },
+    ],
+  });
+  const body = await capturedRequestBody(() =>
+    openai.completeWithTools({ apiKey: 'k', model: 'gpt-x' }, contextWithHistory).catch(() => {}),
+  );
+  // System content also carries the 1.6 framing note whenever historyTurns
+  // is non-empty (aiContextAssembly.js) — checked loosely here (starts
+  // with/contains) since that exact wording is that file's own concern,
+  // not this adapter's.
+  assert.equal(body.messages.length, 4);
+  assert.equal(body.messages[0].role, 'system');
+  assert.ok(body.messages[0].content.startsWith('s'));
+  assert.match(body.messages[0].content, /never new/);
+  assert.deepEqual(body.messages.slice(1), [
+    { role: 'user', content: 'earlier question' },
+    { role: 'assistant', content: 'earlier answer' },
+    { role: 'user', content: 'u' },
+  ]);
 });
 
 test('openai adapter.completeWithTools: tool definitions are chain-equal across 3 iterations', async () => {
@@ -998,7 +1472,9 @@ test('openai adapter.completeWithTools: tool definitions are chain-equal across 
 
   const body0 = await capturedRequestBody(() => openai.completeWithTools(cfg, P2C_CONTEXT, []).catch(() => {}));
   const body1 = await capturedRequestBody(() => openai.completeWithTools(cfg, P2C_CONTEXT, [turn]).catch(() => {}));
-  const body2 = await capturedRequestBody(() => openai.completeWithTools(cfg, P2C_CONTEXT, [turn, turn]).catch(() => {}));
+  const body2 = await capturedRequestBody(() =>
+    openai.completeWithTools(cfg, P2C_CONTEXT, [turn, turn]).catch(() => {}),
+  );
 
   assert.deepEqual(body0.tools, body1.tools);
   assert.deepEqual(body1.tools, body2.tools);
@@ -1010,12 +1486,19 @@ test('openai adapter.completeWithTools: tool definitions are chain-equal across 
 
 test('selfHosted adapter.completeWithTools: priorTurns appends the same OpenAI-compatible tool_calls/role:tool shape openai.js uses', async () => {
   const selfHosted = aiProviders.getAdapter('self_hosted');
-  const priorTurns = [{
-    toolName: 'tool_a', arguments: { x: 1 }, callId: 'call_123', resultText: 'RESULT_TEXT',
-  }];
-  const body = await capturedRequestBody(() => selfHosted.completeWithTools(
-    { baseUrl: 'http://localhost:1', model: 'sh-x' }, P2C_CONTEXT, priorTurns,
-  ).catch(() => {}));
+  const priorTurns = [
+    {
+      toolName: 'tool_a',
+      arguments: { x: 1 },
+      callId: 'call_123',
+      resultText: 'RESULT_TEXT',
+    },
+  ];
+  const body = await capturedRequestBody(() =>
+    selfHosted
+      .completeWithTools({ baseUrl: 'http://localhost:1', model: 'sh-x' }, P2C_CONTEXT, priorTurns)
+      .catch(() => {}),
+  );
 
   assert.equal(body.messages.length, 4);
   assert.deepEqual(body.messages[2], {
@@ -1028,17 +1511,47 @@ test('selfHosted adapter.completeWithTools: priorTurns appends the same OpenAI-c
 
 test('selfHosted adapter.completeWithTools: priorTurns=[]/omitted produces a byte-identical base turn to today (regression lock)', async () => {
   const selfHosted = aiProviders.getAdapter('self_hosted');
-  const withEmpty = await capturedRequestBody(() => selfHosted.completeWithTools(
-    { baseUrl: 'http://localhost:1', model: 'sh-x' }, P2C_CONTEXT, [],
-  ).catch(() => {}));
-  const omitted = await capturedRequestBody(() => selfHosted.completeWithTools(
-    { baseUrl: 'http://localhost:1', model: 'sh-x' }, P2C_CONTEXT,
-  ).catch(() => {}));
+  const withEmpty = await capturedRequestBody(() =>
+    selfHosted.completeWithTools({ baseUrl: 'http://localhost:1', model: 'sh-x' }, P2C_CONTEXT, []).catch(() => {}),
+  );
+  const omitted = await capturedRequestBody(() =>
+    selfHosted.completeWithTools({ baseUrl: 'http://localhost:1', model: 'sh-x' }, P2C_CONTEXT).catch(() => {}),
+  );
   assert.deepEqual(withEmpty.messages, [
     { role: 'system', content: 's' },
     { role: 'user', content: 'u' },
   ]);
   assert.deepEqual(withEmpty, omitted);
+});
+
+// ARCNAVE modernization P2 / 1.6 — see gemini's own equivalent test for
+// the shared reasoning (same OpenAI-compatible convention openai.js uses).
+test('selfHosted adapter.completeWithTools: historyTurns become real user/assistant messages, placed between system and the current user message', async () => {
+  const selfHosted = aiProviders.getAdapter('self_hosted');
+  const contextWithHistory = contextFromFlatPrompts({
+    systemPrompt: 's',
+    userPrompt: 'u',
+    tools: P2C_TOOLS,
+    historyTurns: [
+      { role: 'user', content: 'earlier question' },
+      { role: 'assistant', content: 'earlier answer' },
+    ],
+  });
+  const body = await capturedRequestBody(() =>
+    selfHosted.completeWithTools({ baseUrl: 'http://localhost:1', model: 'sh-x' }, contextWithHistory).catch(() => {}),
+  );
+  // System content also carries the 1.6 framing note whenever historyTurns
+  // is non-empty (aiContextAssembly.js) — checked loosely here, same as
+  // openai's own equivalent test.
+  assert.equal(body.messages.length, 4);
+  assert.equal(body.messages[0].role, 'system');
+  assert.ok(body.messages[0].content.startsWith('s'));
+  assert.match(body.messages[0].content, /never new/);
+  assert.deepEqual(body.messages.slice(1), [
+    { role: 'user', content: 'earlier question' },
+    { role: 'assistant', content: 'earlier answer' },
+    { role: 'user', content: 'u' },
+  ]);
 });
 
 test('selfHosted adapter.completeWithTools: tool definitions are chain-equal across 3 iterations', async () => {
@@ -1048,7 +1561,9 @@ test('selfHosted adapter.completeWithTools: tool definitions are chain-equal acr
 
   const body0 = await capturedRequestBody(() => selfHosted.completeWithTools(cfg, P2C_CONTEXT, []).catch(() => {}));
   const body1 = await capturedRequestBody(() => selfHosted.completeWithTools(cfg, P2C_CONTEXT, [turn]).catch(() => {}));
-  const body2 = await capturedRequestBody(() => selfHosted.completeWithTools(cfg, P2C_CONTEXT, [turn, turn]).catch(() => {}));
+  const body2 = await capturedRequestBody(() =>
+    selfHosted.completeWithTools(cfg, P2C_CONTEXT, [turn, turn]).catch(() => {}),
+  );
 
   assert.deepEqual(body0.tools, body1.tools);
   assert.deepEqual(body1.tools, body2.tools);

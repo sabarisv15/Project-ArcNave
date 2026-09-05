@@ -5,9 +5,7 @@
 // made, is a permanent fact; revoke() sets revoked_at, it never
 // removes the row (see the migration's file-level comment).
 
-async function create(client, {
-  collegeId, departmentId, facultyUserId, appointedByUserId, reason,
-}) {
+async function create(client, { collegeId, departmentId, facultyUserId, appointedByUserId, reason }) {
   const result = await client.query(
     `INSERT INTO hod_in_charge_appointments
        (college_id, department_id, faculty_user_id, appointed_by_user_id, reason)
@@ -51,5 +49,9 @@ async function revoke(client, id, { revokedByUserId }) {
 }
 
 module.exports = {
-  create, findById, findActiveForDepartment, listForDepartment, revoke,
+  create,
+  findById,
+  findActiveForDepartment,
+  listForDepartment,
+  revoke,
 };

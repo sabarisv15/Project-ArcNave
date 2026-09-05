@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const attendanceService = require('../services/attendanceService');
 const visibilityService = require('../services/visibilityService');
@@ -143,6 +145,54 @@ function mapAttendanceServiceError(err, res) {
   return false;
 }
 
+// P3 4.9 — contract schemas, same permissive discipline
+// students.js/staff.js's own schema blocks established. markAttendance's
+// own body (ATTENDANCE_BODY_FIELDS above) is z.record-permissive:
+// attendanceService.markAttendance itself never type-checks
+// hourIndex/totalStudents beyond presence (see that file's own
+// required-fields check) — no definitive number-vs-numeric-string
+// contract to assert at this layer without risking a currently-valid
+// request.
+const attendanceIdParams = z.object({ id: z.string() });
+const correctionIdParams = z.object({ correctionId: z.string() });
+const attendanceBodyRecordSchema = z.record(z.string(), z.any()).optional();
+
+const markAttendanceSchema = z.object({ body: attendanceBodyRecordSchema });
+const closeAbsenceFlagSchema = z.object({
+  params: attendanceIdParams,
+  body: z.object({ remarks: z.string().optional() }).optional(),
+});
+const getAttendanceSessionSchema = z.object({ params: attendanceIdParams });
+const listAttendanceSchema = z.object({
+  query: z
+    .object({
+      class_id: z.string().optional(),
+      session_date: z.string().optional(),
+      start_date: z.string().optional(),
+      end_date: z.string().optional(),
+    })
+    .optional(),
+});
+const lockAttendanceSchema = z.object({ params: attendanceIdParams });
+const getEffectiveAttendanceSchema = z.object({ params: attendanceIdParams });
+const requestCorrectionSchema = z.object({
+  params: attendanceIdParams,
+  body: z
+    .object({
+      proposed_absent_student_ids: z.array(z.any()).optional(),
+      proposed_total_students: z.any().optional(),
+      reason: z.string().optional(),
+    })
+    .optional(),
+});
+const listCorrectionsSchema = z.object({ params: attendanceIdParams });
+const approveCorrectionSchema = z.object({ params: correctionIdParams });
+const escalateCorrectionSchema = z.object({
+  params: correctionIdParams,
+  body: z.object({ escalate_to_role: z.string().optional(), remarks: z.string().optional() }).optional(),
+});
+const rejectCorrectionSchema = z.object({ params: correctionIdParams });
+
 function createAttendanceRouter() {
   const router = express.Router();
 
@@ -162,27 +212,31 @@ function createAttendanceRouter() {
   // user) is the correct, and only correct, route-level gate here;
   // the service is where the real decision is made.
 
-  router.post('/attendance', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const session = await attendanceService.markAttendance(
-        req.dbClient,
-        bodyToServiceFields(req.body || {}),
-        { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole },
-      );
-      // 200, not 201: markAttendance is a real mark-or-re-mark upsert
-      // (StaffDashboard.jsx's own "Mark Attendance"/"Update Attendance"
-      // button is the same handler either way — see that file's own
-      // comment), and the service's return value doesn't distinguish
-      // which happened, so there's nothing here to key a 201 off of
-      // without changing markAttendance's own contract, which this
-      // slice doesn't do.
-      res.status(200).json(session);
-    } catch (err) {
-      if (mapAttendanceServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/attendance',
+    requireAuth,
+    validate(markAttendanceSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const session = await attendanceService.markAttendance(req.dbClient, bodyToServiceFields(req.body || {}), {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+        });
+        // 200, not 201: markAttendance is a real mark-or-re-mark upsert
+        // (StaffDashboard.jsx's own "Mark Attendance"/"Update Attendance"
+        // button is the same handler either way — see that file's own
+        // comment), and the service's return value doesn't distinguish
+        // which happened, so there's nothing here to key a 201 off of
+        // without changing markAttendance's own contract, which this
+        // slice doesn't do.
+        res.status(200).json(session);
+      } catch (err) {
+        if (mapAttendanceServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // RS-ATT-008 (D6, Stage 6): scoped exactly like
   // assessment_marks_summary's own actor-scoped read — a tutor sees
@@ -190,33 +244,44 @@ function createAttendanceRouter() {
   // unrestricted. Registered ahead of /attendance/:id below — Express
   // matches routes in registration order, and "absence-flags" would
   // otherwise be swallowed as an :id (found live, 2026-07-28).
-  router.get('/attendance/absence-flags', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const flags = await attendanceService.listOutstandingAbsenceFlagsForActor(req.dbClient, {
-      actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole, collegeId: req.collegeId,
-    });
-    res.json(flags);
-  }));
+  router.get(
+    '/attendance/absence-flags',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const flags = await attendanceService.listOutstandingAbsenceFlagsForActor(req.dbClient, {
+        actorUserId: identityService.resolveActorUserId(req.capabilities),
+        actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+        collegeId: req.collegeId,
+      });
+      res.json(flags);
+    }),
+  );
 
   // requireAuth, not requirePermission: RS-ATT-008 names the actor
   // ("L3 MUST open and close it out") — closeAbsenceFlag's own hod/
   // principal check is the real gate, same "the service is the gate"
   // reasoning this router already uses throughout.
-  router.post('/attendance/absence-flags/:id/close', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { remarks } = req.body || {};
-    try {
-      const flag = await attendanceService.closeAbsenceFlag(
-        req.dbClient,
-        req.params.id,
-        { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole, remarks },
-      );
-      res.json(flag);
-    } catch (err) {
-      if (mapAttendanceServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/attendance/absence-flags/:id/close',
+    requireAuth,
+    validate(closeAbsenceFlagSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { remarks } = req.body || {};
+      try {
+        const flag = await attendanceService.closeAbsenceFlag(req.dbClient, req.params.id, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+          remarks,
+        });
+        res.json(flag);
+      } catch (err) {
+        if (mapAttendanceServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // requireAuth gates "must be logged in"; the real scope (staff:
   // tutor/faculty-allocated of this session's class, hod: own
@@ -224,23 +289,30 @@ function createAttendanceRouter() {
   // visibilityService.assertCanViewClass's job, same
   // resolve-the-real-assignment discipline attendanceService's own
   // assertCanMark already uses for the write side.
-  router.get('/attendance/:id', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const session = await attendanceService.getAttendanceSession(req.dbClient, req.params.id);
-    if (session === null) {
-      res.status(404).json({ detail: `No attendance session found with id ${JSON.stringify(req.params.id)}` });
-      return;
-    }
-    try {
-      await visibilityService.assertCanViewClass(req.dbClient, session.class_id, {
-        actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole, collegeId: req.collegeId,
-      });
-    } catch (err) {
-      if (mapAttendanceServiceError(err, res)) return;
-      throw err;
-    }
-    res.json(session);
-  }));
+  router.get(
+    '/attendance/:id',
+    requireAuth,
+    validate(getAttendanceSessionSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const session = await attendanceService.getAttendanceSession(req.dbClient, req.params.id);
+      if (session === null) {
+        res.status(404).json({ detail: `No attendance session found with id ${JSON.stringify(req.params.id)}` });
+        return;
+      }
+      try {
+        await visibilityService.assertCanViewClass(req.dbClient, session.class_id, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+          collegeId: req.collegeId,
+        });
+      } catch (err) {
+        if (mapAttendanceServiceError(err, res)) return;
+        throw err;
+      }
+      res.json(session);
+    }),
+  );
 
   // class_id is always required. session_date (exact match) keeps its
   // original required-together contract — no breaking change for any
@@ -248,52 +320,76 @@ function createAttendanceRouter() {
   // may be given instead of session_date to widen the same read into a
   // range, and omitting both start_date and end_date (with no
   // session_date) means all-time for that class, not a 400.
-  router.get('/attendance', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const {
-      class_id: classId, session_date: sessionDate, start_date: startDate, end_date: endDate,
-    } = req.query;
-    if (!classId) {
-      res.status(400).json({ detail: 'class_id query parameter is required' });
-      return;
-    }
-    try {
-      await visibilityService.assertCanViewClass(req.dbClient, classId, {
-        actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole, collegeId: req.collegeId,
+  router.get(
+    '/attendance',
+    requireAuth,
+    validate(listAttendanceSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { class_id: classId, session_date: sessionDate, start_date: startDate, end_date: endDate } = req.query;
+      if (!classId) {
+        res.status(400).json({ detail: 'class_id query parameter is required' });
+        return;
+      }
+      try {
+        await visibilityService.assertCanViewClass(req.dbClient, classId, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+          collegeId: req.collegeId,
+        });
+      } catch (err) {
+        if (mapAttendanceServiceError(err, res)) return;
+        throw err;
+      }
+      if (sessionDate) {
+        const sessions = await attendanceService.listAttendanceSessionsForClassAndDate(
+          req.dbClient,
+          classId,
+          sessionDate,
+        );
+        res.json(sessions);
+        return;
+      }
+      const sessions = await attendanceService.listAttendanceSessionsForClassInRange(req.dbClient, classId, {
+        startDate,
+        endDate,
       });
-    } catch (err) {
-      if (mapAttendanceServiceError(err, res)) return;
-      throw err;
-    }
-    if (sessionDate) {
-      const sessions = await attendanceService.listAttendanceSessionsForClassAndDate(req.dbClient, classId, sessionDate);
       res.json(sessions);
-      return;
-    }
-    const sessions = await attendanceService.listAttendanceSessionsForClassInRange(req.dbClient, classId, { startDate, endDate });
-    res.json(sessions);
-  }));
+    }),
+  );
 
-  router.post('/attendance/:id/lock', requirePermission('attendance.lock'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const session = await attendanceService.lockAttendanceSession(req.dbClient, req.params.id, { actorUserId: identityService.resolveActorUserId(req.capabilities) });
+  router.post(
+    '/attendance/:id/lock',
+    requirePermission('attendance.lock'),
+    validate(lockAttendanceSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const session = await attendanceService.lockAttendanceSession(req.dbClient, req.params.id, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.json(session);
+      } catch (err) {
+        if (mapAttendanceServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
+
+  router.get(
+    '/attendance/:id/effective',
+    requireAuth,
+    validate(getEffectiveAttendanceSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const session = await attendanceService.getEffectiveAttendanceSession(req.dbClient, req.params.id);
+      if (session === null) {
+        res.status(404).json({ detail: `No attendance session found with id ${JSON.stringify(req.params.id)}` });
+        return;
+      }
       res.json(session);
-    } catch (err) {
-      if (mapAttendanceServiceError(err, res)) return;
-      throw err;
-    }
-  }));
-
-  router.get('/attendance/:id/effective', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const session = await attendanceService.getEffectiveAttendanceSession(req.dbClient, req.params.id);
-    if (session === null) {
-      res.status(404).json({ detail: `No attendance session found with id ${JSON.stringify(req.params.id)}` });
-      return;
-    }
-    res.json(session);
-  }));
+    }),
+  );
 
   // requireAuth, not requirePermission: BusinessRules.md names the
   // actor ("Subject Faculty submits a correction request") — same
@@ -301,75 +397,107 @@ function createAttendanceRouter() {
   // uses. Nothing here restricts *which* faculty may submit; the
   // approval step (Class Tutor only, via workflowService's own
   // step-matching) is the real gate on the outcome.
-  router.post('/attendance/:id/corrections', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const {
-      proposed_absent_student_ids: proposedAbsentStudentIds,
-      proposed_total_students: proposedTotalStudents,
-      reason,
-    } = req.body || {};
-    try {
-      const result = await attendanceService.requestAttendanceCorrection(
-        req.dbClient,
-        req.params.id,
-        { proposedAbsentStudentIds, proposedTotalStudents, reason },
-        { requestedByUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(201).json(result);
-    } catch (err) {
-      if (mapAttendanceServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/attendance/:id/corrections',
+    requireAuth,
+    validate(requestCorrectionSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const {
+        proposed_absent_student_ids: proposedAbsentStudentIds,
+        proposed_total_students: proposedTotalStudents,
+        reason,
+      } = req.body || {};
+      try {
+        const result = await attendanceService.requestAttendanceCorrection(
+          req.dbClient,
+          req.params.id,
+          { proposedAbsentStudentIds, proposedTotalStudents, reason },
+          { requestedByUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.status(201).json(result);
+      } catch (err) {
+        if (mapAttendanceServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.get('/attendance/:id/corrections', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const corrections = await attendanceService.listAttendanceCorrectionsForSession(req.dbClient, req.params.id);
-    res.json(corrections);
-  }));
+  router.get(
+    '/attendance/:id/corrections',
+    requireAuth,
+    validate(listCorrectionsSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const corrections = await attendanceService.listAttendanceCorrectionsForSession(req.dbClient, req.params.id);
+      res.json(corrections);
+    }),
+  );
 
-  router.post('/attendance/corrections/:correctionId/approve', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const correction = await attendanceService.approveAttendanceCorrection(req.dbClient, req.params.correctionId, { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole });
-      res.json(correction);
-    } catch (err) {
-      if (mapAttendanceServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/attendance/corrections/:correctionId/approve',
+    requireAuth,
+    validate(approveCorrectionSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const correction = await attendanceService.approveAttendanceCorrection(req.dbClient, req.params.correctionId, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+        });
+        res.json(correction);
+      } catch (err) {
+        if (mapAttendanceServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // RS-ATT-004 (D9): only the current step's real approver (checked by
   // workflowService.escalateRequest's own step-mismatch guard, same as
   // approve/reject) may escalate — requireAuth, not requirePermission,
   // same "the service is the gate" reasoning this router already uses
   // throughout.
-  router.post('/attendance/corrections/:correctionId/escalate', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { escalate_to_role: escalateToRole, remarks } = req.body || {};
-    try {
-      const correction = await attendanceService.escalateAttendanceCorrection(
-        req.dbClient,
-        req.params.correctionId,
-        { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole, escalateToRole, remarks },
-      );
-      res.json(correction);
-    } catch (err) {
-      if (mapAttendanceServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/attendance/corrections/:correctionId/escalate',
+    requireAuth,
+    validate(escalateCorrectionSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { escalate_to_role: escalateToRole, remarks } = req.body || {};
+      try {
+        const correction = await attendanceService.escalateAttendanceCorrection(req.dbClient, req.params.correctionId, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+          escalateToRole,
+          remarks,
+        });
+        res.json(correction);
+      } catch (err) {
+        if (mapAttendanceServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/attendance/corrections/:correctionId/reject', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const correction = await attendanceService.rejectAttendanceCorrection(req.dbClient, req.params.correctionId, { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole });
-      res.json(correction);
-    } catch (err) {
-      if (mapAttendanceServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/attendance/corrections/:correctionId/reject',
+    requireAuth,
+    validate(rejectCorrectionSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const correction = await attendanceService.rejectAttendanceCorrection(req.dbClient, req.params.correctionId, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+          actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+        });
+        res.json(correction);
+      } catch (err) {
+        if (mapAttendanceServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // No DELETE route: attendance_sessions is soft-delete only per
   // BusinessRules.md's AI section, and any real deletion is an
@@ -383,3 +511,16 @@ function createAttendanceRouter() {
 }
 
 module.exports = createAttendanceRouter;
+// P3 4.9 — same "attached to the factory function" convention as
+// routes/auth.js's own `.schemas`, read by routes/openapi.js.
+module.exports.schemas = {
+  '/attendance': { post: markAttendanceSchema, get: listAttendanceSchema },
+  '/attendance/absence-flags/{id}/close': { post: closeAbsenceFlagSchema },
+  '/attendance/{id}': { get: getAttendanceSessionSchema },
+  '/attendance/{id}/lock': { post: lockAttendanceSchema },
+  '/attendance/{id}/effective': { get: getEffectiveAttendanceSchema },
+  '/attendance/{id}/corrections': { post: requestCorrectionSchema, get: listCorrectionsSchema },
+  '/attendance/corrections/{correctionId}/approve': { post: approveCorrectionSchema },
+  '/attendance/corrections/{correctionId}/escalate': { post: escalateCorrectionSchema },
+  '/attendance/corrections/{correctionId}/reject': { post: rejectCorrectionSchema },
+};

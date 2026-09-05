@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
-import { HISTORY_PERIODS, formatFullDate } from '../lib/attendanceData';
+import { HISTORY_PERIODS, formatFullDate } from '@/features/attendance/lib/attendanceData';
 import { DATE_PRESETS, inDateRange } from '../lib/dateFilters';
-import { useAttendanceStore } from '../store/AttendanceProvider';
+import { useAttendanceStore } from '@/features/attendance';
 
 const EMPTY_FILTERS = { ownership: '', code: '', subject: '', year: '' };
 const SORTS = [
@@ -30,10 +30,18 @@ export function useClassLogs() {
 
       if (term) {
         const haystack = [
-          session.classLog.topicTaught, session.classLog.notes,
-          period.subject, period.code, period.programme, period.section, period.batch,
+          session.classLog.topicTaught,
+          session.classLog.notes,
+          period.subject,
+          period.code,
+          period.programme,
+          period.section,
+          period.batch,
           formatFullDate(period.date),
-        ].filter(Boolean).join(' ').toLowerCase();
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
         if (!haystack.includes(term)) return false;
       }
       if (filters.ownership && period.ownership !== filters.ownership) return false;
@@ -64,7 +72,8 @@ export function useClassLogs() {
 
   const activeChips = useMemo(() => {
     const chips = [];
-    if (filters.ownership) chips.push({ key: 'ownership', label: filters.ownership === 'own' ? 'My class' : 'Substitute duty' });
+    if (filters.ownership)
+      chips.push({ key: 'ownership', label: filters.ownership === 'own' ? 'My class' : 'Substitute duty' });
     if (filters.code) chips.push({ key: 'code', label: filters.code });
     if (filters.subject) chips.push({ key: 'subject', label: filters.subject });
     if (filters.year) chips.push({ key: 'year', label: `Year ${filters.year}` });
@@ -72,34 +81,62 @@ export function useClassLogs() {
     return chips;
   }, [filters, datePreset]);
 
-  const removeChip = useCallback((key) => {
-    if (key === 'date') { setDatePreset('all'); setCustomFrom(''); setCustomTo(''); return; }
-    setFilter(key, '');
-  }, [setFilter]);
+  const removeChip = useCallback(
+    (key) => {
+      if (key === 'date') {
+        setDatePreset('all');
+        setCustomFrom('');
+        setCustomTo('');
+        return;
+      }
+      setFilter(key, '');
+    },
+    [setFilter],
+  );
 
   const activeFilterCount = activeChips.length;
   const total = HISTORY_PERIODS.length;
 
-  const resultCountLabel = activeFilterCount === 0 && !query.trim()
-    ? `${total} class logs`
-    : rows.length === 0
-      ? 'No results found'
-      : `Showing ${rows.length} of ${total} class logs`;
+  const resultCountLabel =
+    activeFilterCount === 0 && !query.trim()
+      ? `${total} class logs`
+      : rows.length === 0
+        ? 'No results found'
+        : `Showing ${rows.length} of ${total} class logs`;
 
   const sortLabel = SORTS.find((s) => s.key === sortKey)?.label ?? 'Newest first';
 
   return {
-    rows, resultCountLabel, total, now,
-    query, setQuery,
-    panel, setPanel,
+    rows,
+    resultCountLabel,
+    total,
+    now,
+    query,
+    setQuery,
+    panel,
+    setPanel,
     filtersOpen: panel === 'filters',
     toggleFilters: () => setPanel((p) => (p === 'filters' ? null : 'filters')),
     sortMenuOpen: panel === 'sort',
     toggleSortMenu: () => setPanel((p) => (p === 'sort' ? null : 'sort')),
-    sortKey, setSortKey, sortLabel,
-    filters, setFilter, clearFilters, activeChips, activeFilterCount, removeChip,
-    datePreset, setDatePreset, customFrom, setCustomFrom, customTo, setCustomTo,
-    detailPeriodId, openDetail: setDetailPeriodId, closeDetail: () => setDetailPeriodId(null),
+    sortKey,
+    setSortKey,
+    sortLabel,
+    filters,
+    setFilter,
+    clearFilters,
+    activeChips,
+    activeFilterCount,
+    removeChip,
+    datePreset,
+    setDatePreset,
+    customFrom,
+    setCustomFrom,
+    customTo,
+    setCustomTo,
+    detailPeriodId,
+    openDetail: setDetailPeriodId,
+    closeDetail: () => setDetailPeriodId(null),
   };
 }
 

@@ -7,9 +7,7 @@
 // exposes both primitives, same "mechanics here, decisions in the
 // service" split every other repository in this codebase draws.
 
-async function create(client, {
-  collegeId, draftId, docType, storagePath, fileName, mimeType,
-}) {
+async function create(client, { collegeId, draftId, docType, storagePath, fileName, mimeType }) {
   const result = await client.query(
     `INSERT INTO student_admission_draft_documents
        (college_id, draft_id, doc_type, storage_path, file_name, mime_type, uploaded_at, extraction_status)
@@ -81,9 +79,11 @@ async function updateClassification(client, id, { detectedDocType, confidence })
 // The background extraction job's own per-document write-back —
 // extraction_status plus full engine/model/prompt traceability in one
 // statement, since they're always set together (one extraction run).
-async function updateExtractionResult(client, id, {
-  extractionStatus, extractionJobId, ocrEngine, ocrEngineVersion, aiModel, aiModelVersion, promptVersion,
-}) {
+async function updateExtractionResult(
+  client,
+  id,
+  { extractionStatus, extractionJobId, ocrEngine, ocrEngineVersion, aiModel, aiModelVersion, promptVersion },
+) {
   const result = await client.query(
     `UPDATE student_admission_draft_documents
      SET extraction_status = $2, extraction_job_id = $3, ocr_engine = $4, ocr_engine_version = $5,
@@ -96,10 +96,7 @@ async function updateExtractionResult(client, id, {
 }
 
 async function deleteById(client, id) {
-  const result = await client.query(
-    'DELETE FROM student_admission_draft_documents WHERE id = $1 RETURNING *',
-    [id],
-  );
+  const result = await client.query('DELETE FROM student_admission_draft_documents WHERE id = $1 RETURNING *', [id]);
   return result.rows[0] || null;
 }
 

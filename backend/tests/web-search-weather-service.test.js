@@ -18,11 +18,15 @@ const config = require('../src/config');
 function withConfigCleared(keys, fn) {
   return async () => {
     const originals = keys.map((key) => config[key]);
-    keys.forEach((key) => { config[key] = null; });
+    keys.forEach((key) => {
+      config[key] = null;
+    });
     try {
       await fn();
     } finally {
-      keys.forEach((key, i) => { config[key] = originals[i]; });
+      keys.forEach((key, i) => {
+        config[key] = originals[i];
+      });
     }
   };
 }
@@ -37,8 +41,8 @@ test('webSearchService.search — not configured', async (t) => {
     try {
       await assert.rejects(
         webSearchService.search(null, 'college-1', 'AICTE new rules'),
-        (err) => err instanceof webSearchService.WebSearchNotConfiguredError
-          && err.message.includes('GEMINI_PROJECT_ID'),
+        (err) =>
+          err instanceof webSearchService.WebSearchNotConfiguredError && err.message.includes('GEMINI_PROJECT_ID'),
       );
     } finally {
       config.gemini.projectId = original;
@@ -68,40 +72,56 @@ test('getWebSearchConfig — on by default, off only when explicitly opted out',
   });
 
   await t.test('a row that never mentions enabled means enabled', async () => {
-    const result = await withStoredRow(
-      { configuration: { somethingElse: 1 } },
-      () => webSearchService.getWebSearchConfig(null, 'college-1'),
+    const result = await withStoredRow({ configuration: { somethingElse: 1 } }, () =>
+      webSearchService.getWebSearchConfig(null, 'college-1'),
     );
     assert.equal(result.enabled, true);
   });
 
   await t.test('an explicit false is still honoured — an opt-out survives the flip', async () => {
-    const result = await withStoredRow(
-      { configuration: { enabled: false } },
-      () => webSearchService.getWebSearchConfig(null, 'college-1'),
+    const result = await withStoredRow({ configuration: { enabled: false } }, () =>
+      webSearchService.getWebSearchConfig(null, 'college-1'),
     );
     assert.equal(result.enabled, false);
   });
 
   await t.test('an opted-out college is refused with a message that does not tell it to opt in', async () => {
-    await withStoredRow({ configuration: { enabled: false } }, async () => {
-      await assert.rejects(
-        webSearchService.search(null, 'college-1', 'AICTE new rules'),
-        (err) => err instanceof webSearchService.WebSearchNotEnabledError
-          && /opted out/.test(err.message)
-          && !/opt in/.test(err.message),
-      );
-    });
+    // assertSearchable checks "is a provider configured at all" before
+    // "is this college opted in" (cheapest-gate-first, this file's own
+    // module comment) — this subtest is asserting the SECOND gate, so it
+    // must satisfy the first itself rather than assume the ambient
+    // environment already has a real GEMINI_PROJECT_ID (true on a local
+    // dev machine with .env, false in CI — this file's own header
+    // comment already states every other test in this suite follows
+    // this exact discipline; this one was the one gap).
+    const originalProjectId = config.gemini.projectId;
+    config.gemini.projectId = 'test-project';
+    try {
+      await withStoredRow({ configuration: { enabled: false } }, async () => {
+        await assert.rejects(
+          webSearchService.search(null, 'college-1', 'AICTE new rules'),
+          (err) =>
+            err instanceof webSearchService.WebSearchNotEnabledError &&
+            /opted out/.test(err.message) &&
+            !/opt in/.test(err.message),
+        );
+      });
+    } finally {
+      config.gemini.projectId = originalProjectId;
+    }
   });
 });
 
 test('weatherService.fetchCurrentWeather — not configured', async (t) => {
-  await t.test('throws WeatherNotConfiguredError when no API key is set', withConfigCleared(['openWeatherApiKey'], async () => {
-    await assert.rejects(
-      weatherService.fetchCurrentWeather(null, 'college-1', 'Coimbatore'),
-      weatherService.WeatherNotConfiguredError,
-    );
-  }));
+  await t.test(
+    'throws WeatherNotConfiguredError when no API key is set',
+    withConfigCleared(['openWeatherApiKey'], async () => {
+      await assert.rejects(
+        weatherService.fetchCurrentWeather(null, 'college-1', 'Coimbatore'),
+        weatherService.WeatherNotConfiguredError,
+      );
+    }),
+  );
 });
 
 test('web_search / weather_fetch tool registration', async (t) => {
@@ -132,18 +152,20 @@ test('gemini provider — readWebResults maps grounding chunks to results', asyn
 
   await t.test('joins every support span citing the same chunk', () => {
     const results = gemini.readWebResults({
-      candidates: [{
-        groundingMetadata: {
-          groundingChunks: [
-            { web: { uri: 'https://redirect/a', title: 'Source A' } },
-            { web: { uri: 'https://redirect/b', title: 'Source B' } },
-          ],
-          groundingSupports: [
-            { segment: { text: 'First claim.' }, groundingChunkIndices: [0] },
-            { segment: { text: 'Second claim.' }, groundingChunkIndices: [0, 1] },
-          ],
+      candidates: [
+        {
+          groundingMetadata: {
+            groundingChunks: [
+              { web: { uri: 'https://redirect/a', title: 'Source A' } },
+              { web: { uri: 'https://redirect/b', title: 'Source B' } },
+            ],
+            groundingSupports: [
+              { segment: { text: 'First claim.' }, groundingChunkIndices: [0] },
+              { segment: { text: 'Second claim.' }, groundingChunkIndices: [0, 1] },
+            ],
+          },
         },
-      }],
+      ],
     });
     assert.equal(results.length, 2);
     assert.equal(results[0].title, 'Source A');
@@ -156,20 +178,24 @@ test('gemini provider — readWebResults maps grounding chunks to results', asyn
 
   await t.test('a chunk with no supporting span yields an empty snippet, not a crash', () => {
     const results = gemini.readWebResults({
-      candidates: [{
-        groundingMetadata: { groundingChunks: [{ web: { uri: 'https://redirect/c', title: 'C' } }] },
-      }],
+      candidates: [
+        {
+          groundingMetadata: { groundingChunks: [{ web: { uri: 'https://redirect/c', title: 'C' } }] },
+        },
+      ],
     });
     assert.deepEqual(results, [{ title: 'C', url: 'https://redirect/c', snippet: '' }]);
   });
 
   await t.test('a chunk with no uri is dropped rather than returned unusable', () => {
     const results = gemini.readWebResults({
-      candidates: [{
-        groundingMetadata: {
-          groundingChunks: [{ web: { title: 'no uri' } }, { web: { uri: 'https://redirect/d', title: 'D' } }],
+      candidates: [
+        {
+          groundingMetadata: {
+            groundingChunks: [{ web: { title: 'no uri' } }, { web: { uri: 'https://redirect/d', title: 'D' } }],
+          },
         },
-      }],
+      ],
     });
     assert.equal(results.length, 1);
     assert.equal(results[0].url, 'https://redirect/d');
@@ -201,18 +227,22 @@ test('gemini provider — readWebResults maps grounding chunks to results', asyn
 test('readFetchResult — refuses anything that was not actually retrieved', async (t) => {
   const url = 'https://www.aicte-india.org/';
   const withStatus = (status, text) => ({
-    candidates: [{
-      content: { parts: [{ text }] },
-      urlContextMetadata: { urlMetadata: [{ retrievedUrl: url, urlRetrievalStatus: status }] },
-    }],
+    candidates: [
+      {
+        content: { parts: [{ text }] },
+        urlContextMetadata: { urlMetadata: [{ retrievedUrl: url, urlRetrievalStatus: status }] },
+      },
+    ],
   });
 
   await t.test('a retrieval error throws, and the model text is discarded', () => {
     assert.throws(
-      () => webSearchService.readFetchResult(withStatus('URL_RETRIEVAL_STATUS_ERROR', 'Confident invented summary.'), url),
-      (err) => err instanceof webSearchService.WebFetchFailedError
-        && err.message.includes('could not be retrieved')
-        && !err.message.includes('Confident invented summary'),
+      () =>
+        webSearchService.readFetchResult(withStatus('URL_RETRIEVAL_STATUS_ERROR', 'Confident invented summary.'), url),
+      (err) =>
+        err instanceof webSearchService.WebFetchFailedError &&
+        err.message.includes('could not be retrieved') &&
+        !err.message.includes('Confident invented summary'),
     );
   });
 
@@ -224,7 +254,10 @@ test('readFetchResult — refuses anything that was not actually retrieved', asy
   });
 
   await t.test('success returns the content', () => {
-    const out = webSearchService.readFetchResult(withStatus(webSearchService.URL_RETRIEVAL_SUCCESS, 'Real page text.'), url);
+    const out = webSearchService.readFetchResult(
+      withStatus(webSearchService.URL_RETRIEVAL_SUCCESS, 'Real page text.'),
+      url,
+    );
     assert.equal(out.retrieved, true);
     assert.equal(out.content, 'Real page text.');
   });

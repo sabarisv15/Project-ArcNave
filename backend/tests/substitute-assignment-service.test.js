@@ -35,7 +35,10 @@ const notificationService = require('../src/services/notificationService');
 const staffService = require('../src/services/staffService');
 
 const CLASS_ROW = {
-  id: 'class-1', college_id: 'c1', department_id: 'dept-1', class_name: 'CSE-A',
+  id: 'class-1',
+  college_id: 'c1',
+  department_id: 'dept-1',
+  class_name: 'CSE-A',
 };
 
 // RS-CLS-007 widened (ADL-031): every requestSubstituteAssignment call
@@ -44,10 +47,21 @@ const CLASS_ROW = {
 // candidate eligible; individual tests override to exercise a rejection.
 function mockEligibleCandidate(t, overrides = {}) {
   const staffMock = t.mock.method(staffService, 'getStaffByUserId', async () => ({
-    id: 'staff-u2', user_id: 'u2', department_id: 'dept-1', ...overrides.staff,
+    id: 'staff-u2',
+    user_id: 'u2',
+    department_id: 'dept-1',
+    ...overrides.staff,
   }));
-  const allocationsMock = t.mock.method(facultyAllocationRepository, 'findByStaffUserId', async () => overrides.allocations ?? []);
-  const subMock = t.mock.method(substituteAssignmentRepository, 'findByStaffPeriodAndDate', async () => overrides.existingSubstitution ?? null);
+  const allocationsMock = t.mock.method(
+    facultyAllocationRepository,
+    'findByStaffUserId',
+    async () => overrides.allocations ?? [],
+  );
+  const subMock = t.mock.method(
+    substituteAssignmentRepository,
+    'findByStaffPeriodAndDate',
+    async () => overrides.existingSubstitution ?? null,
+  );
   t.after(() => {
     staffMock.mock.restore();
     allocationsMock.mock.restore();
@@ -68,9 +82,17 @@ test('academicService.requestSubstituteAssignment', async (t) => {
     const findClassMock = t.mock.method(classRepository, 'findById', async () => null);
     t.after(() => findClassMock.mock.restore());
     await assert.rejects(
-      () => academicService.requestSubstituteAssignment({}, {
-        classId: 'missing', timetablePeriodId: 'p1', assignmentDate: '2026-06-01', substituteStaffUserId: 'u2',
-      }, { requestedByUserId: 'hod-1' }),
+      () =>
+        academicService.requestSubstituteAssignment(
+          {},
+          {
+            classId: 'missing',
+            timetablePeriodId: 'p1',
+            assignmentDate: '2026-06-01',
+            substituteStaffUserId: 'u2',
+          },
+          { requestedByUserId: 'hod-1' },
+        ),
       academicService.ClassValidationError,
     );
   });
@@ -83,9 +105,17 @@ test('academicService.requestSubstituteAssignment', async (t) => {
       resolveMock.mock.restore();
     });
     await assert.rejects(
-      () => academicService.requestSubstituteAssignment({}, {
-        classId: 'class-1', timetablePeriodId: 'p1', assignmentDate: '2026-06-01', substituteStaffUserId: 'u2',
-      }, { requestedByUserId: 'unrelated-staff' }),
+      () =>
+        academicService.requestSubstituteAssignment(
+          {},
+          {
+            classId: 'class-1',
+            timetablePeriodId: 'p1',
+            assignmentDate: '2026-06-01',
+            substituteStaffUserId: 'u2',
+          },
+          { requestedByUserId: 'unrelated-staff' },
+        ),
       academicService.SubstituteAssignmentNotAuthorizedError,
     );
   });
@@ -100,9 +130,17 @@ test('academicService.requestSubstituteAssignment', async (t) => {
     });
 
     await assert.rejects(
-      () => academicService.requestSubstituteAssignment({}, {
-        classId: 'class-1', timetablePeriodId: 'p1', assignmentDate: '2026-06-01', substituteStaffUserId: 'u2',
-      }, { requestedByUserId: 'hod-1' }),
+      () =>
+        academicService.requestSubstituteAssignment(
+          {},
+          {
+            classId: 'class-1',
+            timetablePeriodId: 'p1',
+            assignmentDate: '2026-06-01',
+            substituteStaffUserId: 'u2',
+          },
+          { requestedByUserId: 'hod-1' },
+        ),
       academicService.SubstituteAssignmentCandidateNotInDepartmentError,
     );
   });
@@ -117,9 +155,17 @@ test('academicService.requestSubstituteAssignment', async (t) => {
     });
 
     await assert.rejects(
-      () => academicService.requestSubstituteAssignment({}, {
-        classId: 'class-1', timetablePeriodId: 'p1', assignmentDate: '2026-06-01', substituteStaffUserId: 'u2',
-      }, { requestedByUserId: 'hod-1' }),
+      () =>
+        academicService.requestSubstituteAssignment(
+          {},
+          {
+            classId: 'class-1',
+            timetablePeriodId: 'p1',
+            assignmentDate: '2026-06-01',
+            substituteStaffUserId: 'u2',
+          },
+          { requestedByUserId: 'hod-1' },
+        ),
       academicService.SubstituteAssignmentCandidateNotFreeError,
     );
   });
@@ -134,9 +180,17 @@ test('academicService.requestSubstituteAssignment', async (t) => {
     });
 
     await assert.rejects(
-      () => academicService.requestSubstituteAssignment({}, {
-        classId: 'class-1', timetablePeriodId: 'p1', assignmentDate: '2026-06-01', substituteStaffUserId: 'u2',
-      }, { requestedByUserId: 'hod-1' }),
+      () =>
+        academicService.requestSubstituteAssignment(
+          {},
+          {
+            classId: 'class-1',
+            timetablePeriodId: 'p1',
+            assignmentDate: '2026-06-01',
+            substituteStaffUserId: 'u2',
+          },
+          { requestedByUserId: 'hod-1' },
+        ),
       academicService.SubstituteAssignmentCandidateNotFreeError,
     );
   });
@@ -152,62 +206,101 @@ test('academicService.requestSubstituteAssignment', async (t) => {
     });
 
     await assert.rejects(
-      () => academicService.requestSubstituteAssignment({}, {
-        classId: 'class-1', timetablePeriodId: 'p1', assignmentDate: '2026-06-01', substituteStaffUserId: 'u2',
-      }, { requestedByUserId: 'hod-1' }),
+      () =>
+        academicService.requestSubstituteAssignment(
+          {},
+          {
+            classId: 'class-1',
+            timetablePeriodId: 'p1',
+            assignmentDate: '2026-06-01',
+            substituteStaffUserId: 'u2',
+          },
+          { requestedByUserId: 'hod-1' },
+        ),
       academicService.SubstituteAssignmentCandidateNotFoundError,
     );
   });
 
-  await t.test('the class hod may initiate, submits a workflow request, and notifies the (single-step) chain', async () => {
-    const findClassMock = t.mock.method(classRepository, 'findById', async () => CLASS_ROW);
-    const resolveMock = t.mock.method(identityService, 'resolvePositionOccupant', async () => 'hod-1');
-    mockEligibleCandidate(t);
-    const createRequestMock = t.mock.method(
-      substituteAssignmentRequestRepository, 'create', async (client, fields) => ({ id: 'req-1', ...fields }),
-    );
-    const chainMock = t.mock.method(
-      workflowChainService, 'resolveApproverChain', async () => [{ step: 1, role: 'hod', user_id: 'hod-1' }],
-    );
-    const submitMock = t.mock.method(
-      workflowService, 'submitRequest', async (client, fields) => ({ id: 'wf-1', status: 'Pending', ...fields }),
-    );
-    const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
-    const getUserMock = t.mock.method(authRepository, 'getUserById', async () => ({ id: 'hod-1', email: 'hod@example.com' }));
-    const sendMock = t.mock.method(notificationService, 'sendViaChannel', async () => ({ status: 'sent' }));
-    t.after(() => {
-      findClassMock.mock.restore();
-      resolveMock.mock.restore();
-      createRequestMock.mock.restore();
-      chainMock.mock.restore();
-      submitMock.mock.restore();
-      auditMock.mock.restore();
-      getUserMock.mock.restore();
-      sendMock.mock.restore();
-    });
+  await t.test(
+    'the class hod may initiate, submits a workflow request, and notifies the (single-step) chain',
+    async () => {
+      const findClassMock = t.mock.method(classRepository, 'findById', async () => CLASS_ROW);
+      const resolveMock = t.mock.method(identityService, 'resolvePositionOccupant', async () => 'hod-1');
+      mockEligibleCandidate(t);
+      const createRequestMock = t.mock.method(
+        substituteAssignmentRequestRepository,
+        'create',
+        async (client, fields) => ({ id: 'req-1', ...fields }),
+      );
+      const chainMock = t.mock.method(workflowChainService, 'resolveApproverChain', async () => [
+        { step: 1, role: 'hod', user_id: 'hod-1' },
+      ]);
+      const submitMock = t.mock.method(workflowService, 'submitRequest', async (client, fields) => ({
+        id: 'wf-1',
+        status: 'Pending',
+        ...fields,
+      }));
+      const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
+      const getUserMock = t.mock.method(authRepository, 'getUserById', async () => ({
+        id: 'hod-1',
+        email: 'hod@example.com',
+      }));
+      const sendMock = t.mock.method(notificationService, 'sendViaChannel', async () => ({ status: 'sent' }));
+      t.after(() => {
+        findClassMock.mock.restore();
+        resolveMock.mock.restore();
+        createRequestMock.mock.restore();
+        chainMock.mock.restore();
+        submitMock.mock.restore();
+        auditMock.mock.restore();
+        getUserMock.mock.restore();
+        sendMock.mock.restore();
+      });
 
-    const result = await academicService.requestSubstituteAssignment({}, {
-      classId: 'class-1', timetablePeriodId: 'p1', assignmentDate: '2026-06-01', substituteStaffUserId: 'u2', reason: 'sick leave',
-    }, { requestedByUserId: 'hod-1' });
+      const result = await academicService.requestSubstituteAssignment(
+        {},
+        {
+          classId: 'class-1',
+          timetablePeriodId: 'p1',
+          assignmentDate: '2026-06-01',
+          substituteStaffUserId: 'u2',
+          reason: 'sick leave',
+        },
+        { requestedByUserId: 'hod-1' },
+      );
 
-    assert.equal(result.request.id, 'req-1');
-    assert.equal(result.workflowRequest.id, 'wf-1');
-    assert.equal(chainMock.mock.calls[0].arguments[1].entityType, 'substitute_assignment');
-    assert.equal(submitMock.mock.calls[0].arguments[1].entityId, 'req-1');
-    assert.equal(sendMock.mock.calls.length, 1);
-    assert.equal(sendMock.mock.calls[0].arguments[1].to, 'hod@example.com');
-  });
+      assert.equal(result.request.id, 'req-1');
+      assert.equal(result.workflowRequest.id, 'wf-1');
+      assert.equal(chainMock.mock.calls[0].arguments[1].entityType, 'substitute_assignment');
+      assert.equal(submitMock.mock.calls[0].arguments[1].entityId, 'req-1');
+      assert.equal(sendMock.mock.calls.length, 1);
+      assert.equal(sendMock.mock.calls[0].arguments[1].to, 'hod@example.com');
+    },
+  );
 });
 
 test('academicService.approveSubstituteAssignment', async (t) => {
   await t.test('creates the substitute_assignments row and audit-logs it', async () => {
     const REQUEST_ROW = {
-      id: 'req-1', college_id: 'c1', class_id: 'class-1', timetable_period_id: 'p1', assignment_date: '2026-06-01', original_staff_user_id: null, substitute_staff_user_id: 'u2', reason: 'sick leave',
+      id: 'req-1',
+      college_id: 'c1',
+      class_id: 'class-1',
+      timetable_period_id: 'p1',
+      assignment_date: '2026-06-01',
+      original_staff_user_id: null,
+      substitute_staff_user_id: 'u2',
+      reason: 'sick leave',
     };
     const findRequestMock = t.mock.method(substituteAssignmentRequestRepository, 'findById', async () => REQUEST_ROW);
     const findPendingMock = t.mock.method(workflowService, 'findPendingForEntity', async () => ({ id: 'wf-1' }));
-    const approveMock = t.mock.method(workflowService, 'approveRequest', async () => ({ id: 'wf-1', status: 'Approved' }));
-    const createMock = t.mock.method(substituteAssignmentRepository, 'create', async (client, fields) => ({ id: 'sub-1', ...fields }));
+    const approveMock = t.mock.method(workflowService, 'approveRequest', async () => ({
+      id: 'wf-1',
+      status: 'Approved',
+    }));
+    const createMock = t.mock.method(substituteAssignmentRepository, 'create', async (client, fields) => ({
+      id: 'sub-1',
+      ...fields,
+    }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
       findRequestMock.mock.restore();
@@ -235,13 +328,26 @@ test('academicService.approveSubstituteAssignment', async (t) => {
 
   await t.test('maps a period-not-found constraint violation', async () => {
     const REQUEST_ROW = {
-      id: 'req-1', college_id: 'c1', class_id: 'class-1', timetable_period_id: 'missing', assignment_date: '2026-06-01', substitute_staff_user_id: 'u2',
+      id: 'req-1',
+      college_id: 'c1',
+      class_id: 'class-1',
+      timetable_period_id: 'missing',
+      assignment_date: '2026-06-01',
+      substitute_staff_user_id: 'u2',
     };
     const findRequestMock = t.mock.method(substituteAssignmentRequestRepository, 'findById', async () => REQUEST_ROW);
     const findPendingMock = t.mock.method(workflowService, 'findPendingForEntity', async () => ({ id: 'wf-1' }));
-    const approveMock = t.mock.method(workflowService, 'approveRequest', async () => ({ id: 'wf-1', status: 'Approved' }));
-    const err = Object.assign(new Error('fk'), { code: '23503', constraint: 'substitute_assignments_timetable_period_id_fkey' });
-    const createMock = t.mock.method(substituteAssignmentRepository, 'create', async () => { throw err; });
+    const approveMock = t.mock.method(workflowService, 'approveRequest', async () => ({
+      id: 'wf-1',
+      status: 'Approved',
+    }));
+    const err = Object.assign(new Error('fk'), {
+      code: '23503',
+      constraint: 'substitute_assignments_timetable_period_id_fkey',
+    });
+    const createMock = t.mock.method(substituteAssignmentRepository, 'create', async () => {
+      throw err;
+    });
     t.after(() => {
       findRequestMock.mock.restore();
       findPendingMock.mock.restore();
@@ -256,13 +362,26 @@ test('academicService.approveSubstituteAssignment', async (t) => {
 
   await t.test('maps a duplicate (period, date) constraint violation', async () => {
     const REQUEST_ROW = {
-      id: 'req-1', college_id: 'c1', class_id: 'class-1', timetable_period_id: 'p1', assignment_date: '2026-06-01', substitute_staff_user_id: 'u2',
+      id: 'req-1',
+      college_id: 'c1',
+      class_id: 'class-1',
+      timetable_period_id: 'p1',
+      assignment_date: '2026-06-01',
+      substitute_staff_user_id: 'u2',
     };
     const findRequestMock = t.mock.method(substituteAssignmentRequestRepository, 'findById', async () => REQUEST_ROW);
     const findPendingMock = t.mock.method(workflowService, 'findPendingForEntity', async () => ({ id: 'wf-1' }));
-    const approveMock = t.mock.method(workflowService, 'approveRequest', async () => ({ id: 'wf-1', status: 'Approved' }));
-    const err = Object.assign(new Error('dup'), { code: '23505', constraint: 'substitute_assignments_class_period_date_key' });
-    const createMock = t.mock.method(substituteAssignmentRepository, 'create', async () => { throw err; });
+    const approveMock = t.mock.method(workflowService, 'approveRequest', async () => ({
+      id: 'wf-1',
+      status: 'Approved',
+    }));
+    const err = Object.assign(new Error('dup'), {
+      code: '23505',
+      constraint: 'substitute_assignments_class_period_date_key',
+    });
+    const createMock = t.mock.method(substituteAssignmentRepository, 'create', async () => {
+      throw err;
+    });
     t.after(() => {
       findRequestMock.mock.restore();
       findPendingMock.mock.restore();
@@ -278,10 +397,17 @@ test('academicService.approveSubstituteAssignment', async (t) => {
 
 test('academicService.rejectSubstituteAssignment', async (t) => {
   await t.test('rejects the workflow request without creating an assignment', async () => {
-    const findRequestMock = t.mock.method(substituteAssignmentRequestRepository, 'findById', async () => ({ id: 'req-1' }));
+    const findRequestMock = t.mock.method(substituteAssignmentRequestRepository, 'findById', async () => ({
+      id: 'req-1',
+    }));
     const findPendingMock = t.mock.method(workflowService, 'findPendingForEntity', async () => ({ id: 'wf-1' }));
-    const rejectMock = t.mock.method(workflowService, 'rejectRequest', async () => ({ id: 'wf-1', status: 'Rejected' }));
-    const createMock = t.mock.method(substituteAssignmentRepository, 'create', async () => { throw new Error('must not be called'); });
+    const rejectMock = t.mock.method(workflowService, 'rejectRequest', async () => ({
+      id: 'wf-1',
+      status: 'Rejected',
+    }));
+    const createMock = t.mock.method(substituteAssignmentRepository, 'create', async () => {
+      throw new Error('must not be called');
+    });
     t.after(() => {
       findRequestMock.mock.restore();
       findPendingMock.mock.restore();
@@ -297,17 +423,30 @@ test('academicService.rejectSubstituteAssignment', async (t) => {
 
 test('attendanceService.assertCanMark recognizes an authorized substitute', async (t) => {
   const CLASS_MARK_ROW = {
-    id: 'class-1', college_id: 'c1', timetable_status: 'Approved',
+    id: 'class-1',
+    college_id: 'c1',
+    timetable_status: 'Approved',
   };
 
   await t.test('a substitute assigned for this exact (period, date) may mark attendance', async () => {
     const resolveTutorMock = t.mock.method(identityService, 'resolvePositionOccupant', async () => 'tutor-1');
-    const periodMock = t.mock.method(academicService, 'getTimetablePeriodByDayAndHour', async () => ({ id: 'period-1' }));
+    const periodMock = t.mock.method(academicService, 'getTimetablePeriodByDayAndHour', async () => ({
+      id: 'period-1',
+    }));
     const allocationMock = t.mock.method(academicService, 'getFacultyAllocationForClassAndPeriod', async () => null);
-    const subMock = t.mock.method(academicService, 'getSubstituteAssignment', async () => ({ substitute_staff_user_id: 'sub-teacher-1' }));
+    const subMock = t.mock.method(academicService, 'getSubstituteAssignment', async () => ({
+      substitute_staff_user_id: 'sub-teacher-1',
+    }));
     const findSessionMock = t.mock.method(attendanceRepository, 'findByClassSessionAndHour', async () => null);
-    const createMock = t.mock.method(attendanceRepository, 'create', async (client, fields) => ({ id: 'sess-1', ...fields }));
-    const auditMock = t.mock.method(require('../src/repositories/auditLogRepository'), 'createAuditLogEntry', async () => {});
+    const createMock = t.mock.method(attendanceRepository, 'create', async (client, fields) => ({
+      id: 'sess-1',
+      ...fields,
+    }));
+    const auditMock = t.mock.method(
+      require('../src/repositories/auditLogRepository'),
+      'createAuditLogEntry',
+      async () => {},
+    );
     t.after(() => {
       resolveTutorMock.mock.restore();
       periodMock.mock.restore();
@@ -320,17 +459,29 @@ test('attendanceService.assertCanMark recognizes an authorized substitute', asyn
     const getClassMock = t.mock.method(academicService, 'getClass', async () => CLASS_MARK_ROW);
     t.after(() => getClassMock.mock.restore());
 
-    const session = await attendanceService.markAttendance({}, {
-      classId: 'class-1', sessionDate: '2026-06-01', hourIndex: 2, absentStudentIds: [], totalStudents: 40,
-    }, { actorUserId: 'sub-teacher-1', actorRole: 'staff' });
+    const session = await attendanceService.markAttendance(
+      {},
+      {
+        classId: 'class-1',
+        sessionDate: '2026-06-01',
+        hourIndex: 2,
+        absentStudentIds: [],
+        totalStudents: 40,
+      },
+      { actorUserId: 'sub-teacher-1', actorRole: 'staff' },
+    );
     assert.equal(session.id, 'sess-1');
   });
 
   await t.test('a different staff member (not tutor/hod/scheduled/substitute) is rejected', async () => {
     const resolveTutorMock = t.mock.method(identityService, 'resolvePositionOccupant', async () => 'tutor-1');
-    const periodMock = t.mock.method(academicService, 'getTimetablePeriodByDayAndHour', async () => ({ id: 'period-1' }));
+    const periodMock = t.mock.method(academicService, 'getTimetablePeriodByDayAndHour', async () => ({
+      id: 'period-1',
+    }));
     const allocationMock = t.mock.method(academicService, 'getFacultyAllocationForClassAndPeriod', async () => null);
-    const subMock = t.mock.method(academicService, 'getSubstituteAssignment', async () => ({ substitute_staff_user_id: 'sub-teacher-1' }));
+    const subMock = t.mock.method(academicService, 'getSubstituteAssignment', async () => ({
+      substitute_staff_user_id: 'sub-teacher-1',
+    }));
     const getClassMock = t.mock.method(academicService, 'getClass', async () => CLASS_MARK_ROW);
     t.after(() => {
       resolveTutorMock.mock.restore();
@@ -341,9 +492,18 @@ test('attendanceService.assertCanMark recognizes an authorized substitute', asyn
     });
 
     await assert.rejects(
-      () => attendanceService.markAttendance({}, {
-        classId: 'class-1', sessionDate: '2026-06-01', hourIndex: 2, absentStudentIds: [], totalStudents: 40,
-      }, { actorUserId: 'unrelated-staff', actorRole: 'staff' }),
+      () =>
+        attendanceService.markAttendance(
+          {},
+          {
+            classId: 'class-1',
+            sessionDate: '2026-06-01',
+            hourIndex: 2,
+            absentStudentIds: [],
+            totalStudents: 40,
+          },
+          { actorUserId: 'unrelated-staff', actorRole: 'staff' },
+        ),
       attendanceService.AttendanceForbiddenError,
     );
   });
@@ -352,11 +512,12 @@ test('attendanceService.assertCanMark recognizes an authorized substitute', asyn
 test('attendanceService.listSubstituteAssignmentsWithMarkingStatus', async (t) => {
   await t.test('flags an unmarked assignment older than 24 hours as overdue', async () => {
     const oldTimestamp = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
-    const listMock = t.mock.method(
-      academicService, 'listSubstituteAssignmentsForClass',
-      async () => [{ id: 'sub-1', timetable_period_id: 'p1', assignment_date: '2026-06-01', created_at: oldTimestamp }],
-    );
-    const periodMock = t.mock.method(academicService, 'getTimetablePeriodsByIds', async () => [{ id: 'p1', hour_index: 2 }]);
+    const listMock = t.mock.method(academicService, 'listSubstituteAssignmentsForClass', async () => [
+      { id: 'sub-1', timetable_period_id: 'p1', assignment_date: '2026-06-01', created_at: oldTimestamp },
+    ]);
+    const periodMock = t.mock.method(academicService, 'getTimetablePeriodsByIds', async () => [
+      { id: 'p1', hour_index: 2 },
+    ]);
     const sessionMock = t.mock.method(attendanceRepository, 'findByClassAndDateRange', async () => []);
     t.after(() => {
       listMock.mock.restore();
@@ -371,16 +532,15 @@ test('attendanceService.listSubstituteAssignmentsWithMarkingStatus', async (t) =
 
   await t.test('does not flag a marked assignment as overdue', async () => {
     const oldTimestamp = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
-    const listMock = t.mock.method(
-      academicService, 'listSubstituteAssignmentsForClass',
-      async () => [{ id: 'sub-1', timetable_period_id: 'p1', assignment_date: '2026-06-01', created_at: oldTimestamp }],
-    );
-    const periodMock = t.mock.method(academicService, 'getTimetablePeriodsByIds', async () => [{ id: 'p1', hour_index: 2 }]);
-    const sessionMock = t.mock.method(
-      attendanceRepository,
-      'findByClassAndDateRange',
-      async () => [{ id: 'sess-1', session_date: '2026-06-01', hour_index: 2 }],
-    );
+    const listMock = t.mock.method(academicService, 'listSubstituteAssignmentsForClass', async () => [
+      { id: 'sub-1', timetable_period_id: 'p1', assignment_date: '2026-06-01', created_at: oldTimestamp },
+    ]);
+    const periodMock = t.mock.method(academicService, 'getTimetablePeriodsByIds', async () => [
+      { id: 'p1', hour_index: 2 },
+    ]);
+    const sessionMock = t.mock.method(attendanceRepository, 'findByClassAndDateRange', async () => [
+      { id: 'sess-1', session_date: '2026-06-01', hour_index: 2 },
+    ]);
     t.after(() => {
       listMock.mock.restore();
       periodMock.mock.restore();
@@ -392,43 +552,46 @@ test('attendanceService.listSubstituteAssignmentsWithMarkingStatus', async (t) =
     assert.equal(result.markingOverdue, false);
   });
 
-  await t.test('resolves periods and sessions for multiple assignments in one batched call each, not one per assignment', async () => {
-    const listMock = t.mock.method(
-      academicService, 'listSubstituteAssignmentsForClass',
-      async () => [
+  await t.test(
+    'resolves periods and sessions for multiple assignments in one batched call each, not one per assignment',
+    async () => {
+      const listMock = t.mock.method(academicService, 'listSubstituteAssignmentsForClass', async () => [
         { id: 'sub-1', timetable_period_id: 'p1', assignment_date: '2026-06-01', created_at: new Date().toISOString() },
         { id: 'sub-2', timetable_period_id: 'p2', assignment_date: '2026-06-03', created_at: new Date().toISOString() },
-      ],
-    );
-    const periodMock = t.mock.method(
-      academicService, 'getTimetablePeriodsByIds',
-      async () => [{ id: 'p1', hour_index: 2 }, { id: 'p2', hour_index: 4 }],
-    );
-    const sessionMock = t.mock.method(
-      attendanceRepository, 'findByClassAndDateRange',
-      async () => [{ id: 'sess-1', session_date: '2026-06-01', hour_index: 2 }],
-    );
-    t.after(() => {
-      listMock.mock.restore();
-      periodMock.mock.restore();
-      sessionMock.mock.restore();
-    });
+      ]);
+      const periodMock = t.mock.method(academicService, 'getTimetablePeriodsByIds', async () => [
+        { id: 'p1', hour_index: 2 },
+        { id: 'p2', hour_index: 4 },
+      ]);
+      const sessionMock = t.mock.method(attendanceRepository, 'findByClassAndDateRange', async () => [
+        { id: 'sess-1', session_date: '2026-06-01', hour_index: 2 },
+      ]);
+      t.after(() => {
+        listMock.mock.restore();
+        periodMock.mock.restore();
+        sessionMock.mock.restore();
+      });
 
-    const results = await attendanceService.listSubstituteAssignmentsWithMarkingStatus({}, 'class-1');
+      const results = await attendanceService.listSubstituteAssignmentsWithMarkingStatus({}, 'class-1');
 
-    assert.equal(periodMock.mock.callCount(), 1);
-    assert.deepEqual(periodMock.mock.calls[0].arguments[1], ['p1', 'p2']);
-    assert.equal(sessionMock.mock.callCount(), 1);
-    assert.deepEqual(sessionMock.mock.calls[0].arguments[2], { startDate: '2026-06-01', endDate: '2026-06-03' });
+      assert.equal(periodMock.mock.callCount(), 1);
+      assert.deepEqual(periodMock.mock.calls[0].arguments[1], ['p1', 'p2']);
+      assert.equal(sessionMock.mock.callCount(), 1);
+      assert.deepEqual(sessionMock.mock.calls[0].arguments[2], { startDate: '2026-06-01', endDate: '2026-06-03' });
 
-    assert.equal(results[0].marked, true);
-    assert.equal(results[1].marked, false);
-  });
+      assert.equal(results[0].marked, true);
+      assert.equal(results[1].marked, false);
+    },
+  );
 
   await t.test('an empty assignment list resolves no periods and no sessions', async () => {
     const listMock = t.mock.method(academicService, 'listSubstituteAssignmentsForClass', async () => []);
-    const periodMock = t.mock.method(academicService, 'getTimetablePeriodsByIds', async () => { throw new Error('must not be called'); });
-    const sessionMock = t.mock.method(attendanceRepository, 'findByClassAndDateRange', async () => { throw new Error('must not be called'); });
+    const periodMock = t.mock.method(academicService, 'getTimetablePeriodsByIds', async () => {
+      throw new Error('must not be called');
+    });
+    const sessionMock = t.mock.method(attendanceRepository, 'findByClassAndDateRange', async () => {
+      throw new Error('must not be called');
+    });
     t.after(() => {
       listMock.mock.restore();
       periodMock.mock.restore();

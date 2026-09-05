@@ -8,7 +8,7 @@ import * as Tooltip from '@radix-ui/react-tooltip';
 import App from './App.jsx';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { WorkspaceProvider } from './store/WorkspaceProvider.jsx';
-import { ComposerProvider } from './store/ComposerProvider.jsx';
+import { ComposerProvider } from '@/features/chat';
 import { startAutoHideScrollbars } from './lib/autoHideScrollbars.js';
 import './index.css';
 
@@ -70,5 +70,5 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         </AuthProvider>
       </QueryClientProvider>
     </ThemeProvider>
-  </React.StrictMode>
+  </React.StrictMode>,
 );

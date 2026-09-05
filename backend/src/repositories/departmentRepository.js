@@ -46,18 +46,12 @@ async function findById(client, id) {
 }
 
 async function findByCollege(client, collegeId) {
-  const result = await client.query(
-    'SELECT * FROM departments WHERE college_id = $1 ORDER BY name',
-    [collegeId],
-  );
+  const result = await client.query('SELECT * FROM departments WHERE college_id = $1 ORDER BY name', [collegeId]);
   return result.rows;
 }
 
 async function findByCollegeAndName(client, collegeId, name) {
-  const result = await client.query(
-    'SELECT * FROM departments WHERE college_id = $1 AND name = $2',
-    [collegeId, name],
-  );
+  const result = await client.query('SELECT * FROM departments WHERE college_id = $1 AND name = $2', [collegeId, name]);
   return result.rows[0] || null;
 }
 
@@ -126,9 +120,7 @@ async function renameDepartment(client, id, name) {
 // intake/duration in the same sitting (the wizard's own "Annual
 // Intake"/"Programme Duration" fields) — same merged_into guard as
 // plain renameDepartment, extended rather than duplicated.
-async function renameDepartmentWithDetails(client, id, {
-  name, approvedIntake, courseDuration, effectiveDate,
-}) {
+async function renameDepartmentWithDetails(client, id, { name, approvedIntake, courseDuration, effectiveDate }) {
   const result = await client.query(
     `UPDATE departments SET name = $2, approved_intake = COALESCE($3, approved_intake),
        course_duration = COALESCE($4, course_duration),
@@ -141,13 +133,14 @@ async function renameDepartmentWithDetails(client, id, {
   return result.rows[0] || null;
 }
 
-async function mergeDepartments(client, {
-  sourceDepartmentIds, targetDepartmentId, name, approvedIntake, courseDuration, effectiveDate,
-}) {
-  await client.query(
-    'UPDATE classes SET department_id = $2 WHERE department_id = ANY($1::uuid[])',
-    [sourceDepartmentIds, targetDepartmentId],
-  );
+async function mergeDepartments(
+  client,
+  { sourceDepartmentIds, targetDepartmentId, name, approvedIntake, courseDuration, effectiveDate },
+) {
+  await client.query('UPDATE classes SET department_id = $2 WHERE department_id = ANY($1::uuid[])', [
+    sourceDepartmentIds,
+    targetDepartmentId,
+  ]);
   await client.query(
     `UPDATE departments SET merged_into_department_id = $2, version = version + 1, updated_at = now()
      WHERE id = ANY($1::uuid[])`,

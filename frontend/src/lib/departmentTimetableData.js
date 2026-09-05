@@ -166,7 +166,7 @@ function buildGrid(seedOffset) {
         for (let n = 0; n < entry.periods; n++) pool.push(entry);
       });
       return [c.id, pool];
-    })
+    }),
   );
 
   const cells = [];

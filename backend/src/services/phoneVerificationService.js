@@ -154,11 +154,15 @@ async function verifyOtp(client, studentId, target, code, { actorUserId, actorRo
 
   const otpRow = await studentPhoneOtpRepository.findLatestActive(client, studentId, target);
   if (otpRow === null) {
-    throw new PhoneVerificationNotRequestedError(`no live OTP found for student ${JSON.stringify(studentId)}, target ${JSON.stringify(target)}`);
+    throw new PhoneVerificationNotRequestedError(
+      `no live OTP found for student ${JSON.stringify(studentId)}, target ${JSON.stringify(target)}`,
+    );
   }
 
   if (otpRow.attempts >= config.otp.maxAttempts) {
-    throw new PhoneVerificationMaxAttemptsExceededError(`OTP ${JSON.stringify(otpRow.id)} has exceeded the maximum number of attempts`);
+    throw new PhoneVerificationMaxAttemptsExceededError(
+      `OTP ${JSON.stringify(otpRow.id)} has exceeded the maximum number of attempts`,
+    );
   }
 
   if (hashCode(code) !== otpRow.code_hash) {

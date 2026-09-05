@@ -143,7 +143,7 @@ function DepartmentSummary({ onOpen }) {
             aria-label={`${d.name} — open student roster`}
             className={cn(
               DEPT_GRID,
-              'w-full h-[48px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2'
+              'w-full h-[48px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2',
             )}
           >
             <span className="min-w-0">
@@ -159,7 +159,7 @@ function DepartmentSummary({ onOpen }) {
             <span
               className={cn(
                 'text-[13px] tabular-nums',
-                d.attendance < ATTENDANCE_THRESHOLD ? 'font-[500] text-danger' : 'text-ink'
+                d.attendance < ATTENDANCE_THRESHOLD ? 'font-[500] text-danger' : 'text-ink',
               )}
             >
               {d.attendance}%
@@ -184,7 +184,7 @@ function DepartmentSummary({ onOpen }) {
               <span
                 className={cn(
                   'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500] max-w-full truncate',
-                  DEPT_ATTENTION_STATES[d.attention].tone
+                  DEPT_ATTENTION_STATES[d.attention].tone,
                 )}
               >
                 {DEPT_ATTENTION_STATES[d.attention].label}
@@ -197,8 +197,7 @@ function DepartmentSummary({ onOpen }) {
           </button>
         ))}
 
-        {rows.length === 0 &&
-          (DEPARTMENT_HEALTH.length === 0 ? <NoDepartments /> : <NoResults what="departments" />)}
+        {rows.length === 0 && (DEPARTMENT_HEALTH.length === 0 ? <NoDepartments /> : <NoResults what="departments" />)}
       </StickyTableShell>
 
       <p className="flex-none m-0 mt-[8px] text-[11.5px] text-ink-faint">
@@ -224,7 +223,7 @@ function ScopedRoster({ departmentId, onBack }) {
       { value: '', label: 'All classes' },
       ...classesOfDepartment(departmentId).map((c) => ({ value: c.id, label: c.code })),
     ],
-    [departmentId]
+    [departmentId],
   );
 
   const rows = useMemo(() => {
@@ -318,7 +317,7 @@ function ScopedRoster({ departmentId, onBack }) {
             aria-label={`${s.name}, roll ${s.roll} — open record`}
             className={cn(
               STUDENT_GRID,
-              'w-full h-[46px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2'
+              'w-full h-[46px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2',
             )}
           >
             <span className="min-w-0">
@@ -337,7 +336,7 @@ function ScopedRoster({ departmentId, onBack }) {
             <span
               className={cn(
                 'text-[13px] tabular-nums',
-                s.attendance < ATTENDANCE_THRESHOLD ? 'font-[500] text-danger' : 'text-ink'
+                s.attendance < ATTENDANCE_THRESHOLD ? 'font-[500] text-danger' : 'text-ink',
               )}
             >
               {s.attendance}%
@@ -358,7 +357,7 @@ function ScopedRoster({ departmentId, onBack }) {
       </p>
 
       <InstitutionStudentDrawer
-        student={openId ? rows.find((s) => s.id === openId) ?? null : null}
+        student={openId ? (rows.find((s) => s.id === openId) ?? null) : null}
         onClose={() => setOpenId(null)}
       />
     </>

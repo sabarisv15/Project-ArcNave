@@ -105,7 +105,9 @@ const HOD_LEVEL = 3;
 // cannot configure timetable_approval to skip Principal at all.
 const ROLE_LEVELS = { principal: PRINCIPAL_LEVEL, hod: HOD_LEVEL, tutor: 4 };
 const ENTITY_APPROVAL_FLOORS = {
-  timetable_approval: PRINCIPAL_LEVEL, student_lifecycle_change: HOD_LEVEL, substitute_assignment: HOD_LEVEL,
+  timetable_approval: PRINCIPAL_LEVEL,
+  student_lifecycle_change: HOD_LEVEL,
+  substitute_assignment: HOD_LEVEL,
 };
 
 class WorkflowChainValidationError extends Error {}
@@ -142,7 +144,9 @@ async function resolveRoleUserId(client, role, { collegeId, classId, departmentI
   if (role === 'principal') {
     const userId = await identityService.resolvePositionOccupant(client, { collegeId, level: PRINCIPAL_LEVEL });
     if (userId === null) {
-      throw new WorkflowChainMissingContextError(`college ${JSON.stringify(collegeId)} has no active Principal to resolve a "principal" chain step`);
+      throw new WorkflowChainMissingContextError(
+        `college ${JSON.stringify(collegeId)} has no active Principal to resolve a "principal" chain step`,
+      );
     }
     return userId;
   }
@@ -152,7 +156,9 @@ async function resolveRoleUserId(client, role, { collegeId, classId, departmentI
     }
     const userId = await identityService.resolvePositionOccupant(client, { collegeId, departmentId });
     if (userId === null) {
-      throw new WorkflowChainMissingContextError(`department ${JSON.stringify(departmentId)} has no active HOD (permanent or acting) to resolve an "hod" chain step`);
+      throw new WorkflowChainMissingContextError(
+        `department ${JSON.stringify(departmentId)} has no active HOD (permanent or acting) to resolve an "hod" chain step`,
+      );
     }
     return userId;
   }
@@ -166,11 +172,15 @@ async function resolveRoleUserId(client, role, { collegeId, classId, departmentI
     // consulted for this role at all.
     const userId = await identityService.resolvePositionOccupant(client, { collegeId, classId });
     if (userId === null) {
-      throw new WorkflowChainMissingContextError(`class ${JSON.stringify(classId)} has no tutor assigned to resolve a "tutor" chain step`);
+      throw new WorkflowChainMissingContextError(
+        `class ${JSON.stringify(classId)} has no tutor assigned to resolve a "tutor" chain step`,
+      );
     }
     return userId;
   }
-  throw new WorkflowChainUnknownRoleError(`role ${JSON.stringify(role)} is not a known chain role (${KNOWN_ROLES.join(', ')})`);
+  throw new WorkflowChainUnknownRoleError(
+    `role ${JSON.stringify(role)} is not a known chain role (${KNOWN_ROLES.join(', ')})`,
+  );
 }
 
 // BusinessRules.md: "temporary delegation supports start date, end
@@ -179,7 +189,10 @@ async function resolveRoleUserId(client, role, { collegeId, classId, departmentI
 // approver, it never changes which roles a chain requires.
 async function applyDelegationIfActive(client, role, baseUserId, { collegeId, departmentId, date }) {
   const delegation = await workflowDelegationRepository.findActive(client, {
-    collegeId, role, departmentId: role === 'hod' ? departmentId : null, date,
+    collegeId,
+    role,
+    departmentId: role === 'hod' ? departmentId : null,
+    date,
   });
   return delegation === null ? baseUserId : delegation.delegate_user_id;
 }
@@ -190,18 +203,21 @@ async function applyDelegationIfActive(client, role, baseUserId, { collegeId, de
 // institution hasn't configured this module (or hasn't configured
 // anything at all yet), never a hard failure for an unconfigured but
 // otherwise-known module.
-async function resolveApproverChain(client, {
-  collegeId, entityType, classId, departmentId,
-}, { date } = {}) {
+async function resolveApproverChain(client, { collegeId, entityType, classId, departmentId }, { date } = {}) {
   if (!collegeId || !entityType) {
     throw new WorkflowChainValidationError('collegeId and entityType are required');
   }
 
-  const config = await configurationService.getConfiguration(client, { collegeId, category: WORKFLOW_CHAIN_CONFIG_CATEGORY });
+  const config = await configurationService.getConfiguration(client, {
+    collegeId,
+    category: WORKFLOW_CHAIN_CONFIG_CATEGORY,
+  });
   const configuredChain = config && config.configuration ? config.configuration[entityType] : undefined;
   const roles = configuredChain || DEFAULT_CHAINS[entityType];
   if (!roles) {
-    throw new WorkflowChainUnknownEntityTypeError(`no chain configured or defaulted for entityType ${JSON.stringify(entityType)}`);
+    throw new WorkflowChainUnknownEntityTypeError(
+      `no chain configured or defaulted for entityType ${JSON.stringify(entityType)}`,
+    );
   }
 
   const floor = ENTITY_APPROVAL_FLOORS[entityType];
@@ -218,29 +234,49 @@ async function resolveApproverChain(client, {
     // eslint-disable-next-line no-await-in-loop
     const baseUserId = await resolveRoleUserId(client, role, { collegeId, classId, departmentId });
     // eslint-disable-next-line no-await-in-loop
-    const userId = await applyDelegationIfActive(client, role, baseUserId, { collegeId, departmentId, date: effectiveDate });
+    const userId = await applyDelegationIfActive(client, role, baseUserId, {
+      collegeId,
+      departmentId,
+      date: effectiveDate,
+    });
     chain.push({ step: i + 1, role, user_id: userId });
   }
 
   return chain;
 }
 
-async function createDelegation(client, {
-  role, departmentId, delegateUserId, startDate, endDate, reason,
-}, { actorUserId, collegeId } = {}) {
+async function createDelegation(
+  client,
+  { role, departmentId, delegateUserId, startDate, endDate, reason },
+  { actorUserId, collegeId } = {},
+) {
   if (!KNOWN_ROLES.includes(role)) {
-    throw new WorkflowChainUnknownRoleError(`role ${JSON.stringify(role)} is not a known chain role (${KNOWN_ROLES.join(', ')})`);
+    throw new WorkflowChainUnknownRoleError(
+      `role ${JSON.stringify(role)} is not a known chain role (${KNOWN_ROLES.join(', ')})`,
+    );
   }
   if (!delegateUserId || !startDate) {
     throw new WorkflowChainValidationError('delegateUserId and startDate are required');
   }
 
   const delegation = await workflowDelegationRepository.create(client, {
-    collegeId, role, departmentId, delegateUserId, startDate, endDate, reason, delegatedByUserId: actorUserId,
+    collegeId,
+    role,
+    departmentId,
+    delegateUserId,
+    startDate,
+    endDate,
+    reason,
+    delegatedByUserId: actorUserId,
   });
 
   await auditLogRepository.createAuditLogEntry(client, {
-    collegeId, userId: actorUserId, action: 'workflow_delegation_created', entity: 'workflow_delegations', entityId: delegation.id, metadata: { role },
+    collegeId,
+    userId: actorUserId,
+    action: 'workflow_delegation_created',
+    entity: 'workflow_delegations',
+    entityId: delegation.id,
+    metadata: { role },
   });
 
   return delegation;
@@ -252,7 +288,12 @@ async function revokeDelegation(client, id, { actorUserId } = {}) {
     return null;
   }
   await auditLogRepository.createAuditLogEntry(client, {
-    collegeId: delegation.college_id, userId: actorUserId, action: 'workflow_delegation_revoked', entity: 'workflow_delegations', entityId: id, metadata: null,
+    collegeId: delegation.college_id,
+    userId: actorUserId,
+    action: 'workflow_delegation_revoked',
+    entity: 'workflow_delegations',
+    entityId: id,
+    metadata: null,
   });
   return delegation;
 }

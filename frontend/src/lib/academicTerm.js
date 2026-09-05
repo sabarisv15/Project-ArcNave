@@ -54,12 +54,7 @@ import {
 import { PROVISIONING } from './provisioning';
 import { CLASS_TUTOR_SEATS, buildSeatsFor, freshSeatOverrides } from './seatState';
 import { BASELINE_TIMETABLE_STATES, freshTimetableStates } from './timetableState';
-import {
-  PRIOR_CLASSES,
-  REVIEW_CANDIDATES,
-  priorClassesFor,
-  reviewQueueFor,
-} from './promotionData';
+import { PRIOR_CLASSES, REVIEW_CANDIDATES, priorClassesFor, reviewQueueFor } from './promotionData';
 
 /**
  * The three states an academic year can be in, in the badge vocabulary the
@@ -257,8 +252,7 @@ export const COMMENCEMENT_CONSEQUENCES = [
   {
     key: 'classes',
     title: 'New semester × section classes become the active classes',
-    detail:
-      'Every active class of the new band derives one Class Tutor seat, exactly as the closing term did.',
+    detail: 'Every active class of the new band derives one Class Tutor seat, exactly as the closing term did.',
   },
   {
     key: 'seats',
@@ -269,8 +263,7 @@ export const COMMENCEMENT_CONSEQUENCES = [
   {
     key: 'history',
     title: 'The previous term becomes historical',
-    detail:
-      'Its students, rosters and records stay readable and cannot be changed by anyone, including this office.',
+    detail: 'Its students, rosters and records stay readable and cannot be changed by anyone, including this office.',
   },
   {
     key: 'review',
@@ -287,13 +280,11 @@ export const COMMENCEMENT_CONSEQUENCES = [
   {
     key: 'timetable',
     title: 'Timetables start again from not submitted',
-    detail:
-      'Each active class needs a timetable drafted, endorsed and finally approved before it is live.',
+    detail: 'Each active class needs a timetable drafted, endorsed and finally approved before it is live.',
   },
   {
     key: 'attendance',
     title: 'Attendance stays locked until a timetable is approved',
-    detail:
-      'Attendance is a consequence of an approved timetable and an active year. No seat switches it on.',
+    detail: 'Attendance is a consequence of an approved timetable and an active year. No seat switches it on.',
   },
 ];

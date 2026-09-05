@@ -1,0 +1,30 @@
+{
+  // Type-check + editor support only — Vite already transpiles `.ts`/
+  // `.tsx` via esbuild with zero config changes (confirmed: no build.js
+  // update was needed), so this file exists for `tsc --noEmit` in CI and
+  // IDE intellisense, not to enable Vite to read TypeScript (it already
+  // could). Existing `.jsx`/`.js` files are unaffected — `allowJs` lets
+  // them keep importing/being imported by new `.tsx`/`.ts` files during
+  // the gradual migration (ADR-016 Amendment 1 / ADL-072).
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "allowJs": true,
+    "checkJs": false,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

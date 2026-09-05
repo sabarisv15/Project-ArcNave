@@ -30,7 +30,9 @@ class ArtifactAlreadyPublishedError extends Error {}
 
 function assertOwnedBy(artifact, actorUserId) {
   if (artifact.user_id !== actorUserId) {
-    throw new ArtifactForbiddenError(`user ${JSON.stringify(actorUserId)} does not own artifact ${JSON.stringify(artifact.id)}`);
+    throw new ArtifactForbiddenError(
+      `user ${JSON.stringify(actorUserId)} does not own artifact ${JSON.stringify(artifact.id)}`,
+    );
   }
 }
 
@@ -42,7 +44,9 @@ function assertNotDeleted(artifact) {
 
 function assertNotPublished(artifact) {
   if (artifact.status === 'published') {
-    throw new ArtifactAlreadyPublishedError(`artifact ${JSON.stringify(artifact.id)} is already published and cannot be changed`);
+    throw new ArtifactAlreadyPublishedError(
+      `artifact ${JSON.stringify(artifact.id)} is already published and cannot be changed`,
+    );
   }
 }
 
@@ -69,9 +73,11 @@ async function listOwnArtifactVersions(client, id, { userId }) {
   return artifactVersionRepository.listByArtifact(client, id);
 }
 
-async function createArtifact(client, {
-  title, content, conversationId, sourceMessageId, artifactType,
-}, { userId, collegeId }) {
+async function createArtifact(
+  client,
+  { title, content, conversationId, sourceMessageId, artifactType },
+  { userId, collegeId },
+) {
   const trimmedTitle = (title || '').trim();
   if (!trimmedTitle) {
     throw new ArtifactValidationError('title is required');
@@ -197,14 +203,18 @@ async function publishArtifact(client, id, { userId, collegeId, format }) {
 
   const { buffer, mimeType, extension } = await convertContent(existing.title, existing.content, format);
 
-  const document = await documentService.uploadPersonalDocument(client, {
-    collegeId,
-    title: existing.title,
-    folderName: 'AI Artifacts',
-    fileName: `${existing.title}.${extension}`,
-    mimeType,
-    fileBuffer: buffer,
-  }, { actorUserId: userId });
+  const document = await documentService.uploadPersonalDocument(
+    client,
+    {
+      collegeId,
+      title: existing.title,
+      folderName: 'AI Artifacts',
+      fileName: `${existing.title}.${extension}`,
+      mimeType,
+      fileBuffer: buffer,
+    },
+    { actorUserId: userId },
+  );
 
   const artifact = await artifactRepository.update(client, id, {
     status: 'published',
@@ -243,14 +253,18 @@ async function exportArtifactAs(client, id, format, { userId, collegeId }) {
 
   const { buffer, mimeType, extension } = await convertContent(existing.title, existing.content, format);
 
-  const document = await documentService.uploadPersonalDocument(client, {
-    collegeId,
-    title: existing.title,
-    folderName: 'AI Artifacts',
-    fileName: `${existing.title}.${extension}`,
-    mimeType,
-    fileBuffer: buffer,
-  }, { actorUserId: userId });
+  const document = await documentService.uploadPersonalDocument(
+    client,
+    {
+      collegeId,
+      title: existing.title,
+      folderName: 'AI Artifacts',
+      fileName: `${existing.title}.${extension}`,
+      mimeType,
+      fileBuffer: buffer,
+    },
+    { actorUserId: userId },
+  );
 
   await auditLogRepository.createAuditLogEntry(client, {
     collegeId,
@@ -282,13 +296,13 @@ async function exportArtifactAs(client, id, format, { userId, collegeId }) {
 // bare boolean: a caller that could pass `{passed: true}` on its own
 // has defeated the entire gate this function exists to enforce. There
 // is no "attach anyway" override in this slice.
-async function attachGeneratedFile(client, id, {
-  buffer, fileName, mimeType, verification,
-}, { userId, collegeId }) {
+async function attachGeneratedFile(client, id, { buffer, fileName, mimeType, verification }, { userId, collegeId }) {
   const existing = await resolveOwnArtifact(client, id, userId);
 
   if (!verification || typeof verification !== 'object' || typeof verification.passed !== 'boolean') {
-    throw new ArtifactValidationError('verification must be the full verification report object, not a boolean or omitted');
+    throw new ArtifactValidationError(
+      'verification must be the full verification report object, not a boolean or omitted',
+    );
   }
   if (!verification.passed) {
     throw new ArtifactValidationError(
@@ -296,14 +310,18 @@ async function attachGeneratedFile(client, id, {
     );
   }
 
-  const document = await documentService.uploadPersonalDocument(client, {
-    collegeId,
-    title: existing.title,
-    folderName: 'AI Artifacts',
-    fileName,
-    mimeType,
-    fileBuffer: buffer,
-  }, { actorUserId: userId });
+  const document = await documentService.uploadPersonalDocument(
+    client,
+    {
+      collegeId,
+      title: existing.title,
+      folderName: 'AI Artifacts',
+      fileName,
+      mimeType,
+      fileBuffer: buffer,
+    },
+    { actorUserId: userId },
+  );
 
   const artifact = await artifactRepository.update(client, id, {
     generatedDocumentId: document.id,

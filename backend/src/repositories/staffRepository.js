@@ -114,10 +114,10 @@ async function findByUserId(client, userId) {
 }
 
 async function findByStaffCode(client, collegeId, staffCode) {
-  const result = await client.query(
-    'SELECT * FROM staff WHERE college_id = $1 AND staff_code = $2',
-    [collegeId, staffCode],
-  );
+  const result = await client.query('SELECT * FROM staff WHERE college_id = $1 AND staff_code = $2', [
+    collegeId,
+    staffCode,
+  ]);
   return result.rows[0] || null;
 }
 
@@ -144,10 +144,7 @@ async function remove(client, id) {
 }
 
 async function list(client, { limit = 50, offset = 0 } = {}) {
-  const result = await client.query(
-    'SELECT * FROM staff ORDER BY created_at LIMIT $1 OFFSET $2',
-    [limit, offset],
-  );
+  const result = await client.query('SELECT * FROM staff ORDER BY created_at LIMIT $1 OFFSET $2', [limit, offset]);
   return result.rows;
 }
 
@@ -157,10 +154,7 @@ async function list(client, { limit = 50, offset = 0 } = {}) {
 // specific hod/principal identity): every staff member in the
 // department, active or not, same as list()'s own unfiltered shape.
 async function findByDepartmentId(client, departmentId) {
-  const result = await client.query(
-    'SELECT * FROM staff WHERE department_id = $1 ORDER BY created_at',
-    [departmentId],
-  );
+  const result = await client.query('SELECT * FROM staff WHERE department_id = $1 ORDER BY created_at', [departmentId]);
   return result.rows;
 }
 

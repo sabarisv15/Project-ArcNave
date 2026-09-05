@@ -112,9 +112,15 @@ async function resolveCapabilities(client, { userId, collegeId }) {
     // eslint-disable-next-line no-await-in-loop -- see above
     const departmentIds = await departmentResolver.resolveMappedDepartments(client, position.positionId);
     // eslint-disable-next-line no-await-in-loop -- see above
-    const currentOccupantUserId = await assignmentResolver.resolveCurrentOccupantUserId(client, position.positionAccountId);
+    const currentOccupantUserId = await assignmentResolver.resolveCurrentOccupantUserId(
+      client,
+      position.positionAccountId,
+    );
     positions.push({
-      ...position, moduleKeys, departmentIds, currentOccupantUserId,
+      ...position,
+      moduleKeys,
+      departmentIds,
+      currentOccupantUserId,
     });
   }
 
@@ -155,11 +161,12 @@ async function resolveCapabilities(client, { userId, collegeId }) {
 // Returns null for a vacant slot (no position provisioned yet, or no
 // active occupant) — the ordinary case, not an error, same convention
 // resolveCapabilities itself follows for "no active position."
-async function resolvePositionOccupant(client, {
-  collegeId, level, departmentId, classId,
-}) {
+async function resolvePositionOccupant(client, { collegeId, level, departmentId, classId }) {
   const position = await positionSlotResolver.resolvePositionForSlot(client, {
-    collegeId, level, departmentId, classId,
+    collegeId,
+    level,
+    departmentId,
+    classId,
   });
   if (position === null) {
     return null;
@@ -227,7 +234,8 @@ async function resolveCapabilitiesForPosition(client, { positionAccountId }) {
   const currentOccupantUserId = await assignmentResolver.resolveCurrentOccupantUserId(client, positionAccountId);
 
   const { effectiveRole, scopeLevel } = deriveEffectiveRoleAndScopeForPosition({
-    level: position.level, positionType: position.position_type,
+    level: position.level,
+    positionType: position.position_type,
   });
 
   return {

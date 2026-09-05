@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { formatDateDMY } from '../lib/ist';
-import { formatTime } from '../lib/attendanceData';
-import { ATTENDANCE_THRESHOLD } from '../lib/attendanceLedger';
+import { formatTime } from '@/features/attendance/lib/attendanceData';
+import { ATTENDANCE_THRESHOLD } from '@/features/attendance/lib/attendanceLedger';
 import { inDateRange } from '../lib/dateFilters';
 import { cn } from '../lib/utils';
 
@@ -53,7 +53,9 @@ export function StudentAbsenceDrawer({ student, subject, now, onClose }) {
             <>
               <div className="flex-none flex items-start justify-between gap-[12px] pt-[18px] px-[18px] pb-[14px] border-b border-line">
                 <div className="min-w-0">
-                  <Dialog.Title className="m-0 text-[17px] font-[600] tracking-[-.01em] truncate">{student.name}</Dialog.Title>
+                  <Dialog.Title className="m-0 text-[17px] font-[600] tracking-[-.01em] truncate">
+                    {student.name}
+                  </Dialog.Title>
                   <div className="mt-[2px] text-[11.5px] text-ink-faint truncate">
                     Roll {student.roll} · {student.registerNumber}
                   </div>
@@ -83,9 +85,7 @@ export function StudentAbsenceDrawer({ student, subject, now, onClose }) {
               </div>
 
               <div className="flex-none flex items-center gap-[8px] px-[18px] pt-[14px] pb-[10px]">
-                <span className="text-[11px] font-[500] uppercase tracking-[.06em] text-ink-faint">
-                  Absence dates
-                </span>
+                <span className="text-[11px] font-[500] uppercase tracking-[.06em] text-ink-faint">Absence dates</span>
                 <span className="text-[11.5px] text-ink-faint">{absences.length}</span>
                 <div className="flex-1" />
                 {showRangeFilter && (
@@ -99,7 +99,7 @@ export function StudentAbsenceDrawer({ student, subject, now, onClose }) {
                           'h-[24px] px-[9px] rounded-[7px] font-sans text-[11px] cursor-pointer transition-colors duration-200',
                           range === r.key
                             ? 'bg-accent-soft text-accent font-[600]'
-                            : 'bg-transparent text-ink-muted font-[500] hover:bg-tint2'
+                            : 'bg-transparent text-ink-muted font-[500] hover:bg-tint2',
                         )}
                       >
                         {r.label}
@@ -122,7 +122,9 @@ export function StudentAbsenceDrawer({ student, subject, now, onClose }) {
                       <div key={a.id} className="px-[13px] py-[9px] border-t border-line-light first:border-t-0">
                         <div className="flex items-baseline gap-[8px] text-[12.5px]">
                           <span className="font-[600] text-ink whitespace-nowrap">{formatDateDMY(a.date)}</span>
-                          <span className="text-ink-faint" aria-hidden="true">·</span>
+                          <span className="text-ink-faint" aria-hidden="true">
+                            ·
+                          </span>
                           <span className="text-ink-muted tabular-nums whitespace-nowrap">
                             {formatTime(a.startTime)}–{formatTime(a.endTime)} IST
                           </span>

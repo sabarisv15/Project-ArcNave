@@ -26,9 +26,29 @@
 
 /** Elements whose content is dropped entirely, not just unwrapped. */
 const DROPPED = new Set([
-  'SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'NOSCRIPT', 'LINK', 'META',
-  'HEAD', 'TITLE', 'FORM', 'INPUT', 'SELECT', 'TEXTAREA', 'BUTTON', 'SVG',
-  'VIDEO', 'AUDIO', 'CANVAS', 'MAP', 'AREA', 'TEMPLATE', 'BASE',
+  'SCRIPT',
+  'STYLE',
+  'IFRAME',
+  'OBJECT',
+  'EMBED',
+  'NOSCRIPT',
+  'LINK',
+  'META',
+  'HEAD',
+  'TITLE',
+  'FORM',
+  'INPUT',
+  'SELECT',
+  'TEXTAREA',
+  'BUTTON',
+  'SVG',
+  'VIDEO',
+  'AUDIO',
+  'CANVAS',
+  'MAP',
+  'AREA',
+  'TEMPLATE',
+  'BASE',
 ]);
 
 /** Only these schemes may survive on a link. */
@@ -157,7 +177,12 @@ function serialize(node, ctx) {
     case 'BLOCKQUOTE': {
       const inner = serializeChildren(node, ctx).trim();
       if (!inner) return '';
-      return block(inner.split('\n').map((line) => `> ${line}`.trimEnd()).join('\n'));
+      return block(
+        inner
+          .split('\n')
+          .map((line) => `> ${line}`.trimEnd())
+          .join('\n'),
+      );
     }
 
     case 'PRE': {

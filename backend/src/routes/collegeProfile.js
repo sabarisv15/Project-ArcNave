@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requirePermission } = require('../middleware/rbac');
 const collegeProfileService = require('../services/collegeProfileService');
 const identityService = require('../services/identityService');
@@ -46,44 +48,70 @@ function bodyToFields(body, fieldMap) {
   return fields;
 }
 
+const updateCollegeProfileSchema = z.object({
+  body: z
+    .object({
+      name: z.string().optional(),
+      level1_position_title: z.string().optional(),
+      level3_position_title: z.string().optional(),
+      level4_position_title: z.string().optional(),
+      affiliating_university: z.string().optional(),
+      year_established: z.any().optional(),
+      address: z.string().optional(),
+    })
+    .optional(),
+});
+
 function createCollegeProfileRouter() {
   const router = express.Router();
 
-  router.get('/college-profile', requirePermission('college_profile.read'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const profile = await collegeProfileService.getProfile(req.dbClient, req.collegeId);
-    if (profile === null) {
-      res.status(404).json({ detail: `No college found with college_id ${JSON.stringify(req.collegeId)}` });
-      return;
-    }
-    res.json(profile);
-  }));
-
-  router.put('/college-profile', requirePermission('college_profile.update'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    let profile;
-    try {
-      profile = await collegeProfileService.updateProfile(
-        req.dbClient,
-        req.collegeId,
-        bodyToFields(req.body || {}, COLLEGE_PROFILE_BODY_FIELDS),
-        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-    } catch (err) {
-      if (err instanceof collegeProfileService.CollegeProfileValidationError) {
-        res.status(400).json({ detail: err.message });
+  router.get(
+    '/college-profile',
+    requirePermission('college_profile.read'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const profile = await collegeProfileService.getProfile(req.dbClient, req.collegeId);
+      if (profile === null) {
+        res.status(404).json({ detail: `No college found with college_id ${JSON.stringify(req.collegeId)}` });
         return;
       }
-      throw err;
-    }
-    if (profile === null) {
-      res.status(404).json({ detail: `No college found with college_id ${JSON.stringify(req.collegeId)}` });
-      return;
-    }
-    res.json(profile);
-  }));
+      res.json(profile);
+    }),
+  );
+
+  router.put(
+    '/college-profile',
+    requirePermission('college_profile.update'),
+    validate(updateCollegeProfileSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      let profile;
+      try {
+        profile = await collegeProfileService.updateProfile(
+          req.dbClient,
+          req.collegeId,
+          bodyToFields(req.body || {}, COLLEGE_PROFILE_BODY_FIELDS),
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+      } catch (err) {
+        if (err instanceof collegeProfileService.CollegeProfileValidationError) {
+          res.status(400).json({ detail: err.message });
+          return;
+        }
+        throw err;
+      }
+      if (profile === null) {
+        res.status(404).json({ detail: `No college found with college_id ${JSON.stringify(req.collegeId)}` });
+        return;
+      }
+      res.json(profile);
+    }),
+  );
 
   return router;
 }
 
 module.exports = createCollegeProfileRouter;
+module.exports.schemas = {
+  '/college-profile': { put: updateCollegeProfileSchema },
+};

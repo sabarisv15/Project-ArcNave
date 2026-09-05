@@ -188,7 +188,7 @@ const CSE_FACULTY = DEPT_FACULTY.map((f) => ({
 }));
 
 export const INST_FACULTY = PROVISIONED_DEPARTMENTS.flatMap((d) =>
-  d.id === CSE_DEPARTMENT.id ? CSE_FACULTY : mkFaculty(d.id, FACULTY_SEEDS[d.id] ?? [])
+  d.id === CSE_DEPARTMENT.id ? CSE_FACULTY : mkFaculty(d.id, FACULTY_SEEDS[d.id] ?? []),
 );
 
 export const FACULTY_BY_ID = Object.fromEntries(INST_FACULTY.map((f) => [f.id, f]));
@@ -283,7 +283,7 @@ export const INST_AT_RISK_TOTAL = INST_STUDENTS.filter((s) => s.attendance < ATT
 /** The head of a department, or null — a department genuinely may not have one. */
 export function hodOf(departmentId) {
   const dept = DEPARTMENT_BY_ID[departmentId];
-  return dept?.hodId ? FACULTY_BY_ID[dept.hodId] ?? null : null;
+  return dept?.hodId ? (FACULTY_BY_ID[dept.hodId] ?? null) : null;
 }
 
 export function departmentLabel(departmentId) {

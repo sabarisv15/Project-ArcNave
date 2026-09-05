@@ -29,7 +29,7 @@ function mark(el) {
     setTimeout(() => {
       el.classList.remove('is-scrolling');
       timers.delete(el);
-    }, HIDE_DELAY_MS)
+    }, HIDE_DELAY_MS),
   );
 }
 

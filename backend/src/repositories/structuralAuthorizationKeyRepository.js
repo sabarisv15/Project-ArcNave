@@ -8,9 +8,7 @@
 // on the table itself (see the migration), not this file, are what
 // actually enforce which side may do what.
 
-async function createKey(client, {
-  collegeId, actionType, actionPayload, tokenHash, generatedBy, expiresAt,
-}) {
+async function createKey(client, { collegeId, actionType, actionPayload, tokenHash, generatedBy, expiresAt }) {
   const result = await client.query(
     `INSERT INTO structural_authorization_keys
        (college_id, action_type, action_payload, token_hash, generated_by, expires_at)
@@ -38,10 +36,7 @@ async function findById(client, id) {
 }
 
 async function findByTokenHash(pool, tokenHash) {
-  const result = await pool.query(
-    'SELECT * FROM structural_authorization_keys WHERE token_hash = $1',
-    [tokenHash],
-  );
+  const result = await pool.query('SELECT * FROM structural_authorization_keys WHERE token_hash = $1', [tokenHash]);
   return result.rows[0] || null;
 }
 

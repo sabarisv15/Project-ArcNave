@@ -2,21 +2,28 @@
   "name": "arcnave-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "ARCNAVE backend — Express (Node.js, plain JavaScript). See docs/adr/ADR-016-Node-Backend.md.",
+  "description": "ARCNAVE backend — Express (Node.js). Existing code is plain JavaScript; new files may be TypeScript (ADR-016 Amendment 1, ADL-072). See bka/30-decisions/adr-register.md.",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "migrate": "node scripts/migrate.js up",
     "migrate:down": "node scripts/migrate.js down",
-    "test": "node --test tests/"
+    "test": "node --test tests/",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "sbom": "cyclonedx-npm --output-file sbom.json",
+    "audit:gate": "npm audit --json | node scripts/audit-policy-gate.js audit-allowlist.json"
   },
   "dependencies": {
     "argon2": "^0.41.1",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "docx": "^9.7.1",
     "docxtemplater": "^3.69.0",
     "exceljs": "^4.4.0",
-    "express": "^4.19.2",
+    "express": "^5.2.1",
     "express-rate-limit": "^8.6.2",
     "google-auth-library": "^11.0.2",
     "helmet": "^8.3.0",
@@ -29,10 +36,21 @@
     "pg": "^8.12.0",
     "pizzip": "^3.2.0",
     "pptxgenjs": "^4.0.1",
-    "tesseract.js": "^7.0.0"
+    "tesseract.js": "^7.0.0",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@cyclonedx/cyclonedx-npm": "6.0.0",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.4.0",
+    "eslint": "^10.9.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-n": "^18.3.0",
+    "globals": "^17.11.0",
     "jszip": "^3.10.1",
-    "node-pg-migrate": "^7.6.1"
+    "node-pg-migrate": "^7.6.1",
+    "prettier": "^3.9.6",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
   }
 }

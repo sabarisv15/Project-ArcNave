@@ -39,11 +39,12 @@ const PDFDocument = require('pdfkit');
 const { GoogleAuth } = require('google-auth-library');
 const config = require('../src/config');
 
-const GENERIC_PROMPT = 'This document contains a table. Extract EVERY row as a JSON array of arrays — '
-  + 'one inner array per row, each element the exact text of one cell/column on that row, left to right, '
-  + 'in reading order. Do not merge rows together. Do not skip any row, even if the table spans multiple '
-  + 'pages. Do not interpret or label the columns — return the raw cell text only. '
-  + 'Return ONLY the JSON array, no prose, no markdown fence.';
+const GENERIC_PROMPT =
+  'This document contains a table. Extract EVERY row as a JSON array of arrays — ' +
+  'one inner array per row, each element the exact text of one cell/column on that row, left to right, ' +
+  'in reading order. Do not merge rows together. Do not skip any row, even if the table spans multiple ' +
+  'pages. Do not interpret or label the columns — return the raw cell text only. ' +
+  'Return ONLY the JSON array, no prose, no markdown fence.';
 
 async function accessToken() {
   const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
@@ -64,13 +65,12 @@ async function askGemini(token, base64) {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
     body: JSON.stringify({
-      contents: [{
-        role: 'user',
-        parts: [
-          { inline_data: { mime_type: 'application/pdf', data: base64 } },
-          { text: GENERIC_PROMPT },
-        ],
-      }],
+      contents: [
+        {
+          role: 'user',
+          parts: [{ inline_data: { mime_type: 'application/pdf', data: base64 } }, { text: GENERIC_PROMPT }],
+        },
+      ],
       generationConfig: { temperature: 0.4, maxOutputTokens: 16384 },
     }),
   });
@@ -83,7 +83,10 @@ async function askGemini(token, base64) {
     .flatMap((c) => (c.content && c.content.parts) || [])
     .map((p) => p.text || '')
     .join('');
-  const cleaned = text.replace(/^```(?:json)?/m, '').replace(/```\s*$/m, '').trim();
+  const cleaned = text
+    .replace(/^```(?:json)?/m, '')
+    .replace(/```\s*$/m, '')
+    .trim();
   try {
     return { rows: JSON.parse(cleaned), raw: text, ms, inTok, finish };
   } catch {
@@ -155,14 +158,22 @@ function buildLedgerPdf(rowsPerPage, pageCount) {
       debitTotal += debit;
       creditTotal += credit;
       rows.push({
-        n, date, type, desc: `TRANSACTION FOR ROW ${n}`, debit, credit,
+        n,
+        date,
+        type,
+        desc: `TRANSACTION FOR ROW ${n}`,
+        debit,
+        credit,
       });
       doc.text(`${date} ${type} TRANSACTION FOR ROW ${n} ${debit}.00 ${credit}.00`);
     }
   }
   doc.end();
   return done.then(() => ({
-    buffer: Buffer.concat(chunks), rows, debitTotal, creditTotal,
+    buffer: Buffer.concat(chunks),
+    rows,
+    debitTotal,
+    creditTotal,
   }));
 }
 
@@ -187,9 +198,11 @@ async function main() {
       const n = Number(String(last).replace(/,/g, ''));
       return Number.isFinite(n) ? s + n : s;
     }, 0);
-    console.log(`  MARKS total, summed by column index over the model's own cells (the shape `
-      + `documentAggregateService already consumes unchanged): ${marksTotal}`
-      + ` (ground truth ${a.total}, ${marksTotal === a.total ? 'MATCH' : 'MISMATCH'})`);
+    console.log(
+      `  MARKS total, summed by column index over the model's own cells (the shape ` +
+        `documentAggregateService already consumes unchanged): ${marksTotal}` +
+        ` (ground truth ${a.total}, ${marksTotal === a.total ? 'MATCH' : 'MISMATCH'})`,
+    );
   }
 
   // --- Shape B: ledger, 15 rows/page x 6 pages = 90 rows ------------------
@@ -214,14 +227,22 @@ async function main() {
       if (Number.isFinite(debit)) debitTotal += debit;
       if (Number.isFinite(credit)) creditTotal += credit;
     });
-    console.log(`  DEBIT total : ${debitTotal} (ground truth ${b.debitTotal}, `
-      + `${debitTotal === b.debitTotal ? 'MATCH' : 'MISMATCH'})`);
-    console.log(`  CREDIT total: ${creditTotal} (ground truth ${b.creditTotal}, `
-      + `${creditTotal === b.creditTotal ? 'MATCH' : 'MISMATCH'})`);
+    console.log(
+      `  DEBIT total : ${debitTotal} (ground truth ${b.debitTotal}, ` +
+        `${debitTotal === b.debitTotal ? 'MATCH' : 'MISMATCH'})`,
+    );
+    console.log(
+      `  CREDIT total: ${creditTotal} (ground truth ${b.creditTotal}, ` +
+        `${creditTotal === b.creditTotal ? 'MATCH' : 'MISMATCH'})`,
+    );
   }
 
-  console.log('\n(same GENERIC_PROMPT used for both shapes — no per-shape code, '
-    + 'no document-family knowledge in the prompt)');
+  console.log(
+    '\n(same GENERIC_PROMPT used for both shapes — no per-shape code, ' + 'no document-family knowledge in the prompt)',
+  );
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

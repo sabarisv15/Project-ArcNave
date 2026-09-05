@@ -53,7 +53,10 @@ const configurationService = require('./configurationService');
 const STORAGE_CONFIGURATION_CATEGORY = 'storage';
 
 async function resolveStorageProviderName(client, collegeId) {
-  const row = await configurationService.getConfiguration(client, { collegeId, category: STORAGE_CONFIGURATION_CATEGORY });
+  const row = await configurationService.getConfiguration(client, {
+    collegeId,
+    category: STORAGE_CONFIGURATION_CATEGORY,
+  });
   return (row && row.configuration && row.configuration.provider) || storageProviderRegistry.DEFAULT_PROVIDER_NAME;
 }
 
@@ -264,9 +267,24 @@ function assertValidReviewStatus(status) {
 // uploads) enforce that themselves before calling this — the same
 // "role check/shape check happens at the specific wrapper, the shared
 // write path stays permissive" split uploadTemplate already uses.
-async function uploadDocument(client, {
-  collegeId, studentId, classId, docType, title, folderName, academicYearId, departmentId, categoryId, fileName, mimeType, fileBuffer,
-}, { actorUserId } = {}) {
+async function uploadDocument(
+  client,
+  {
+    collegeId,
+    studentId,
+    classId,
+    docType,
+    title,
+    folderName,
+    academicYearId,
+    departmentId,
+    categoryId,
+    fileName,
+    mimeType,
+    fileBuffer,
+  },
+  { actorUserId } = {},
+) {
   if (!docType || !fileName || !mimeType || !fileBuffer || !actorUserId) {
     throw new DocumentValidationError('docType, fileName, mimeType, fileBuffer, and actorUserId are required');
   }
@@ -348,18 +366,22 @@ async function uploadDocument(client, {
 // storage I/O, same reason fileStorage.js itself takes no `client`.
 class DraftDocumentValidationError extends Error {}
 
-async function storeDraftAdmissionDocument({
-  collegeId, draftId, docType, fileName, mimeType, fileBuffer,
-}) {
+async function storeDraftAdmissionDocument({ collegeId, draftId, docType, fileName, mimeType, fileBuffer }) {
   if (!collegeId || !draftId || !docType || !fileName || !fileBuffer) {
     throw new DraftDocumentValidationError('collegeId, draftId, docType, fileName, and fileBuffer are required');
   }
   const storagePath = fileStorage.buildDraftStoragePath({
-    collegeId, draftId, docType, fileName,
+    collegeId,
+    draftId,
+    docType,
+    fileName,
   });
   await fileStorage.writeFile(storagePath, fileBuffer);
   return {
-    storagePath, fileName, mimeType, fileSizeBytes: fileBuffer.length,
+    storagePath,
+    fileName,
+    mimeType,
+    fileSizeBytes: fileBuffer.length,
   };
 }
 
@@ -484,10 +506,23 @@ async function listDocumentsForClass(client, classId) {
 // way through it. Skipped entirely when documentGroupId is set: a
 // deliberate new version of an already-known document is not a
 // duplicate-upload scenario, it's the versioning flow above.
-async function uploadInstitutionalDocument(client, {
-  collegeId, title, categoryId, academicYearId, departmentId, classId, fileName, mimeType, fileBuffer,
-  documentGroupId, confirmUpload,
-}, { actorUserId } = {}) {
+async function uploadInstitutionalDocument(
+  client,
+  {
+    collegeId,
+    title,
+    categoryId,
+    academicYearId,
+    departmentId,
+    classId,
+    fileName,
+    mimeType,
+    fileBuffer,
+    documentGroupId,
+    confirmUpload,
+  },
+  { actorUserId } = {},
+) {
   if (!title || !String(title).trim()) {
     throw new DocumentValidationError('title is required');
   }
@@ -528,7 +563,10 @@ async function uploadInstitutionalDocument(client, {
   if (!documentGroupId && contentHash && !confirmUpload) {
     const exactMatches = await documentRepository.findByContentHash(client, { collegeId, contentHash });
     const similarMatches = await documentRepository.findSimilarInstitutional(client, {
-      collegeId, title: title.trim(), categoryId: resolvedCategoryId, academicYearId: resolvedAcademicYearId,
+      collegeId,
+      title: title.trim(),
+      categoryId: resolvedCategoryId,
+      academicYearId: resolvedAcademicYearId,
     });
     const duplicates = [...exactMatches, ...similarMatches.filter((d) => !exactMatches.some((e) => e.id === d.id))];
     if (duplicates.length > 0) {
@@ -589,9 +627,11 @@ async function uploadInstitutionalDocument(client, {
 // as isStaffTierRole's own actorRole === undefined branch, this
 // defaults to "no filter," never to the more restrictive behavior, so
 // this is purely additive for any caller that doesn't opt in.
-async function listInstitutionalDocuments(client, {
-  docType, classId, categoryId, academicYearId, departmentId, search, limit,
-} = {}, { actorRole } = {}) {
+async function listInstitutionalDocuments(
+  client,
+  { docType, classId, categoryId, academicYearId, departmentId, search, limit } = {},
+  { actorRole } = {},
+) {
   return documentRepository.findInstitutional(client, {
     docType,
     classId,
@@ -618,23 +658,29 @@ async function getLatestDocumentForStudentAndType(client, studentId, docType) {
 // second use case existed.
 const PERSONAL_DOC_TYPE = 'personal';
 
-async function uploadPersonalDocument(client, {
-  collegeId, title, folderName, fileName, mimeType, fileBuffer,
-}, { actorUserId } = {}) {
+async function uploadPersonalDocument(
+  client,
+  { collegeId, title, folderName, fileName, mimeType, fileBuffer },
+  { actorUserId } = {},
+) {
   if (!title || !String(title).trim()) {
     throw new DocumentValidationError('title is required');
   }
-  return uploadDocument(client, {
-    collegeId,
-    studentId: null,
-    classId: null,
-    docType: PERSONAL_DOC_TYPE,
-    title: title.trim(),
-    folderName: folderName ? String(folderName).trim() || null : null,
-    fileName,
-    mimeType,
-    fileBuffer,
-  }, { actorUserId });
+  return uploadDocument(
+    client,
+    {
+      collegeId,
+      studentId: null,
+      classId: null,
+      docType: PERSONAL_DOC_TYPE,
+      title: title.trim(),
+      folderName: folderName ? String(folderName).trim() || null : null,
+      fileName,
+      mimeType,
+      fileBuffer,
+    },
+    { actorUserId },
+  );
 }
 
 async function listPersonalDocuments(client, { actorUserId }) {
@@ -659,7 +705,9 @@ async function loadOwnedPersonalDocument(client, id, actorUserId) {
     return null;
   }
   if (document.doc_type !== PERSONAL_DOC_TYPE || document.uploaded_by_user_id !== actorUserId) {
-    throw new DocumentNotAuthorizedError(`user ${JSON.stringify(actorUserId)} may not modify document ${JSON.stringify(id)}`);
+    throw new DocumentNotAuthorizedError(
+      `user ${JSON.stringify(actorUserId)} may not modify document ${JSON.stringify(id)}`,
+    );
   }
   return document;
 }
@@ -720,14 +768,18 @@ async function duplicatePersonalDocument(client, id, { actorUserId } = {}) {
   const dot = document.file_name.lastIndexOf('.');
   const base = dot > 0 ? document.file_name.slice(0, dot) : document.file_name;
   const ext = dot > 0 ? document.file_name.slice(dot) : '';
-  return uploadPersonalDocument(client, {
-    collegeId: document.college_id,
-    title: `${document.title || base} (copy)`,
-    folderName: document.folder_name,
-    fileName: `${base} (copy)${ext}`,
-    mimeType: document.mime_type,
-    fileBuffer: buffer,
-  }, { actorUserId });
+  return uploadPersonalDocument(
+    client,
+    {
+      collegeId: document.college_id,
+      title: `${document.title || base} (copy)`,
+      folderName: document.folder_name,
+      fileName: `${base} (copy)${ext}`,
+      mimeType: document.mime_type,
+      fileBuffer: buffer,
+    },
+    { actorUserId },
+  );
 }
 
 // The natural "what templates can I generate from" listing a picker
@@ -785,13 +837,17 @@ async function mergeDocumentTemplate(client, templateId, fields, { actorUserId }
   const templateBuffer = await fileStorage.readFile(document.storage_path, { providerName });
   const buffer = templateMerger.mergeTemplate(templateBuffer, fields);
 
-  const mergedDocument = await uploadDocument(client, {
-    collegeId: document.college_id,
-    docType: MERGED_DOC_TYPE,
-    fileName: `merged-${document.file_name}`,
-    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    fileBuffer: buffer,
-  }, { actorUserId });
+  const mergedDocument = await uploadDocument(
+    client,
+    {
+      collegeId: document.college_id,
+      docType: MERGED_DOC_TYPE,
+      fileName: `merged-${document.file_name}`,
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      fileBuffer: buffer,
+    },
+    { actorUserId },
+  );
 
   return { document: mergedDocument, buffer };
 }
@@ -944,10 +1000,15 @@ async function getVersionHistory(client, documentGroupId) {
 // everything else (a real PDF/DOCX text diff is out of scope for this
 // slice — flagged, not silently guessed at).
 const METADATA_DIFF_FIELDS = [
-  ['title', 'title'], ['file_name', 'file_name'], ['mime_type', 'mime_type'],
-  ['file_size_bytes', 'file_size_bytes'], ['category_id', 'category_id'],
-  ['department_id', 'department_id'], ['academic_year_id', 'academic_year_id'],
-  ['publication_status', 'publication_status'], ['content_hash', 'content_hash'],
+  ['title', 'title'],
+  ['file_name', 'file_name'],
+  ['mime_type', 'mime_type'],
+  ['file_size_bytes', 'file_size_bytes'],
+  ['category_id', 'category_id'],
+  ['department_id', 'department_id'],
+  ['academic_year_id', 'academic_year_id'],
+  ['publication_status', 'publication_status'],
+  ['content_hash', 'content_hash'],
 ];
 
 function diffTextContent(bufferA, bufferB) {
@@ -1001,7 +1062,10 @@ async function compareDocumentVersions(client, versionAId, versionBId) {
   }
 
   return {
-    versionA, versionB, metadataDiff, contentDiff,
+    versionA,
+    versionB,
+    metadataDiff,
+    contentDiff,
   };
 }
 
@@ -1145,7 +1209,9 @@ async function loadPendingRequestForDocument(client, entityType, documentId) {
   const document = await loadInstitutionalDocumentOrThrow(client, documentId);
   const pending = await workflowService.findPendingForEntity(client, entityType, documentId);
   if (pending === null) {
-    throw new DocumentNoPendingRequestError(`document ${JSON.stringify(documentId)} has no pending ${entityType} request`);
+    throw new DocumentNoPendingRequestError(
+      `document ${JSON.stringify(documentId)} has no pending ${entityType} request`,
+    );
   }
   return { document, pending };
 }
@@ -1158,7 +1224,11 @@ async function loadPendingRequestForDocument(client, entityType, documentId) {
 // composing, not two unrelated features) — never left for someone to
 // remember as a separate manual step.
 async function approvePublish(client, documentId, { actorUserId, remarks } = {}) {
-  const { document, pending } = await loadPendingRequestForDocument(client, 'institutional_document_publish', documentId);
+  const { document, pending } = await loadPendingRequestForDocument(
+    client,
+    'institutional_document_publish',
+    documentId,
+  );
   await workflowService.approveRequest(client, pending.id, { actorUserId, remarks });
 
   const siblings = await documentRepository.findByGroupId(client, document.document_group_id);
@@ -1193,7 +1263,11 @@ async function approvePublish(client, documentId, { actorUserId, remarks } = {})
 }
 
 async function rejectPublish(client, documentId, { actorUserId, remarks } = {}) {
-  const { document, pending } = await loadPendingRequestForDocument(client, 'institutional_document_publish', documentId);
+  const { document, pending } = await loadPendingRequestForDocument(
+    client,
+    'institutional_document_publish',
+    documentId,
+  );
   await workflowService.rejectRequest(client, pending.id, { actorUserId, remarks });
 
   await auditLogRepository.createAuditLogEntry(client, {
@@ -1247,7 +1321,11 @@ async function submitSupersedeRequest(client, documentId, { requestedByUserId, o
 }
 
 async function approveSupersede(client, documentId, { actorUserId, remarks } = {}) {
-  const { document, pending } = await loadPendingRequestForDocument(client, 'institutional_document_supersede', documentId);
+  const { document, pending } = await loadPendingRequestForDocument(
+    client,
+    'institutional_document_supersede',
+    documentId,
+  );
   await workflowService.approveRequest(client, pending.id, { actorUserId, remarks });
 
   const updated = await documentRepository.update(client, documentId, {
@@ -1268,7 +1346,11 @@ async function approveSupersede(client, documentId, { actorUserId, remarks } = {
 }
 
 async function rejectSupersede(client, documentId, { actorUserId, remarks } = {}) {
-  const { document, pending } = await loadPendingRequestForDocument(client, 'institutional_document_supersede', documentId);
+  const { document, pending } = await loadPendingRequestForDocument(
+    client,
+    'institutional_document_supersede',
+    documentId,
+  );
   await workflowService.rejectRequest(client, pending.id, { actorUserId, remarks });
 
   await auditLogRepository.createAuditLogEntry(client, {

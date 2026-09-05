@@ -124,7 +124,8 @@ async function execute(label, code) {
   // Reported, not interpreted — see the file comment on why this number
   // cannot tell cold from warm.
   console.log(`${label}: ${elapsed} ms wall (sandbox exec clock ${uptime}s)`);
-  stdout.split('\n')
+  stdout
+    .split('\n')
     .filter((line) => /^(IMPORT|SOFFICE)/.test(line))
     .forEach((line) => console.log(`    ${line}`));
   if (body.stderr) console.log(`    stderr: ${String(body.stderr).slice(0, 300)}`);

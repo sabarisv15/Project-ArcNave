@@ -26,13 +26,21 @@ async function look(label, fileName, mime) {
 }
 
 async function main() {
-  await look('PROSE DOCX', 'Microcontrollers - Complete Technical Overview.docx',
-    textExtraction.DOCX_MIME_TYPE);
+  await look('PROSE DOCX', 'Microcontrollers - Complete Technical Overview.docx', textExtraction.DOCX_MIME_TYPE);
 
-  const csvText = await look('REAL GST CSV', 'MyReport_Taxable_inward_supplies_received_from_registered_persons.csv',
-    'text/csv');
+  const csvText = await look(
+    'REAL GST CSV',
+    'MyReport_Taxable_inward_supplies_received_from_registered_persons.csv',
+    'text/csv',
+  );
   console.log('\n  why "none"? first 6 lines of the extracted text:');
-  csvText.split('\n').slice(0, 6).forEach((l, i) => console.log(`   ${i}`, JSON.stringify(l).slice(0, 190)));
+  csvText
+    .split('\n')
+    .slice(0, 6)
+    .forEach((l, i) => console.log(`   ${i}`, JSON.stringify(l).slice(0, 190)));
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

@@ -3,6 +3,7 @@
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const config = require('./config');
 const { appPool } = require('./db/pool');
 const asyncHandler = require('./middleware/asyncHandler');
@@ -13,6 +14,7 @@ const { sessionRevocationMiddleware } = require('./middleware/sessionRevocation'
 const { identityMiddleware } = require('./middleware/identity');
 const errorHandler = require('./middleware/errorHandler');
 const createAuthRouter = require('./routes/auth');
+const createOpenApiRouter = require('./routes/openapi');
 const createConfigurationsRouter = require('./routes/configurations');
 const createAiConfigRouter = require('./routes/aiConfig');
 const createInvitationsRouter = require('./routes/invitations');
@@ -92,19 +94,26 @@ function createTenantApp({ registerExtraRoutes } = {}) {
   // here, this is standard baseline hardening for any HTTP surface.
   app.use(helmet());
   // CORS — a single explicit origin (config.frontendOrigin), never a
-  // wildcard (see config.js's own comment on why). No credentials:
-  // true — this app has no cookie-based auth anywhere (bearer tokens
-  // only, see security.js), so the browser never needs permission to
-  // forward cookies cross-origin. allowedHeaders lists every custom
-  // header a real cross-origin frontend request actually sends today:
-  // Authorization (the bearer token), X-Request-ID (requestContext.js's
-  // own client-settable correlation id), and Idempotency-Key (the
-  // AI tool-invoke idempotency header — see routes/ai.js).
-  app.use(cors({
-    origin: config.frontendOrigin,
-    credentials: false,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'Idempotency-Key'],
-  }));
+  // wildcard (see config.js's own comment on why). `credentials: true`
+  // (ARCNAVE modernization P0, PDF 5.1 / clash C6) lets the browser
+  // send/receive the httpOnly refresh-token cookie cross-origin — safe
+  // specifically because the origin allow-list is a single explicit
+  // value, never a wildcard; `cors` itself refuses to combine
+  // `credentials: true` with `origin: '*'`. Access tokens are still
+  // bearer-in-header (see security.js), unaffected by this.
+  // allowedHeaders lists every custom header a real cross-origin
+  // frontend request actually sends today: Authorization (the bearer
+  // token), X-Request-ID (requestContext.js's own client-settable
+  // correlation id), and Idempotency-Key (the AI tool-invoke
+  // idempotency header — see routes/ai.js).
+  app.use(
+    cors({
+      origin: config.frontendOrigin,
+      credentials: true,
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'Idempotency-Key'],
+    }),
+  );
+  app.use(cookieParser());
 
   // Path-scoped, ahead of the global default below — deliberately, not
   // incidentally. Pre-launch audit finding: body-parser's json
@@ -131,10 +140,26 @@ function createTenantApp({ registerExtraRoutes } = {}) {
   // authMiddleware/tenantMiddleware on purpose: a liveness probe
   // shouldn't require a resolved tenant (or even a transaction) to
   // succeed, same as the Python version's /health not needing one.
-  app.get('/health', asyncHandler(async (req, res) => {
-    await appPool.query('SELECT 1');
-    res.json({ status: 'ok' });
-  }));
+  app.get(
+    '/health',
+    asyncHandler(async (req, res) => {
+      await appPool.query('SELECT 1');
+      // ARCNAVE modernization P3 (D1) — pull-based pool-exhaustion
+      // visibility, same live gauges tenantConnection.js's own
+      // db_pool_contention warning reads. Cheap (property reads, no
+      // extra query) and additive — `status: 'ok'` is unchanged for
+      // every existing caller of this endpoint.
+      res.json({
+        status: 'ok',
+        pool: { total: appPool.totalCount, idle: appPool.idleCount, waiting: appPool.waitingCount },
+      });
+    }),
+  );
+
+  // ARCNAVE modernization P1 (PDF 4.8) — generated API documentation,
+  // same "no tenant/transaction needed" reasoning as /health above:
+  // reading the schema shape a route enforces isn't tenant data.
+  app.use(createOpenApiRouter());
 
   // POST /invitations/accept — also registered before authMiddleware/
   // tenantMiddleware, same reasoning as /health: this route resolves
@@ -173,17 +198,18 @@ function createTenantApp({ registerExtraRoutes } = {}) {
   // from the database itself, not any in-memory value TenantMiddleware
   // computed. A passing response is only possible if every step
   // actually ran, not just that the middleware thinks it did.
-  app.get('/whoami', asyncHandler(async (req, res) => {
-    const result = await req.dbClient.query(
-      "SELECT current_setting('app.current_tenant', true) AS college_id",
-    );
-    const collegeId = result.rows[0] ? result.rows[0].college_id : null;
-    if (!collegeId) {
-      res.status(400).json({ detail: 'No tenant could be resolved for this request' });
-      return;
-    }
-    res.json({ college_id: collegeId });
-  }));
+  app.get(
+    '/whoami',
+    asyncHandler(async (req, res) => {
+      const result = await req.dbClient.query("SELECT current_setting('app.current_tenant', true) AS college_id");
+      const collegeId = result.rows[0] ? result.rows[0].college_id : null;
+      if (!collegeId) {
+        res.status(400).json({ detail: 'No tenant could be resolved for this request' });
+        return;
+      }
+      res.json({ college_id: collegeId });
+    }),
+  );
 
   // Ordinary tenant-scoped routes, registered after tenantMiddleware
   // like whoami above — not to be confused with AuthMiddleware.

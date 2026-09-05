@@ -36,7 +36,9 @@ async function assertOwnedFolder(client, id, actorUserId) {
     throw new PersonalDocumentFolderNotFoundError(`personal document folder ${JSON.stringify(id)} does not exist`);
   }
   if (folder.owner_user_id !== actorUserId) {
-    throw new PersonalDocumentFolderForbiddenError(`user ${JSON.stringify(actorUserId)} does not own folder ${JSON.stringify(id)}`);
+    throw new PersonalDocumentFolderForbiddenError(
+      `user ${JSON.stringify(actorUserId)} does not own folder ${JSON.stringify(id)}`,
+    );
   }
   return folder;
 }
@@ -48,7 +50,9 @@ async function assertValidParent(client, parentId, { actorUserId, excludeId } = 
   }
   const parent = await personalDocumentFolderRepository.findById(client, parentId);
   if (parent === null || parent.owner_user_id !== actorUserId) {
-    throw new PersonalDocumentFolderParentNotFoundError(`personal document folder ${JSON.stringify(parentId)} does not exist`);
+    throw new PersonalDocumentFolderParentNotFoundError(
+      `personal document folder ${JSON.stringify(parentId)} does not exist`,
+    );
   }
   if (excludeId === undefined) return;
   // Walk the parent's own ancestor chain — if excludeId (the folder
@@ -79,7 +83,10 @@ async function createFolder(client, { name, parentId }, { actorUserId, collegeId
 
   try {
     return await personalDocumentFolderRepository.create(client, {
-      collegeId, ownerUserId: actorUserId, name: trimmed, parentId: parentId ?? null,
+      collegeId,
+      ownerUserId: actorUserId,
+      name: trimmed,
+      parentId: parentId ?? null,
     });
   } catch (err) {
     if (err.code === '23505') {

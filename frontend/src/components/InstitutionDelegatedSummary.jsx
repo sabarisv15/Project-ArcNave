@@ -55,7 +55,7 @@ export function InstitutionDelegatedSummary({ provisioning = PROVISIONING }) {
       <dl className="m-0 px-[14px] py-[4px]">
         <Row
           label="Held by"
-          value={seat.state === 'active' ? seat.holderName : seat.invitedEmail ?? '—'}
+          value={seat.state === 'active' ? seat.holderName : (seat.invitedEmail ?? '—')}
           hint={
             seat.state === 'active'
               ? `${seat.holderDesignation} · since ${seat.since}`
@@ -64,11 +64,7 @@ export function InstitutionDelegatedSummary({ provisioning = PROVISIONING }) {
                 : 'The position is configured but nobody holds it. Anything routed to it waits.'
           }
         />
-        <Row
-          label="Delegated scope"
-          value={scope.areas.join(' · ')}
-          hint={scope.note}
-        />
+        <Row label="Delegated scope" value={scope.areas.join(' · ')} hint={scope.note} />
         <Row
           label="Approval chain"
           value={inChain ? 'In the timetable approval chain' : 'Not in the timetable approval chain'}

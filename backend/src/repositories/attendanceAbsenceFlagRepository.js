@@ -5,9 +5,7 @@
 // flag is a permanent fact; closing it sets closed_at/closed_by_user_id/
 // closure_remarks, never removes the row (ADL-011: "closure... logged").
 
-async function create(client, {
-  collegeId, studentId, classId, consecutiveAbsentDays,
-}) {
+async function create(client, { collegeId, studentId, classId, consecutiveAbsentDays }) {
   const result = await client.query(
     `INSERT INTO attendance_absence_flags
        (college_id, student_id, class_id, consecutive_absent_days)
@@ -82,5 +80,10 @@ async function close(client, id, { closedByUserId, remarks }) {
 }
 
 module.exports = {
-  create, findById, findOutstandingForStudent, findOutstandingForStudents, listOutstanding, close,
+  create,
+  findById,
+  findOutstandingForStudent,
+  findOutstandingForStudents,
+  listOutstanding,
+  close,
 };

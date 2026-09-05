@@ -28,7 +28,10 @@ test('security.createAccessToken embeds token_version', async (t) => {
 
   await t.test('carries an explicit tokenVersion through', () => {
     const token = security.createAccessToken({
-      userId: 'u1', collegeId: 'c1', role: 'staff', tokenVersion: 7,
+      userId: 'u1',
+      collegeId: 'c1',
+      role: 'staff',
+      tokenVersion: 7,
     });
     const claims = jwt.verify(token, config.jwtSecretKey, { algorithms: [config.jwtAlgorithm] });
     assert.equal(claims.token_version, 7);
@@ -59,7 +62,9 @@ test('sessionRevocationMiddleware', async (t) => {
     const req = { jwtClaims: { sub: 'u1', type: 'access', token_version: 3 }, dbClient: {} };
     const res = fakeRes();
     let nextCalled = false;
-    await sessionRevocationMiddleware(req, res, () => { nextCalled = true; });
+    await sessionRevocationMiddleware(req, res, () => {
+      nextCalled = true;
+    });
 
     assert.equal(nextCalled, true);
     assert.equal(res.statusCode, null);
@@ -72,7 +77,9 @@ test('sessionRevocationMiddleware', async (t) => {
     const req = { jwtClaims: { sub: 'u1', type: 'access', token_version: 3 }, dbClient: {} };
     const res = fakeRes();
     let nextCalled = false;
-    await sessionRevocationMiddleware(req, res, () => { nextCalled = true; });
+    await sessionRevocationMiddleware(req, res, () => {
+      nextCalled = true;
+    });
 
     assert.equal(nextCalled, false);
     assert.equal(res.statusCode, 401);
@@ -85,7 +92,9 @@ test('sessionRevocationMiddleware', async (t) => {
     const req = { jwtClaims: { sub: 'ghost', type: 'access', token_version: 0 }, dbClient: {} };
     const res = fakeRes();
     let nextCalled = false;
-    await sessionRevocationMiddleware(req, res, () => { nextCalled = true; });
+    await sessionRevocationMiddleware(req, res, () => {
+      nextCalled = true;
+    });
 
     assert.equal(nextCalled, false);
     assert.equal(res.statusCode, 401);
@@ -98,7 +107,9 @@ test('sessionRevocationMiddleware', async (t) => {
     const req = { jwtClaims: null, dbClient: {} };
     const res = fakeRes();
     let nextCalled = false;
-    await sessionRevocationMiddleware(req, res, () => { nextCalled = true; });
+    await sessionRevocationMiddleware(req, res, () => {
+      nextCalled = true;
+    });
 
     assert.equal(nextCalled, true);
     assert.equal(getVersionMock.mock.callCount(), 0);
@@ -108,46 +119,72 @@ test('sessionRevocationMiddleware', async (t) => {
   // position_accounts.token_version via positionAccountAuthService,
   // never authService/users.token_version — proven by asserting each
   // mock is called (or not) for the matching claim type.
-  await t.test('position_access: lets a request through whose token_version matches position_accounts, never touching authService', async () => {
-    const userVersionMock = t.mock.method(authService, 'getCurrentTokenVersion', async () => { throw new Error('must not be called for position_access'); });
-    const positionVersionMock = t.mock.method(positionAccountAuthService, 'getCurrentPositionAccountTokenVersion', async () => 2);
-    t.after(() => {
-      userVersionMock.mock.restore();
-      positionVersionMock.mock.restore();
-    });
+  await t.test(
+    'position_access: lets a request through whose token_version matches position_accounts, never touching authService',
+    async () => {
+      const userVersionMock = t.mock.method(authService, 'getCurrentTokenVersion', async () => {
+        throw new Error('must not be called for position_access');
+      });
+      const positionVersionMock = t.mock.method(
+        positionAccountAuthService,
+        'getCurrentPositionAccountTokenVersion',
+        async () => 2,
+      );
+      t.after(() => {
+        userVersionMock.mock.restore();
+        positionVersionMock.mock.restore();
+      });
 
-    const req = { jwtClaims: { sub: 'acct-1', type: 'position_access', token_version: 2 }, dbClient: {} };
-    const res = fakeRes();
-    let nextCalled = false;
-    await sessionRevocationMiddleware(req, res, () => { nextCalled = true; });
+      const req = { jwtClaims: { sub: 'acct-1', type: 'position_access', token_version: 2 }, dbClient: {} };
+      const res = fakeRes();
+      let nextCalled = false;
+      await sessionRevocationMiddleware(req, res, () => {
+        nextCalled = true;
+      });
 
-    assert.equal(nextCalled, true);
-    assert.equal(res.statusCode, null);
-    assert.equal(userVersionMock.mock.callCount(), 0);
-    assert.equal(positionVersionMock.mock.callCount(), 1);
-  });
+      assert.equal(nextCalled, true);
+      assert.equal(res.statusCode, null);
+      assert.equal(userVersionMock.mock.callCount(), 0);
+      assert.equal(positionVersionMock.mock.callCount(), 1);
+    },
+  );
 
-  await t.test('position_access: rejects a stale token_version independently of the same occupant\'s users.token_version', async () => {
-    const positionVersionMock = t.mock.method(positionAccountAuthService, 'getCurrentPositionAccountTokenVersion', async () => 5);
-    t.after(() => positionVersionMock.mock.restore());
+  await t.test(
+    "position_access: rejects a stale token_version independently of the same occupant's users.token_version",
+    async () => {
+      const positionVersionMock = t.mock.method(
+        positionAccountAuthService,
+        'getCurrentPositionAccountTokenVersion',
+        async () => 5,
+      );
+      t.after(() => positionVersionMock.mock.restore());
 
-    const req = { jwtClaims: { sub: 'acct-1', type: 'position_access', token_version: 4 }, dbClient: {} };
-    const res = fakeRes();
-    let nextCalled = false;
-    await sessionRevocationMiddleware(req, res, () => { nextCalled = true; });
+      const req = { jwtClaims: { sub: 'acct-1', type: 'position_access', token_version: 4 }, dbClient: {} };
+      const res = fakeRes();
+      let nextCalled = false;
+      await sessionRevocationMiddleware(req, res, () => {
+        nextCalled = true;
+      });
 
-    assert.equal(nextCalled, false);
-    assert.equal(res.statusCode, 401);
-  });
+      assert.equal(nextCalled, false);
+      assert.equal(res.statusCode, 401);
+    },
+  );
 
   await t.test('position_access: rejects a token naming a position account that no longer exists', async () => {
-    const positionVersionMock = t.mock.method(positionAccountAuthService, 'getCurrentPositionAccountTokenVersion', async () => null);
+    const positionVersionMock = t.mock.method(
+      positionAccountAuthService,
+      'getCurrentPositionAccountTokenVersion',
+      async () => null,
+    );
     t.after(() => positionVersionMock.mock.restore());
 
     const req = { jwtClaims: { sub: 'ghost-acct', type: 'position_access', token_version: 0 }, dbClient: {} };
     const res = fakeRes();
     let nextCalled = false;
-    await sessionRevocationMiddleware(req, res, () => { nextCalled = true; });
+    await sessionRevocationMiddleware(req, res, () => {
+      nextCalled = true;
+    });
 
     assert.equal(nextCalled, false);
     assert.equal(res.statusCode, 401);

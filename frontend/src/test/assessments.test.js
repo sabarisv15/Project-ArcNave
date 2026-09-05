@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  canPublish, eligibleScopes, initialAssessments, isValidMark, marksProgress, scopeById, studentsForScope,
-} from '../lib/assessmentsData';
+  canPublish,
+  eligibleScopes,
+  initialAssessments,
+  isValidMark,
+  marksProgress,
+  scopeById,
+  studentsForScope,
+} from '../features/assessments/lib/assessmentsData';
 import { ownedScopesForVersion, blocksForDay, ACTIVE_VERSION_ID } from '../lib/timetableData';
 
 describe('assessment scope is timetable-derived', () => {
@@ -53,7 +59,10 @@ describe('marks validation and publication', () => {
   });
 
   it('allows publish once every student has a valid entry', () => {
-    const full = { ...assessment, marks: Object.fromEntries(students.map((s) => [s.id, { value: 10, absent: false }])) };
+    const full = {
+      ...assessment,
+      marks: Object.fromEntries(students.map((s) => [s.id, { value: 10, absent: false }])),
+    };
     expect(canPublish(full, students)).toBe(true);
   });
 

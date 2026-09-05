@@ -37,28 +37,78 @@ const MAX_TITLE_CHARS = 120;
 // Structural/shape elements and text. Deliberately excludes every
 // element that can load, execute, or reference anything.
 const ALLOWED_ELEMENTS = new Set([
-  'svg', 'g', 'defs', 'title', 'desc',
-  'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'path',
-  'text', 'tspan',
-  'marker', 'linearGradient', 'radialGradient', 'stop',
+  'svg',
+  'g',
+  'defs',
+  'title',
+  'desc',
+  'rect',
+  'circle',
+  'ellipse',
+  'line',
+  'polyline',
+  'polygon',
+  'path',
+  'text',
+  'tspan',
+  'marker',
+  'linearGradient',
+  'radialGradient',
+  'stop',
 ]);
 
 // Presentation attributes only. No `href`, no `xlink:*`, no `on*`, no
 // `style` (which can carry `url(...)`), no `class`/`id` (nothing in a
 // static picture needs to be targetable from outside it).
 const ALLOWED_ATTRIBUTES = new Set([
-  'viewBox', 'width', 'height', 'xmlns', 'preserveAspectRatio',
-  'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry',
-  'd', 'points', 'transform',
-  'fill', 'fill-opacity', 'fill-rule',
-  'stroke', 'stroke-width', 'stroke-opacity', 'stroke-linecap',
-  'stroke-linejoin', 'stroke-dasharray',
+  'viewBox',
+  'width',
+  'height',
+  'xmlns',
+  'preserveAspectRatio',
+  'x',
+  'y',
+  'x1',
+  'y1',
+  'x2',
+  'y2',
+  'cx',
+  'cy',
+  'r',
+  'rx',
+  'ry',
+  'd',
+  'points',
+  'transform',
+  'fill',
+  'fill-opacity',
+  'fill-rule',
+  'stroke',
+  'stroke-width',
+  'stroke-opacity',
+  'stroke-linecap',
+  'stroke-linejoin',
+  'stroke-dasharray',
   'opacity',
-  'font-family', 'font-size', 'font-weight', 'font-style',
-  'text-anchor', 'dominant-baseline', 'dx', 'dy',
-  'offset', 'stop-color', 'stop-opacity',
-  'gradientUnits', 'gradientTransform',
-  'markerWidth', 'markerHeight', 'refX', 'refY', 'orient', 'markerUnits',
+  'font-family',
+  'font-size',
+  'font-weight',
+  'font-style',
+  'text-anchor',
+  'dominant-baseline',
+  'dx',
+  'dy',
+  'offset',
+  'stop-color',
+  'stop-opacity',
+  'gradientUnits',
+  'gradientTransform',
+  'markerWidth',
+  'markerHeight',
+  'refX',
+  'refY',
+  'orient',
+  'markerUnits',
 ]);
 
 // Checked against the whole document before parsing, so a payload hidden
@@ -103,7 +153,9 @@ function assertAttributesAllowed(rawAttributes, tagName) {
   while (attributeMatch !== null) {
     const [, attributeName] = attributeMatch;
     if (!ALLOWED_ATTRIBUTES.has(attributeName)) {
-      throw new AiDiagramValidationError(`diagram rejected: attribute ${JSON.stringify(attributeName)} is not allowed on <${tagName}>`);
+      throw new AiDiagramValidationError(
+        `diagram rejected: attribute ${JSON.stringify(attributeName)} is not allowed on <${tagName}>`,
+      );
     }
     attributeMatch = attributePattern.exec(rawAttributes || '');
   }
@@ -127,9 +179,7 @@ function assertElementsAndAttributes(svg) {
 }
 
 function buildDiagram(title, svg) {
-  const cleanTitle = title && typeof title === 'string' && title.trim()
-    ? title.trim().slice(0, MAX_TITLE_CHARS)
-    : null;
+  const cleanTitle = title && typeof title === 'string' && title.trim() ? title.trim().slice(0, MAX_TITLE_CHARS) : null;
   if (typeof svg !== 'string' || !svg.trim()) {
     throw new AiDiagramValidationError('svg is required and must be a non-empty string');
   }
@@ -163,9 +213,10 @@ function describeConstraints() {
       'url(...), @import, data: URLs, javascript: URLs',
       'DOCTYPE, ENTITY, CDATA, processing instructions',
     ],
-    guidance: 'Draw a static picture only: shapes, paths and text. Inline every colour as a fill or '
-      + 'stroke attribute. Give the root <svg> a viewBox so it scales. If a diagram needs an icon, draw '
-      + 'it as paths — no image can be referenced or embedded.',
+    guidance:
+      'Draw a static picture only: shapes, paths and text. Inline every colour as a fill or ' +
+      'stroke attribute. Give the root <svg> a viewBox so it scales. If a diagram needs an icon, draw ' +
+      'it as paths — no image can be referenced or embedded.',
   };
 }
 

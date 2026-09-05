@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requirePermission } = require('../middleware/rbac');
 const analyticsService = require('../services/analyticsService');
 const identityService = require('../services/identityService');
@@ -13,6 +15,16 @@ function requireResolvedTenant(req, res) {
   }
   return true;
 }
+
+const attendanceRateSchema = z.object({
+  query: z
+    .object({
+      class_id: z.string().optional(),
+      start_date: z.string().optional(),
+      end_date: z.string().optional(),
+    })
+    .optional(),
+});
 
 function createAnalyticsRouter() {
   const router = express.Router();
@@ -34,23 +46,35 @@ function createAnalyticsRouter() {
   // principal/hod (by resolved role) keep the exact prior behavior
   // unchanged (unscoped, class_id/date filters honored) — only a
   // genuinely resolved 'staff' takes the new scoped path.
-  router.get('/analytics/attendance-rate', requirePermission('analytics.attendance_rate.read'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { class_id: classId, start_date: startDate, end_date: endDate } = req.query;
-    if (req.capabilities.effectiveRole === 'staff') {
-      const rows = await analyticsService.getAttendanceRateForActor(
-        req.dbClient,
-        { actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.capabilities.effectiveRole, collegeId: req.collegeId },
-        { startDate, endDate },
-      );
+  router.get(
+    '/analytics/attendance-rate',
+    requirePermission('analytics.attendance_rate.read'),
+    validate(attendanceRateSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { class_id: classId, start_date: startDate, end_date: endDate } = req.query;
+      if (req.capabilities.effectiveRole === 'staff') {
+        const rows = await analyticsService.getAttendanceRateForActor(
+          req.dbClient,
+          {
+            actorUserId: identityService.resolveActorUserId(req.capabilities),
+            actorRole: req.capabilities.effectiveRole,
+            collegeId: req.collegeId,
+          },
+          { startDate, endDate },
+        );
+        res.json(rows);
+        return;
+      }
+      const rows = await analyticsService.getAttendanceRateByClass(req.dbClient, { classId, startDate, endDate });
       res.json(rows);
-      return;
-    }
-    const rows = await analyticsService.getAttendanceRateByClass(req.dbClient, { classId, startDate, endDate });
-    res.json(rows);
-  }));
+    }),
+  );
 
   return router;
 }
 
 module.exports = createAnalyticsRouter;
+module.exports.schemas = {
+  '/analytics/attendance-rate': { get: attendanceRateSchema },
+};

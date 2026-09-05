@@ -176,7 +176,9 @@ async function assertIsClassTutor(client, cls, actorUserId, actorRole) {
   if (actorRole !== 'class_tutor') {
     return false;
   }
-  const tutorUserId = cls ? await identityService.resolvePositionOccupant(client, { collegeId: cls.college_id, classId: cls.id }) : null;
+  const tutorUserId = cls
+    ? await identityService.resolvePositionOccupant(client, { collegeId: cls.college_id, classId: cls.id })
+    : null;
   return cls !== null && tutorUserId === actorUserId;
 }
 
@@ -185,9 +187,15 @@ async function assertIsClassTutor(client, cls, actorUserId, actorRole) {
 // gate. Refuses outright (FeePaymentAlreadyMarkedError) if the student
 // already has a row; any later change is requestFeeCorrection's job,
 // never a second call here.
-async function markFeePayment(client, { collegeId, studentId, status, receiptDocumentId }, { actorUserId, actorRole } = {}) {
+async function markFeePayment(
+  client,
+  { collegeId, studentId, status, receiptDocumentId },
+  { actorUserId, actorRole } = {},
+) {
   if (!collegeId || !studentId || !actorUserId || !status || !receiptDocumentId) {
-    throw new FeePaymentValidationError('collegeId, studentId, actorUserId, status, and receiptDocumentId are required');
+    throw new FeePaymentValidationError(
+      'collegeId, studentId, actorUserId, status, and receiptDocumentId are required',
+    );
   }
   assertValidFeePaymentStatus(status);
 
@@ -211,14 +219,20 @@ async function markFeePayment(client, { collegeId, studentId, status, receiptDoc
   let payment;
   try {
     payment = await feePaymentRepository.create(client, {
-      collegeId, studentId, status, markedByUserId: actorUserId, receiptDocumentId,
+      collegeId,
+      studentId,
+      status,
+      markedByUserId: actorUserId,
+      receiptDocumentId,
     });
   } catch (err) {
     if (err.code === '23503' && err.constraint === 'fee_payments_student_id_fkey') {
       throw new FeePaymentStudentNotFoundError(`studentId ${JSON.stringify(studentId)} does not exist`);
     }
     if (err.code === '23503' && err.constraint === 'fee_payments_receipt_document_id_fkey') {
-      throw new FeePaymentDocumentNotFoundError(`receiptDocumentId ${JSON.stringify(receiptDocumentId)} does not exist`);
+      throw new FeePaymentDocumentNotFoundError(
+        `receiptDocumentId ${JSON.stringify(receiptDocumentId)} does not exist`,
+      );
     }
     if (err.code === '23505' && err.constraint === 'fee_payments_student_id_key') {
       throw new FeePaymentConflictError(
@@ -320,7 +334,12 @@ async function listFeePayments(client, { limit, offset } = {}) {
 // now configure this chain like every other one, instead of the
 // hardcoded `[{ role: 'hod', ... }]` array this function used to build
 // itself.
-async function requestFeeCorrection(client, feePaymentId, { proposedStatus, reason } = {}, { requestedByUserId, origin = 'human' } = {}) {
+async function requestFeeCorrection(
+  client,
+  feePaymentId,
+  { proposedStatus, reason } = {},
+  { requestedByUserId, origin = 'human' } = {},
+) {
   if (!proposedStatus) {
     throw new FeeCorrectionValidationError('proposedStatus is required');
   }
@@ -341,7 +360,10 @@ async function requestFeeCorrection(client, feePaymentId, { proposedStatus, reas
     );
   }
   const approverChain = await workflowChainService.resolveApproverChain(client, {
-    collegeId: cls.college_id, entityType: 'fee_correction', classId: cls.id, departmentId: cls.department_id,
+    collegeId: cls.college_id,
+    entityType: 'fee_correction',
+    classId: cls.id,
+    departmentId: cls.department_id,
   });
 
   const workflowRequest = await workflowService.submitRequest(client, {
@@ -371,11 +393,15 @@ async function loadPendingFeeCorrectionApproval(client, correctionId) {
     throw new FeeCorrectionNotFoundError(`fee correction ${JSON.stringify(correctionId)} does not exist`);
   }
   if (correction.workflow_request_id === null) {
-    throw new FeeCorrectionNoPendingRequestError(`fee correction ${JSON.stringify(correctionId)} has no workflow request`);
+    throw new FeeCorrectionNoPendingRequestError(
+      `fee correction ${JSON.stringify(correctionId)} has no workflow request`,
+    );
   }
   const pending = await workflowService.getRequest(client, correction.workflow_request_id);
   if (pending === null || pending.status !== 'Pending') {
-    throw new FeeCorrectionNoPendingRequestError(`fee correction ${JSON.stringify(correctionId)} has no pending approval request`);
+    throw new FeeCorrectionNoPendingRequestError(
+      `fee correction ${JSON.stringify(correctionId)} has no pending approval request`,
+    );
   }
   return { correction, pending };
 }
@@ -447,7 +473,10 @@ async function checkScholarshipEligibility(client, collegeId, studentId, { actor
 
   if (student.annual_income === null || student.annual_income === undefined) {
     return {
-      eligible: false, reason: 'no_income_on_file', annualIncome: null, threshold: null,
+      eligible: false,
+      reason: 'no_income_on_file',
+      annualIncome: null,
+      threshold: null,
     };
   }
 
@@ -477,9 +506,12 @@ async function checkScholarshipEligibility(client, collegeId, studentId, { actor
 // criteria enforced here either: eligible is whatever the Tutor
 // decided, for whatever reason they recorded, per institution policy
 // this codebase doesn't (and per BusinessRules.md, shouldn't) encode.
-async function recordScholarshipDecision(client, studentId, {
-  schemeName, eligible, reason, supportingDocumentId,
-}, { actorUserId, actorRole } = {}) {
+async function recordScholarshipDecision(
+  client,
+  studentId,
+  { schemeName, eligible, reason, supportingDocumentId },
+  { actorUserId, actorRole } = {},
+) {
   if (!schemeName) {
     throw new ScholarshipDecisionValidationError('schemeName is required');
   }

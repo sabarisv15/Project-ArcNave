@@ -86,13 +86,23 @@ export const profileSchema = z
  */
 export const SECTION_FIELDS = {
   identity: [
-    'firstName', 'lastName', 'email', 'dateOfBirth', 'gender',
-    'designation', 'designationOther', 'appointmentType',
+    'firstName',
+    'lastName',
+    'email',
+    'dateOfBirth',
+    'gender',
+    'designation',
+    'designationOther',
+    'appointmentType',
   ],
   education: [
     'hasDoctorate',
-    'ugQualification', 'ugQualificationOther', 'ugSpecialization',
-    'pgQualification', 'pgQualificationOther', 'pgSpecialization',
+    'ugQualification',
+    'ugQualificationOther',
+    'ugSpecialization',
+    'pgQualification',
+    'pgQualificationOther',
+    'pgSpecialization',
     'totalExperienceYears',
   ],
   previous: ['previousInstitutions'],

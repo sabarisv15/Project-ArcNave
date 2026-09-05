@@ -79,10 +79,10 @@ function hostFor(subdomain) {
 async function seedTenant(adminPool, label) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const college = { collegeId: `fin${label}${suffix}`, subdomain: `fintenant${label}${suffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [college.collegeId, college.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    college.collegeId,
+    college.subdomain,
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userIds = {};
   for (const [username, role] of [
@@ -118,7 +118,10 @@ async function seedTenant(adminPool, label) {
     [college.collegeId, userIds.hoduser, department.rows[0].id],
   );
   await seedHodPosition(adminPool, {
-    collegeId: college.collegeId, userId: userIds.hoduser, departmentId: department.rows[0].id, passwordHash,
+    collegeId: college.collegeId,
+    userId: userIds.hoduser,
+    departmentId: department.rows[0].id,
+    passwordHash,
   });
 
   const cls = await adminPool.query(
@@ -126,7 +129,10 @@ async function seedTenant(adminPool, label) {
     [college.collegeId, 'Finance API Test Class', department.rows[0].id],
   );
   const { officialEmail: tutorEmail } = await seedClassTutorPosition(adminPool, {
-    collegeId: college.collegeId, userId: userIds.tutoruser, classId: cls.rows[0].id, passwordHash,
+    collegeId: college.collegeId,
+    userId: userIds.tutoruser,
+    classId: cls.rows[0].id,
+    passwordHash,
   });
 
   const receiptDoc = await adminPool.query(
@@ -148,7 +154,12 @@ async function seedTenant(adminPool, label) {
 async function seedStudent(adminPool, college, label) {
   const student = await adminPool.query(
     `INSERT INTO students (college_id, roll_no, full_name, class_id) VALUES ($1, $2, $3, $4) RETURNING id`,
-    [college.collegeId, `FIN-${label}-${crypto.randomUUID().slice(0, 6)}`, `Finance Test Student ${label}`, college.classId],
+    [
+      college.collegeId,
+      `FIN-${label}-${crypto.randomUUID().slice(0, 6)}`,
+      `Finance Test Student ${label}`,
+      college.classId,
+    ],
   );
   return student.rows[0].id;
 }
@@ -188,12 +199,10 @@ test('finance', async (t) => {
   });
 
   async function login(college, username) {
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/auth/login',
-      'POST',
-      { headers: { host: hostFor(college.subdomain) }, body: { username, password: PASSWORD } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/auth/login', 'POST', {
+      headers: { host: hostFor(college.subdomain) },
+      body: { username, password: PASSWORD },
+    });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -209,12 +218,10 @@ test('finance', async (t) => {
   // Position Account login — Position Occupancy alone (tutoruser's
   // personal login) no longer suffices.
   async function loginTutor(college) {
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/position-accounts/login',
-      'POST',
-      { headers: { host: hostFor(college.subdomain) }, body: { official_email: college.classTutorEmail, password: PASSWORD } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/position-accounts/login', 'POST', {
+      headers: { host: hostFor(college.subdomain) },
+      body: { official_email: college.classTutorEmail, password: PASSWORD },
+    });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -225,7 +232,9 @@ test('finance', async (t) => {
     const studentId = await seedStudent(adminPool, collegeA, 'mark1');
     const token = await loginTutor(collegeA);
     const resp = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, token), {
-      student_id: studentId, status: 'paid', receipt_document_id: collegeA.receiptDocumentId,
+      student_id: studentId,
+      status: 'paid',
+      receipt_document_id: collegeA.receiptDocumentId,
     });
     assert.equal(resp.status, 201);
     assert.equal(resp.body.student_id, studentId);
@@ -239,7 +248,8 @@ test('finance', async (t) => {
     const studentId = await seedStudent(adminPool, collegeA, 'nostatus');
     const token = await loginTutor(collegeA);
     const resp = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, token), {
-      student_id: studentId, receipt_document_id: collegeA.receiptDocumentId,
+      student_id: studentId,
+      receipt_document_id: collegeA.receiptDocumentId,
     });
     assert.equal(resp.status, 400);
   });
@@ -248,7 +258,8 @@ test('finance', async (t) => {
     const studentId = await seedStudent(adminPool, collegeA, 'noreceipt');
     const token = await loginTutor(collegeA);
     const resp = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, token), {
-      student_id: studentId, status: 'paid',
+      student_id: studentId,
+      status: 'paid',
     });
     assert.equal(resp.status, 400);
   });
@@ -257,7 +268,9 @@ test('finance', async (t) => {
     const studentId = await seedStudent(adminPool, collegeA, 'badstatus');
     const token = await loginTutor(collegeA);
     const resp = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, token), {
-      student_id: studentId, status: 'partially_paid', receipt_document_id: collegeA.receiptDocumentId,
+      student_id: studentId,
+      status: 'partially_paid',
+      receipt_document_id: collegeA.receiptDocumentId,
     });
     assert.equal(resp.status, 400);
   });
@@ -265,7 +278,9 @@ test('finance', async (t) => {
   await t.test('mark with a nonexistent student_id returns 404, not a 500', async () => {
     const token = await loginTutor(collegeA);
     const resp = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, token), {
-      student_id: crypto.randomUUID(), status: 'paid', receipt_document_id: collegeA.receiptDocumentId,
+      student_id: crypto.randomUUID(),
+      status: 'paid',
+      receipt_document_id: collegeA.receiptDocumentId,
     });
     assert.equal(resp.status, 404);
   });
@@ -274,7 +289,9 @@ test('finance', async (t) => {
     const studentId = await seedStudent(adminPool, collegeA, 'badreceipt');
     const token = await loginTutor(collegeA);
     const resp = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, token), {
-      student_id: studentId, status: 'paid', receipt_document_id: crypto.randomUUID(),
+      student_id: studentId,
+      status: 'paid',
+      receipt_document_id: crypto.randomUUID(),
     });
     assert.equal(resp.status, 404);
   });
@@ -282,46 +299,65 @@ test('finance', async (t) => {
   await t.test('mark requires authentication', async () => {
     const studentId = await seedStudent(adminPool, collegeA, 'noauth');
     const resp = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA), {
-      student_id: studentId, status: 'paid', receipt_document_id: collegeA.receiptDocumentId,
+      student_id: studentId,
+      status: 'paid',
+      receipt_document_id: collegeA.receiptDocumentId,
     });
     assert.equal(resp.status, 401);
   });
 
-  await t.test('mark is rejected (403) for an authenticated actor who is not the student\'s own class tutor', async () => {
-    const studentId = await seedStudent(adminPool, collegeA, 'wrongactor');
-    const token = await login(collegeA, 'staffuser');
-    const resp = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, token), {
-      student_id: studentId, status: 'paid', receipt_document_id: collegeA.receiptDocumentId,
-    });
-    assert.equal(resp.status, 403);
-  });
+  await t.test(
+    "mark is rejected (403) for an authenticated actor who is not the student's own class tutor",
+    async () => {
+      const studentId = await seedStudent(adminPool, collegeA, 'wrongactor');
+      const token = await login(collegeA, 'staffuser');
+      const resp = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, token), {
+        student_id: studentId,
+        status: 'paid',
+        receipt_document_id: collegeA.receiptDocumentId,
+      });
+      assert.equal(resp.status, 403);
+    },
+  );
 
   // 4-login authorization architecture (2026-08-09) — the critical
   // regression case: tutoruser genuinely occupies this class's L4 seat,
   // but this request uses their personal login. Must be rejected
   // exactly like a stranger.
-  await t.test('mark is rejected (403) for tutoruser\'s personal login even though that person occupies this class\'s L4 seat', async () => {
-    const studentId = await seedStudent(adminPool, collegeA, 'personallogin');
-    const token = await login(collegeA, 'tutoruser');
-    const resp = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, token), {
-      student_id: studentId, status: 'paid', receipt_document_id: collegeA.receiptDocumentId,
-    });
-    assert.equal(resp.status, 403);
-  });
+  await t.test(
+    "mark is rejected (403) for tutoruser's personal login even though that person occupies this class's L4 seat",
+    async () => {
+      const studentId = await seedStudent(adminPool, collegeA, 'personallogin');
+      const token = await login(collegeA, 'tutoruser');
+      const resp = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, token), {
+        student_id: studentId,
+        status: 'paid',
+        receipt_document_id: collegeA.receiptDocumentId,
+      });
+      assert.equal(resp.status, 403);
+    },
+  );
 
-  await t.test('marking the same student twice is a real 409 (FeePaymentAlreadyMarkedError), not an upsert', async () => {
-    const studentId = await seedStudent(adminPool, collegeA, 'remark');
-    const token = await loginTutor(collegeA);
-    const first = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, token), {
-      student_id: studentId, status: 'not_paid', receipt_document_id: collegeA.receiptDocumentId,
-    });
-    assert.equal(first.status, 201);
+  await t.test(
+    'marking the same student twice is a real 409 (FeePaymentAlreadyMarkedError), not an upsert',
+    async () => {
+      const studentId = await seedStudent(adminPool, collegeA, 'remark');
+      const token = await loginTutor(collegeA);
+      const first = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, token), {
+        student_id: studentId,
+        status: 'not_paid',
+        receipt_document_id: collegeA.receiptDocumentId,
+      });
+      assert.equal(first.status, 201);
 
-    const second = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, token), {
-      student_id: studentId, status: 'paid', receipt_document_id: collegeA.receiptDocumentId,
-    });
-    assert.equal(second.status, 409);
-  });
+      const second = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, token), {
+        student_id: studentId,
+        status: 'paid',
+        receipt_document_id: collegeA.receiptDocumentId,
+      });
+      assert.equal(second.status, 409);
+    },
+  );
 
   // --- fee_payments: read ---
 
@@ -334,18 +370,28 @@ test('finance', async (t) => {
   await t.test('GET returns 404 for a student with no fee payment marked yet', async () => {
     const studentId = await seedStudent(adminPool, collegeA, 'unmarked');
     const token = await loginTutor(collegeA);
-    const resp = await get(baseUrl, `/api/v1/finance/fee-payments?student_id=${studentId}`, headersFor(collegeA, token));
+    const resp = await get(
+      baseUrl,
+      `/api/v1/finance/fee-payments?student_id=${studentId}`,
+      headersFor(collegeA, token),
+    );
     assert.equal(resp.status, 404);
   });
 
-  await t.test('GET returns this student\'s effective fee status, effective:false before any correction', async () => {
+  await t.test("GET returns this student's effective fee status, effective:false before any correction", async () => {
     const studentId = await seedStudent(adminPool, collegeA, 'read1');
     const token = await loginTutor(collegeA);
     await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, token), {
-      student_id: studentId, status: 'paid', receipt_document_id: collegeA.receiptDocumentId,
+      student_id: studentId,
+      status: 'paid',
+      receipt_document_id: collegeA.receiptDocumentId,
     });
 
-    const resp = await get(baseUrl, `/api/v1/finance/fee-payments?student_id=${studentId}`, headersFor(collegeA, token));
+    const resp = await get(
+      baseUrl,
+      `/api/v1/finance/fee-payments?student_id=${studentId}`,
+      headersFor(collegeA, token),
+    );
     assert.equal(resp.status, 200);
     assert.equal(resp.body.student_id, studentId);
     assert.equal(resp.body.status, 'paid');
@@ -358,63 +404,87 @@ test('finance', async (t) => {
     assert.equal(resp.status, 401);
   });
 
-  await t.test('a student\'s fee payment from tenant A is invisible to tenant B (RLS via a real student_id collision attempt)', async () => {
-    const studentIdA = await seedStudent(adminPool, collegeA, 'crosstenant');
-    const tokenA = await loginTutor(collegeA);
-    await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, tokenA), {
-      student_id: studentIdA, status: 'paid', receipt_document_id: collegeA.receiptDocumentId,
-    });
+  await t.test(
+    "a student's fee payment from tenant A is invisible to tenant B (RLS via a real student_id collision attempt)",
+    async () => {
+      const studentIdA = await seedStudent(adminPool, collegeA, 'crosstenant');
+      const tokenA = await loginTutor(collegeA);
+      await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, tokenA), {
+        student_id: studentIdA,
+        status: 'paid',
+        receipt_document_id: collegeA.receiptDocumentId,
+      });
 
-    const tokenB = await loginTutor(collegeB);
-    const resp = await get(baseUrl, `/api/v1/finance/fee-payments?student_id=${studentIdA}`, headersFor(collegeB, tokenB));
-    assert.equal(resp.status, 404);
-  });
+      const tokenB = await loginTutor(collegeB);
+      const resp = await get(
+        baseUrl,
+        `/api/v1/finance/fee-payments?student_id=${studentIdA}`,
+        headersFor(collegeB, tokenB),
+      );
+      assert.equal(resp.status, 404);
+    },
+  );
 
   // --- fee corrections (RS-FIN-003) ---
 
-  await t.test('the golden path: mark -> request correction -> hod approves -> GET reflects the corrected, effective value', async () => {
-    const studentId = await seedStudent(adminPool, collegeA, 'correction1');
-    const tutorToken = await loginTutor(collegeA);
-    const marked = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, tutorToken), {
-      student_id: studentId, status: 'not_paid', receipt_document_id: collegeA.receiptDocumentId,
-    });
-    assert.equal(marked.status, 201);
+  await t.test(
+    'the golden path: mark -> request correction -> hod approves -> GET reflects the corrected, effective value',
+    async () => {
+      const studentId = await seedStudent(adminPool, collegeA, 'correction1');
+      const tutorToken = await loginTutor(collegeA);
+      const marked = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, tutorToken), {
+        student_id: studentId,
+        status: 'not_paid',
+        receipt_document_id: collegeA.receiptDocumentId,
+      });
+      assert.equal(marked.status, 201);
 
-    const requested = await post(
-      baseUrl,
-      `/api/v1/finance/fee-payments/${marked.body.id}/corrections`,
-      headersFor(collegeA, tutorToken),
-      { proposed_status: 'paid', reason: 'receipt was found afterwards' },
-    );
-    assert.equal(requested.status, 201);
-    assert.equal(requested.body.proposed_status, 'paid');
-    assert.ok(requested.body.correction_id);
+      const requested = await post(
+        baseUrl,
+        `/api/v1/finance/fee-payments/${marked.body.id}/corrections`,
+        headersFor(collegeA, tutorToken),
+        { proposed_status: 'paid', reason: 'receipt was found afterwards' },
+      );
+      assert.equal(requested.status, 201);
+      assert.equal(requested.body.proposed_status, 'paid');
+      assert.ok(requested.body.correction_id);
 
-    // Original untouched while pending.
-    const stillOriginal = await get(baseUrl, `/api/v1/finance/fee-payments?student_id=${studentId}`, headersFor(collegeA, tutorToken));
-    assert.equal(stillOriginal.body.status, 'not_paid');
-    assert.equal(stillOriginal.body.effective, false);
+      // Original untouched while pending.
+      const stillOriginal = await get(
+        baseUrl,
+        `/api/v1/finance/fee-payments?student_id=${studentId}`,
+        headersFor(collegeA, tutorToken),
+      );
+      assert.equal(stillOriginal.body.status, 'not_paid');
+      assert.equal(stillOriginal.body.effective, false);
 
-    const hodToken = await login(collegeA, 'hoduser');
-    const approved = await post(
-      baseUrl,
-      `/api/v1/finance/fee-corrections/${requested.body.correction_id}/approve`,
-      headersFor(collegeA, hodToken),
-    );
-    assert.equal(approved.status, 200);
-    assert.ok(approved.body.applied_at);
+      const hodToken = await login(collegeA, 'hoduser');
+      const approved = await post(
+        baseUrl,
+        `/api/v1/finance/fee-corrections/${requested.body.correction_id}/approve`,
+        headersFor(collegeA, hodToken),
+      );
+      assert.equal(approved.status, 200);
+      assert.ok(approved.body.applied_at);
 
-    const effective = await get(baseUrl, `/api/v1/finance/fee-payments?student_id=${studentId}`, headersFor(collegeA, tutorToken));
-    assert.equal(effective.body.status, 'paid');
-    assert.equal(effective.body.effective, true);
-    assert.equal(effective.body.effective_correction_id, requested.body.correction_id);
-  });
+      const effective = await get(
+        baseUrl,
+        `/api/v1/finance/fee-payments?student_id=${studentId}`,
+        headersFor(collegeA, tutorToken),
+      );
+      assert.equal(effective.body.status, 'paid');
+      assert.equal(effective.body.effective, true);
+      assert.equal(effective.body.effective_correction_id, requested.body.correction_id);
+    },
+  );
 
   await t.test('a rejected correction never becomes effective', async () => {
     const studentId = await seedStudent(adminPool, collegeA, 'correction2');
     const tutorToken = await loginTutor(collegeA);
     const marked = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, tutorToken), {
-      student_id: studentId, status: 'not_paid', receipt_document_id: collegeA.receiptDocumentId,
+      student_id: studentId,
+      status: 'not_paid',
+      receipt_document_id: collegeA.receiptDocumentId,
     });
 
     const requested = await post(
@@ -433,36 +503,49 @@ test('finance', async (t) => {
     );
     assert.equal(rejected.status, 200);
 
-    const effective = await get(baseUrl, `/api/v1/finance/fee-payments?student_id=${studentId}`, headersFor(collegeA, tutorToken));
-    assert.equal(effective.body.status, 'not_paid');
-    assert.equal(effective.body.effective, false);
-  });
-
-  await t.test('a fee_correction cannot be approved through the generic workflow-requests endpoint — 409, correction never applied', async () => {
-    const studentId = await seedStudent(adminPool, collegeA, 'genericguard');
-    const tutorToken = await loginTutor(collegeA);
-    const marked = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, tutorToken), {
-      student_id: studentId, status: 'not_paid', receipt_document_id: collegeA.receiptDocumentId,
-    });
-    const requested = await post(
+    const effective = await get(
       baseUrl,
-      `/api/v1/finance/fee-payments/${marked.body.id}/corrections`,
+      `/api/v1/finance/fee-payments?student_id=${studentId}`,
       headersFor(collegeA, tutorToken),
-      { proposed_status: 'paid' },
     );
-
-    const hodToken = await login(collegeA, 'hoduser');
-    const genericAttempt = await post(
-      baseUrl,
-      `/api/v1/workflow-requests/${requested.body.workflow_request_id}/approve`,
-      headersFor(collegeA, hodToken),
-    );
-    assert.equal(genericAttempt.status, 409);
-
-    const effective = await get(baseUrl, `/api/v1/finance/fee-payments?student_id=${studentId}`, headersFor(collegeA, tutorToken));
     assert.equal(effective.body.status, 'not_paid');
     assert.equal(effective.body.effective, false);
   });
+
+  await t.test(
+    'a fee_correction cannot be approved through the generic workflow-requests endpoint — 409, correction never applied',
+    async () => {
+      const studentId = await seedStudent(adminPool, collegeA, 'genericguard');
+      const tutorToken = await loginTutor(collegeA);
+      const marked = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, tutorToken), {
+        student_id: studentId,
+        status: 'not_paid',
+        receipt_document_id: collegeA.receiptDocumentId,
+      });
+      const requested = await post(
+        baseUrl,
+        `/api/v1/finance/fee-payments/${marked.body.id}/corrections`,
+        headersFor(collegeA, tutorToken),
+        { proposed_status: 'paid' },
+      );
+
+      const hodToken = await login(collegeA, 'hoduser');
+      const genericAttempt = await post(
+        baseUrl,
+        `/api/v1/workflow-requests/${requested.body.workflow_request_id}/approve`,
+        headersFor(collegeA, hodToken),
+      );
+      assert.equal(genericAttempt.status, 409);
+
+      const effective = await get(
+        baseUrl,
+        `/api/v1/finance/fee-payments?student_id=${studentId}`,
+        headersFor(collegeA, tutorToken),
+      );
+      assert.equal(effective.body.status, 'not_paid');
+      assert.equal(effective.body.effective, false);
+    },
+  );
 
   await t.test('requesting a correction on a nonexistent fee payment returns 404', async () => {
     const token = await loginTutor(collegeA);
@@ -479,7 +562,9 @@ test('finance', async (t) => {
     const studentId = await seedStudent(adminPool, collegeA, 'listcorrections');
     const tutorToken = await loginTutor(collegeA);
     const marked = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, tutorToken), {
-      student_id: studentId, status: 'not_paid', receipt_document_id: collegeA.receiptDocumentId,
+      student_id: studentId,
+      status: 'not_paid',
+      receipt_document_id: collegeA.receiptDocumentId,
     });
     await post(
       baseUrl,
@@ -488,7 +573,11 @@ test('finance', async (t) => {
       { proposed_status: 'paid' },
     );
 
-    const resp = await get(baseUrl, `/api/v1/finance/fee-payments/${marked.body.id}/corrections`, headersFor(collegeA, tutorToken));
+    const resp = await get(
+      baseUrl,
+      `/api/v1/finance/fee-payments/${marked.body.id}/corrections`,
+      headersFor(collegeA, tutorToken),
+    );
     assert.equal(resp.status, 200);
     assert.ok(Array.isArray(resp.body));
     assert.equal(resp.body.length, 1);
@@ -501,7 +590,9 @@ test('finance', async (t) => {
     const studentId = await seedStudent(adminPool, collegeA, 'audit1');
     const token = await loginTutor(collegeA);
     const resp = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, token), {
-      student_id: studentId, status: 'paid', receipt_document_id: collegeA.receiptDocumentId,
+      student_id: studentId,
+      status: 'paid',
+      receipt_document_id: collegeA.receiptDocumentId,
     });
     assert.equal(resp.status, 201);
 
@@ -519,7 +610,9 @@ test('finance', async (t) => {
     const studentId = await seedStudent(adminPool, collegeA, 'audit2');
     const tutorToken = await loginTutor(collegeA);
     const marked = await post(baseUrl, '/api/v1/finance/fee-payments', headersFor(collegeA, tutorToken), {
-      student_id: studentId, status: 'not_paid', receipt_document_id: collegeA.receiptDocumentId,
+      student_id: studentId,
+      status: 'not_paid',
+      receipt_document_id: collegeA.receiptDocumentId,
     });
     const requested = await post(
       baseUrl,
@@ -529,7 +622,11 @@ test('finance', async (t) => {
     );
 
     const hodToken = await login(collegeA, 'hoduser');
-    await post(baseUrl, `/api/v1/finance/fee-corrections/${requested.body.correction_id}/approve`, headersFor(collegeA, hodToken));
+    await post(
+      baseUrl,
+      `/api/v1/finance/fee-corrections/${requested.body.correction_id}/approve`,
+      headersFor(collegeA, hodToken),
+    );
 
     const rows = await adminPool.query(
       `SELECT action, user_id FROM audit_log WHERE college_id = $1 AND entity_id = $2 AND action = 'fee_correction_approved'`,

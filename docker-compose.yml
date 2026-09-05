@@ -7,6 +7,15 @@ services:
     # data in the pgdata volume is unaffected by this swap — same
     # Postgres major version, only an additional extension available.
     image: pgvector/pgvector:pg16
+    # ARCNAVE modernization P1 (PDF D6: "no slow-query dashboard" ->
+    # query-stats extension + dashboard). pg_stat_statements needs to
+    # be in shared_preload_libraries at server START, not just
+    # CREATE EXTENSION'd — that alone only registers the SQL-visible
+    # view, the library actually has to be loaded into the postmaster
+    # process to collect anything. scripts/query-stats-report.js reads
+    # the view this enables; migrations/*_pg-stat-statements.js is
+    # what actually CREATE EXTENSIONs it once the library is loaded.
+    command: postgres -c shared_preload_libraries=pg_stat_statements
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-arcnave_admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
@@ -85,6 +94,10 @@ services:
       # change, just this env var. Real production credentialing is a
       # separate decision; this is this dev sandbox's own override.
       DEFAULT_AI_PROVIDER: ${DEFAULT_AI_PROVIDER:-gemini}
+      # ADL-071/ADL-101 — off (unset/false) is the safe default; a real
+      # prefix below Vertex's ~4,096-token minimum silently degrades to
+      # inline. Turned on 2026-09-04, ADL-101.
+      AI_EXPLICIT_CACHE: ${AI_EXPLICIT_CACHE:-false}
       GEMINI_PROJECT_ID: ${GEMINI_PROJECT_ID:-}
       GEMINI_LOCATION: ${GEMINI_LOCATION:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
@@ -144,8 +157,15 @@ services:
       # GOOGLE_APPLICATION_CREDENTIALS above points to. Never present in
       # a real deployment image; this is this docker-compose.yml's own
       # dev-sandbox convenience, not something config.js or gemini.js
-      # depends on existing.
-      - ${GEMINI_ADC_PATH}:/app/.gcp/adc.json:ro
+      # depends on existing. `:-/dev/null` default (same pattern the
+      # SANDBOX_INVOKER_KEY_PATH line below already uses) — GEMINI_ADC_PATH
+      # unset previously left this `${GEMINI_ADC_PATH}:/app/.gcp/adc.json:ro`,
+      # an empty host path Docker Compose can't even parse ("invalid spec:
+      # empty section between colons"), which is exactly what broke CI's
+      # first-ever real GitHub Actions run (no .env, so no GEMINI_ADC_PATH)
+      # — the same failure would hit any fresh dev machine with no gcloud
+      # ADC configured yet, this was never CI-specific.
+      - ${GEMINI_ADC_PATH:-/dev/null}:/app/.gcp/adc.json:ro
       # Same optional-mount shape as the ADC line above: SANDBOX_INVOKER_KEY_PATH
       # unset means this line does nothing and SANDBOX_SERVICE_CREDENTIALS_PATH
       # (above) is empty, so getIdTokenClient() falls back to its own ADC

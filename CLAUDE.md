@@ -160,7 +160,7 @@ Frontend tests (`npm test` in `frontend/`, Vitest + Testing Library)
 assert behavior — what renders, what a click does — never exact markup
 or classNames, so they survive a redesign; see
 `frontend/src/api/academicYears.test.js` and
-`frontend/src/components/ui/badge.test.jsx` for the pattern. Use
+`frontend/src/components/AppShell.test.jsx` for the pattern. Use
 `/wire-frontend <feature>` to connect a screen to its real API without
 touching layout/styling once a page's markup already exists.
 

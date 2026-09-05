@@ -31,14 +31,35 @@ const staffService = require('../src/services/staffService');
 // default; null here exercises that default, same as every college
 // that never sets a custom title.
 function mockEnsureHodPositionCalls(t, { existingAssignment = null, existingOccupant = null } = {}) {
-  const getLevel3PositionTitleMock = t.mock.method(collegeProfileRepository, 'getLevel3PositionTitle', async () => null);
-  const findAssignmentMock = t.mock.method(positionRepository, 'findActiveDepartmentAssignment', async () => existingAssignment);
-  const createPositionMock = t.mock.method(positionRepository, 'createPosition', async () => ({ id: 'pos-1', level: 3 }));
+  const getLevel3PositionTitleMock = t.mock.method(
+    collegeProfileRepository,
+    'getLevel3PositionTitle',
+    async () => null,
+  );
+  const findAssignmentMock = t.mock.method(
+    positionRepository,
+    'findActiveDepartmentAssignment',
+    async () => existingAssignment,
+  );
+  const createPositionMock = t.mock.method(positionRepository, 'createPosition', async () => ({
+    id: 'pos-1',
+    level: 3,
+  }));
   const createAccountMock = t.mock.method(positionRepository, 'createPositionAccount', async () => ({ id: 'acct-1' }));
-  const createDeptAssignmentMock = t.mock.method(positionRepository, 'createPositionDepartmentAssignment', async () => ({ id: 'deptassign-1' }));
+  const createDeptAssignmentMock = t.mock.method(
+    positionRepository,
+    'createPositionDepartmentAssignment',
+    async () => ({ id: 'deptassign-1' }),
+  );
   const findOccupantMock = t.mock.method(positionRepository, 'findActiveOccupant', async () => existingOccupant);
-  const revokeOccupantMock = t.mock.method(positionRepository, 'revokePositionOccupant', async () => ({ id: 'occ-old', revoked_at: new Date() }));
-  const createOccupantMock = t.mock.method(positionRepository, 'createPositionOccupant', async (client, fields) => ({ id: 'occ-1', ...fields }));
+  const revokeOccupantMock = t.mock.method(positionRepository, 'revokePositionOccupant', async () => ({
+    id: 'occ-old',
+    revoked_at: new Date(),
+  }));
+  const createOccupantMock = t.mock.method(positionRepository, 'createPositionOccupant', async (client, fields) => ({
+    id: 'occ-1',
+    ...fields,
+  }));
   t.after(() => {
     getLevel3PositionTitleMock.mock.restore();
     findAssignmentMock.mock.restore();
@@ -50,7 +71,14 @@ function mockEnsureHodPositionCalls(t, { existingAssignment = null, existingOccu
     createOccupantMock.mock.restore();
   });
   return {
-    getLevel3PositionTitleMock, findAssignmentMock, createPositionMock, createAccountMock, createDeptAssignmentMock, findOccupantMock, revokeOccupantMock, createOccupantMock,
+    getLevel3PositionTitleMock,
+    findAssignmentMock,
+    createPositionMock,
+    createAccountMock,
+    createDeptAssignmentMock,
+    findOccupantMock,
+    revokeOccupantMock,
+    createOccupantMock,
   };
 }
 
@@ -65,7 +93,12 @@ test('deactivateStaff', async (t) => {
   });
 
   await t.test('rejects a target with no departmentId set, before checking anything else', async () => {
-    const findMock = t.mock.method(staffRepository, 'findById', async () => ({ id: 'staff-1', college_id: 'c1', user_id: 'u1', department_id: null }));
+    const findMock = t.mock.method(staffRepository, 'findById', async () => ({
+      id: 'staff-1',
+      college_id: 'c1',
+      user_id: 'u1',
+      department_id: null,
+    }));
     const findHodMock = t.mock.method(staffRepository, 'findByCollegeDepartmentAndRole');
     t.after(() => {
       findMock.mock.restore();
@@ -79,8 +112,16 @@ test('deactivateStaff', async (t) => {
   });
 
   await t.test('rejects an actor who is hod of a DIFFERENT department', async () => {
-    const findMock = t.mock.method(staffRepository, 'findById', async () => ({ id: 'staff-1', college_id: 'c1', user_id: 'u1', department_id: 'dept-1' }));
-    const findHodMock = t.mock.method(staffRepository, 'findByCollegeDepartmentAndRole', async () => ({ id: 'staff-hod', user_id: 'hod-of-other-dept' }));
+    const findMock = t.mock.method(staffRepository, 'findById', async () => ({
+      id: 'staff-1',
+      college_id: 'c1',
+      user_id: 'u1',
+      department_id: 'dept-1',
+    }));
+    const findHodMock = t.mock.method(staffRepository, 'findByCollegeDepartmentAndRole', async () => ({
+      id: 'staff-hod',
+      user_id: 'hod-of-other-dept',
+    }));
     const findInChargeMock = t.mock.method(hodInChargeRepository, 'findActiveForDepartment');
     const deactivateMock = t.mock.method(authService, 'deactivateUser');
     t.after(() => {
@@ -97,7 +138,12 @@ test('deactivateStaff', async (t) => {
   });
 
   await t.test('rejects a department with no active hod to authorize against', async () => {
-    const findMock = t.mock.method(staffRepository, 'findById', async () => ({ id: 'staff-1', college_id: 'c1', user_id: 'u1', department_id: 'dept-1' }));
+    const findMock = t.mock.method(staffRepository, 'findById', async () => ({
+      id: 'staff-1',
+      college_id: 'c1',
+      user_id: 'u1',
+      department_id: 'dept-1',
+    }));
     const findHodMock = t.mock.method(staffRepository, 'findByCollegeDepartmentAndRole', async () => null);
     const findInChargeMock = t.mock.method(hodInChargeRepository, 'findActiveForDepartment', async () => null);
     t.after(() => {
@@ -112,9 +158,19 @@ test('deactivateStaff', async (t) => {
   });
 
   await t.test('refuses while the staff member still has active faculty allocations', async () => {
-    const findMock = t.mock.method(staffRepository, 'findById', async () => ({ id: 'staff-1', college_id: 'c1', user_id: 'u1', department_id: 'dept-1' }));
-    const findHodMock = t.mock.method(staffRepository, 'findByCollegeDepartmentAndRole', async () => ({ id: 'staff-hod', user_id: 'hod-1' }));
-    const findAllocMock = t.mock.method(facultyAllocationRepository, 'findByStaffUserId', async () => [{ id: 'alloc-1' }]);
+    const findMock = t.mock.method(staffRepository, 'findById', async () => ({
+      id: 'staff-1',
+      college_id: 'c1',
+      user_id: 'u1',
+      department_id: 'dept-1',
+    }));
+    const findHodMock = t.mock.method(staffRepository, 'findByCollegeDepartmentAndRole', async () => ({
+      id: 'staff-hod',
+      user_id: 'hod-1',
+    }));
+    const findAllocMock = t.mock.method(facultyAllocationRepository, 'findByStaffUserId', async () => [
+      { id: 'alloc-1' },
+    ]);
     const deactivateMock = t.mock.method(authService, 'deactivateUser');
     t.after(() => {
       findMock.mock.restore();
@@ -130,8 +186,16 @@ test('deactivateStaff', async (t) => {
   });
 
   await t.test('refuses while the staff member is still a class tutor', async () => {
-    const findMock = t.mock.method(staffRepository, 'findById', async () => ({ id: 'staff-1', college_id: 'c1', user_id: 'u1', department_id: 'dept-1' }));
-    const findHodMock = t.mock.method(staffRepository, 'findByCollegeDepartmentAndRole', async () => ({ id: 'staff-hod', user_id: 'hod-1' }));
+    const findMock = t.mock.method(staffRepository, 'findById', async () => ({
+      id: 'staff-1',
+      college_id: 'c1',
+      user_id: 'u1',
+      department_id: 'dept-1',
+    }));
+    const findHodMock = t.mock.method(staffRepository, 'findByCollegeDepartmentAndRole', async () => ({
+      id: 'staff-hod',
+      user_id: 'hod-1',
+    }));
     const findAllocMock = t.mock.method(facultyAllocationRepository, 'findByStaffUserId', async () => []);
     const findTutorClassMock = t.mock.method(identityService, 'resolveActiveClassTutorPosition', async () => 'class-1');
     const deactivateMock = t.mock.method(authService, 'deactivateUser');
@@ -150,12 +214,23 @@ test('deactivateStaff', async (t) => {
   });
 
   await t.test('deactivates a staff member with no active duties, without deleting the staff row', async () => {
-    const findMock = t.mock.method(staffRepository, 'findById', async () => ({ id: 'staff-1', college_id: 'c1', user_id: 'u1', department_id: 'dept-1' }));
-    const findHodMock = t.mock.method(staffRepository, 'findByCollegeDepartmentAndRole', async () => ({ id: 'staff-hod', user_id: 'hod-1' }));
+    const findMock = t.mock.method(staffRepository, 'findById', async () => ({
+      id: 'staff-1',
+      college_id: 'c1',
+      user_id: 'u1',
+      department_id: 'dept-1',
+    }));
+    const findHodMock = t.mock.method(staffRepository, 'findByCollegeDepartmentAndRole', async () => ({
+      id: 'staff-hod',
+      user_id: 'hod-1',
+    }));
     const findAllocMock = t.mock.method(facultyAllocationRepository, 'findByStaffUserId', async () => []);
     const findTutorClassMock = t.mock.method(identityService, 'resolveActiveClassTutorPosition', async () => null);
     const removeMock = t.mock.method(staffRepository, 'remove');
-    const deactivateMock = t.mock.method(authService, 'deactivateUser', async (client, userId) => ({ id: userId, is_active: false }));
+    const deactivateMock = t.mock.method(authService, 'deactivateUser', async (client, userId) => ({
+      id: userId,
+      is_active: false,
+    }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
       findMock.mock.restore();
@@ -183,14 +258,23 @@ test('appointHodInCharge / revokeHodInCharge / findHodForDepartment fallback', a
   });
 
   await t.test('creates an appointment, swaps the position occupant, and audit-logs it', async () => {
-    const createMock = t.mock.method(hodInChargeRepository, 'create', async (client, fields) => ({ id: 'appt-1', ...fields }));
+    const createMock = t.mock.method(hodInChargeRepository, 'create', async (client, fields) => ({
+      id: 'appt-1',
+      ...fields,
+    }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     const positionMocks = mockEnsureHodPositionCalls(t);
     t.after(() => {
       createMock.mock.restore();
       auditMock.mock.restore();
     });
-    const result = await staffService.appointHodInCharge({}, 'dept-1', 'faculty-1', { reason: 'HOD on leave' }, { actorUserId: 'principal-1', collegeId: 'c1' });
+    const result = await staffService.appointHodInCharge(
+      {},
+      'dept-1',
+      'faculty-1',
+      { reason: 'HOD on leave' },
+      { actorUserId: 'principal-1', collegeId: 'c1' },
+    );
     assert.equal(result.id, 'appt-1');
     assert.equal(auditMock.mock.calls[0].arguments[1].action, 'hod_in_charge_appointed');
     assert.equal(positionMocks.createOccupantMock.mock.calls[0].arguments[1].userId, 'faculty-1');
@@ -198,22 +282,36 @@ test('appointHodInCharge / revokeHodInCharge / findHodForDepartment fallback', a
   });
 
   await t.test('maps a duplicate active-appointment constraint violation', async () => {
-    const err = Object.assign(new Error('dup'), { code: '23505', constraint: 'hod_in_charge_one_active_per_department' });
-    const createMock = t.mock.method(hodInChargeRepository, 'create', async () => { throw err; });
+    const err = Object.assign(new Error('dup'), {
+      code: '23505',
+      constraint: 'hod_in_charge_one_active_per_department',
+    });
+    const createMock = t.mock.method(hodInChargeRepository, 'create', async () => {
+      throw err;
+    });
     t.after(() => createMock.mock.restore());
     await assert.rejects(
-      () => staffService.appointHodInCharge({}, 'dept-1', 'faculty-1', {}, { actorUserId: 'principal-1', collegeId: 'c1' }),
+      () =>
+        staffService.appointHodInCharge({}, 'dept-1', 'faculty-1', {}, { actorUserId: 'principal-1', collegeId: 'c1' }),
       staffService.HodInChargeAlreadyActiveError,
     );
   });
 
   await t.test('revokeHodInCharge falls back to the permanent HOD occupant when one exists', async () => {
     const revokeMock = t.mock.method(hodInChargeRepository, 'revoke', async () => ({
-      id: 'appt-1', college_id: 'c1', department_id: 'dept-1', faculty_user_id: 'faculty-1',
+      id: 'appt-1',
+      college_id: 'c1',
+      department_id: 'dept-1',
+      faculty_user_id: 'faculty-1',
     }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
-    const findHodMock = t.mock.method(staffRepository, 'findByCollegeDepartmentAndRole', async () => ({ id: 'staff-hod', user_id: 'permanent-hod-1' }));
-    const positionMocks = mockEnsureHodPositionCalls(t, { existingOccupant: { id: 'occ-inCharge', user_id: 'faculty-1' } });
+    const findHodMock = t.mock.method(staffRepository, 'findByCollegeDepartmentAndRole', async () => ({
+      id: 'staff-hod',
+      user_id: 'permanent-hod-1',
+    }));
+    const positionMocks = mockEnsureHodPositionCalls(t, {
+      existingOccupant: { id: 'occ-inCharge', user_id: 'faculty-1' },
+    });
     t.after(() => {
       revokeMock.mock.restore();
       auditMock.mock.restore();
@@ -228,11 +326,16 @@ test('appointHodInCharge / revokeHodInCharge / findHodForDepartment fallback', a
 
   await t.test('revokeHodInCharge leaves the position vacant when no permanent HOD exists', async () => {
     const revokeMock = t.mock.method(hodInChargeRepository, 'revoke', async () => ({
-      id: 'appt-1', college_id: 'c1', department_id: 'dept-1', faculty_user_id: 'faculty-1',
+      id: 'appt-1',
+      college_id: 'c1',
+      department_id: 'dept-1',
+      faculty_user_id: 'faculty-1',
     }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     const findHodMock = t.mock.method(staffRepository, 'findByCollegeDepartmentAndRole', async () => null);
-    const positionMocks = mockEnsureHodPositionCalls(t, { existingOccupant: { id: 'occ-inCharge', user_id: 'faculty-1' } });
+    const positionMocks = mockEnsureHodPositionCalls(t, {
+      existingOccupant: { id: 'occ-inCharge', user_id: 'faculty-1' },
+    });
     t.after(() => {
       revokeMock.mock.restore();
       auditMock.mock.restore();
@@ -254,7 +357,10 @@ test('appointHodInCharge / revokeHodInCharge / findHodForDepartment fallback', a
   });
 
   await t.test('findHodForDepartment returns the real HOD when one is active, never checking in-charge', async () => {
-    const findHodMock = t.mock.method(staffRepository, 'findByCollegeDepartmentAndRole', async () => ({ id: 'staff-hod', user_id: 'hod-1' }));
+    const findHodMock = t.mock.method(staffRepository, 'findByCollegeDepartmentAndRole', async () => ({
+      id: 'staff-hod',
+      user_id: 'hod-1',
+    }));
     const findInChargeMock = t.mock.method(hodInChargeRepository, 'findActiveForDepartment');
     t.after(() => {
       findHodMock.mock.restore();
@@ -265,18 +371,26 @@ test('appointHodInCharge / revokeHodInCharge / findHodForDepartment fallback', a
     assert.equal(findInChargeMock.mock.callCount(), 0);
   });
 
-  await t.test('findHodForDepartment falls back to an active HOD In-Charge appointee when no real HOD exists', async () => {
-    const findHodMock = t.mock.method(staffRepository, 'findByCollegeDepartmentAndRole', async () => null);
-    const findInChargeMock = t.mock.method(hodInChargeRepository, 'findActiveForDepartment', async () => ({ faculty_user_id: 'faculty-1' }));
-    const findByUserIdMock = t.mock.method(staffRepository, 'findByUserId', async () => ({ id: 'staff-faculty', user_id: 'faculty-1' }));
-    t.after(() => {
-      findHodMock.mock.restore();
-      findInChargeMock.mock.restore();
-      findByUserIdMock.mock.restore();
-    });
-    const result = await staffService.findHodForDepartment({}, 'c1', 'dept-1');
-    assert.equal(result.user_id, 'faculty-1');
-  });
+  await t.test(
+    'findHodForDepartment falls back to an active HOD In-Charge appointee when no real HOD exists',
+    async () => {
+      const findHodMock = t.mock.method(staffRepository, 'findByCollegeDepartmentAndRole', async () => null);
+      const findInChargeMock = t.mock.method(hodInChargeRepository, 'findActiveForDepartment', async () => ({
+        faculty_user_id: 'faculty-1',
+      }));
+      const findByUserIdMock = t.mock.method(staffRepository, 'findByUserId', async () => ({
+        id: 'staff-faculty',
+        user_id: 'faculty-1',
+      }));
+      t.after(() => {
+        findHodMock.mock.restore();
+        findInChargeMock.mock.restore();
+        findByUserIdMock.mock.restore();
+      });
+      const result = await staffService.findHodForDepartment({}, 'c1', 'dept-1');
+      assert.equal(result.user_id, 'faculty-1');
+    },
+  );
 
   await t.test('findHodForDepartment throws when neither a real HOD nor an in-charge appointee exists', async () => {
     const findHodMock = t.mock.method(staffRepository, 'findByCollegeDepartmentAndRole', async () => null);

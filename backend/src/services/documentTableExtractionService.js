@@ -71,7 +71,10 @@ function looksTabDelimited(lines) {
   let modalCount = 0;
   let modalFrequency = 0;
   counts.forEach((frequency, n) => {
-    if (frequency > modalFrequency) { modalFrequency = frequency; modalCount = n; }
+    if (frequency > modalFrequency) {
+      modalFrequency = frequency;
+      modalCount = n;
+    }
   });
   return modalCount >= 2 && modalFrequency * 2 > tabbed.length;
 }
@@ -170,7 +173,12 @@ function assessCoverage(text, records, fragmentCounts) {
   const markerCount = countMarkers(text);
   if (markerCount === 0) {
     return {
-      applicable: false, reliable: true, markerCount: 0, accountedCount: 0, orphanCount: 0, collapsedRecords: 0,
+      applicable: false,
+      reliable: true,
+      markerCount: 0,
+      accountedCount: 0,
+      orphanCount: 0,
+      collapsedRecords: 0,
     };
   }
   let accountedCount = 0;
@@ -278,7 +286,8 @@ function extractSequentialIdRecords(text) {
 // collapse to exactly 10 distinct real sections. Still a plain string
 // match against existing document text, never a semantic mapping this
 // service invents — the caller supplies which section name they mean.
-const SECTION_HEADER_PATTERN = /\b\d{3,4}\s+[A-Z][A-Z .,&'()/-]{8,120}\((?:FULL TIME|SANDWICH|PART TIME|LATERAL ENTRY)\)/;
+const SECTION_HEADER_PATTERN =
+  /\b\d{3,4}\s+[A-Z][A-Z .,&'()/-]{8,120}\((?:FULL TIME|SANDWICH|PART TIME|LATERAL ENTRY)\)/;
 
 // One entry per section CHANGE, not one per page — the header line
 // repeats every page within the same section, so only the first

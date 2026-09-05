@@ -65,10 +65,10 @@ function hostFor(subdomain) {
 async function seedTenant(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const college = { collegeId: `idem${suffix}`, subdomain: `idemtenant${suffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [college.collegeId, college.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    college.collegeId,
+    college.subdomain,
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const result = await adminPool.query(
     `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
@@ -76,7 +76,10 @@ async function seedTenant(adminPool) {
     [college.collegeId, passwordHash],
   );
   const userId = result.rows[0].id;
-  await adminPool.query("INSERT INTO staff (college_id, user_id, full_name) VALUES ($1, $2, 'Test Principal')", [college.collegeId, userId]);
+  await adminPool.query("INSERT INTO staff (college_id, user_id, full_name) VALUES ($1, $2, 'Test Principal')", [
+    college.collegeId,
+    userId,
+  ]);
   await seedPrincipalPosition(adminPool, { collegeId: college.collegeId, userId });
   return { ...college, userId };
 }
@@ -108,7 +111,12 @@ test('AI tool-invoke idempotency', async (t) => {
   });
 
   async function login() {
-    const resp = await post(baseUrl, '/api/v1/auth/login', { host: hostFor(college.subdomain) }, { username: 'principaluser', password: PASSWORD });
+    const resp = await post(
+      baseUrl,
+      '/api/v1/auth/login',
+      { host: hostFor(college.subdomain) },
+      { username: 'principaluser', password: PASSWORD },
+    );
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -134,27 +142,46 @@ test('AI tool-invoke idempotency', async (t) => {
   await t.test('no Idempotency-Key header: behavior is unchanged — two calls really do create two rows', async () => {
     const token = await login();
     const toAddress = `no-key-${crypto.randomUUID()}@example.com`;
-    const first = await post(baseUrl, '/api/v1/ai/tools/draft_notification/invoke', headersFor(token), { params: draftParams(toAddress) });
-    const second = await post(baseUrl, '/api/v1/ai/tools/draft_notification/invoke', headersFor(token), { params: draftParams(toAddress) });
+    const first = await post(baseUrl, '/api/v1/ai/tools/draft_notification/invoke', headersFor(token), {
+      params: draftParams(toAddress),
+    });
+    const second = await post(baseUrl, '/api/v1/ai/tools/draft_notification/invoke', headersFor(token), {
+      params: draftParams(toAddress),
+    });
     assert.equal(first.status, 200);
     assert.equal(second.status, 200);
-    assert.equal(await countNotifications(toAddress), 2, 'without a key, two real calls means two real drafts — no accidental dedup');
+    assert.equal(
+      await countNotifications(toAddress),
+      2,
+      'without a key, two real calls means two real drafts — no accidental dedup',
+    );
   });
 
-  await t.test('same Idempotency-Key, same params: second call replays the stored response, does not re-execute', async () => {
-    const token = await login();
-    const toAddress = `same-key-${crypto.randomUUID()}@example.com`;
-    const key = crypto.randomUUID();
+  await t.test(
+    'same Idempotency-Key, same params: second call replays the stored response, does not re-execute',
+    async () => {
+      const token = await login();
+      const toAddress = `same-key-${crypto.randomUUID()}@example.com`;
+      const key = crypto.randomUUID();
 
-    const first = await post(baseUrl, '/api/v1/ai/tools/draft_notification/invoke', headersFor(token, key), { params: draftParams(toAddress) });
-    assert.equal(first.status, 200);
+      const first = await post(baseUrl, '/api/v1/ai/tools/draft_notification/invoke', headersFor(token, key), {
+        params: draftParams(toAddress),
+      });
+      assert.equal(first.status, 200);
 
-    const second = await post(baseUrl, '/api/v1/ai/tools/draft_notification/invoke', headersFor(token, key), { params: draftParams(toAddress) });
-    assert.equal(second.status, 200);
-    assert.deepEqual(second.body, first.body, 'a replayed response must be byte-for-byte the stored first response');
+      const second = await post(baseUrl, '/api/v1/ai/tools/draft_notification/invoke', headersFor(token, key), {
+        params: draftParams(toAddress),
+      });
+      assert.equal(second.status, 200);
+      assert.deepEqual(second.body, first.body, 'a replayed response must be byte-for-byte the stored first response');
 
-    assert.equal(await countNotifications(toAddress), 1, 'the handler must have run exactly once despite two identical requests');
-  });
+      assert.equal(
+        await countNotifications(toAddress),
+        1,
+        'the handler must have run exactly once despite two identical requests',
+      );
+    },
+  );
 
   await t.test('same Idempotency-Key, different params: 422, not a silent replay of the wrong response', async () => {
     const token = await login();
@@ -162,28 +189,47 @@ test('AI tool-invoke idempotency', async (t) => {
     const toAddressA = `diff-params-a-${crypto.randomUUID()}@example.com`;
     const toAddressB = `diff-params-b-${crypto.randomUUID()}@example.com`;
 
-    const first = await post(baseUrl, '/api/v1/ai/tools/draft_notification/invoke', headersFor(token, key), { params: draftParams(toAddressA) });
+    const first = await post(baseUrl, '/api/v1/ai/tools/draft_notification/invoke', headersFor(token, key), {
+      params: draftParams(toAddressA),
+    });
     assert.equal(first.status, 200);
 
-    const second = await post(baseUrl, '/api/v1/ai/tools/draft_notification/invoke', headersFor(token, key), { params: draftParams(toAddressB) });
+    const second = await post(baseUrl, '/api/v1/ai/tools/draft_notification/invoke', headersFor(token, key), {
+      params: draftParams(toAddressB),
+    });
     assert.equal(second.status, 422);
 
-    assert.equal(await countNotifications(toAddressB), 0, 'the mismatched-params request must never have reached the handler');
+    assert.equal(
+      await countNotifications(toAddressB),
+      0,
+      'the mismatched-params request must never have reached the handler',
+    );
   });
 
-  await t.test('two genuinely concurrent requests with the same key: exactly one execution, both callers get the same real response', async () => {
-    const token = await login();
-    const toAddress = `concurrent-${crypto.randomUUID()}@example.com`;
-    const key = crypto.randomUUID();
+  await t.test(
+    'two genuinely concurrent requests with the same key: exactly one execution, both callers get the same real response',
+    async () => {
+      const token = await login();
+      const toAddress = `concurrent-${crypto.randomUUID()}@example.com`;
+      const key = crypto.randomUUID();
 
-    const [a, b] = await Promise.all([
-      post(baseUrl, '/api/v1/ai/tools/draft_notification/invoke', headersFor(token, key), { params: draftParams(toAddress) }),
-      post(baseUrl, '/api/v1/ai/tools/draft_notification/invoke', headersFor(token, key), { params: draftParams(toAddress) }),
-    ]);
+      const [a, b] = await Promise.all([
+        post(baseUrl, '/api/v1/ai/tools/draft_notification/invoke', headersFor(token, key), {
+          params: draftParams(toAddress),
+        }),
+        post(baseUrl, '/api/v1/ai/tools/draft_notification/invoke', headersFor(token, key), {
+          params: draftParams(toAddress),
+        }),
+      ]);
 
-    assert.equal(a.status, 200);
-    assert.equal(b.status, 200);
-    assert.deepEqual(a.body, b.body, 'both concurrent callers must see the same single real result');
-    assert.equal(await countNotifications(toAddress), 1, 'the DB UNIQUE constraint must have serialized this to exactly one real execution');
-  });
+      assert.equal(a.status, 200);
+      assert.equal(b.status, 200);
+      assert.deepEqual(a.body, b.body, 'both concurrent callers must see the same single real result');
+      assert.equal(
+        await countNotifications(toAddress),
+        1,
+        'the DB UNIQUE constraint must have serialized this to exactly one real execution',
+      );
+    },
+  );
 });

@@ -61,17 +61,22 @@ function buildOdtBuffer(paragraphs) {
   const zip = new PizZip();
   zip.file('mimetype', 'application/vnd.oasis.opendocument.text');
   const body = paragraphs.map((p) => `<text:p>${p}</text:p>`).join('');
-  zip.file('content.xml', `<office:document-content><office:body><office:text>${body}</office:text></office:body></office:document-content>`);
+  zip.file(
+    'content.xml',
+    `<office:document-content><office:body><office:text>${body}</office:text></office:body></office:document-content>`,
+  );
   return zip.generate({ type: 'nodebuffer' });
 }
 
 function buildOdsBuffer(sheetName, rows) {
   const zip = new PizZip();
   zip.file('mimetype', 'application/vnd.oasis.opendocument.spreadsheet');
-  const rowsXml = rows.map((row) => {
-    const cells = row.map((value) => `<table:table-cell><text:p>${value}</text:p></table:table-cell>`).join('');
-    return `<table:table-row>${cells}</table:table-row>`;
-  }).join('');
+  const rowsXml = rows
+    .map((row) => {
+      const cells = row.map((value) => `<table:table-cell><text:p>${value}</text:p></table:table-cell>`).join('');
+      return `<table:table-row>${cells}</table:table-row>`;
+    })
+    .join('');
   zip.file(
     'content.xml',
     `<office:document-content><office:body><office:spreadsheet><table:table table:name="${sheetName}">${rowsXml}</table:table></office:spreadsheet></office:body></office:document-content>`,
@@ -84,42 +89,108 @@ test('extractPlainText: an ordinary text-layer PDF is extracted via the fast tex
     throw new Error('runOcr must never be called for a real text-layer PDF');
   });
   const buffer = await buildPdfBuffer('This is a real text-layer PDF with plenty of readable characters per page.');
-  const result = await documentTextExtractionService.extractPlainText(buffer, documentTextExtractionService.PDF_MIME_TYPE);
+  const result = await documentTextExtractionService.extractPlainText(
+    buffer,
+    documentTextExtractionService.PDF_MIME_TYPE,
+  );
   assert.equal(result.method, 'text_layer');
   assert.match(result.text, /real text-layer PDF/);
   assert.equal(runOcrMock.mock.calls.length, 0);
 });
 
-test('extractPlainText: correction 1 — a PDF with an empty/near-empty text layer (e.g. scanned) falls back to OCR, mocked here to avoid a real Tesseract run', async (t) => {
+test('extractPlainText: correction 1 — a scanned PDF with no client/collegeId (vision unavailable) falls back to Tesseract, mocked here to avoid a real Tesseract run', async (t) => {
   t.mock.method(documentExtractionService, 'runOcr', async () => ({ text: 'OCR-recovered text.', ocrConfidence: 91 }));
   const blankBuffer = await buildPdfBuffer(null); // no .text() call -> empty embedded text layer
-  const result = await documentTextExtractionService.extractPlainText(blankBuffer, documentTextExtractionService.PDF_MIME_TYPE);
+  const result = await documentTextExtractionService.extractPlainText(
+    blankBuffer,
+    documentTextExtractionService.PDF_MIME_TYPE,
+  );
   assert.equal(result.method, 'ocr_fallback');
   assert.equal(result.text, 'OCR-recovered text.');
 });
 
+// ADL-074 (modernization P3 2.4) — vision is the DEFAULT for a genuinely
+// scanned PDF when client/collegeId are available (a real chat turn
+// always has both — see aiService.resolveChatAttachments' own call
+// site), not a confidence-gated fallback behind Tesseract. Decided
+// explicitly by the owner, not to be re-opened on cost grounds alone.
+test('extractPlainText: a scanned PDF with client+collegeId available uses vision by DEFAULT, never touching Tesseract', async (t) => {
+  const visionMock = t.mock.method(documentExtractionService, 'transcribeWithVision', async () => ({
+    text: 'Vision-transcribed text.',
+    method: 'vision_transcription',
+  }));
+  const runOcrMock = t.mock.method(documentExtractionService, 'runOcr', async () => {
+    throw new Error('Tesseract must not be called when vision is available and succeeds');
+  });
+  const blankBuffer = await buildPdfBuffer(null);
+  const result = await documentTextExtractionService.extractPlainText(
+    blankBuffer,
+    documentTextExtractionService.PDF_MIME_TYPE,
+    { client: {}, collegeId: 'c1' },
+  );
+  assert.equal(result.method, 'vision_transcription');
+  assert.equal(result.text, 'Vision-transcribed text.');
+  assert.equal(visionMock.mock.calls.length, 1);
+  assert.equal(visionMock.mock.calls[0].arguments[1].collegeId, 'c1');
+  assert.equal(runOcrMock.mock.calls.length, 0);
+});
+
+test('extractPlainText: a scanned PDF falls back to Tesseract when vision itself fails (capability or network), even with client+collegeId', async (t) => {
+  t.mock.method(documentExtractionService, 'transcribeWithVision', async () => {
+    throw new documentExtractionService.DocumentExtractionVisionTranscriptionUnsupportedError('no vision capability');
+  });
+  t.mock.method(documentExtractionService, 'runOcr', async () => ({
+    text: 'Tesseract fallback text.',
+    ocrConfidence: 40,
+  }));
+  const blankBuffer = await buildPdfBuffer(null);
+  const result = await documentTextExtractionService.extractPlainText(
+    blankBuffer,
+    documentTextExtractionService.PDF_MIME_TYPE,
+    { client: {}, collegeId: 'c1' },
+  );
+  assert.equal(result.method, 'ocr_fallback');
+  assert.equal(result.text, 'Tesseract fallback text.');
+});
+
 test('extractPlainText: a corrupt/non-PDF buffer claimed as application/pdf degrades to corrupt_or_unreadable, never throws', async () => {
-  const result = await documentTextExtractionService.extractPlainText(Buffer.from('not a real pdf'), documentTextExtractionService.PDF_MIME_TYPE);
+  const result = await documentTextExtractionService.extractPlainText(
+    Buffer.from('not a real pdf'),
+    documentTextExtractionService.PDF_MIME_TYPE,
+  );
   assert.equal(result.text, null);
   assert.equal(result.failureReason, 'corrupt_or_unreadable');
 });
 
 test('extractPlainText: a real DOCX is extracted via mammoth', async () => {
   const buffer = await buildDocxBuffer('Hello from a real docx document.');
-  const result = await documentTextExtractionService.extractPlainText(buffer, documentTextExtractionService.DOCX_MIME_TYPE);
+  const result = await documentTextExtractionService.extractPlainText(
+    buffer,
+    documentTextExtractionService.DOCX_MIME_TYPE,
+  );
   assert.equal(result.method, 'mammoth');
   assert.equal(result.text, 'Hello from a real docx document.');
 });
 
 test('extractPlainText: a corrupt DOCX degrades to corrupt_or_unreadable, never throws', async () => {
-  const result = await documentTextExtractionService.extractPlainText(Buffer.from('not a real docx'), documentTextExtractionService.DOCX_MIME_TYPE);
+  const result = await documentTextExtractionService.extractPlainText(
+    Buffer.from('not a real docx'),
+    documentTextExtractionService.DOCX_MIME_TYPE,
+  );
   assert.equal(result.text, null);
   assert.equal(result.failureReason, 'corrupt_or_unreadable');
 });
 
 test('extractPlainText: a real XLSX is extracted via exceljs, sheet name + cells joined into readable lines', async () => {
-  const buffer = await buildXlsxBuffer([['name', 'marks'], ['Ravi', 92], ['Meena', 88]]);
-  const result = await documentTextExtractionService.extractPlainText(buffer, documentTextExtractionService.XLSX_MIME_TYPE);
+  const buffer = await buildXlsxBuffer([
+    ['name', 'marks'],
+    ['Ravi', 92],
+    ['Meena', 88],
+  ]);
+  const result = await documentTextExtractionService.extractPlainText(
+    buffer,
+    documentTextExtractionService.XLSX_MIME_TYPE,
+  );
   assert.equal(result.method, 'exceljs');
   assert.match(result.text, /Sheet1/);
   assert.match(result.text, /Ravi \| 92/);
@@ -127,41 +198,63 @@ test('extractPlainText: a real XLSX is extracted via exceljs, sheet name + cells
 });
 
 test('extractPlainText: a corrupt XLSX degrades to corrupt_or_unreadable, never throws', async () => {
-  const result = await documentTextExtractionService.extractPlainText(Buffer.from('not a real xlsx'), documentTextExtractionService.XLSX_MIME_TYPE);
+  const result = await documentTextExtractionService.extractPlainText(
+    Buffer.from('not a real xlsx'),
+    documentTextExtractionService.XLSX_MIME_TYPE,
+  );
   assert.equal(result.text, null);
   assert.equal(result.failureReason, 'corrupt_or_unreadable');
 });
 
 test('extractPlainText: a real PPTX has its slide text runs extracted in slide order', async () => {
   const buffer = buildPptxBuffer(['First slide text.', 'Second slide text.']);
-  const result = await documentTextExtractionService.extractPlainText(buffer, documentTextExtractionService.PPTX_MIME_TYPE);
+  const result = await documentTextExtractionService.extractPlainText(
+    buffer,
+    documentTextExtractionService.PPTX_MIME_TYPE,
+  );
   assert.equal(result.method, 'pptx_slides');
   assert.match(result.text, /Slide 1\nFirst slide text\./);
   assert.match(result.text, /Slide 2\nSecond slide text\./);
 });
 
 test('extractPlainText: a corrupt/non-PPTX buffer degrades to corrupt_or_unreadable, never throws', async () => {
-  const result = await documentTextExtractionService.extractPlainText(Buffer.from('not a real pptx'), documentTextExtractionService.PPTX_MIME_TYPE);
+  const result = await documentTextExtractionService.extractPlainText(
+    Buffer.from('not a real pptx'),
+    documentTextExtractionService.PPTX_MIME_TYPE,
+  );
   assert.equal(result.text, null);
   assert.equal(result.failureReason, 'corrupt_or_unreadable');
 });
 
 test('extractPlainText: a real ODT has its paragraphs extracted, joined by newline', async () => {
   const buffer = buildOdtBuffer(['Paragraph one.', 'Paragraph two.']);
-  const result = await documentTextExtractionService.extractPlainText(buffer, documentTextExtractionService.ODT_MIME_TYPE);
+  const result = await documentTextExtractionService.extractPlainText(
+    buffer,
+    documentTextExtractionService.ODT_MIME_TYPE,
+  );
   assert.equal(result.method, 'odt_paragraphs');
   assert.equal(result.text, 'Paragraph one.\nParagraph two.');
 });
 
 test('extractPlainText: a corrupt/non-ODT buffer degrades to corrupt_or_unreadable, never throws', async () => {
-  const result = await documentTextExtractionService.extractPlainText(Buffer.from('not a real odt'), documentTextExtractionService.ODT_MIME_TYPE);
+  const result = await documentTextExtractionService.extractPlainText(
+    Buffer.from('not a real odt'),
+    documentTextExtractionService.ODT_MIME_TYPE,
+  );
   assert.equal(result.text, null);
   assert.equal(result.failureReason, 'corrupt_or_unreadable');
 });
 
 test('extractPlainText: a real ODS has its sheet name + cells joined into readable lines', async () => {
-  const buffer = buildOdsBuffer('Sheet1', [['name', 'marks'], ['Ravi', '92'], ['Meena', '88']]);
-  const result = await documentTextExtractionService.extractPlainText(buffer, documentTextExtractionService.ODS_MIME_TYPE);
+  const buffer = buildOdsBuffer('Sheet1', [
+    ['name', 'marks'],
+    ['Ravi', '92'],
+    ['Meena', '88'],
+  ]);
+  const result = await documentTextExtractionService.extractPlainText(
+    buffer,
+    documentTextExtractionService.ODS_MIME_TYPE,
+  );
   assert.equal(result.method, 'ods_sheets');
   assert.match(result.text, /Sheet1/);
   assert.match(result.text, /Ravi \| 92/);
@@ -169,7 +262,10 @@ test('extractPlainText: a real ODS has its sheet name + cells joined into readab
 });
 
 test('extractPlainText: a corrupt/non-ODS buffer degrades to corrupt_or_unreadable, never throws', async () => {
-  const result = await documentTextExtractionService.extractPlainText(Buffer.from('not a real ods'), documentTextExtractionService.ODS_MIME_TYPE);
+  const result = await documentTextExtractionService.extractPlainText(
+    Buffer.from('not a real ods'),
+    documentTextExtractionService.ODS_MIME_TYPE,
+  );
   assert.equal(result.text, null);
   assert.equal(result.failureReason, 'corrupt_or_unreadable');
 });
@@ -182,7 +278,10 @@ test('extractPlainText: a corrupt/non-ODS buffer degrades to corrupt_or_unreadab
 test('extractPlainText: markdown/plain pass through as direct UTF-8 text, no library involved', async () => {
   for (const mimeType of ['text/markdown', 'text/plain']) {
     // eslint-disable-next-line no-await-in-loop
-    const result = await documentTextExtractionService.extractPlainText(Buffer.from('raw content here', 'utf8'), mimeType);
+    const result = await documentTextExtractionService.extractPlainText(
+      Buffer.from('raw content here', 'utf8'),
+      mimeType,
+    );
     assert.equal(result.method, 'direct_text');
     assert.equal(result.text, 'raw content here');
   }
@@ -205,7 +304,8 @@ test.after(() => {
 test('extractPlainText: csv is parsed as a table, not raw text, and reaches the delimited strategy', async () => {
   const csv = 'Serial,RegNo,Name,Arrears\n818,24700301,ANBARASAN V,2\n819,24700302,BHARATH K,0\n';
   const result = await documentTextExtractionService.extractPlainText(
-    Buffer.from(csv, 'utf8'), documentTextExtractionService.CSV_MIME_TYPE,
+    Buffer.from(csv, 'utf8'),
+    documentTextExtractionService.CSV_MIME_TYPE,
   );
   assert.equal(result.method, 'exceljs_csv');
   assert.equal(result.text.split('\n')[0], 'Serial | RegNo | Name | Arrears');
@@ -218,7 +318,8 @@ test('extractPlainText: csv is parsed as a table, not raw text, and reaches the 
 test('extractPlainText: a comma inside a quoted csv cell is not a cell boundary', async () => {
   const csv = 'RegNo,Name,Fee\n24700301,"ANBARASAN V, Jr.",625\n';
   const result = await documentTextExtractionService.extractPlainText(
-    Buffer.from(csv, 'utf8'), documentTextExtractionService.CSV_MIME_TYPE,
+    Buffer.from(csv, 'utf8'),
+    documentTextExtractionService.CSV_MIME_TYPE,
   );
   const cells = extractRecords(result.text).records[1].cells;
   assert.deepEqual(cells, ['24700301', 'ANBARASAN V, Jr.', '625']);
@@ -229,9 +330,11 @@ test('extractPlainText: a comma inside a quoted csv cell is not a cell boundary'
 // prose and produced strategy 'none'. Structure has to survive extraction;
 // it cannot be recovered downstream.
 function docxWithTable(rows, trailingProse) {
-  const cell = (t) => `<w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>${t}</w:t></w:r></w:p></w:tc>`;
-  const table = `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>${
-    rows.map((r) => `<w:tr>${r.map(cell).join('')}</w:tr>`).join('')}</w:tbl>`;
+  const cell = (t) =>
+    `<w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>${t}</w:t></w:r></w:p></w:tc>`;
+  const table = `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>${rows
+    .map((r) => `<w:tr>${r.map(cell).join('')}</w:tr>`)
+    .join('')}</w:tbl>`;
   const prose = trailingProse ? `<w:p><w:r><w:t>${trailingProse}</w:t></w:r></w:p>` : '';
   return docxBuffer(`${table}${prose}`);
 }
@@ -242,30 +345,47 @@ function docxProseOnly(paragraphs) {
 
 function docxBuffer(bodyXml) {
   const zip = new PizZip();
-  zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-    + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-    + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-    + '<Default Extension="xml" ContentType="application/xml"/>'
-    + '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
-    + '</Types>');
-  zip.folder('_rels').file('.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-    + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
-    + '</Relationships>');
-  zip.folder('word').file('document.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-    + '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-    + `<w:body>${bodyXml}</w:body></w:document>`);
+  zip.file(
+    '[Content_Types].xml',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+      '</Types>',
+  );
+  zip
+    .folder('_rels')
+    .file(
+      '.rels',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+        '</Relationships>',
+    );
+  zip
+    .folder('word')
+    .file(
+      'document.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+        `<w:body>${bodyXml}</w:body></w:document>`,
+    );
   return zip.generate({ type: 'nodebuffer' });
 }
 
 test('extractPlainText: a docx table keeps its row/cell structure', async () => {
-  const buffer = docxWithTable([
-    ['Serial', 'RegNo', 'Name', 'Arrears'],
-    ['818', '24700301', 'ANBARASAN V', '2'],
-    ['819', '24700302', 'BHARATH K', '0'],
-  ], 'End of table');
+  const buffer = docxWithTable(
+    [
+      ['Serial', 'RegNo', 'Name', 'Arrears'],
+      ['818', '24700301', 'ANBARASAN V', '2'],
+      ['819', '24700302', 'BHARATH K', '0'],
+    ],
+    'End of table',
+  );
   const result = await documentTextExtractionService.extractPlainText(
-    buffer, documentTextExtractionService.DOCX_MIME_TYPE,
+    buffer,
+    documentTextExtractionService.DOCX_MIME_TYPE,
   );
   assert.equal(result.method, 'mammoth_tables');
   const detected = extractRecords(result.text);
@@ -279,7 +399,8 @@ test('extractPlainText: a docx table keeps its row/cell structure', async () => 
 test('extractPlainText: a prose-only docx is unchanged by the table handling', async () => {
   const buffer = docxProseOnly(['First paragraph.', 'Second paragraph.']);
   const result = await documentTextExtractionService.extractPlainText(
-    buffer, documentTextExtractionService.DOCX_MIME_TYPE,
+    buffer,
+    documentTextExtractionService.DOCX_MIME_TYPE,
   );
   assert.equal(result.method, 'mammoth');
   assert.equal(result.text, 'First paragraph.\n\nSecond paragraph.');

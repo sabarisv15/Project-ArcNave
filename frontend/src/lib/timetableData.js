@@ -64,20 +64,110 @@ const SLOT_INDEX_BY_PERIOD = new Map(SLOTS.map((s, i) => [s.period, i]).filter((
 
 /** The classes this staff member is allocated to, each typed theory or practical. */
 const CLASSES = {
-  ds: { subject: 'Data Structures', code: 'II B.Sc CS — A', programme: 'II B.Sc Computer Science', year: 2, section: 'A', type: 'theory' },
-  os: { subject: 'Operating Systems', code: 'II B.Sc CS — B', programme: 'II B.Sc Computer Science', year: 2, section: 'B', type: 'theory' },
-  co: { subject: 'Computer Organization', code: 'II B.Sc CS — C', programme: 'II B.Sc Computer Science', year: 2, section: 'C', type: 'theory' },
-  cn: { subject: 'Computer Networks', code: 'III B.Sc CS — B', programme: 'III B.Sc Computer Science', year: 3, section: 'B', type: 'theory' },
-  dbs: { subject: 'Database Systems', code: 'III B.Sc CS — A', programme: 'III B.Sc Computer Science', year: 3, section: 'A', type: 'theory' },
-  em: { subject: 'Discrete Mathematics', code: 'II B.Sc CS — C', programme: 'II B.Sc Computer Science', year: 2, section: 'C', type: 'theory' },
-  dc: { subject: 'Data Communication', code: 'II B.Sc ECE — A', programme: 'II B.Sc Electronics', year: 2, section: 'A', type: 'theory' },
+  ds: {
+    subject: 'Data Structures',
+    code: 'II B.Sc CS — A',
+    programme: 'II B.Sc Computer Science',
+    year: 2,
+    section: 'A',
+    type: 'theory',
+  },
+  os: {
+    subject: 'Operating Systems',
+    code: 'II B.Sc CS — B',
+    programme: 'II B.Sc Computer Science',
+    year: 2,
+    section: 'B',
+    type: 'theory',
+  },
+  co: {
+    subject: 'Computer Organization',
+    code: 'II B.Sc CS — C',
+    programme: 'II B.Sc Computer Science',
+    year: 2,
+    section: 'C',
+    type: 'theory',
+  },
+  cn: {
+    subject: 'Computer Networks',
+    code: 'III B.Sc CS — B',
+    programme: 'III B.Sc Computer Science',
+    year: 3,
+    section: 'B',
+    type: 'theory',
+  },
+  dbs: {
+    subject: 'Database Systems',
+    code: 'III B.Sc CS — A',
+    programme: 'III B.Sc Computer Science',
+    year: 3,
+    section: 'A',
+    type: 'theory',
+  },
+  em: {
+    subject: 'Discrete Mathematics',
+    code: 'II B.Sc CS — C',
+    programme: 'II B.Sc Computer Science',
+    year: 2,
+    section: 'C',
+    type: 'theory',
+  },
+  dc: {
+    subject: 'Data Communication',
+    code: 'II B.Sc ECE — A',
+    programme: 'II B.Sc Electronics',
+    year: 2,
+    section: 'A',
+    type: 'theory',
+  },
 
-  dslab: { subject: 'Data Structures Lab', code: 'II B.Sc CS — A', programme: 'II B.Sc Computer Science', year: 2, section: 'A', batch: 'Batch 1', type: 'practical' },
-  oslab: { subject: 'Operating Systems Lab', code: 'II B.Sc CS — B', programme: 'II B.Sc Computer Science', year: 2, section: 'B', batch: 'Batch 2', type: 'practical' },
-  nwlab: { subject: 'Networks Lab', code: 'III B.Sc CS — B', programme: 'III B.Sc Computer Science', year: 3, section: 'B', type: 'practical' },
+  dslab: {
+    subject: 'Data Structures Lab',
+    code: 'II B.Sc CS — A',
+    programme: 'II B.Sc Computer Science',
+    year: 2,
+    section: 'A',
+    batch: 'Batch 1',
+    type: 'practical',
+  },
+  oslab: {
+    subject: 'Operating Systems Lab',
+    code: 'II B.Sc CS — B',
+    programme: 'II B.Sc Computer Science',
+    year: 2,
+    section: 'B',
+    batch: 'Batch 2',
+    type: 'practical',
+  },
+  nwlab: {
+    subject: 'Networks Lab',
+    code: 'III B.Sc CS — B',
+    programme: 'III B.Sc Computer Science',
+    year: 3,
+    section: 'B',
+    type: 'practical',
+  },
 
-  phy: { subject: 'Physics', code: 'X — B', programme: 'Higher Secondary', year: null, section: 'B', type: 'theory', ownership: 'substitute', substituteFor: 'Dr. Lakshmi Narayanan' },
-  thermo: { subject: 'Thermodynamics', code: 'MECH Semester 4', programme: 'B.E. Mechanical', year: 2, section: null, type: 'theory', ownership: 'substitute', substituteFor: 'Prof. Girish Menon' },
+  phy: {
+    subject: 'Physics',
+    code: 'X — B',
+    programme: 'Higher Secondary',
+    year: null,
+    section: 'B',
+    type: 'theory',
+    ownership: 'substitute',
+    substituteFor: 'Dr. Lakshmi Narayanan',
+  },
+  thermo: {
+    subject: 'Thermodynamics',
+    code: 'MECH Semester 4',
+    programme: 'B.E. Mechanical',
+    year: 2,
+    section: null,
+    type: 'theory',
+    ownership: 'substitute',
+    substituteFor: 'Prof. Girish Menon',
+  },
 };
 
 /**
@@ -92,11 +182,30 @@ const VERSIONS = [
     label: 'Published',
     effectiveFrom: '15 Jun 2026',
     allocation: {
-      mon: [{ p: 1, c: 'ds' }, { p: 2, c: 'cn' }, { p: 6, c: 'dslab', span: 3 }],
-      tue: [{ p: 1, c: 'os' }, { p: 2, c: 'dbs' }, { p: 4, c: 'co' }],
-      wed: [{ p: 1, c: 'nwlab', span: 3 }, { p: 5, c: 'dc' }],
-      thu: [{ p: 1, c: 'os' }, { p: 2, c: 'dbs' }, { p: 4, c: 'em' }],
-      fri: [{ p: 1, c: 'ds' }, { p: 3, c: 'os' }, { p: 7, c: 'em' }],
+      mon: [
+        { p: 1, c: 'ds' },
+        { p: 2, c: 'cn' },
+        { p: 6, c: 'dslab', span: 3 },
+      ],
+      tue: [
+        { p: 1, c: 'os' },
+        { p: 2, c: 'dbs' },
+        { p: 4, c: 'co' },
+      ],
+      wed: [
+        { p: 1, c: 'nwlab', span: 3 },
+        { p: 5, c: 'dc' },
+      ],
+      thu: [
+        { p: 1, c: 'os' },
+        { p: 2, c: 'dbs' },
+        { p: 4, c: 'em' },
+      ],
+      fri: [
+        { p: 1, c: 'ds' },
+        { p: 3, c: 'os' },
+        { p: 7, c: 'em' },
+      ],
     },
   },
   {
@@ -104,11 +213,30 @@ const VERSIONS = [
     label: 'Revised v1',
     effectiveFrom: '6 Jul 2026',
     allocation: {
-      mon: [{ p: 1, c: 'ds' }, { p: 2, c: 'cn' }, { p: 6, c: 'dslab', span: 3 }],
-      tue: [{ p: 1, c: 'os' }, { p: 2, c: 'dbs' }, { p: 4, c: 'co' }, { p: 6, c: 'oslab', span: 3 }],
-      wed: [{ p: 1, c: 'nwlab', span: 3 }, { p: 5, c: 'dc' }],
-      thu: [{ p: 1, c: 'os' }, { p: 2, c: 'dbs' }, { p: 4, c: 'em' }],
-      fri: [{ p: 1, c: 'ds' }, { p: 3, c: 'os' }],
+      mon: [
+        { p: 1, c: 'ds' },
+        { p: 2, c: 'cn' },
+        { p: 6, c: 'dslab', span: 3 },
+      ],
+      tue: [
+        { p: 1, c: 'os' },
+        { p: 2, c: 'dbs' },
+        { p: 4, c: 'co' },
+        { p: 6, c: 'oslab', span: 3 },
+      ],
+      wed: [
+        { p: 1, c: 'nwlab', span: 3 },
+        { p: 5, c: 'dc' },
+      ],
+      thu: [
+        { p: 1, c: 'os' },
+        { p: 2, c: 'dbs' },
+        { p: 4, c: 'em' },
+      ],
+      fri: [
+        { p: 1, c: 'ds' },
+        { p: 3, c: 'os' },
+      ],
     },
   },
   {
@@ -117,17 +245,43 @@ const VERSIONS = [
     effectiveFrom: '3 Aug 2026',
     active: true,
     allocation: {
-      mon: [{ p: 1, c: 'ds' }, { p: 2, c: 'cn' }, { p: 6, c: 'dslab', span: 3 }],
-      tue: [{ p: 1, c: 'os' }, { p: 2, c: 'dbs' }, { p: 4, c: 'co' }, { p: 6, c: 'ds' }],
-      wed: [{ p: 1, c: 'nwlab', span: 3 }, { p: 5, c: 'dc' }, { p: 8, c: 'phy' }],
-      thu: [{ p: 1, c: 'os' }, { p: 2, c: 'dbs' }, { p: 3, c: 'phy' }, { p: 4, c: 'em' }, { p: 6, c: 'oslab', span: 3 }],
-      fri: [{ p: 1, c: 'ds' }, { p: 3, c: 'os' }, { p: 6, c: 'thermo' }],
+      mon: [
+        { p: 1, c: 'ds' },
+        { p: 2, c: 'cn' },
+        { p: 6, c: 'dslab', span: 3 },
+      ],
+      tue: [
+        { p: 1, c: 'os' },
+        { p: 2, c: 'dbs' },
+        { p: 4, c: 'co' },
+        { p: 6, c: 'ds' },
+      ],
+      wed: [
+        { p: 1, c: 'nwlab', span: 3 },
+        { p: 5, c: 'dc' },
+        { p: 8, c: 'phy' },
+      ],
+      thu: [
+        { p: 1, c: 'os' },
+        { p: 2, c: 'dbs' },
+        { p: 3, c: 'phy' },
+        { p: 4, c: 'em' },
+        { p: 6, c: 'oslab', span: 3 },
+      ],
+      fri: [
+        { p: 1, c: 'ds' },
+        { p: 3, c: 'os' },
+        { p: 6, c: 'thermo' },
+      ],
     },
   },
 ];
 
 export const TIMETABLE_VERSIONS = VERSIONS.map(({ id, label, effectiveFrom, active }) => ({
-  id, label, effectiveFrom, active: !!active,
+  id,
+  label,
+  effectiveFrom,
+  active: !!active,
 }));
 
 export const ACTIVE_VERSION_ID = VERSIONS.find((v) => v.active)?.id ?? VERSIONS[VERSIONS.length - 1].id;
@@ -197,9 +351,7 @@ function versionById(versionId) {
 /** Every block a day holds in one version, in slot order. */
 export function blocksForDay(dayKey, versionId = ACTIVE_VERSION_ID) {
   const allocation = versionById(versionId).allocation[dayKey] ?? [];
-  return allocation
-    .flatMap(expandSession)
-    .sort((a, b) => a.startSlotIndex - b.startSlotIndex);
+  return allocation.flatMap(expandSession).sort((a, b) => a.startSlotIndex - b.startSlotIndex);
 }
 
 /**
@@ -241,7 +393,14 @@ export function workloadForVersion(versionId = ACTIVE_VERSION_ID) {
       const { subject, code, type, batch } = block.class;
       const key = `${subject}__${type}`;
       const existing = groups.get(key) ?? {
-        key, subject, code, batch: batch ?? null, type, hours: 0, sessions: 0, longestBlock: 0,
+        key,
+        subject,
+        code,
+        batch: batch ?? null,
+        type,
+        hours: 0,
+        sessions: 0,
+        longestBlock: 0,
       };
       existing.hours += block.hours;
       existing.sessions += 1;
@@ -252,7 +411,7 @@ export function workloadForVersion(versionId = ACTIVE_VERSION_ID) {
   }
 
   const rows = [...groups.values()].sort(
-    (a, b) => a.subject.localeCompare(b.subject) || (a.type === 'theory' ? -1 : 1)
+    (a, b) => a.subject.localeCompare(b.subject) || (a.type === 'theory' ? -1 : 1),
   );
 
   return {
@@ -272,10 +431,7 @@ export function workloadForVersion(versionId = ACTIVE_VERSION_ID) {
  * displays an older one would be two versions' numbers on one screen.
  */
 export function periodCountForVersion(versionId = ACTIVE_VERSION_ID) {
-  return DAYS.reduce(
-    (total, day) => total + blocksForDay(day.key, versionId).reduce((n, b) => n + b.span, 0),
-    0
-  );
+  return DAYS.reduce((total, day) => total + blocksForDay(day.key, versionId).reduce((n, b) => n + b.span, 0), 0);
 }
 
 /** `1.0 hr` / `18.0 hrs` — one hours format for the whole workload surface. */
@@ -353,10 +509,18 @@ export function ownedScopesForVersion(versionId = ACTIVE_VERSION_ID) {
       if (cls.ownership !== 'own') continue;
       const id = `${versionId}:${cls.key}`;
       const existing = scopes.get(id) ?? {
-        id, versionId, classKey: cls.key,
-        subject: cls.subject, code: cls.code, programme: cls.programme,
-        year: cls.year ?? null, section: cls.section ?? null, batch: cls.batch ?? null,
-        type: cls.type, weeklyHours: 0, weeklySessions: 0,
+        id,
+        versionId,
+        classKey: cls.key,
+        subject: cls.subject,
+        code: cls.code,
+        programme: cls.programme,
+        year: cls.year ?? null,
+        section: cls.section ?? null,
+        batch: cls.batch ?? null,
+        type: cls.type,
+        weeklyHours: 0,
+        weeklySessions: 0,
       };
       existing.weeklyHours += block.hours;
       existing.weeklySessions += 1;

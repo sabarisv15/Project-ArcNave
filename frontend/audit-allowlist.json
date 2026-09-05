@@ -1,0 +1,19 @@
+{
+  "_comment": "ARCNAVE modernization P5 (O5) dependency policy allowlist — read by scripts/audit-policy-gate.js. Only HIGH/CRITICAL advisories need an entry here; MODERATE/LOW stay informational (npm audit still reports them, see dependency-scan-baseline.md). Every entry needs a real 'reason' and 'recorded' date — this is an accepted-risk log, not a blanket suppression.",
+  "accepted": [
+    {
+      "url": "https://github.com/advisories/GHSA-5xrq-8626-4rwp",
+      "package": "vitest",
+      "severity": "critical",
+      "reason": "Arbitrary file read/execute only when the Vitest UI server is listening. Dev/test tooling only — never runs in `npm run build`'s shipped bundle, and this repo's CI/local workflow never starts the Vitest UI server. Fix needs vitest@3 (currently pinned ^2.1.4), its own breaking config-surface migration.",
+      "recorded": "2026-09-03"
+    },
+    {
+      "url": "https://github.com/advisories/GHSA-fx2h-pf6j-xcff",
+      "package": "vite",
+      "severity": "high",
+      "reason": "`server.fs.deny` bypass on Windows alternate paths — dev server only, not present in the production build artifact. Fix needs vite@7 (currently pinned ^5.4.0), a breaking bump.",
+      "recorded": "2026-09-03"
+    }
+  ]
+}

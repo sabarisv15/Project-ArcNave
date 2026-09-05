@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth } = require('../middleware/rbac');
 const workflowService = require('../services/workflowService');
 const staffService = require('../services/staffService');
@@ -147,8 +149,8 @@ function mapWorkflowRequestsError(err, res) {
     return true;
   }
   if (
-    err instanceof notificationService.NotificationNoPendingRequestError
-    || err instanceof notificationService.NotificationNotApprovedError
+    err instanceof notificationService.NotificationNoPendingRequestError ||
+    err instanceof notificationService.NotificationNotApprovedError
   ) {
     res.status(409).json({ detail: err.message });
     return true;
@@ -211,7 +213,8 @@ async function dispatchWorkflowAction(req, action) {
     return { result: await fn(req.dbClient, request.entity_id, { actorUserId, remarks }) };
   }
   if (request.entity_type === 'timetable_approval') {
-    const fn = action === 'approve' ? academicService.approveTimetableApproval : academicService.rejectTimetableApproval;
+    const fn =
+      action === 'approve' ? academicService.approveTimetableApproval : academicService.rejectTimetableApproval;
     return { result: await fn(req.dbClient, request.entity_id, { actorUserId, remarks }) };
   }
   // RS-CLS-007: entity_id here is the substitute_assignment_requests
@@ -221,7 +224,8 @@ async function dispatchWorkflowAction(req, action) {
   // top of workflowService.approveRequest, same two-step cascade
   // staff_registration needs.
   if (request.entity_type === 'substitute_assignment') {
-    const fn = action === 'approve' ? academicService.approveSubstituteAssignment : academicService.rejectSubstituteAssignment;
+    const fn =
+      action === 'approve' ? academicService.approveSubstituteAssignment : academicService.rejectSubstituteAssignment;
     return { result: await fn(req.dbClient, request.entity_id, { actorUserId, remarks }) };
   }
   if (request.entity_type === 'institutional_document_publish') {
@@ -234,7 +238,9 @@ async function dispatchWorkflowAction(req, action) {
   }
   if (request.entity_type === 'notification') {
     if (action === 'reject') {
-      return { result: await notificationService.rejectNotification(req.dbClient, request.entity_id, { actorUserId, remarks }) };
+      return {
+        result: await notificationService.rejectNotification(req.dbClient, request.entity_id, { actorUserId, remarks }),
+      };
     }
     // Two real steps, not one — see the file-level comment: approval
     // alone doesn't dispatch anything.
@@ -253,7 +259,11 @@ async function dispatchWorkflowAction(req, action) {
   // cascade for. Reject outright rather than silently under-applying —
   // routes/attendance.js's/routes/finance.js's own dedicated routes are
   // where these two entity types must be approved from.
-  if (request.entity_type === 'attendance_correction' || request.entity_type === 'fee_correction' || request.entity_type === 'mark_correction') {
+  if (
+    request.entity_type === 'attendance_correction' ||
+    request.entity_type === 'fee_correction' ||
+    request.entity_type === 'mark_correction'
+  ) {
     throw new WorkflowRequestWrongEndpointError(
       `${JSON.stringify(request.entity_type)} requests must be ${action}d through their own dedicated route, not the generic workflow-requests endpoint`,
     );
@@ -263,46 +273,77 @@ async function dispatchWorkflowAction(req, action) {
   return { result: await fn(req.dbClient, req.params.id, { actorUserId, remarks }) };
 }
 
+const workflowRequestIdParams = z.object({ id: z.string() });
+const approveWorkflowRequestSchema = z.object({
+  params: workflowRequestIdParams,
+  body: z.object({ remarks: z.string().optional() }).optional(),
+});
+const rejectWorkflowRequestSchema = z.object({
+  params: workflowRequestIdParams,
+  body: z.object({ remarks: z.string().optional() }).optional(),
+});
+
 function createWorkflowRequestsRouter() {
   const router = express.Router();
 
-  router.get('/workflow-requests/pending', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const pending = await workflowService.listPendingForApprover(req.dbClient, identityService.resolveActorUserId(req.capabilities));
-    res.json(pending);
-  }));
+  router.get(
+    '/workflow-requests/pending',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const pending = await workflowService.listPendingForApprover(
+        req.dbClient,
+        identityService.resolveActorUserId(req.capabilities),
+      );
+      res.json(pending);
+    }),
+  );
 
-  router.post('/workflow-requests/:id/approve', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const { notFound, result } = await dispatchWorkflowAction(req, 'approve');
-      if (notFound) {
-        res.status(404).json({ detail: `No workflow request found with id ${JSON.stringify(req.params.id)}` });
-        return;
+  router.post(
+    '/workflow-requests/:id/approve',
+    requireAuth,
+    validate(approveWorkflowRequestSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const { notFound, result } = await dispatchWorkflowAction(req, 'approve');
+        if (notFound) {
+          res.status(404).json({ detail: `No workflow request found with id ${JSON.stringify(req.params.id)}` });
+          return;
+        }
+        res.json(result);
+      } catch (err) {
+        if (mapWorkflowRequestsError(err, res)) return;
+        throw err;
       }
-      res.json(result);
-    } catch (err) {
-      if (mapWorkflowRequestsError(err, res)) return;
-      throw err;
-    }
-  }));
+    }),
+  );
 
-  router.post('/workflow-requests/:id/reject', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const { notFound, result } = await dispatchWorkflowAction(req, 'reject');
-      if (notFound) {
-        res.status(404).json({ detail: `No workflow request found with id ${JSON.stringify(req.params.id)}` });
-        return;
+  router.post(
+    '/workflow-requests/:id/reject',
+    requireAuth,
+    validate(rejectWorkflowRequestSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const { notFound, result } = await dispatchWorkflowAction(req, 'reject');
+        if (notFound) {
+          res.status(404).json({ detail: `No workflow request found with id ${JSON.stringify(req.params.id)}` });
+          return;
+        }
+        res.json(result);
+      } catch (err) {
+        if (mapWorkflowRequestsError(err, res)) return;
+        throw err;
       }
-      res.json(result);
-    } catch (err) {
-      if (mapWorkflowRequestsError(err, res)) return;
-      throw err;
-    }
-  }));
+    }),
+  );
 
   return router;
 }
 
 module.exports = createWorkflowRequestsRouter;
+module.exports.schemas = {
+  '/workflow-requests/{id}/approve': { post: approveWorkflowRequestSchema },
+  '/workflow-requests/{id}/reject': { post: rejectWorkflowRequestSchema },
+};

@@ -1,18 +1,12 @@
-import { act, renderHook, render, screen, within } from '@testing-library/react';
+import { act, renderHook, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import * as Tooltip from '@radix-ui/react-tooltip';
 import { describe, expect, it } from 'vitest';
-import App from '../App';
-import { WorkspaceProvider } from '../store/WorkspaceProvider';
-import { ComposerProvider } from '../store/ComposerProvider';
-import { AcademicTermProvider } from '../store/AcademicTermProvider';
-import { AcademicRosterProvider } from '../store/AcademicRosterProvider';
 import {
+  AcademicTermProvider,
+  AcademicRosterProvider,
   InstitutionalLifecycleProvider,
   useInstitutionalLifecycle,
-} from '../store/InstitutionalLifecycleProvider';
+} from '@/features/institution';
 import {
   ENDORSEMENT_STATES,
   canFinalApprove,
@@ -25,6 +19,7 @@ import { PROVISIONING, PROVISIONING_WITHOUT_LEVEL_2 } from '../lib/provisioning'
 import { TIMETABLE_STATES, awaitsFinalApproval } from '../lib/institutionTimetableData';
 import { LEVEL_2, HOD_L3, PRINCIPAL_L1 } from '../lib/roles';
 import { DEPARTMENT as CSE_DEPARTMENT } from '../lib/departmentData';
+import { renderApp as renderAppShared } from './renderApp';
 
 const wrapper = ({ children }) => (
   <AcademicTermProvider>
@@ -36,25 +31,12 @@ const wrapper = ({ children }) => (
 
 const lifecycle = () => renderHook(() => useInstitutionalLifecycle(), { wrapper });
 
-function renderApp(route = '/curriculum') {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[route]}>
-        <Tooltip.Provider>
-          <WorkspaceProvider>
-            <ComposerProvider>
-              <App />
-            </ComposerProvider>
-          </WorkspaceProvider>
-        </Tooltip.Provider>
-      </MemoryRouter>
-    </QueryClientProvider>
-  );
+function renderApp(route = '/curriculum', options) {
+  return renderAppShared(route, options);
 }
 
 async function usePrincipalView(user) {
-  await user.click(screen.getByRole('button', { name: /open profile/i }));
+  await user.click(await screen.findByRole('button', { name: /open profile/i }));
   const group = await screen.findByRole('radiogroup', { name: /workspace view/i });
   await user.click(within(group).getByRole('radio', { name: /principal/i }));
   await user.click(screen.getByRole('button', { name: /close profile/i }));
@@ -107,12 +89,19 @@ describe('The final decision is available at exactly one state', () => {
     expect(canFinalApprove('endorsed_pending_l1')).toBe(true);
 
     // Everything else, and each for its own reason.
-    ['not_submitted', 'draft', 'conflict_identified', 'ready_for_endorsement', 'endorsed_pending_l2', 'approved_locked', 'superseded', 'rejected'].forEach(
-      (state) => {
-        expect(canFinalApprove(state)).toBe(false);
-        expect(finalApprovalBlockReason(state)).toBeTruthy();
-      }
-    );
+    [
+      'not_submitted',
+      'draft',
+      'conflict_identified',
+      'ready_for_endorsement',
+      'endorsed_pending_l2',
+      'approved_locked',
+      'superseded',
+      'rejected',
+    ].forEach((state) => {
+      expect(canFinalApprove(state)).toBe(false);
+      expect(finalApprovalBlockReason(state)).toBeTruthy();
+    });
   });
 
   it('refuses a conflicted revision, and says why rather than going quiet', () => {
@@ -181,9 +170,7 @@ describe('Deciding a revision never disturbs the live timetable', () => {
     expect(result.current.endorsementStateOf(awaiting.departmentId)).toBe('approved_locked');
     // The department's live grid is a separate field the decision does not touch.
     expect(awaiting.live.label).toBe(live);
-    expect(
-      TIMETABLE_STATES.find((s) => s.departmentId === awaiting.departmentId).live.label
-    ).toBe(live);
+    expect(TIMETABLE_STATES.find((s) => s.departmentId === awaiting.departmentId).live.label).toBe(live);
     // And a revision is still not the same thing as the live version.
     expect(TIMETABLE_STATES.every((s) => s.live.label !== s.revision?.label)).toBe(true);
   });
@@ -254,9 +241,7 @@ describe('The timetable page shows both, and decides only what it may', () => {
       name: new RegExp(`${CSE_DEPARTMENT.name} — open timetable decision`, 'i'),
     });
     expect(within(row).getByText(/live timetable unchanged/i)).toBeInTheDocument();
-    expect(
-      within(row).getByText(ENDORSEMENT_STATES.endorsed_pending_l1.label)
-    ).toBeInTheDocument();
+    expect(within(row).getByText(ENDORSEMENT_STATES.endorsed_pending_l1.label)).toBeInTheDocument();
   });
 
   it('states why a revision cannot be decided instead of hiding the reason', async () => {

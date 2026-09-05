@@ -65,6 +65,8 @@ were corrected by that review: the LLM provider row
 | [ADR-028](#adr-028) | Production LLM provider | Accepted | [RS-AIG-008](../10-specification/RS-AIG-ai-governance.md#rs-aig-008) |
 | [ADR-029](#adr-029) | Universal Document Intelligence — structural CDR + deterministic analysis, no general execution | Accepted | [RS-AIG-002](../10-specification/RS-AIG-ai-governance.md#rs-aig-002), [RS-AIG-018](../10-specification/RS-AIG-ai-governance.md#rs-aig-018), [RS-AIG-019](../10-specification/RS-AIG-ai-governance.md#rs-aig-019) |
 | [ADR-030](#adr-030) | ARCNAVE Context Architecture — structured, stability-annotated context replaces flat prompt strings | Accepted, phased | [RS-AIG-008](../10-specification/RS-AIG-ai-governance.md#rs-aig-008) |
+| [ADR-031](#adr-031) | API version / retirement policy | Accepted | none — engineering/release-process policy, not a business rule |
+| [ADR-032](#adr-032) | Table partitioning trigger + candidate/strategy (deferred until real volume) | Deferred | none — engineering/scaling decision, not a business rule |
 
 ---
 
@@ -155,6 +157,14 @@ at the cheapest possible point. Rejected: staying on the prior stack, NestJS
 friction rather than removing it — revisit once the lack of static types is a
 demonstrated maintenance cost). The database design underneath was
 re-implemented faithfully, not re-thought.
+
+**Amendment 1 (typed-code migration, [ADL-072](ledger.md#adl-072)).**
+Reversed for NEW files only, 2026-09-01, as part of the ARCNAVE
+modernization plan's P3 (4.3/5.2, clash C7) — owner authorised the
+reversal explicitly rather than this being silently decided in code.
+Every existing `.js` file is unaffected; TypeScript is additive
+tooling, not a rewrite mandate. See ADL-072 for the reasoning and
+what shipped.
 
 ### ADR-017
 **Local disk storage for documents.** Object storage's main advantage — a shared
@@ -574,3 +584,115 @@ resumable, dry-runnable — is generalised and still in force at
 [RS-DAT-007](../10-specification/RS-DAT-data-integrity.md#rs-dat-007). Revisit
 only if a real already-live institution ever needs migrating into the model
 after the fact.
+
+---
+
+### ADR-031
+
+**API version / retirement policy** (ARCNAVE modernization P5, plan item 4.10:
+"version prefix exists, no sunset plan → a deprecation timeline"). CLAUDE.md's
+own rule 5 ("All API routes live under `/api/v1/`") is a fixed constraint, not
+something this ADR revisits — every route in this codebase stays `/api/v1/`
+today, no `v2` prefix exists or is being introduced by this decision. What was
+actually missing, per the plan's own framing, is a *policy for the day a
+breaking change genuinely needs one* — not a mechanism built ahead of a real
+need (the same "don't build speculatively" reasoning this project already
+applied to LaTeX/Mermaid rendering and the O2 gradual-rollout tooling: no code
+this pass, a decision only).
+
+**When a new major version is warranted.** A route needs `/api/v2/`, not an
+in-place change under `/api/v1/`, only for a genuinely breaking change to a
+route already covered by `routes/openapi.js`'s generated contract (P1 4.8) —
+removing/renaming a response field a real caller depends on, changing a
+field's type, or changing status-code semantics. Additive changes (a new
+optional request field, a new response field, a new route) are never a
+version bump — this matches how every `zod` schema in this codebase already
+treats `.optional()` fields, so the policy adds no new mental model on top of
+what route authors already do.
+
+**Deprecation communication, once `/api/v2/` genuinely exists.** A deprecated
+`/api/v1/` route responds with the `Deprecation: true` and `Sunset:
+<HTTP-date>` response headers (RFC 8594 — the standard machine-readable
+mechanism, not a bespoke ARCNAVE header), and its `routes/openapi.js` schema
+entry gains a `deprecated: true` OpenAPI field so the generated contract
+itself documents it, not just a side doc. A CHANGES.md entry records the
+sunset date the same day the `Sunset` header is added — the header and the
+changelog are written together, never one without the other.
+
+**Minimum support window: 6 months from the `Sunset` header first
+appearing.** Long enough that this internal-tool's own frontend (the only
+real API consumer today — no external third-party integrations exist yet)
+has a full academic term to migrate every call site before the old route is
+actually removed. Revisit if a real external API consumer is ever
+onboarded — a genuinely different constituency with different notice-period
+expectations.
+
+**No code shipped by this ADR.** No route in this codebase is deprecated
+today, so there is nothing to attach the `Deprecation`/`Sunset` header
+mechanism to yet — writing unused deprecation middleware now, with zero
+real caller, would be exactly the speculative-build pattern this project
+avoids elsewhere. The mechanism above is specified precisely enough to
+implement in an afternoon the first time it is actually needed (a
+`res.set('Deprecation', 'true'); res.set('Sunset', ...)` call in the
+deprecated route handler, or a thin middleware wrapping it — either is a
+few lines, not a design decision, once this ADR exists).
+
+---
+
+### ADR-032
+
+**Table partitioning — deferred, not built, with a real measured baseline
+and a named trigger** (ARCNAVE modernization P5, plan item D8: "no
+partitioning → partition the biggest growing tables"). Measured against
+the real running `demo`-seeded Docker Postgres before writing anything
+(this project's own standing "measure before designing" discipline):
+`pg_stat_user_tables` shows the single largest table in the whole
+database is `audit_log` at **1,840 rows / 1.28 MB**; every other table
+is smaller still (`messages`/`ai_tool_embeddings`/`notifications`
+single/double digits or zero rows). No table in this codebase is within
+several orders of magnitude of where PostgreSQL partitioning typically
+starts paying for its own added complexity (tens of millions of rows, or
+a query pattern that specifically benefits from partition pruning) —
+this is expected and consistent with ADL-085's own "ARCNAVE is
+pre-launch, no live tenant data yet" reasoning, not a surprise finding.
+
+**Decision: defer the build, not the analysis.** Partitioning
+`audit_log` (or any other table) today, against zero real production
+data, would be exactly the speculative-build pattern this project
+consistently avoids elsewhere (LaTeX/Mermaid rendering, O2 gradual
+rollout, ADR-031's own deprecation-header mechanism) — there is no real
+query-performance or vacuum-pressure problem this would fix yet, and a
+wrong partitioning key chosen against a tiny synthetic dataset is worse
+than no partitioning at all once real traffic shape actually exists.
+
+**What IS decided, so a future session doesn't have to re-derive it:**
+- **Candidate:** `audit_log` is the clear first candidate if/when
+  partitioning is ever warranted — append-only (round 7's finding:
+  `SELECT, INSERT` only for the `arcnave_app` role, no `UPDATE`/`DELETE`
+  grant), every row carries a real `created_at timestamptz NOT NULL
+  DEFAULT now()`, and it is structurally the one table every tenant's
+  every AI/workflow/document action writes to on every request — the
+  fastest, least bounded grower in the schema by design, not by
+  accident.
+- **Strategy, if it is ever built:** native PostgreSQL declarative RANGE
+  partitioning on `created_at`, monthly partitions, created ahead of
+  need by a scheduled job (not manually) — the standard pattern for an
+  append-only audit/event table. `college_id`'s own RLS policy
+  (`tenant_isolation`, forced) is unaffected by partitioning on a
+  different column; partition-level pruning on `created_at` and
+  row-level tenant filtering on `college_id` are orthogonal, both stay
+  in force together.
+- **Trigger to actually build this:** either (a) `audit_log` crosses
+  roughly 10 million rows or 10 GB (whichever comes first — an early,
+  conservative threshold, revisit downward only if a specific slow-query
+  or vacuum-pressure signal appears sooner), or (b) a real, measured
+  query-performance problem is traced to `audit_log`'s unpartitioned
+  size specifically (via `EXPLAIN ANALYZE`/`pg_stat_statements`,
+  D6's own already-shipped observability), whichever happens first.
+  Neither condition exists today.
+
+**Revisit:** at the same P0-P5 mandate's standard review cadence
+(post-module or quarterly, whichever is sooner) once real tenant traffic
+exists — check `pg_stat_user_tables` again before assuming the numbers
+above are still current; this ADR's own measured baseline goes stale the
+moment a real college onboards.

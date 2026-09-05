@@ -9,58 +9,71 @@
 // tenantMiddleware in tenantApp.js, same as routes/invitations.js.
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { appPool } = require('../db/pool');
 const { openTenantTransaction } = require('../db/tenantTransaction');
 const positionAccountInvitationService = require('../services/positionAccountInvitationService');
 
+const acceptPositionInvitationSchema = z.object({
+  body: z.object({ token: z.string().optional(), password: z.string().optional() }).optional(),
+});
+
 function createPositionAccountInvitationsRouter() {
   const router = express.Router();
 
-  router.post('/position-accounts/invitations/accept', asyncHandler(async (req, res) => {
-    const { token, password } = req.body || {};
+  router.post(
+    '/position-accounts/invitations/accept',
+    validate(acceptPositionInvitationSchema),
+    asyncHandler(async (req, res) => {
+      const { token, password } = req.body || {};
 
-    const lookupClient = await appPool.connect();
-    let invitation;
-    try {
-      invitation = await positionAccountInvitationService.lookupPendingInvitation(lookupClient, token);
-    } catch (err) {
-      if (err instanceof positionAccountInvitationService.PositionInvitationInvalidError) {
-        res.status(401).json({ detail: 'Invalid or expired invitation' });
-        return;
+      const lookupClient = await appPool.connect();
+      let invitation;
+      try {
+        invitation = await positionAccountInvitationService.lookupPendingInvitation(lookupClient, token);
+      } catch (err) {
+        if (err instanceof positionAccountInvitationService.PositionInvitationInvalidError) {
+          res.status(401).json({ detail: 'Invalid or expired invitation' });
+          return;
+        }
+        throw err;
+      } finally {
+        lookupClient.release();
       }
-      throw err;
-    } finally {
-      lookupClient.release();
-    }
 
-    await openTenantTransaction(req, res, invitation.college_id);
+      await openTenantTransaction(req, res, invitation.college_id);
 
-    let account;
-    try {
-      account = await positionAccountInvitationService.acceptInvitation(req.dbClient, invitation, { password });
-    } catch (err) {
-      if (err instanceof positionAccountInvitationService.PositionInvitationValidationError) {
-        await req.rollbackTransaction();
-        res.status(400).json({ detail: err.message });
-        return;
+      let account;
+      try {
+        account = await positionAccountInvitationService.acceptInvitation(req.dbClient, invitation, { password });
+      } catch (err) {
+        if (err instanceof positionAccountInvitationService.PositionInvitationValidationError) {
+          await req.rollbackTransaction();
+          res.status(400).json({ detail: err.message });
+          return;
+        }
+        if (err instanceof positionAccountInvitationService.PositionInvitationInvalidError) {
+          await req.rollbackTransaction();
+          res.status(401).json({ detail: 'Invalid or expired invitation' });
+          return;
+        }
+        throw err;
       }
-      if (err instanceof positionAccountInvitationService.PositionInvitationInvalidError) {
-        await req.rollbackTransaction();
-        res.status(401).json({ detail: 'Invalid or expired invitation' });
-        return;
-      }
-      throw err;
-    }
 
-    res.status(201).json({
-      position_account_id: account.id,
-      college_id: account.college_id,
-      official_email: account.official_email,
-    });
-  }));
+      res.status(201).json({
+        position_account_id: account.id,
+        college_id: account.college_id,
+        official_email: account.official_email,
+      });
+    }),
+  );
 
   return router;
 }
 
 module.exports = createPositionAccountInvitationsRouter;
+module.exports.schemas = {
+  '/position-accounts/invitations/accept': { post: acceptPositionInvitationSchema },
+};

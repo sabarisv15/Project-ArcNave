@@ -87,11 +87,12 @@ class InvitationInvalidError extends Error {}
 // this username is already taken in the invitation's own college.
 class InvitationUsernameConflictError extends Error {}
 
-async function issueTokenPair(client, {
-  collegeId, userId, role, tokenVersion,
-}) {
+async function issueTokenPair(client, { collegeId, userId, role, tokenVersion }) {
   const accessToken = security.createAccessToken({
-    userId, collegeId, role, tokenVersion,
+    userId,
+    collegeId,
+    role,
+    tokenVersion,
   });
   const refreshToken = security.generateRefreshToken();
   const expiresAt = new Date(Date.now() + config.refreshTokenExpireDays * 24 * 60 * 60 * 1000);
@@ -221,7 +222,9 @@ async function verifyMfaLogin(client, { challengeId, code }) {
   }
 
   if (challenge.attempts >= config.otp.maxAttempts) {
-    throw new MfaMaxAttemptsExceededError(`MFA challenge ${JSON.stringify(challenge.id)} has exceeded the maximum number of attempts`);
+    throw new MfaMaxAttemptsExceededError(
+      `MFA challenge ${JSON.stringify(challenge.id)} has exceeded the maximum number of attempts`,
+    );
   }
 
   if (hashMfaCode(code) !== challenge.code_hash) {
@@ -246,7 +249,10 @@ async function verifyMfaLogin(client, { challengeId, code }) {
   });
 
   return issueTokenPair(client, {
-    collegeId: user.college_id, userId: user.id, role: user.role, tokenVersion: user.token_version,
+    collegeId: user.college_id,
+    userId: user.id,
+    role: user.role,
+    tokenVersion: user.token_version,
   });
 }
 
@@ -380,7 +386,10 @@ async function login(client, { collegeId, username, password }) {
   });
 
   return issueTokenPair(client, {
-    collegeId: user.college_id, userId: user.id, role: user.role, tokenVersion: user.token_version,
+    collegeId: user.college_id,
+    userId: user.id,
+    role: user.role,
+    tokenVersion: user.token_version,
   });
 }
 
@@ -433,7 +442,10 @@ async function refresh(client, rawRefreshToken) {
 
   await authRepository.revokeRefreshToken(client, stored.id);
   return issueTokenPair(client, {
-    collegeId: user.college_id, userId: user.id, role: user.role, tokenVersion: user.token_version,
+    collegeId: user.college_id,
+    userId: user.id,
+    role: user.role,
+    tokenVersion: user.token_version,
   });
 }
 
@@ -675,7 +687,10 @@ async function provisionLevel1PositionForNewPrincipal(client, collegeId, user, p
   const chosenTitle = await collegeProfileRepository.getLevel1PositionTitle(client, collegeId);
 
   const position = await positionRepository.createPosition(client, {
-    collegeId, level: 1, title: chosenTitle || DEFAULT_LEVEL1_POSITION_TITLE, createdBy: user.id,
+    collegeId,
+    level: 1,
+    title: chosenTitle || DEFAULT_LEVEL1_POSITION_TITLE,
+    createdBy: user.id,
   });
   const account = await positionRepository.createPositionAccount(client, {
     collegeId,

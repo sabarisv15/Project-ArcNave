@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  INSTITUTIONAL_EVENTS, MONTH_NAMES, WEEKDAY_LABELS,
-  eventsByDay, monthGrid, noteHasContent, notePreview,
-} from '../lib/calendarData';
+  INSTITUTIONAL_EVENTS,
+  MONTH_NAMES,
+  WEEKDAY_LABELS,
+  eventsByDay,
+  monthGrid,
+  noteHasContent,
+  notePreview,
+} from '../features/calendar/lib/calendarData';
 import { istDayKey } from '../lib/ist';
 
 describe('institutional events', () => {

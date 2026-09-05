@@ -46,9 +46,7 @@ export function SeatContextIndicator() {
   return (
     <div className="px-[10px] pb-[8px]">
       <div className="flex flex-col gap-[1px] px-[9px] py-[6px] rounded-[10px] bg-tint2">
-        <span className="text-[11.5px] font-[500] text-ink-soft leading-[1.3]">
-          {seatTitle(activeRole)}
-        </span>
+        <span className="text-[11.5px] font-[500] text-ink-soft leading-[1.3]">{seatTitle(activeRole)}</span>
         <span className="text-[11px] text-ink-faint leading-[1.3]">
           {INSTITUTION_IDENTITY.name} · {scope}
         </span>

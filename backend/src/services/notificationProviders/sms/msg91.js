@@ -18,6 +18,15 @@
 
 const MSG91_SEND_URL = 'https://api.msg91.com/api/v5/flow';
 
+// A small REST POST, same shape/scale as weatherService's own outbound
+// call (8s) and webRetrievalService's (10s) — this sits in that band
+// rather than borrowing the provider adapters' 30s, which is sized for
+// LLM generation, not a send-and-acknowledge. Without any timeout at
+// all, Node's fetch waits indefinitely: a hung MSG91 endpoint pinned
+// the calling request (and, on a request-path send, the TenantConnection
+// it holds open) forever.
+const FETCH_TIMEOUT_MS = 10_000;
+
 async function send(to, body, { credentials } = {}) {
   const { authKey, senderId, route } = credentials || {};
 
@@ -25,6 +34,8 @@ async function send(to, body, { credentials } = {}) {
     return { channel: 'sms', status: 'stubbed', to, body };
   }
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const response = await fetch(MSG91_SEND_URL, {
       method: 'POST',
@@ -38,22 +49,40 @@ async function send(to, body, { credentials } = {}) {
         mobiles: to,
         message: body,
       }),
+      signal: controller.signal,
     });
 
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data.type === 'error') {
       return {
-        channel: 'sms', status: 'failed', to, body, error: data.message || `MSG91 responded ${response.status}`,
+        channel: 'sms',
+        status: 'failed',
+        to,
+        body,
+        error: data.message || `MSG91 responded ${response.status}`,
       };
     }
 
     return {
-      channel: 'sms', status: 'sent', to, body, providerId: data.request_id || null,
+      channel: 'sms',
+      status: 'sent',
+      to,
+      body,
+      providerId: data.request_id || null,
     };
   } catch (err) {
     return {
-      channel: 'sms', status: 'failed', to, body, error: err.message,
+      channel: 'sms',
+      status: 'failed',
+      to,
+      body,
+      // An abort is reported as a timeout rather than fetch's own opaque
+      // "This operation was aborted" — the distinction matters when
+      // reading a failed notification row back later.
+      error: err.name === 'AbortError' ? `MSG91 request timed out after ${FETCH_TIMEOUT_MS}ms` : err.message,
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

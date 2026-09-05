@@ -173,9 +173,11 @@ function buildFinanceReportModel(feePayments) {
   };
 }
 
-async function generateStudentExportReport(client, {
-  collegeId, format = 'csv', columns: requestedColumns, studentIds,
-}, { actorUserId, actorRole } = {}) {
+async function generateStudentExportReport(
+  client,
+  { collegeId, format = 'csv', columns: requestedColumns, studentIds },
+  { actorUserId, actorRole } = {},
+) {
   if (!collegeId || !actorUserId) {
     throw new ReportValidationError('collegeId and actorUserId are required');
   }
@@ -216,7 +218,13 @@ async function generateStudentExportReport(client, {
     // for this case).
     const document = await documentService.uploadDocument(
       client,
-      { collegeId, docType: 'generated_report', fileName: `student_export_${Date.now()}.${generator.extension}`, mimeType: generator.mimeType, fileBuffer: bytes },
+      {
+        collegeId,
+        docType: 'generated_report',
+        fileName: `student_export_${Date.now()}.${generator.extension}`,
+        mimeType: generator.mimeType,
+        fileBuffer: bytes,
+      },
       { actorUserId },
     );
 
@@ -263,7 +271,11 @@ async function generateStudentExportReport(client, {
   }
 }
 
-async function generateSimpleReport(client, { collegeId, format = 'csv', reportType, titleBuilder, loadRows }, { actorUserId } = {}) {
+async function generateSimpleReport(
+  client,
+  { collegeId, format = 'csv', reportType, titleBuilder, loadRows },
+  { actorUserId } = {},
+) {
   if (!collegeId || !actorUserId) {
     throw new ReportValidationError('collegeId and actorUserId are required');
   }
@@ -276,7 +288,13 @@ async function generateSimpleReport(client, { collegeId, format = 'csv', reportT
     const bytes = await generator.generate(titleBuilder(await loadRows()));
     const document = await documentService.uploadDocument(
       client,
-      { collegeId, docType: 'generated_report', fileName: `${reportType}_${Date.now()}.${generator.extension}`, mimeType: generator.mimeType, fileBuffer: bytes },
+      {
+        collegeId,
+        docType: 'generated_report',
+        fileName: `${reportType}_${Date.now()}.${generator.extension}`,
+        mimeType: generator.mimeType,
+        fileBuffer: bytes,
+      },
       { actorUserId },
     );
     return await generatedReportRepository.create(client, {
@@ -303,23 +321,31 @@ async function generateSimpleReport(client, { collegeId, format = 'csv', reportT
 }
 
 async function generateAttendanceReport(client, { collegeId, format = 'csv' }, opts = {}) {
-  return generateSimpleReport(client, {
-    collegeId,
-    format,
-    reportType: 'attendance_report',
-    titleBuilder: buildAttendanceReportModel,
-    loadRows: () => attendanceRepository.list(client, { limit: REPORT_LIMIT }),
-  }, opts);
+  return generateSimpleReport(
+    client,
+    {
+      collegeId,
+      format,
+      reportType: 'attendance_report',
+      titleBuilder: buildAttendanceReportModel,
+      loadRows: () => attendanceRepository.list(client, { limit: REPORT_LIMIT }),
+    },
+    opts,
+  );
 }
 
 async function generateFinanceReport(client, { collegeId, format = 'csv' }, opts = {}) {
-  return generateSimpleReport(client, {
-    collegeId,
-    format,
-    reportType: 'finance_report',
-    titleBuilder: buildFinanceReportModel,
-    loadRows: () => feePaymentRepository.list(client, { limit: REPORT_LIMIT }),
-  }, opts);
+  return generateSimpleReport(
+    client,
+    {
+      collegeId,
+      format,
+      reportType: 'finance_report',
+      titleBuilder: buildFinanceReportModel,
+      loadRows: () => feePaymentRepository.list(client, { limit: REPORT_LIMIT }),
+    },
+    opts,
+  );
 }
 
 // BusinessRules.md Assessment marks: "marks can be exported using
@@ -354,13 +380,17 @@ function buildAssessmentMarksReportModel(rows) {
 }
 
 async function generateAssessmentMarksReport(client, { collegeId, format = 'csv', filters = {} }, opts = {}) {
-  return generateSimpleReport(client, {
-    collegeId,
-    format,
-    reportType: 'assessment_marks_report',
-    titleBuilder: buildAssessmentMarksReportModel,
-    loadRows: () => assessmentService.listMarksForFilters(client, filters),
-  }, opts);
+  return generateSimpleReport(
+    client,
+    {
+      collegeId,
+      format,
+      reportType: 'assessment_marks_report',
+      titleBuilder: buildAssessmentMarksReportModel,
+      loadRows: () => assessmentService.listMarksForFilters(client, filters),
+    },
+    opts,
+  );
 }
 
 module.exports = {

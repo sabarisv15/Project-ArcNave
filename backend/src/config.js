@@ -5,6 +5,12 @@
 // required value fails loudly at startup, not silently at first use.
 
 const path = require('path');
+// ARCNAVE modernization P2 (PDF 1.14) — the six EXPERIMENTAL_* behaviour
+// trials that used to be declared inline here now live in one validated,
+// introspectable registry. resolveFlags() returns them as plain writable
+// data properties (spread below), preserving the runtime-mutation
+// contract tests/scripts rely on.
+const { resolveFlags } = require('./featureFlags');
 
 function required(name) {
   const value = process.env[name];
@@ -21,14 +27,58 @@ module.exports = {
 
   // The one browser origin allowed to make cross-origin requests to
   // this API (see tenantApp.js/platformApp.js's cors() wiring) — never
-  // a wildcard: this app serves student/staff PII across every tenant,
-  // and auth is bearer-token-in-header (see security.js — no cookies
-  // anywhere in this codebase), so an overly permissive CORS policy
-  // would let any third-party page read a response if it ever got hold
-  // of a token, not just enable convenience. Defaults to the frontend's
-  // own local dev server (frontend/vite.config.js, port 3100) —
-  // deploy-specific, must be set for any non-local frontend origin.
+  // a wildcard: this app serves student/staff PII across every tenant.
+  // Defaults to the frontend's own local dev server
+  // (frontend/vite.config.js, port 3100) — deploy-specific, must be
+  // set for any non-local frontend origin.
   frontendOrigin: process.env.FRONTEND_ORIGIN || 'http://localhost:3100',
+
+  // ARCNAVE modernization P0 (PDF 5.1 / clash C6): the refresh token
+  // moved from browser-readable storage (frontend's sessionStorage) to
+  // an httpOnly cookie the browser attaches automatically and no
+  // client-side script can read — the actual fix for the XSS-theft
+  // finding. `credentials: true` on cors() (tenantApp.js/platformApp.js)
+  // is required for the browser to send/accept this cookie
+  // cross-origin; CORS still allows exactly one explicit origin, never
+  // a wildcard, so this does not open the door any wider than before.
+  refreshCookie: {
+    name: 'arcnave_refresh_token',
+    // Scoped to the one path prefix that ever reads it
+    // (routes/auth.js's /auth/refresh and /auth/logout) — never sent
+    // on any other request, unlike the old bearer-token-in-header
+    // pattern which had no way to scope by path at all.
+    path: '/api/v1/auth',
+    httpOnly: true,
+    sameSite: 'strict',
+    // False only for local http:// dev — a real deploy is always
+    // https:// and must set this true (COOKIE_SECURE=true), same
+    // "defaults safe for prod, opt out only for local dev" posture
+    // config.js already uses elsewhere in this file.
+    secure: process.env.COOKIE_SECURE !== 'false',
+    // Unset (host-only cookie) by default — correct for local dev,
+    // where the Vite proxy makes frontend and backend the same origin
+    // from the browser's point of view. A production deploy that
+    // splits frontend/API across sibling subdomains of one parent
+    // domain (e.g. app.arcnave.com / api.arcnave.com) sets this to
+    // the shared parent (".arcnave.com") so the cookie is sent to
+    // both.
+    domain: process.env.REFRESH_COOKIE_DOMAIN || undefined,
+  },
+
+  // Same fix, same reasoning, for the separate Position Account login
+  // surface (routes/positionAccounts.js mirrors routes/auth.js's
+  // shape exactly) — a distinct cookie name/path so a browser that
+  // happens to hold both a personal login and a Position Account
+  // login session at once (different tabs, same origin) never has one
+  // flow's refresh silently clobber the other's cookie.
+  positionRefreshCookie: {
+    name: 'arcnave_position_refresh_token',
+    path: '/api/v1/position-accounts',
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: process.env.COOKIE_SECURE !== 'false',
+    domain: process.env.REFRESH_COOKIE_DOMAIN || undefined,
+  },
 
   // Runtime app connection — must use the least-privilege arcnave_app
   // role, never the migration-owner role. That role is a Postgres
@@ -146,6 +196,18 @@ module.exports = {
   // documents with a key visible in this file's own git history.
   documentStorageEncryptionKey: required('DOCUMENT_STORAGE_ENCRYPTION_KEY'),
 
+  // ARCNAVE modernization P1 (PDF D7: "container volume only" today —
+  // no real backup). scripts/backup-database.js/restore-database.js
+  // read this. Local-disk only, deliberately (owner decision,
+  // 2026-08-31) — an off-host destination (cloud storage) was set up
+  // and then intentionally torn down the same session; revisit once a
+  // real deploy target exists to protect, not before.
+  dbBackup: {
+    // How many local pg_dump files scripts/backup-database.js keeps
+    // in documentBackupRoot before pruning the oldest.
+    localRetentionCount: Number(process.env.DB_BACKUP_LOCAL_RETENTION_COUNT || 3),
+  },
+
   // NotificationService's real email channel (Module 8). Deliberately
   // NOT required() like the connection strings/JWT secrets above:
   // this session's own task asks for "a stub/log-only fallback if no
@@ -235,6 +297,18 @@ module.exports = {
     fastModel: process.env.CLAUDE_FAST_MODEL || null,
   },
 
+  // Perplexity Agent API — a standalone web-grounded-answer capability
+  // (services/aiProviders/perplexity.js), NOT a DEFAULT_AI_PROVIDER
+  // candidate: it's an API-key vendor like openai/claude above, but its
+  // /v1/agent endpoint is agentic/web-grounded by design, not a drop-in
+  // complete()/completeWithTools() chat provider. apiKey is the one real
+  // secret in this block — resolved only from the environment, never
+  // committed (see perplexity.js's own header comment).
+  perplexity: {
+    apiKey: process.env.PERPLEXITY_API_KEY || null,
+    model: process.env.PERPLEXITY_MODEL || null,
+  },
+
   // Tool Search (Priority 1, Phase 1) — a dedicated, cheap Vertex AI
   // MaaS model (e.g. qwen/qwen3-next-80b-a3b-thinking-maas or
   // minimax/minimax-m2-maas — model-swappable, never hardcoded) whose
@@ -254,83 +328,61 @@ module.exports = {
     model: process.env.TOOL_SEARCH_MODEL || null,
   },
 
-  // Gemini-native catalogue routing experiment (Priority 1 follow-up to
-  // the Tool Search NO-GO) — ADL-064 (2026-08-30): resolved down to two
-  // finalists after live comparison against the original full-description
-  // default and 3 other mechanically-derived/hand-authored variants (all
-  // now retired — this app can no longer select any of them). Unset
-  // (null) or any unrecognized value now means 'keywords' — the new
-  // shipped default, role-filtered same as the retired default was.
-  // 'hybrid' (see scripts/experimental-catalogue-hybrid.md) is the one
-  // remaining opt-in, kept for the still-open keywords-vs-hybrid
-  // comparison; aiService.js's buildToolCatalogueForExperiment() is the
-  // one place that reads this value.
-  experimentalCatalogueVariant: process.env.EXPERIMENTAL_CATALOGUE_VARIANT || null,
+  // ARCNAVE modernization P2 (PDF 1.3 / 1.10 / clash C1) — the greeting /
+  // small-talk fast path. When aiGreetingClassifier deterministically
+  // recognises a turn as pure chit-chat ("hi", "thanks", "vanakkam"),
+  // askAgent skips the per-turn embedding tool-shortlist call and offers
+  // zero tools + no catalogue + no describe_tools — the same structural
+  // no-tool posture experimentalZeroToolFastPath / Research mode use.
+  // Rule/instruction-chunk selection is UNCHANGED (clash C1: this picks
+  // tools, never rules). Unlike toolSearch this ships ON — it is a
+  // deterministic whitelist, not a model call, and its only failure mode
+  // (a task misread as chit-chat) is bounded by a strict whitelist. Set
+  // AI_GREETING_FAST_PATH=false to disable without a code change.
+  aiGreetingFastPath: process.env.AI_GREETING_FAST_PATH !== 'false',
 
-  // Priority 2 — reasoning-model benchmark (GLM-5.2 / Kimi K2 Thinking
-  // vs current Gemini). Unset (null) reproduces today's exact
-  // configurationService.getAiConfig() resolution — the only value this
-  // app ships with. When set, aiService.js's resolveReasoningConfig()
-  // overrides askAgent's {adapter, aiConfig} to the vertex_maas adapter
-  // (already built for Priority 1) + this exact MaaS model string —
-  // e.g. 'zai-org/glm-5.2-maas' or 'moonshotai/kimi-k2-thinking-maas'.
-  // No default model — never invented, same "no hardcoded model"
-  // convention config.toolSearch.model already follows.
-  experimentalReasoningModel: process.env.EXPERIMENTAL_REASONING_MODEL || null,
+  // ARCNAVE modernization P2 (PDF 1.4 / clash C2) — explicit Vertex AI
+  // prompt caching for askAgent's stable decision-call system prefix
+  // (mode prefix + policy + tool-routing catalogue). Measured GO
+  // (backend/scripts/explicit-cache-viability-probe.js, 2026-08-31, real
+  // Vertex calls): billed input on the cached portion drops ~4,678 -> ~13
+  // tokens (99.7%) for gemini-3.7-flash @ global, no minimum-token
+  // rejection — which meets ADL-054/055's own re-open condition. OFF by
+  // default: the mechanism ships, flipping it on is a per-deploy decision
+  // once the ledger numbers (ADL-071) are reviewed, same posture as
+  // config.toolSearch. Vertex/Gemini only (aiExplicitCache.js degrades to
+  // an inline system prompt for every other adapter and on any cache
+  // failure). `=== 'true'` — a stray truthy string never enables it.
+  aiExplicitCache: process.env.AI_EXPLICIT_CACHE === 'true',
 
-  // Priority 3 follow-up — live session trial only, per explicit user
-  // instruction not to touch the production default until they've
-  // verified it themselves in the real running app. Reinforces a small,
-  // condensed subset of the user-supplied AI_OPERATING_INSTRUCTIONS_1.md
-  // reference document's Section 3.5 ("analyze a file") discipline —
-  // confirm scope/section before computing, extract via the real tool
-  // rather than estimating, cross-verify before answering — as an
-  // ADDITIONAL system-prompt segment, only when the turn has attachments.
-  // Does not replace or rewrite any existing tool, service, or ownership
-  // rule (DocumentService/ArtifactService are unchanged); it only adds
-  // prompt guidance. Off by default (false) —
-  // the only value this app ships with.
-  experimentalAttachmentDiscipline: process.env.EXPERIMENTAL_ATTACHMENT_DISCIPLINE === 'true',
+  // ARCNAVE modernization P3 (D3 — "meaning-search only -> blend with
+  // keyword search + re-ranking") — aiToolRetrievalService.js's hybrid
+  // tool-retrieval mode, blending semantic (embedding) and lexical
+  // (keyword-overlap) rankings via Reciprocal Rank Fusion instead of
+  // today's either/or choice (semantic when embeddings are available,
+  // lexical only as a total fallback). Same posture as config.toolSearch
+  // above: the mechanism ships, OFF by default — 1.2/C4's margin-based
+  // semantic-only cutoff (this same session, ADL-072's sibling P2
+  // banner) was JUST live-measured against real Gemini embeddings;
+  // hybrid fusion has NOT been, so it must not silently become the
+  // default path for every real AI turn's tool selection without its
+  // own probe run first (same discipline
+  // scripts/tool-retrieval-margin-probe.js already set for the cutoff
+  // itself — see scripts/tool-retrieval-hybrid-probe.js). `=== 'true'`
+  // — a stray truthy string never enables it.
+  aiHybridToolRetrieval: process.env.AI_HYBRID_TOOL_RETRIEVAL === 'true',
 
-  // Testing-phase only, per explicit user instruction, after being told
-  // the real cost/content tradeoffs (the full user-supplied document is
-  // ~13,000 tokens and includes generic Claude-API tool/skill/safety
-  // content that names nothing ARCNAVE actually has — user chose to wire
-  // it verbatim anyway to observe real live behavior). When true, this
-  // REPLACES experimentalAttachmentDiscipline's condensed segment with
-  // the full raw document text, on every turn, not just ones with an
-  // attachment, and resends it on every LLM call in the turn (decision,
-  // schema-fetch retries, post-tool continuation) — not just once. Off
-  // by default (false) — the only value this app ships with, and the
-  // only value any checked-in file in this repo sets. `=== 'true'` is
-  // deliberate, not `Boolean(process.env...)`: a non-empty string like
-  // `'false'` or `'0'` must not accidentally enable this.
-  //
-  // Review Finding #5 (2026-08-29): this must NEVER be set in a checked-in
-  // docker-compose.yml, .env.example, or deployment manifest — only in a
-  // gitignored/untracked local override (e.g. docker-compose.override.yml)
-  // for a deliberate, time-boxed live trial, turned back off afterward. If
-  // you are reading this because config.experimentalFullInstructionsDocument
-  // is unexpectedly true, check for exactly that kind of untracked local
-  // override before assuming the code default changed.
-  experimentalFullInstructionsDocument: process.env.EXPERIMENTAL_FULL_INSTRUCTIONS_DOCUMENT === 'true',
-
-  // CEO Vertex/Gemini audit #27 (2026-08-30) — "Enable it let us 1st test
-  // in real time then if it is exposing we will then decide to stop."
-  // A global, process-level flag (not a per-college `configuration` DB
-  // row like audio_video_attachments) precisely because this is a
-  // developer/ops real-time trial, same category as
-  // experimentalAttachmentDiscipline/experimentalFullInstructionsDocument
-  // above — a DB-backed per-college toggle would cost every single
-  // askAgent call an extra query just to read `false` for every college
-  // that will never use it, which a real regression in this exact ADL's
-  // own second pass caught (3 exact-query-count tests broke the moment
-  // this was wired as a DB read instead). Off by default (false) — the
-  // only value this app ships with. When true, aiService.js requests
-  // Gemini's thought-summary parts on the Curriculum decision call and
-  // logs them (audit-only, never returned to any API response —
-  // RS-AIG-027 still bars user-facing exposure).
-  experimentalThinkingTraceVisibility: process.env.EXPERIMENTAL_THINKING_TRACE_VISIBILITY === 'true',
+  // ARCNAVE modernization P2 (PDF 1.14) — the six EXPERIMENTAL_* AI
+  // behaviour trials (experimentalCatalogueVariant, experimentalReasoningModel,
+  // experimentalAttachmentDiscipline, experimentalFullInstructionsDocument,
+  // experimentalThinkingTraceVisibility, experimentalZeroToolFastPath).
+  // Their definitions, env-var names, parsers, defaults, owners and full
+  // rationale now live in one validated, introspectable table in
+  // src/featureFlags.js (surfaced read-only at GET /ai-config/feature-flags).
+  // Spread here as plain writable data properties so `config.experimentalX`
+  // resolves byte-identically to before and tests/scripts can still
+  // assign-then-restore it around a case.
+  ...resolveFlags(),
 
   // Which provider a college with no college_ai_config row of its own
   // falls back to (configurationService.getAiConfig). Defaults to

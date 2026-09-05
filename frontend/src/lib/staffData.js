@@ -16,8 +16,45 @@ const DESIGNATIONS = [
   'Academic Coordinator',
 ];
 const EMPLOYMENT_TYPES = ['Teaching', 'Non-teaching', 'Contract'];
-const FIRST = ['Lakshmi', 'Anand', 'Fathima', 'Girish', 'Nandita', 'Suresh', 'Priya', 'Ravi', 'Deepa', 'Manoj', 'Kavitha', 'Ashok', 'Radha', 'Vijay', 'Shalini', 'Naveen', 'Geetha', 'Prakash', 'Uma', 'Sathish'];
-const LAST = ['Narayanan', 'Kulkarni', 'Rasheed', 'Menon', 'Roy', 'Iyer', 'Krishnan', 'Pillai', 'Chandran', 'Varma', 'Subramanian', 'Balan', 'Raghavan', 'Nambiar', 'Devan'];
+const FIRST = [
+  'Lakshmi',
+  'Anand',
+  'Fathima',
+  'Girish',
+  'Nandita',
+  'Suresh',
+  'Priya',
+  'Ravi',
+  'Deepa',
+  'Manoj',
+  'Kavitha',
+  'Ashok',
+  'Radha',
+  'Vijay',
+  'Shalini',
+  'Naveen',
+  'Geetha',
+  'Prakash',
+  'Uma',
+  'Sathish',
+];
+const LAST = [
+  'Narayanan',
+  'Kulkarni',
+  'Rasheed',
+  'Menon',
+  'Roy',
+  'Iyer',
+  'Krishnan',
+  'Pillai',
+  'Chandran',
+  'Varma',
+  'Subramanian',
+  'Balan',
+  'Raghavan',
+  'Nambiar',
+  'Devan',
+];
 const TITLES = ['Dr.', 'Prof.', 'Mr.', 'Ms.'];
 
 export const SORTS = [

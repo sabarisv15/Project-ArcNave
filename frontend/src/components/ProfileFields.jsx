@@ -55,7 +55,9 @@ export function ReadRow({ label, value, hint, className }) {
   return (
     <div className={className}>
       <div className="text-[12px] font-[400] text-ink-faint">{label}</div>
-      <div className="mt-[2px] text-[13.5px] font-[500] text-ink">{value || <span className="text-ink-faint font-[400]">Not provided</span>}</div>
+      <div className="mt-[2px] text-[13.5px] font-[500] text-ink">
+        {value || <span className="text-ink-faint font-[400]">Not provided</span>}
+      </div>
       {hint && <div className="mt-[2px] text-[12px] font-[400] text-ink-faint">{hint}</div>}
     </div>
   );
@@ -71,7 +73,9 @@ export function Field({ label, required, error, hint, children, className }) {
   const id = useId();
   return (
     <div className={className}>
-      <FieldLabel htmlFor={id} required={required}>{label}</FieldLabel>
+      <FieldLabel htmlFor={id} required={required}>
+        {label}
+      </FieldLabel>
       {typeof children === 'function' ? children(id) : children}
       {hint && !error && <p className="m-0 mt-[5px] text-[12px] font-[400] text-ink-faint">{hint}</p>}
       <FieldError>{error}</FieldError>
@@ -93,7 +97,10 @@ export function ProfileSelect({ id, value, onChange, options, placeholder = 'Sel
       <SelectPrimitive.Trigger
         id={id}
         aria-label={ariaLabel}
-        className={cn(CONTROL, 'flex items-center justify-between gap-[6px] cursor-pointer data-[state=open]:border-accent-line')}
+        className={cn(
+          CONTROL,
+          'flex items-center justify-between gap-[6px] cursor-pointer data-[state=open]:border-accent-line',
+        )}
       >
         <SelectPrimitive.Value placeholder={<span className="text-ink-faint">{placeholder}</span>} />
         <SelectPrimitive.Icon>

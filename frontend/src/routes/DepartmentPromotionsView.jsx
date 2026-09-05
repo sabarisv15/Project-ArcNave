@@ -8,8 +8,7 @@ import { NoAssignedDepartment, NoResults } from '../components/InstitutionalStat
 import { SearchPopoverField, SortIconPopover } from '../components/ToolbarIcons';
 import { FilterPopover, FilterSelect } from '../components/FilterPopover';
 import { PANE, STICKY_HEAD, TABLE_HEAD, StickyTableShell, TableEmptyState } from '../components/WorkspaceLayout';
-import { useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
-import { useAcademicTerm } from '../store/AcademicTermProvider';
+import { useInstitutionalLifecycle, useAcademicTerm } from '@/features/institution';
 import { cn } from '../lib/utils';
 
 /**
@@ -85,9 +84,7 @@ function Progress({ progress }) {
       <div className="mt-[9px] flex items-baseline gap-[16px] flex-wrap">
         {Object.values(PROMOTION_OUTCOMES).map((o) => (
           <span key={o.key} className="text-[11.5px] text-ink-faint">
-            <span className="text-[13px] font-[500] text-ink-soft tabular-nums">
-              {progress.byOutcome[o.key] ?? 0}
-            </span>{' '}
+            <span className="text-[13px] font-[500] text-ink-soft tabular-nums">{progress.byOutcome[o.key] ?? 0}</span>{' '}
             {o.resultLabel.toLowerCase()}
           </span>
         ))}
@@ -108,10 +105,7 @@ export function DepartmentPromotionsView() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [openId, setOpenId] = useState(null);
 
-  const scoped = useMemo(
-    () => reviewQueue.filter((c) => c.departmentId === DEPARTMENT?.id),
-    [reviewQueue]
-  );
+  const scoped = useMemo(() => reviewQueue.filter((c) => c.departmentId === DEPARTMENT?.id), [reviewQueue]);
 
   const priorClassById = useMemo(() => priorClassIndex(priorClasses), [priorClasses]);
 
@@ -124,7 +118,7 @@ export function DepartmentPromotionsView() {
       { value: '', label: 'All prior classes' },
       ...priorClasses.map((c) => ({ value: c.id, label: `${c.code} · semester ${c.semester}` })),
     ],
-    [priorClasses]
+    [priorClasses],
   );
 
   const rows = useMemo(() => {
@@ -173,7 +167,7 @@ export function DepartmentPromotionsView() {
     );
   }
 
-  const open = openId ? scoped.find((c) => c.id === openId) ?? null : null;
+  const open = openId ? (scoped.find((c) => c.id === openId) ?? null) : null;
 
   return (
     <div className={PANE}>
@@ -239,7 +233,7 @@ export function DepartmentPromotionsView() {
               aria-label={`${c.name} — review placement`}
               className={cn(
                 GRID,
-                'w-full h-[48px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2'
+                'w-full h-[48px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2',
               )}
             >
               <span className="min-w-0">
@@ -259,7 +253,7 @@ export function DepartmentPromotionsView() {
               <span
                 className={cn(
                   'text-[12.5px] tabular-nums',
-                  c.backlogCount >= 2 ? 'font-[500] text-danger' : 'text-ink-muted'
+                  c.backlogCount >= 2 ? 'font-[500] text-danger' : 'text-ink-muted',
                 )}
               >
                 {c.backlogCount === 0 ? <span className="text-ink-faint">—</span> : c.backlogCount}
@@ -270,7 +264,7 @@ export function DepartmentPromotionsView() {
                   <span
                     className={cn(
                       'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500] max-w-full truncate',
-                      PROMOTION_OUTCOMES[review.outcome].tone
+                      PROMOTION_OUTCOMES[review.outcome].tone,
                     )}
                   >
                     {PROMOTION_OUTCOMES[review.outcome].resultLabel}

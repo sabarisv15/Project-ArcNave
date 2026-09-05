@@ -38,9 +38,11 @@ async function collectTenantCounts(client) {
   };
 }
 
-async function upsertCollegeStats(pool, collegeId, {
-  activeUsersCount, studentsCount, staffCount, departmentsCount, backgroundJobsOk,
-}) {
+async function upsertCollegeStats(
+  pool,
+  collegeId,
+  { activeUsersCount, studentsCount, staffCount, departmentsCount, backgroundJobsOk },
+) {
   await pool.query(
     `INSERT INTO platform_college_stats
        (college_id, active_users_count, students_count, staff_count, departments_count, background_jobs_ok,
@@ -82,7 +84,9 @@ async function recordSyncError(pool, collegeId, errorMessage) {
 // platformPool, which has no grant on users/students/staff/
 // background_jobs — only SELECT on platform_college_stats itself).
 async function sumActiveUsers(pool) {
-  const result = await pool.query('SELECT COALESCE(sum(active_users_count), 0)::int AS total FROM platform_college_stats');
+  const result = await pool.query(
+    'SELECT COALESCE(sum(active_users_count), 0)::int AS total FROM platform_college_stats',
+  );
   return result.rows[0].total;
 }
 
@@ -102,5 +106,9 @@ async function systemHealthSummary(pool) {
 }
 
 module.exports = {
-  collectTenantCounts, upsertCollegeStats, recordSyncError, sumActiveUsers, systemHealthSummary,
+  collectTenantCounts,
+  upsertCollegeStats,
+  recordSyncError,
+  sumActiveUsers,
+  systemHealthSummary,
 };

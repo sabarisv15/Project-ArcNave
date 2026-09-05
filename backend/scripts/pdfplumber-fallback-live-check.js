@@ -32,10 +32,11 @@ const PASSWORD = 'PdfplumberFallbackLivePass123!';
 async function seedTenant(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const collegeId = `pfb${suffix}`;
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain, address) VALUES ($1, $1, $2, $3)',
-    [collegeId, `pfbtenant${suffix}`, 'pdfplumber-fallback-live-address'],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain, address) VALUES ($1, $1, $2, $3)', [
+    collegeId,
+    `pfbtenant${suffix}`,
+    'pdfplumber-fallback-live-address',
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userResult = await adminPool.query(
     `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
@@ -107,36 +108,57 @@ async function main() {
   let failures = 0;
 
   try {
-    const attachment = await withTenantClient(appPool, collegeId, (client) => documentService.uploadChatAttachment(
-      client,
-      {
-        collegeId,
-        fileName: 'EXAM FEES ece(sw) III YR 7 SEM.pdf',
-        mimeType: 'application/pdf',
-        fileBuffer: fs.readFileSync(SAMPLE),
-      },
-      { actorUserId: userId },
-    ));
+    const attachment = await withTenantClient(appPool, collegeId, (client) =>
+      documentService.uploadChatAttachment(
+        client,
+        {
+          collegeId,
+          fileName: 'EXAM FEES ece(sw) III YR 7 SEM.pdf',
+          mimeType: 'application/pdf',
+          fileBuffer: fs.readFileSync(SAMPLE),
+        },
+        { actorUserId: userId },
+      ),
+    );
     const attachmentId = attachment.id || (attachment.document && attachment.document.id);
     console.log(`Seeded tenant ${collegeId}, attachment ${attachmentId}\n`);
 
     console.log('Check 1 — count(DoB): the fallback fires, verifies, and grants full trust (not a refusal)');
-    const counted = await withTenantClient(appPool, collegeId, (client) => documentAnalysisService.analyzeAttachment(
-      client, { attachmentId, filter: { pattern: 'DoB' }, operation: 'count' }, identityContext,
-    ));
-    console.log(`      status=${counted.status} strategy=${counted.strategy} total=${counted.total} scopedCount=${counted.scopedCount}`);
+    const counted = await withTenantClient(appPool, collegeId, (client) =>
+      documentAnalysisService.analyzeAttachment(
+        client,
+        { attachmentId, filter: { pattern: 'DoB' }, operation: 'count' },
+        identityContext,
+      ),
+    );
+    console.log(
+      `      status=${counted.status} strategy=${counted.strategy} total=${counted.total} scopedCount=${counted.scopedCount}`,
+    );
     if (!report('status is ok, not a refusal', counted.status === 'ok', counted.status)) failures += 1;
-    if (!report('strategy carries the _pdfplumber suffix', /_pdfplumber$/.test(counted.strategy || ''), counted.strategy)) failures += 1;
+    if (
+      !report('strategy carries the _pdfplumber suffix', /_pdfplumber$/.test(counted.strategy || ''), counted.strategy)
+    )
+      failures += 1;
     if (!report('23 records recovered', counted.scopedCount === 23, counted.scopedCount)) failures += 1;
     if (!report('23 DoB markers counted (one per record)', counted.total === 23, counted.total)) failures += 1;
 
     console.log('\nCheck 2 — sum: a numeric operation beyond count also runs, not refused');
-    const summed = await withTenantClient(appPool, collegeId, (client) => documentAnalysisService.analyzeAttachment(
-      client, { attachmentId, filter: { pattern: '(\\d+)\\s*$' }, operation: 'sum' }, identityContext,
-    ));
-    console.log(`      status=${summed.status} strategy=${summed.strategy} total=${summed.total} scopedCount=${summed.scopedCount} matchedCount=${summed.matchedCount}`);
-    if (!report('status is ok, not identity_required or a refusal', summed.status === 'ok', summed.status)) failures += 1;
-    if (!report('sum produced a real positive total', typeof summed.total === 'number' && summed.total > 0, summed.total)) failures += 1;
+    const summed = await withTenantClient(appPool, collegeId, (client) =>
+      documentAnalysisService.analyzeAttachment(
+        client,
+        { attachmentId, filter: { pattern: '(\\d+)\\s*$' }, operation: 'sum' },
+        identityContext,
+      ),
+    );
+    console.log(
+      `      status=${summed.status} strategy=${summed.strategy} total=${summed.total} scopedCount=${summed.scopedCount} matchedCount=${summed.matchedCount}`,
+    );
+    if (!report('status is ok, not identity_required or a refusal', summed.status === 'ok', summed.status))
+      failures += 1;
+    if (
+      !report('sum produced a real positive total', typeof summed.total === 'number' && summed.total > 0, summed.total)
+    )
+      failures += 1;
   } finally {
     await cleanupTenant(adminPool, collegeId).catch((err) => console.error('cleanup failed:', err.message));
     await appPool.end();
@@ -147,4 +169,7 @@ async function main() {
   process.exit(failures === 0 ? 0 : 1);
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

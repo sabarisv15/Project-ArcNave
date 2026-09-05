@@ -56,9 +56,15 @@ function useDocument(file) {
   return buffer;
 }
 
-const run = (params) => documentAnalysisService.analyzeAttachment({}, {
-  attachmentId: ATTACHMENT_ID, ...params,
-}, IDENTITY);
+const run = (params) =>
+  documentAnalysisService.analyzeAttachment(
+    {},
+    {
+      attachmentId: ATTACHMENT_ID,
+      ...params,
+    },
+    IDENTITY,
+  );
 
 async function main() {
   for (const file of [DAYBOOK, RESULT_SHEET]) {
@@ -88,7 +94,9 @@ async function main() {
   // 1 — the refusal that makes the list worth having. Without an
   // identityPattern a delimited source would return anonymous rows.
   const anonymous = await run({
-    filter: { pattern: AMOUNT }, operation: 'compare', comparison: { operator: 'lt', value: 5000 },
+    filter: { pattern: AMOUNT },
+    operation: 'compare',
+    comparison: { operator: 'lt', value: 5000 },
   });
   check(
     'no identityPattern on a delimited source -> identity_required, not a list of nulls',
@@ -106,8 +114,13 @@ async function main() {
   check('entries below 5000 returns status ok', below.status === 'ok', `strategy=${below.strategy}`);
   if (below.status === 'ok') {
     console.log(`      matched=${below.matchedCount} of scoped=${below.scopedCount}, total=${below.total}`);
-    console.log(`      unmatched=${below.unmatchedRows} nonNumeric=${below.nonNumericRows} multiMatch=${below.multiMatchRows} withoutIdentity=${below.rowsWithoutIdentity}`);
-    check('every returned row carries a value', below.sample.every((r) => typeof r.value === 'number'));
+    console.log(
+      `      unmatched=${below.unmatchedRows} nonNumeric=${below.nonNumericRows} multiMatch=${below.multiMatchRows} withoutIdentity=${below.rowsWithoutIdentity}`,
+    );
+    check(
+      'every returned row carries a value',
+      below.sample.every((r) => typeof r.value === 'number'),
+    );
     const identified = below.sample.filter((r) => r.identity);
     const distinct = new Set(identified.map((r) => r.identity));
     check(
@@ -130,7 +143,10 @@ async function main() {
       distinct.size > 1,
       `${distinct.size} distinct names across ${below.sample.length} rows`,
     );
-    check('every returned value really is below the threshold', below.sample.every((r) => r.value < 5000));
+    check(
+      'every returned value really is below the threshold',
+      below.sample.every((r) => r.value < 5000),
+    );
     console.log('      first 5 rows:');
     below.sample.slice(0, 5).forEach((r) => console.log(`        ${JSON.stringify(r.identity)} -> ${r.value}`));
   }
@@ -155,7 +171,9 @@ async function main() {
   // count/sum/breakdown may have shifted.
   useDocument(RESULT_SHEET);
   const reference = await run({
-    filter: { pattern: 'RA', mode: 'include' }, operation: 'count', sectionPattern: 'SANDWICH',
+    filter: { pattern: 'RA', mode: 'include' },
+    operation: 'count',
+    sectionPattern: 'SANDWICH',
   });
   check(
     'reference regression: 77 arrears across 21 students',
@@ -167,4 +185,7 @@ async function main() {
   process.exit(failures === 0 ? 0 : 1);
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

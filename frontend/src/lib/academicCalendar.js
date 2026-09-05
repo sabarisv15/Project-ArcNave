@@ -121,7 +121,7 @@ function buildClass(department, semester, sectionEntry) {
  */
 export function activeClassesFor(department, band = ACTIVE_BAND) {
   return activeSemestersFor(department, band).flatMap((semester) =>
-    department.sections.map((sectionEntry) => buildClass(department, semester, sectionEntry))
+    department.sections.map((sectionEntry) => buildClass(department, semester, sectionEntry)),
   );
 }
 

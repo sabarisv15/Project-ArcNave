@@ -49,9 +49,24 @@ export function StaffFilterPopover({ s }) {
       onClear={s.clearFilters}
     >
       <div className="grid grid-cols-2 gap-x-[12px] gap-y-[14px]">
-        <FilterSelect label="Department" value={f.department} onChange={(v) => set('department', v)} options={opts('All departments', SCOPE_DEPTS)} />
-        <FilterSelect label="Designation" value={f.designation} onChange={(v) => set('designation', v)} options={opts('All designations', SCOPE_DESIGNATIONS)} />
-        <FilterSelect label="Employment type" value={f.employmentType} onChange={(v) => set('employmentType', v)} options={opts('All types', SCOPE_EMPLOYMENT_TYPES)} />
+        <FilterSelect
+          label="Department"
+          value={f.department}
+          onChange={(v) => set('department', v)}
+          options={opts('All departments', SCOPE_DEPTS)}
+        />
+        <FilterSelect
+          label="Designation"
+          value={f.designation}
+          onChange={(v) => set('designation', v)}
+          options={opts('All designations', SCOPE_DESIGNATIONS)}
+        />
+        <FilterSelect
+          label="Employment type"
+          value={f.employmentType}
+          onChange={(v) => set('employmentType', v)}
+          options={opts('All types', SCOPE_EMPLOYMENT_TYPES)}
+        />
       </div>
     </FilterPopover>
   );

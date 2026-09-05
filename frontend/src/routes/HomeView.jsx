@@ -1,11 +1,10 @@
 import { useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Greeting } from '../components/Greeting';
-import { AIComposer } from '../components/AIComposer';
+import { AIComposer, composerScope, useComposer } from '@/features/chat';
 import { ScheduleStrip } from '../components/ScheduleStrip';
 import { IdeasList } from '../components/IdeasList';
 import { useWorkspace } from '../store/WorkspaceProvider';
-import { composerScope, useComposer } from '../store/ComposerProvider';
 
 /**
  * Home fits the viewport at 1440×900 and 1366×768; on shorter viewports the column
@@ -20,7 +19,12 @@ export function HomeView() {
 
   const send = async () => {
     const id = await sendMessage({
-      scope: 'chat', text: composer.text, attachments: composer.attachments, mode: composer.mode, thinkingLevel: composer.thinkingLevel,
+      scope: 'chat',
+      text: composer.text,
+      attachments: composer.attachments,
+      mode: composer.mode,
+      thinkingLevel: composer.thinkingLevel,
+      model: composer.model,
     });
     if (!id) return;
     composer.reset(); // sent — clears Home's scope and nothing else
@@ -47,6 +51,8 @@ export function HomeView() {
               onMode={composer.setMode}
               thinkingLevel={composer.thinkingLevel}
               onThinkingLevel={composer.setThinkingLevel}
+              model={composer.model}
+              onModel={composer.setModel}
               variant="start"
               placeholder="Ask ArcNave anything about your campus…"
             />

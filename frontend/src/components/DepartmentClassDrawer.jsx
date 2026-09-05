@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { DrawerShell } from './AttendanceActionDrawer';
+import { DrawerShell } from '@/components/ui/Drawer';
 import { WorkflowTimeline } from './WorkflowTimeline';
 import { ATTENDANCE_THRESHOLD, studentsOfClass } from '../lib/departmentData';
 import { ATTENTION_STATES, facultyName } from '../lib/departmentSignals';
@@ -75,13 +75,7 @@ function OverviewTab({ cls }) {
         <Row label="Semester" value={`Semester ${cls.semester}`} />
         <Row
           label="Class tutor"
-          value={
-            cls.tutor ? (
-              cls.tutor.name
-            ) : (
-              <span className="text-danger font-[500]">Not recorded</span>
-            )
-          }
+          value={cls.tutor ? cls.tutor.name : <span className="text-danger font-[500]">Not recorded</span>}
           hint={
             cls.tutor
               ? cls.tutor.designation
@@ -96,9 +90,7 @@ function OverviewTab({ cls }) {
         <Row
           label="Attendance"
           value={
-            <span
-              className={cn('tabular-nums', cls.attendance < ATTENDANCE_THRESHOLD && 'text-danger font-[500]')}
-            >
+            <span className={cn('tabular-nums', cls.attendance < ATTENDANCE_THRESHOLD && 'text-danger font-[500]')}>
               {cls.attendance}%
             </span>
           }
@@ -147,7 +139,7 @@ function SeatTab({ cls, onManageSeat }) {
     return <p className="m-0 text-[13px] text-ink-muted">This class has no seat record.</p>;
   }
 
-  const holder = seat.state === 'active' ? FACULTY_BY_ID[seat.holderId] ?? null : null;
+  const holder = seat.state === 'active' ? (FACULTY_BY_ID[seat.holderId] ?? null) : null;
 
   return (
     <div>
@@ -241,9 +233,7 @@ function StudentsTab({ cls, onOpenStudents }) {
       </p>
 
       {atRisk.length === 0 ? (
-        <p className="m-0 text-[13px] text-ink-muted">
-          Every student in this class is above the threshold.
-        </p>
+        <p className="m-0 text-[13px] text-ink-muted">Every student in this class is above the threshold.</p>
       ) : (
         <ul className="m-0 p-0 list-none">
           {atRisk.slice(0, 8).map((s) => (
@@ -264,9 +254,7 @@ function StudentsTab({ cls, onOpenStudents }) {
       )}
 
       {atRisk.length > 8 && (
-        <p className="m-0 mt-[8px] text-[11.5px] text-ink-faint">
-          Showing the 8 lowest of {atRisk.length}.
-        </p>
+        <p className="m-0 mt-[8px] text-[11.5px] text-ink-faint">Showing the 8 lowest of {atRisk.length}.</p>
       )}
 
       <button
@@ -305,9 +293,7 @@ function AttendanceTab({ cls }) {
         <Row
           label="Class average"
           value={
-            <span
-              className={cn('tabular-nums', cls.attendance < ATTENDANCE_THRESHOLD && 'text-danger font-[500]')}
-            >
+            <span className={cn('tabular-nums', cls.attendance < ATTENDANCE_THRESHOLD && 'text-danger font-[500]')}>
               {cls.attendance}%
             </span>
           }
@@ -377,7 +363,7 @@ function TimetableTab({ cls }) {
                 title={cell ? `${cell.subject} · ${facultyName(cell.facultyId)} · ${cell.room}` : 'Free period'}
                 className={cn(
                   'min-w-0 rounded-[7px] px-[5px] py-[4px] border',
-                  clash ? 'bg-warning-soft border-warning/30' : 'bg-tint border-transparent'
+                  clash ? 'bg-warning-soft border-warning/30' : 'bg-tint border-transparent',
                 )}
               >
                 {cell ? (
@@ -386,7 +372,7 @@ function TimetableTab({ cls }) {
                     <span
                       className={cn(
                         'block text-[10px] truncate',
-                        cell.facultyId ? 'text-ink-faint' : 'text-danger font-[500]'
+                        cell.facultyId ? 'text-ink-faint' : 'text-danger font-[500]',
                       )}
                     >
                       {cell.facultyId ? facultyName(cell.facultyId) : 'Unassigned'}
@@ -474,7 +460,7 @@ export function DepartmentClassDrawer({ cls, onClose, onOpenStudents, onManageSe
                   'flex-none h-[27px] px-[10px] border-0 rounded-[8px] bg-transparent font-sans text-[12.5px] cursor-pointer transition-colors duration-200',
                   tab === t.key
                     ? 'bg-accent-soft text-accent font-[600]'
-                    : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2'
+                    : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2',
                 )}
               >
                 {t.label}

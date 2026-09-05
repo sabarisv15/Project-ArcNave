@@ -7,9 +7,10 @@
 // and its GRANT, which omits UPDATE/DELETE at the DB permission level
 // too).
 
-async function create(client, {
-  collegeId, classId, revisionNumber, effectiveFrom, workflowRequestId, createdByUserId,
-}) {
+async function create(
+  client,
+  { collegeId, classId, revisionNumber, effectiveFrom, workflowRequestId, createdByUserId },
+) {
   const result = await client.query(
     `INSERT INTO timetable_revisions
        (college_id, class_id, revision_number, effective_from, workflow_request_id, created_by_user_id)
@@ -21,18 +22,16 @@ async function create(client, {
 }
 
 async function countForClass(client, classId) {
-  const result = await client.query(
-    'SELECT COUNT(*)::int AS count FROM timetable_revisions WHERE class_id = $1',
-    [classId],
-  );
+  const result = await client.query('SELECT COUNT(*)::int AS count FROM timetable_revisions WHERE class_id = $1', [
+    classId,
+  ]);
   return result.rows[0].count;
 }
 
 async function listForClass(client, classId) {
-  const result = await client.query(
-    'SELECT * FROM timetable_revisions WHERE class_id = $1 ORDER BY revision_number',
-    [classId],
-  );
+  const result = await client.query('SELECT * FROM timetable_revisions WHERE class_id = $1 ORDER BY revision_number', [
+    classId,
+  ]);
   return result.rows;
 }
 
@@ -54,5 +53,8 @@ async function findEffectiveForDate(client, classId, date) {
 }
 
 module.exports = {
-  create, countForClass, listForClass, findEffectiveForDate,
+  create,
+  countForClass,
+  listForClass,
+  findEffectiveForDate,
 };

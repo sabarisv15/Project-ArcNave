@@ -12,15 +12,7 @@ import { AutosaveStatus, DraftRestoredNote } from './AutosaveStatus';
 import { useAutosave, useRestoredDraft } from '../hooks/useAutosave';
 import { draftKey } from '../lib/draftStore';
 import { ME } from '../lib/substituteData';
-import {
-  CheckboxField,
-  DateField,
-  Field,
-  FieldGrid,
-  PROFILE_CONTROL,
-  ProfileSelect,
-  ReadRow,
-} from './ProfileFields';
+import { CheckboxField, DateField, Field, FieldGrid, PROFILE_CONTROL, ProfileSelect, ReadRow } from './ProfileFields';
 import { MobileVerification } from './MobileVerification';
 import { SeatSwitcher } from './SeatSwitcher';
 import { PreviousInstitutions, entryErrors } from './PreviousInstitutions';
@@ -91,10 +83,19 @@ function Section({ title, note, editing, onEdit, onSave, onCancel, saving, statu
         ) : editing ? (
           <div className="flex-none flex items-center gap-[7px]">
             <AutosaveStatus status={status} onRetry={onSave} />
-            <button type="button" onClick={onCancel} className={cn(SMALL_BTN, 'border border-line bg-paper text-ink-muted hover:bg-tint2 hover:text-ink')}>
+            <button
+              type="button"
+              onClick={onCancel}
+              className={cn(SMALL_BTN, 'border border-line bg-paper text-ink-muted hover:bg-tint2 hover:text-ink')}
+            >
               Cancel
             </button>
-            <button type="button" onClick={onSave} disabled={saving} className={cn(SMALL_BTN, 'border-0 bg-accent text-white hover:bg-accent-hover')}>
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={saving}
+              className={cn(SMALL_BTN, 'border-0 bg-accent text-white hover:bg-accent-hover')}
+            >
               {saving ? 'Saving…' : 'Save'}
             </button>
           </div>
@@ -103,7 +104,10 @@ function Section({ title, note, editing, onEdit, onSave, onCancel, saving, statu
             type="button"
             onClick={onEdit}
             aria-label={`Edit ${title.toLowerCase()}`}
-            className={cn(SMALL_BTN, 'flex-none border border-line bg-paper text-ink-muted hover:bg-tint2 hover:text-ink')}
+            className={cn(
+              SMALL_BTN,
+              'flex-none border border-line bg-paper text-ink-muted hover:bg-tint2 hover:text-ink',
+            )}
           >
             Edit
           </button>
@@ -134,7 +138,15 @@ export function ProfileDrawer() {
     at: profile.mobileVerifiedAt,
   });
 
-  const { control, register, reset, watch, trigger, getValues, formState: { errors } } = useForm({
+  const {
+    control,
+    register,
+    reset,
+    watch,
+    trigger,
+    getValues,
+    formState: { errors },
+  } = useForm({
     resolver: zodResolver(profileSchema),
     defaultValues: toFormValues(PROFILE_RECORD),
     mode: 'onBlur',
@@ -161,7 +173,10 @@ export function ProfileDrawer() {
   // resume the section it was left in.
   const seeded = useRef(false);
   useEffect(() => {
-    if (!profileDrawerOpen) { seeded.current = false; return; }
+    if (!profileDrawerOpen) {
+      seeded.current = false;
+      return;
+    }
     if (seeded.current || !restored?.value?.values) return;
     seeded.current = true;
     reset(restored.value.values, { keepDefaultValues: true });
@@ -274,7 +289,7 @@ export function ProfileDrawer() {
                 <Avatar.Root
                   className={cn(
                     'w-[40px] h-[40px] rounded-full border-[2px] border-paper overflow-hidden block shadow-avatar transition-transform duration-200 ease-[cubic-bezier(.2,.9,.28,1.2)] motion-reduce:transform-none',
-                    pressed ? 'scale-[1.06]' : 'scale-100'
+                    pressed ? 'scale-[1.06]' : 'scale-100',
                   )}
                 >
                   <Avatar.Image src={PHOTO} alt="" className="w-full h-full object-cover" />
@@ -391,13 +406,35 @@ export function ProfileDrawer() {
               {editing === 'identity' ? (
                 <FieldGrid>
                   <Field label="First name" required error={errors.firstName?.message}>
-                    {(id) => <input id={id} autoComplete="given-name" className={PROFILE_CONTROL} {...register('firstName', { onChange: autosave.schedule })} />}
+                    {(id) => (
+                      <input
+                        id={id}
+                        autoComplete="given-name"
+                        className={PROFILE_CONTROL}
+                        {...register('firstName', { onChange: autosave.schedule })}
+                      />
+                    )}
                   </Field>
                   <Field label="Last name" required error={errors.lastName?.message}>
-                    {(id) => <input id={id} autoComplete="family-name" className={PROFILE_CONTROL} {...register('lastName', { onChange: autosave.schedule })} />}
+                    {(id) => (
+                      <input
+                        id={id}
+                        autoComplete="family-name"
+                        className={PROFILE_CONTROL}
+                        {...register('lastName', { onChange: autosave.schedule })}
+                      />
+                    )}
                   </Field>
                   <Field label="Email" required error={errors.email?.message}>
-                    {(id) => <input id={id} type="email" autoComplete="email" className={PROFILE_CONTROL} {...register('email', { onChange: autosave.schedule })} />}
+                    {(id) => (
+                      <input
+                        id={id}
+                        type="email"
+                        autoComplete="email"
+                        className={PROFILE_CONTROL}
+                        {...register('email', { onChange: autosave.schedule })}
+                      />
+                    )}
                   </Field>
                   <Field label="Date of birth" required error={errors.dateOfBirth?.message}>
                     {(id) => (
@@ -410,7 +447,10 @@ export function ProfileDrawer() {
                             ariaLabel="Date of birth, DD/MM/YYYY"
                             max={TODAY_ISO()}
                             value={field.value}
-                            onChange={(v) => { field.onChange(v); autosave.schedule(); }}
+                            onChange={(v) => {
+                              field.onChange(v);
+                              autosave.schedule();
+                            }}
                           />
                         )}
                       />
@@ -422,7 +462,16 @@ export function ProfileDrawer() {
                         control={control}
                         name="gender"
                         render={({ field }) => (
-                          <ProfileSelect id={id} ariaLabel="Gender" value={field.value} options={GENDERS} onChange={(v) => { field.onChange(v); autosave.schedule(); }} />
+                          <ProfileSelect
+                            id={id}
+                            ariaLabel="Gender"
+                            value={field.value}
+                            options={GENDERS}
+                            onChange={(v) => {
+                              field.onChange(v);
+                              autosave.schedule();
+                            }}
+                          />
                         )}
                       />
                     )}
@@ -433,18 +482,41 @@ export function ProfileDrawer() {
                         control={control}
                         name="designation"
                         render={({ field }) => (
-                          <ProfileSelect id={id} ariaLabel="Designation" value={field.value} options={DESIGNATIONS} onChange={(v) => { field.onChange(v); autosave.schedule(); }} />
+                          <ProfileSelect
+                            id={id}
+                            ariaLabel="Designation"
+                            value={field.value}
+                            options={DESIGNATIONS}
+                            onChange={(v) => {
+                              field.onChange(v);
+                              autosave.schedule();
+                            }}
+                          />
                         )}
                       />
                     )}
                   </Field>
                   {values.designation === 'Other' && (
                     <Field label="Specify designation" required error={errors.designationOther?.message}>
-                      {(id) => <input id={id} className={PROFILE_CONTROL} placeholder="Your designation" {...register('designationOther', { onChange: autosave.schedule })} />}
+                      {(id) => (
+                        <input
+                          id={id}
+                          className={PROFILE_CONTROL}
+                          placeholder="Your designation"
+                          {...register('designationOther', { onChange: autosave.schedule })}
+                        />
+                      )}
                     </Field>
                   )}
                   <Field label="Appointment type" error={errors.appointmentType?.message}>
-                    {(id) => <input id={id} className={PROFILE_CONTROL} placeholder="e.g. Permanent, Guest, Contract" {...register('appointmentType', { onChange: autosave.schedule })} />}
+                    {(id) => (
+                      <input
+                        id={id}
+                        className={PROFILE_CONTROL}
+                        placeholder="e.g. Permanent, Guest, Contract"
+                        {...register('appointmentType', { onChange: autosave.schedule })}
+                      />
+                    )}
                   </Field>
 
                   <MobileVerification
@@ -464,7 +536,10 @@ export function ProfileDrawer() {
                   <ReadRow label="Email" value={profile.email} />
                   <ReadRow label="Date of birth" value={formatDOB(profile.dateOfBirth)} />
                   <ReadRow label="Gender" value={profile.gender} />
-                  <ReadRow label="Designation" value={profile.designation === 'Other' ? profile.designationOther : profile.designation} />
+                  <ReadRow
+                    label="Designation"
+                    value={profile.designation === 'Other' ? profile.designationOther : profile.designation}
+                  />
                   <ReadRow label="Appointment type" value={profile.appointmentType} />
                   <MobileVerification
                     editing={false}
@@ -488,7 +563,10 @@ export function ProfileDrawer() {
                     render={({ field }) => (
                       <CheckboxField
                         checked={field.value}
-                        onChange={(v) => { field.onChange(v); autosave.schedule(); }}
+                        onChange={(v) => {
+                          field.onChange(v);
+                          autosave.schedule();
+                        }}
                         label="Doctorate completed"
                       />
                     )}
@@ -500,18 +578,40 @@ export function ProfileDrawer() {
                           control={control}
                           name="ugQualification"
                           render={({ field }) => (
-                            <ProfileSelect id={id} ariaLabel="UG qualification" value={field.value} options={UG_QUALIFICATIONS} onChange={(v) => { field.onChange(v); autosave.schedule(); }} />
+                            <ProfileSelect
+                              id={id}
+                              ariaLabel="UG qualification"
+                              value={field.value}
+                              options={UG_QUALIFICATIONS}
+                              onChange={(v) => {
+                                field.onChange(v);
+                                autosave.schedule();
+                              }}
+                            />
                           )}
                         />
                       )}
                     </Field>
                     {values.ugQualification === 'Other' && (
                       <Field label="Specify UG qualification" required error={errors.ugQualificationOther?.message}>
-                        {(id) => <input id={id} className={PROFILE_CONTROL} {...register('ugQualificationOther', { onChange: autosave.schedule })} />}
+                        {(id) => (
+                          <input
+                            id={id}
+                            className={PROFILE_CONTROL}
+                            {...register('ugQualificationOther', { onChange: autosave.schedule })}
+                          />
+                        )}
                       </Field>
                     )}
                     <Field label="UG specialization" error={errors.ugSpecialization?.message}>
-                      {(id) => <input id={id} className={PROFILE_CONTROL} placeholder="e.g. Computer Science" {...register('ugSpecialization', { onChange: autosave.schedule })} />}
+                      {(id) => (
+                        <input
+                          id={id}
+                          className={PROFILE_CONTROL}
+                          placeholder="e.g. Computer Science"
+                          {...register('ugSpecialization', { onChange: autosave.schedule })}
+                        />
+                      )}
                     </Field>
                     <Field label="PG qualification" error={errors.pgQualification?.message}>
                       {(id) => (
@@ -519,18 +619,40 @@ export function ProfileDrawer() {
                           control={control}
                           name="pgQualification"
                           render={({ field }) => (
-                            <ProfileSelect id={id} ariaLabel="PG qualification" value={field.value} options={PG_QUALIFICATIONS} onChange={(v) => { field.onChange(v); autosave.schedule(); }} />
+                            <ProfileSelect
+                              id={id}
+                              ariaLabel="PG qualification"
+                              value={field.value}
+                              options={PG_QUALIFICATIONS}
+                              onChange={(v) => {
+                                field.onChange(v);
+                                autosave.schedule();
+                              }}
+                            />
                           )}
                         />
                       )}
                     </Field>
                     {values.pgQualification === 'Other' && (
                       <Field label="Specify PG qualification" required error={errors.pgQualificationOther?.message}>
-                        {(id) => <input id={id} className={PROFILE_CONTROL} {...register('pgQualificationOther', { onChange: autosave.schedule })} />}
+                        {(id) => (
+                          <input
+                            id={id}
+                            className={PROFILE_CONTROL}
+                            {...register('pgQualificationOther', { onChange: autosave.schedule })}
+                          />
+                        )}
                       </Field>
                     )}
                     <Field label="PG specialization" error={errors.pgSpecialization?.message}>
-                      {(id) => <input id={id} className={PROFILE_CONTROL} placeholder="e.g. Software Engineering" {...register('pgSpecialization', { onChange: autosave.schedule })} />}
+                      {(id) => (
+                        <input
+                          id={id}
+                          className={PROFILE_CONTROL}
+                          placeholder="e.g. Software Engineering"
+                          {...register('pgSpecialization', { onChange: autosave.schedule })}
+                        />
+                      )}
                     </Field>
                     <Field label="Total years of experience" error={errors.totalExperienceYears?.message}>
                       {(id) => (
@@ -553,11 +675,21 @@ export function ProfileDrawer() {
                   <ReadRow label="Doctorate" value={profile.hasDoctorate ? 'Completed' : 'Not completed'} />
                   <ReadRow
                     label="UG qualification"
-                    value={[profile.ugQualification === 'Other' ? profile.ugQualificationOther : profile.ugQualification, profile.ugSpecialization].filter(Boolean).join(' · ')}
+                    value={[
+                      profile.ugQualification === 'Other' ? profile.ugQualificationOther : profile.ugQualification,
+                      profile.ugSpecialization,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   />
                   <ReadRow
                     label="PG qualification"
-                    value={[profile.pgQualification === 'Other' ? profile.pgQualificationOther : profile.pgQualification, profile.pgSpecialization].filter(Boolean).join(' · ')}
+                    value={[
+                      profile.pgQualification === 'Other' ? profile.pgQualificationOther : profile.pgQualification,
+                      profile.pgSpecialization,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   />
                   <ReadRow
                     label="Total experience"
@@ -579,7 +711,10 @@ export function ProfileDrawer() {
                   <PreviousInstitutions
                     editing={editing === 'previous'}
                     entries={editing === 'previous' ? field.value : profile.previousInstitutions}
-                    onChange={(next) => { field.onChange(next); autosave.schedule(); }}
+                    onChange={(next) => {
+                      field.onChange(next);
+                      autosave.schedule();
+                    }}
                   />
                 )}
               />
@@ -590,7 +725,9 @@ export function ProfileDrawer() {
             <AlertDialog.Portal>
               <AlertDialog.Overlay className="fixed inset-0 z-[130] bg-overlay/20 animate-fadeUp" />
               <AlertDialog.Content className="fixed left-1/2 top-1/2 z-[131] w-[min(380px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-[16px] border border-line bg-paper p-[18px] shadow-dialog outline-none data-[state=open]:animate-fadeUp motion-reduce:animate-none">
-                <AlertDialog.Title className="m-0 text-[15px] font-[600] text-ink">Sign out of ArcNave?</AlertDialog.Title>
+                <AlertDialog.Title className="m-0 text-[15px] font-[600] text-ink">
+                  Sign out of ArcNave?
+                </AlertDialog.Title>
                 <AlertDialog.Description className="mt-[5px] text-[13px] font-[400] text-ink-muted">
                   Unsaved profile changes are kept as a draft and will be waiting when you sign back in.
                 </AlertDialog.Description>

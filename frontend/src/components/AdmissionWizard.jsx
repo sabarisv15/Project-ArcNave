@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { AlertCircle, Check } from 'lucide-react';
-import { DrawerShell, DrawerRail, GHOST_BTN, PRIMARY_BTN } from './AttendanceActionDrawer';
+import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '@/components/ui/Drawer';
 import { AdmissionDocumentStep } from './AdmissionDocumentStep';
 import {
   ADMISSION_FIELDS,
@@ -9,7 +9,7 @@ import {
   emptyAdmission,
   missingRequired,
 } from '../lib/admissionData';
-import { REJECTION, useAcademicRoster } from '../store/AcademicRosterProvider';
+import { REJECTION, useAcademicRoster } from '@/features/institution';
 import { OWNED_CLASS } from '../lib/classTutorData';
 import { cn } from '../lib/utils';
 
@@ -44,7 +44,11 @@ function Steps({ index }) {
     <ol className="m-0 p-0 list-none flex items-center gap-[6px] flex-wrap">
       {ADMISSION_STEPS.map((step, i) => (
         <li key={step.key} className="flex items-center gap-[6px]">
-          {i > 0 && <span aria-hidden="true" className="text-ink-ghost text-[11px]">→</span>}
+          {i > 0 && (
+            <span aria-hidden="true" className="text-ink-ghost text-[11px]">
+              →
+            </span>
+          )}
           <span
             className={cn(
               'inline-flex items-center gap-[5px] h-[22px] px-[8px] rounded-[7px] text-[11.5px]',
@@ -52,7 +56,7 @@ function Steps({ index }) {
                 ? 'bg-accent-soft text-accent font-[600]'
                 : i < index
                   ? 'bg-tint2 text-ink-soft font-[500]'
-                  : 'text-ink-faint'
+                  : 'text-ink-faint',
             )}
             aria-current={i === index ? 'step' : undefined}
           >
@@ -68,12 +72,9 @@ function Steps({ index }) {
 function ScopeContext() {
   return (
     <div className="px-[12px] py-[9px] rounded-[12px] bg-tint border border-line">
-      <div className="text-[11px] font-[500] tracking-[.05em] uppercase text-ink-muted">
-        Admitting into
-      </div>
+      <div className="text-[11px] font-[500] tracking-[.05em] uppercase text-ink-muted">Admitting into</div>
       <div className="mt-[4px] text-[12.5px] text-ink">
-        {OWNED_CLASS.dept} · {OWNED_CLASS.code} · Semester {OWNED_CLASS.semester} · AY{' '}
-        {OWNED_CLASS.academicYear}
+        {OWNED_CLASS.dept} · {OWNED_CLASS.code} · Semester {OWNED_CLASS.semester} · AY {OWNED_CLASS.academicYear}
       </div>
       <div className="mt-[2px] text-[11.5px] text-ink-faint">
         This position admits into its own class only — the class cannot be changed here.
@@ -102,7 +103,7 @@ export function AdmissionWizard({ open, onOpenChange, onAdmitted }) {
    */
   const precheck = useMemo(
     () => (stepIndex === 2 ? validateAdmission(OWNED_CLASS.id, values) : { ok: true }),
-    [stepIndex, validateAdmission, values]
+    [stepIndex, validateAdmission, values],
   );
 
   function reset() {
@@ -151,8 +152,7 @@ export function AdmissionWizard({ open, onOpenChange, onAdmitted }) {
     onAdmitted?.(outcome.student);
   }
 
-  const canContinue =
-    stepIndex === 0 ? true : stepIndex === 1 ? missing.length === 0 : precheck.ok;
+  const canContinue = stepIndex === 0 ? true : stepIndex === 1 ? missing.length === 0 : precheck.ok;
 
   return (
     <DrawerShell
@@ -182,19 +182,20 @@ export function AdmissionWizard({ open, onOpenChange, onAdmitted }) {
           <div className="flex flex-col gap-[11px]">
             {extraction && (
               <p className="m-0 text-[12px] text-ink-muted">
-                Values proposed by the prototype extraction are filled in below. Check every one —
-                nothing has been saved yet.
+                Values proposed by the prototype extraction are filled in below. Check every one — nothing has been
+                saved yet.
               </p>
             )}
             {ADMISSION_FIELDS.map((f) => {
               const band = extraction ? confidenceBand(extraction.confidence?.[f.key]) : null;
               return (
-                <label key={f.key} className="block">
+                <label key={f.key} htmlFor={`admission-${f.key}`} className="block">
                   <span className="block mb-[5px] text-[11px] font-[500] tracking-[.05em] uppercase text-ink-muted">
                     {f.label}
                     {f.required && <span className="text-danger"> *</span>}
                   </span>
                   <input
+                    id={`admission-${f.key}`}
                     type={f.type}
                     className={FIELD}
                     value={values[f.key] ?? ''}
@@ -202,9 +203,7 @@ export function AdmissionWizard({ open, onOpenChange, onAdmitted }) {
                     onChange={(e) => setValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
                   />
                   {band && (
-                    <span className={cn('block mt-[4px] text-[11px]', band.tone)}>
-                      Extraction: {band.label}
-                    </span>
+                    <span className={cn('block mt-[4px] text-[11px]', band.tone)}>Extraction: {band.label}</span>
                   )}
                   {f.hint && <span className="block mt-[3px] text-[11px] text-ink-faint">{f.hint}</span>}
                 </label>
@@ -234,9 +233,7 @@ export function AdmissionWizard({ open, onOpenChange, onAdmitted }) {
                 <div className="grid grid-cols-[140px_1fr] gap-x-[12px] px-[12px] py-[7px] border-t border-line-light">
                   <dt className="m-0 text-[12px] text-ink-faint">Documents</dt>
                   <dd className="m-0 text-[12.5px] text-ink">
-                    {files.length > 0
-                      ? `${files.length} uploaded`
-                      : 'None — will be marked Documents pending'}
+                    {files.length > 0 ? `${files.length} uploaded` : 'None — will be marked Documents pending'}
                   </dd>
                 </div>
               </dl>
@@ -251,8 +248,7 @@ export function AdmissionWizard({ open, onOpenChange, onAdmitted }) {
             )}
 
             <p className="m-0 text-[12px] text-ink-muted">
-              Submitting activates this student in {OWNED_CLASS.code} straight away. There is no
-              approval step after it.
+              Submitting activates this student in {OWNED_CLASS.code} straight away. There is no approval step after it.
             </p>
           </div>
         )}
@@ -270,8 +266,7 @@ export function AdmissionWizard({ open, onOpenChange, onAdmitted }) {
               {created.documentsPending && ' · Documents pending'}
             </div>
             <p className="m-0 text-[12px] text-ink-faint">
-              They appear in the class roster now, and count against the section's{' '}
-              {fill.capacity} provisioned seats.
+              They appear in the class roster now, and count against the section's {fill.capacity} provisioned seats.
             </p>
           </div>
         )}

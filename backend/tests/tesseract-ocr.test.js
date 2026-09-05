@@ -12,8 +12,10 @@ const assert = require('node:assert/strict');
 const Tesseract = require('tesseract.js');
 const tesseractOcr = require('../src/ocr/tesseractOcr');
 
-test('extractTextFromImage: returns the trimmed recognized text and Tesseract\'s own confidence', async (t) => {
-  const recognizeMock = t.mock.method(Tesseract, 'recognize', async () => ({ data: { text: '  Hello from the image  \n', confidence: 92.5 } }));
+test("extractTextFromImage: returns the trimmed recognized text and Tesseract's own confidence", async (t) => {
+  const recognizeMock = t.mock.method(Tesseract, 'recognize', async () => ({
+    data: { text: '  Hello from the image  \n', confidence: 92.5 },
+  }));
   t.after(() => recognizeMock.mock.restore());
 
   const result = await tesseractOcr.extractTextFromImage(Buffer.from('fake-image-bytes'));
@@ -39,7 +41,9 @@ test('extractTextFromImage: missing confidence in the Tesseract result defaults 
 });
 
 test('extractTextFromImage: a Tesseract failure is wrapped in OcrExtractionError, not thrown raw', async (t) => {
-  const recognizeMock = t.mock.method(Tesseract, 'recognize', async () => { throw new Error('worker crashed'); });
+  const recognizeMock = t.mock.method(Tesseract, 'recognize', async () => {
+    throw new Error('worker crashed');
+  });
   t.after(() => recognizeMock.mock.restore());
 
   await assert.rejects(
@@ -77,7 +81,9 @@ test('extractTextFromPages: creates one worker, reuses it across every page in o
 });
 
 test('extractTextFromPages: an empty page list creates no worker and returns an empty array', async (t) => {
-  const createWorkerMock = t.mock.method(Tesseract, 'createWorker', async () => { throw new Error('must not be called'); });
+  const createWorkerMock = t.mock.method(Tesseract, 'createWorker', async () => {
+    throw new Error('must not be called');
+  });
   t.after(() => createWorkerMock.mock.restore());
 
   const results = await tesseractOcr.extractTextFromPages([]);
@@ -87,16 +93,15 @@ test('extractTextFromPages: an empty page list creates no worker and returns an 
 
 test('extractTextFromPages: the worker is still terminated when a page recognize() call fails', async (t) => {
   const workerStub = {
-    recognize: async () => { throw new Error('worker crashed mid-page'); },
+    recognize: async () => {
+      throw new Error('worker crashed mid-page');
+    },
     terminate: async () => {},
   };
   const terminateMock = t.mock.method(workerStub, 'terminate');
   const createWorkerMock = t.mock.method(Tesseract, 'createWorker', async () => workerStub);
   t.after(() => createWorkerMock.mock.restore());
 
-  await assert.rejects(
-    () => tesseractOcr.extractTextFromPages([Buffer.from('p1')]),
-    tesseractOcr.OcrExtractionError,
-  );
+  await assert.rejects(() => tesseractOcr.extractTextFromPages([Buffer.from('p1')]), tesseractOcr.OcrExtractionError);
   assert.equal(terminateMock.mock.callCount(), 1);
 });

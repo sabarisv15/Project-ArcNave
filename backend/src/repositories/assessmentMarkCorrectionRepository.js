@@ -8,9 +8,10 @@
 // feeCorrectionRepository.js/attendanceCorrectionRepository.js exactly
 // — same table shape, same reasoning.
 
-async function create(client, {
-  collegeId, assessmentMarkId, requestedByUserId, proposedMarksObtained, reason, workflowRequestId,
-}) {
+async function create(
+  client,
+  { collegeId, assessmentMarkId, requestedByUserId, proposedMarksObtained, reason, workflowRequestId },
+) {
   const result = await client.query(
     `INSERT INTO assessment_mark_corrections
        (college_id, assessment_mark_id, requested_by_user_id, proposed_marks_obtained, reason, workflow_request_id)
@@ -56,5 +57,9 @@ async function markApplied(client, id) {
 }
 
 module.exports = {
-  create, findById, listForMark, findLatestApplied, markApplied,
+  create,
+  findById,
+  listForMark,
+  findLatestApplied,
+  markApplied,
 };

@@ -8,7 +8,9 @@ const webSearchService = require('../src/services/webSearchService');
 
 (async () => {
   const client = await appPool.connect();
-  const done = []; const already = []; const failed = [];
+  const done = [];
+  const already = [];
+  const failed = [];
   try {
     const { rows } = await client.query('SELECT college_id FROM colleges ORDER BY college_id');
     for (const { college_id: collegeId } of rows) {
@@ -16,7 +18,8 @@ const webSearchService = require('../src/services/webSearchService');
         await client.query('BEGIN');
         await client.query("SELECT set_config('app.current_tenant', $1, true)", [collegeId]);
         const existing = await configurationService.getConfiguration(client, {
-          collegeId, category: webSearchService.CONFIG_CATEGORY,
+          collegeId,
+          category: webSearchService.CONFIG_CATEGORY,
         });
         if (existing && existing.configuration && existing.configuration.enabled) {
           already.push(collegeId);

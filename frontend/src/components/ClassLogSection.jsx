@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Check, ChevronDown, NotebookPen } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { TOPIC_TAUGHT_MAX_LENGTH, formatTime } from '../lib/attendanceData';
+import { TOPIC_TAUGHT_MAX_LENGTH, formatTime } from '@/features/attendance/lib/attendanceData';
 import { AutosaveStatus } from './AutosaveStatus';
 import { useAutosave } from '../hooks/useAutosave';
 import { draftKey } from '../lib/draftStore';
@@ -11,7 +11,11 @@ const FIELD_INPUT =
   'w-full font-sans text-[12.5px] text-ink bg-paper border border-line rounded-[10px] px-[11px] py-[8px] outline-none transition-colors duration-200 placeholder:text-ink-faint focus:border-accent-line focus:shadow-[0_0_0_3px_rgba(11,114,133,.1)]';
 
 const OPTIONAL_FIELDS = [
-  { key: 'lessonObjective', label: 'Lesson objective', placeholder: 'e.g. Students can explain and implement binary search.' },
+  {
+    key: 'lessonObjective',
+    label: 'Lesson objective',
+    placeholder: 'e.g. Students can explain and implement binary search.',
+  },
   { key: 'teachingMethod', label: 'Teaching method / activity', placeholder: 'e.g. Lecture + whiteboard walkthrough' },
   { key: 'resourcesUsed', label: 'Resources used', placeholder: 'e.g. Slides, textbook Ch. 4' },
   { key: 'homework', label: 'Homework / follow-up', placeholder: 'e.g. Solve problems 4.1–4.6 for next class' },
@@ -53,7 +57,11 @@ export function ClassLogSection({ classLog, onChange, topicError, topicRef, disa
           aria-required="true"
           aria-invalid={!!topicError}
           aria-describedby={topicError ? 'topic-taught-error' : undefined}
-          className={cn(FIELD_INPUT, 'resize-y min-h-[64px]', topicError && 'border-danger focus:border-danger focus:shadow-[0_0_0_3px_rgba(180,69,60,.1)]')}
+          className={cn(
+            FIELD_INPUT,
+            'resize-y min-h-[64px]',
+            topicError && 'border-danger focus:border-danger focus:shadow-[0_0_0_3px_rgba(180,69,60,.1)]',
+          )}
         />
         <div className="flex items-center justify-between mt-[5px]">
           {topicError ? (
@@ -75,7 +83,12 @@ export function ClassLogSection({ classLog, onChange, topicError, topicRef, disa
         aria-expanded={expanded}
         className="mt-[12px] inline-flex items-center gap-[5px] h-[26px] px-[2px] border-0 bg-transparent font-sans text-[11.5px] font-[500] text-ink-muted cursor-pointer hover:text-accent"
       >
-        <ChevronDown size={13} strokeWidth={2.2} className={cn('transition-transform duration-200', expanded && 'rotate-180')} aria-hidden="true" />
+        <ChevronDown
+          size={13}
+          strokeWidth={2.2}
+          className={cn('transition-transform duration-200', expanded && 'rotate-180')}
+          aria-hidden="true"
+        />
         {expanded ? 'Hide note' : hasOptionalContent ? 'Show note' : 'Add note'}
       </button>
 
@@ -105,7 +118,9 @@ export function ClassLogSection({ classLog, onChange, topicError, topicRef, disa
 
 /** Read-only class log summary shown once a record is locked/submitted — never editable inline past that point. */
 export function ClassLogReadOnly({ classLog }) {
-  const hasOptional = ['lessonObjective', 'teachingMethod', 'resourcesUsed', 'homework', 'notes'].some((k) => classLog[k]?.trim());
+  const hasOptional = ['lessonObjective', 'teachingMethod', 'resourcesUsed', 'homework', 'notes'].some((k) =>
+    classLog[k]?.trim(),
+  );
   return (
     <div className="mt-[16px] pt-[14px] border-t border-line">
       <div className="flex items-center gap-[7px] mb-[8px]">
@@ -169,13 +184,18 @@ export function ClassLogEditable({ classLog, onChange, savedAt, now, periodId })
     <div>
       <ClassLogSection
         classLog={classLog}
-        onChange={(patch) => { onChange(patch); autosave.schedule(); }}
+        onChange={(patch) => {
+          onChange(patch);
+          autosave.schedule();
+        }}
         topicError={null}
       />
       <div className="flex justify-end mt-[6px]">
-        {autosave.status === 'error' || autosave.status === 'saving'
-          ? <AutosaveStatus status={autosave.status} onRetry={autosave.retry} />
-          : <ClassLogSavedIndicator savedAt={savedAt} now={now} />}
+        {autosave.status === 'error' || autosave.status === 'saving' ? (
+          <AutosaveStatus status={autosave.status} onRetry={autosave.retry} />
+        ) : (
+          <ClassLogSavedIndicator savedAt={savedAt} now={now} />
+        )}
       </div>
     </div>
   );

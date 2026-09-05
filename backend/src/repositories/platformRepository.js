@@ -75,16 +75,43 @@ const PROFILE_COLUMNS = [
   ['address', 'address'],
 ];
 
-async function createCollege(client, {
-  collegeId, name, subdomain, createdBy, level1PositionTitle, level3PositionTitle, storageTier, subscriptionStatus,
-  ...profileFields
-}) {
+async function createCollege(
+  client,
+  {
+    collegeId,
+    name,
+    subdomain,
+    createdBy,
+    level1PositionTitle,
+    level3PositionTitle,
+    storageTier,
+    subscriptionStatus,
+    ...profileFields
+  },
+) {
   const profileEntries = PROFILE_COLUMNS.filter(([key]) => profileFields[key] !== undefined);
-  const columnNames = ['college_id', 'name', 'subdomain', 'created_by', 'level1_position_title',
-    'level3_position_title', 'storage_tier', 'subscription_status', ...profileEntries.map(([, column]) => column)];
-  const values = [collegeId, name, subdomain, createdBy, level1PositionTitle || null,
-    level3PositionTitle || null, storageTier || null, subscriptionStatus || 'trial',
-    ...profileEntries.map(([key]) => profileFields[key])];
+  const columnNames = [
+    'college_id',
+    'name',
+    'subdomain',
+    'created_by',
+    'level1_position_title',
+    'level3_position_title',
+    'storage_tier',
+    'subscription_status',
+    ...profileEntries.map(([, column]) => column),
+  ];
+  const values = [
+    collegeId,
+    name,
+    subdomain,
+    createdBy,
+    level1PositionTitle || null,
+    level3PositionTitle || null,
+    storageTier || null,
+    subscriptionStatus || 'trial',
+    ...profileEntries.map(([key]) => profileFields[key]),
+  ];
   const placeholders = values.map((_, i) => `$${i + 1}`);
 
   // trial_ends_at (30-day fixed window, this session's decision) is
@@ -104,10 +131,7 @@ async function createCollege(client, {
 }
 
 async function findCollegeById(client, collegeId) {
-  const result = await client.query(
-    `SELECT ${COLLEGE_RETURNING} FROM colleges WHERE college_id = $1`,
-    [collegeId],
-  );
+  const result = await client.query(`SELECT ${COLLEGE_RETURNING} FROM colleges WHERE college_id = $1`, [collegeId]);
   return result.rows[0] || null;
 }
 
@@ -133,9 +157,7 @@ async function findCollegeById(client, collegeId) {
 // remains a Platform Admin concern: an
 // operational/billing fact about ARCNAVE's own relationship with the
 // college, not the college's own identity or infrastructure choice.
-const EDITABLE_COLUMNS = [
-  ['subscriptionStatus', 'subscription_status'],
-];
+const EDITABLE_COLUMNS = [['subscriptionStatus', 'subscription_status']];
 
 async function updateCollege(client, collegeId, fields) {
   const entries = EDITABLE_COLUMNS.filter(([key]) => fields[key] !== undefined);

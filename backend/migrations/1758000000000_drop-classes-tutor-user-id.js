@@ -27,5 +27,7 @@ exports.up = (pgm) => {
 exports.down = (pgm) => {
   pgm.sql('ALTER TABLE classes ADD COLUMN tutor_user_id UUID');
   pgm.sql('ALTER TABLE classes ADD CONSTRAINT classes_tutor_user_id_key UNIQUE (tutor_user_id)');
-  pgm.sql('ALTER TABLE classes ADD CONSTRAINT classes_tutor_user_id_fkey FOREIGN KEY (tutor_user_id) REFERENCES users(id)');
+  pgm.sql(
+    'ALTER TABLE classes ADD CONSTRAINT classes_tutor_user_id_fkey FOREIGN KEY (tutor_user_id) REFERENCES users(id)',
+  );
 };

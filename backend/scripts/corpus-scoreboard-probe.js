@@ -60,7 +60,8 @@ function delimitedShare(text) {
 function verdict(strategy, records, coverage, share) {
   if (strategy === 'none') return 'REFUSES (unrecognized_layout)';
   if (coverage && coverage.applicable && !coverage.reliable) return 'REFUSES (unreliable_extraction)';
-  if (strategy === 'delimited' && share < 0.5) return `*** SILENT FALSE POSITIVE — ${(share * 100).toFixed(1)}% of lines are delimited ***`;
+  if (strategy === 'delimited' && share < 0.5)
+    return `*** SILENT FALSE POSITIVE — ${(share * 100).toFixed(1)}% of lines are delimited ***`;
   return 'answers';
 }
 
@@ -69,7 +70,10 @@ async function main() {
   console.log('-'.repeat(118));
   for (const [label, fileName] of FILES) {
     const full = path.join(DOWNLOADS, fileName);
-    if (!fs.existsSync(full)) { console.log(`${label.padEnd(33)} SKIPPED — not found`); continue; }
+    if (!fs.existsSync(full)) {
+      console.log(`${label.padEnd(33)} SKIPPED — not found`);
+      continue;
+    }
     const ext = path.extname(fileName).toLowerCase();
     const mime = MIME[ext];
     let out;
@@ -86,14 +90,19 @@ async function main() {
     const share = delimitedShare(out.text);
     const r = tableExtraction.extractRecords(out.text);
     const cov = r.coverage
-      ? (r.coverage.applicable ? `${r.coverage.accountedCount}/${r.coverage.markerCount}` : 'n/a')
+      ? r.coverage.applicable
+        ? `${r.coverage.accountedCount}/${r.coverage.markerCount}`
+        : 'n/a'
       : 'none';
     console.log(
-      `${label.padEnd(33)} ${ext.slice(1).padEnd(5)} ${String(out.text.length).padStart(7)}  `
-      + `${r.strategy.padEnd(14)} ${String(r.records.length).padStart(5)}  ${cov.padEnd(15)} `
-      + verdict(r.strategy, r.records, r.coverage, share),
+      `${label.padEnd(33)} ${ext.slice(1).padEnd(5)} ${String(out.text.length).padStart(7)}  ` +
+        `${r.strategy.padEnd(14)} ${String(r.records.length).padStart(5)}  ${cov.padEnd(15)} ` +
+        verdict(r.strategy, r.records, r.coverage, share),
     );
   }
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

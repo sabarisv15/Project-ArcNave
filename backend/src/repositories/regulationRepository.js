@@ -33,10 +33,10 @@ async function findById(client, id) {
 }
 
 async function list(client, { limit = 50, offset = 0 } = {}) {
-  const result = await client.query(
-    'SELECT * FROM regulations ORDER BY created_at LIMIT $1 OFFSET $2',
-    [limit, offset],
-  );
+  const result = await client.query('SELECT * FROM regulations ORDER BY created_at LIMIT $1 OFFSET $2', [
+    limit,
+    offset,
+  ]);
   return result.rows;
 }
 

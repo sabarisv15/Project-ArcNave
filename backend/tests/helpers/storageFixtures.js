@@ -37,9 +37,9 @@ function sanitizeSegment(value) {
 async function cleanupCollegeStorage(...collegeIds) {
   const ids = collegeIds.flat().filter(Boolean).map(sanitizeSegment);
   const roots = [config.documentStorageRoot, config.documentBackupRoot].filter(Boolean);
-  await Promise.all(roots.flatMap((root) => ids.map(
-    (id) => fs.rm(path.join(root, id), { recursive: true, force: true }),
-  )));
+  await Promise.all(
+    roots.flatMap((root) => ids.map((id) => fs.rm(path.join(root, id), { recursive: true, force: true }))),
+  );
 }
 
 module.exports = { cleanupCollegeStorage };

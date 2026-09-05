@@ -236,7 +236,9 @@ function applyProviderFallback(provider, adapter) {
   const fallbackAdapter = aiProviders.getAdapter(fallbackProvider);
   const fallbackConfig = GLOBAL_CONFIG_BUILDERS[fallbackProvider]();
   const { state, onFallback } = aiProviderFallbackService.buildFallbackTracker();
-  const resilientAdapter = aiProviderFallbackService.buildResilientAdapter(adapter, fallbackAdapter, fallbackConfig, { onFallback });
+  const resilientAdapter = aiProviderFallbackService.buildResilientAdapter(adapter, fallbackAdapter, fallbackConfig, {
+    onFallback,
+  });
   return { adapter: resilientAdapter, fallbackProvider, fallbackState: state };
 }
 
@@ -248,7 +250,12 @@ async function getAiConfig(client, collegeId) {
     const primaryAdapter = aiProviders.getAdapter(provider);
     const { adapter, fallbackProvider, fallbackState } = applyProviderFallback(provider, primaryAdapter);
     return {
-      provider, config: GLOBAL_CONFIG_BUILDERS[provider](), adapter, configSource: 'platform_default', fallbackProvider, fallbackState,
+      provider,
+      config: GLOBAL_CONFIG_BUILDERS[provider](),
+      adapter,
+      configSource: 'platform_default',
+      fallbackProvider,
+      fallbackState,
     };
   }
 
@@ -269,7 +276,12 @@ async function getAiConfig(client, collegeId) {
   const primaryAdapter = aiProviders.getAdapter(row.provider);
   const { adapter, fallbackProvider, fallbackState } = applyProviderFallback(row.provider, primaryAdapter);
   return {
-    provider: row.provider, config, adapter, configSource: 'college_explicit', fallbackProvider, fallbackState,
+    provider: row.provider,
+    config,
+    adapter,
+    configSource: 'college_explicit',
+    fallbackProvider,
+    fallbackState,
   };
 }
 
@@ -302,13 +314,67 @@ function experimentalReasoningOverride() {
   };
 }
 
+// ADL-099 / RS-AIG-008 amendment (2026-09-04) — the AI Composer's
+// user-facing model picker (ModelSelectorToggle.jsx, replacing the old
+// static "Auto" label). A FIXED, curated allowlist, never an arbitrary
+// frontend-supplied provider/model string — same "never guessed, never
+// scattered" discipline vertexCapabilityRegistry.js's own curated table
+// already follows for capabilities. `claude-opus-5`/`claude-sonnet-5`
+// share globalClaudeConfig()'s projectId/location (same Vertex project,
+// only the model string differs — both live-verified 2026-09-04, real
+// 200 responses). gemini-3.8-flash reuses globalGeminiConfig() as-is
+// (already this deployment's real default model).
+// 'gpt-5.6-terra' (added alongside the three above) routes through the
+// Perplexity Router API rather than a dedicated adapter: the Router API
+// (`/router/v1/chat/completions`) is documented as OpenAI-schema-
+// compatible, so it's reached by pointing the existing `openai` adapter
+// at Perplexity's base URL with Perplexity's own key/model id, exactly
+// like selfHosted.js already does for a college's own OpenAI-compatible
+// endpoint — no new adapter file needed for a chat-only (non-agentic,
+// no web grounding) model. Web grounding for Perplexity is the
+// SEPARATE perplexity_web_answer AI tool (perplexityAnswerService.js /
+// services/aiProviders/perplexity.js), which uses the Agent API instead.
+const PERPLEXITY_ROUTER_BASE_URL = 'https://api.perplexity.ai/router/v1';
+
+const MODEL_CHOICES = {
+  'gemini-3.8-flash': () => ({ provider: 'gemini', config: { ...globalGeminiConfig(), model: 'gemini-3.8-flash' } }),
+  'claude-sonnet-5': () => ({ provider: 'claude', config: { ...globalClaudeConfig(), model: 'claude-sonnet-5' } }),
+  'claude-opus-5': () => ({ provider: 'claude', config: { ...globalClaudeConfig(), model: 'claude-opus-5' } }),
+  'gpt-5.6-terra': () => ({
+    provider: 'openai',
+    config: {
+      apiKey: globalConfig.perplexity.apiKey,
+      baseUrl: PERPLEXITY_ROUTER_BASE_URL,
+      model: 'openai/gpt-5.6-terra',
+    },
+  }),
+};
+
+// An unrecognized/absent label returns null — the caller falls through
+// to the tenant's own configured provider exactly as before this
+// amendment existed, never a guessed or partially-applied override.
+function resolveModelChoiceOverride(modelChoice) {
+  const builder = modelChoice && MODEL_CHOICES[modelChoice];
+  if (!builder) return null;
+  const { provider, config } = builder();
+  return { provider, config, adapter: aiProviders.getAdapter(provider) };
+}
+
 // Returns { provider, config, adapter, configSource, experimentalOverrideApplied }.
-// configSource is 'experimental_fallback' only when the override above
-// actually applied; otherwise it passes getAiConfig's own
+// configSource is 'user_model_choice' only when a valid `modelChoice`
+// override applied (checked FIRST, ahead of experimentalReasoningOverride
+// — an explicit per-turn user pick from the curated allowlist always wins,
+// the same way a real thinkingLevel click always wins over auto-
+// classification), 'experimental_fallback' only when that override
+// applied instead; otherwise it passes getAiConfig's own
 // 'college_explicit'/'platform_default' straight through, unchanged —
 // this function narrows what CAN override, it never invents a new reason
 // to trust or distrust an already-resolved config.
-async function resolveAiConfig(client, collegeId, { allowExperimentalFallback = false } = {}) {
+async function resolveAiConfig(client, collegeId, { allowExperimentalFallback = false, modelChoice } = {}) {
+  const modelChoiceOverride = resolveModelChoiceOverride(modelChoice);
+  if (modelChoiceOverride) {
+    return { ...modelChoiceOverride, configSource: 'user_model_choice', experimentalOverrideApplied: false };
+  }
   const resolved = await getAiConfig(client, collegeId);
   if (!allowExperimentalFallback || resolved.configSource === 'college_explicit') {
     return { ...resolved, experimentalOverrideApplied: false };
@@ -318,7 +384,9 @@ async function resolveAiConfig(client, collegeId, { allowExperimentalFallback = 
     return { ...resolved, experimentalOverrideApplied: false };
   }
   return {
-    ...override, configSource: 'experimental_fallback', experimentalOverrideApplied: true,
+    ...override,
+    configSource: 'experimental_fallback',
+    experimentalOverrideApplied: true,
   };
 }
 
@@ -328,9 +396,12 @@ async function resolveAiConfig(client, collegeId, { allowExperimentalFallback = 
 // argument. The return value never includes api_key or its ciphertext
 // in any form, only hasApiKey (a boolean) — a caller (the route) has
 // no raw key to accidentally leak in a response or a log line.
-async function setAiConfig(client, collegeId, {
-  provider, apiKey, model, embeddingModel, fastModel, baseUrl,
-}, { userId } = {}) {
+async function setAiConfig(
+  client,
+  collegeId,
+  { provider, apiKey, model, embeddingModel, fastModel, baseUrl },
+  { userId } = {},
+) {
   if (!provider) {
     throw new AiConfigValidationError('provider is required');
   }
@@ -359,7 +430,10 @@ async function setAiConfig(client, collegeId, {
     // changed, same "record the fact, not the secret" restraint
     // security.js's own password/token handling already follows.
     metadata: {
-      provider: row.provider, model: row.model, embeddingModel: row.embedding_model, fastModel: row.fast_model,
+      provider: row.provider,
+      model: row.model,
+      embeddingModel: row.embedding_model,
+      fastModel: row.fast_model,
     },
   });
 
@@ -386,4 +460,5 @@ module.exports = {
   resolveAiConfig,
   setAiConfig,
   getToolSearchConfig,
+  MODEL_CHOICES,
 };

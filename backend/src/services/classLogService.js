@@ -24,11 +24,16 @@ function assertValidFields({ classId, sessionDate, subject, topic }) {
   }
 }
 
-async function createLogEntry(client, {
-  classId, timetablePeriodId, subject, sessionDate, topic, notes,
-}, { actorUserId, actorRole, collegeId }) {
+async function createLogEntry(
+  client,
+  { classId, timetablePeriodId, subject, sessionDate, topic, notes },
+  { actorUserId, actorRole, collegeId },
+) {
   assertValidFields({
-    classId, sessionDate, subject, topic,
+    classId,
+    sessionDate,
+    subject,
+    topic,
   });
   await visibilityService.assertCanViewClass(client, classId, { actorUserId, actorRole, collegeId });
 
@@ -57,7 +62,9 @@ async function createLogEntry(client, {
 
 async function assertOwnsEntry(entry, actorUserId) {
   if (entry.created_by_user_id !== actorUserId) {
-    throw new ClassLogForbiddenError(`user ${JSON.stringify(actorUserId)} did not create class log ${JSON.stringify(entry.id)}`);
+    throw new ClassLogForbiddenError(
+      `user ${JSON.stringify(actorUserId)} did not create class log ${JSON.stringify(entry.id)}`,
+    );
   }
 }
 
@@ -107,13 +114,19 @@ async function deleteLogEntry(client, id, { actorUserId, collegeId }) {
 // listLogEntries: classId narrows to one class (still visibility-
 // checked); omitting it searches across every class the actor may see
 // — the "Teaching Journal" screen's own default view.
-async function listLogEntries(client, {
-  classId, subject, fromDate, toDate, limit,
-}, { actorUserId, actorRole, collegeId }) {
+async function listLogEntries(
+  client,
+  { classId, subject, fromDate, toDate, limit },
+  { actorUserId, actorRole, collegeId },
+) {
   if (classId) {
     await visibilityService.assertCanViewClass(client, classId, { actorUserId, actorRole, collegeId });
     return classLogRepository.list(client, {
-      classId, subject, fromDate, toDate, limit,
+      classId,
+      subject,
+      fromDate,
+      toDate,
+      limit,
     });
   }
 

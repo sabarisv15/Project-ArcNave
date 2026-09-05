@@ -21,7 +21,12 @@ const { LlmNotConfiguredError, LlmRequestError } = require('./errors');
 const { withRetry } = require('./retry');
 const { iterateSseLines } = require('./sse');
 const {
-  fetchWithTimeout, parseJsonResponse, extractOpenAiCompatibleUsage, buildOpenAiCompatiblePriorTurnMessages,
+  fetchWithTimeout,
+  parseJsonResponse,
+  extractOpenAiCompatibleUsage,
+  buildOpenAiCompatiblePriorTurnMessages,
+  buildOpenAiCompatibleHistoryMessages,
+  responseFormatFor,
 } = require('./openAiCompatibleUtils');
 const { flattenToPrompts } = require('../aiContextAssembly');
 
@@ -49,16 +54,18 @@ function baseUrl(cfg) {
 // selfHosted.js's own postJson; only the URL and (always-required) auth
 // header construction stay local.
 async function postJson(cfg, path, body) {
-  const response = await withRetry(() => fetchWithTimeout({
-    url: `${baseUrl(cfg)}${path}`,
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${cfg.apiKey}`,
-    },
-    body,
-    timeoutMs: REQUEST_TIMEOUT_MS,
-    providerLabel: 'OpenAI',
-  }));
+  const response = await withRetry(() =>
+    fetchWithTimeout({
+      url: `${baseUrl(cfg)}${path}`,
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${cfg.apiKey}`,
+      },
+      body,
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      providerLabel: 'OpenAI',
+    }),
+  );
 
   return parseJsonResponse(response, 'OpenAI');
 }
@@ -92,20 +99,14 @@ function buildUserContent(userPrompt, images) {
 // CEO Vertex/Gemini audit #12/C3 (2026-08-30) — same responseSchema
 // contract gemini.js's generationConfigFor honors, mapped to OpenAI's
 // own documented `response_format: {type: 'json_schema', ...}` shape.
-// `strict: true` asks OpenAI to enforce the schema itself, not just
-// validate after the fact. Not live-verified against a real OpenAI key
-// (same caveat this whole file already carries) — the shape matches
-// OpenAI's published Structured Outputs convention, not fabricated.
-function responseFormatFor(responseSchema) {
-  if (!responseSchema) return undefined;
-  return {
-    type: 'json_schema',
-    json_schema: { name: 'arcnave_extraction', schema: responseSchema, strict: true },
-  };
-}
-
+// Not live-verified against a real OpenAI key (same caveat this whole
+// file already carries) — the shape matches OpenAI's published
+// Structured Outputs convention, not fabricated. Moved to
+// openAiCompatibleUtils.js (P3 1.12) — see that module's own comment
+// for why selfHosted.js/vertexMaas.js now share this exact function
+// instead of each re-declaring it.
 async function completeWithMeta(cfg, arcnaveContext) {
-  const { systemPrompt, userPrompt, images, responseSchema } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, images, responseSchema, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -115,6 +116,7 @@ async function completeWithMeta(cfg, arcnaveContext) {
     model: cfg.model,
     messages: [
       { role: 'system', content: systemPrompt },
+      ...buildOpenAiCompatibleHistoryMessages(historyTurns),
       { role: 'user', content: buildUserContent(userPrompt, images) },
     ],
     max_tokens: MAX_TOKENS,
@@ -157,7 +159,7 @@ async function complete(cfg, prompts) {
 // `choices` array, just before `[DONE]` — every other chunk's `usage`
 // is absent, so the last one seen wins.
 async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
-  const { systemPrompt, userPrompt, images } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, images, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -176,6 +178,7 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
           model: cfg.model,
           messages: [
             { role: 'system', content: systemPrompt },
+            ...buildOpenAiCompatibleHistoryMessages(historyTurns),
             { role: 'user', content: buildUserContent(userPrompt, images) },
           ],
           max_tokens: MAX_TOKENS,
@@ -207,7 +210,8 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
     } catch {
       continue;
     }
-    const delta = event && event.choices && event.choices[0] && event.choices[0].delta && event.choices[0].delta.content;
+    const delta =
+      event && event.choices && event.choices[0] && event.choices[0].delta && event.choices[0].delta.content;
     if (typeof delta === 'string' && delta.length > 0) {
       full += delta;
       onDelta(delta);
@@ -236,9 +240,7 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
 const buildPriorTurnMessages = buildOpenAiCompatiblePriorTurnMessages;
 
 async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
-  const {
-    systemPrompt, userPrompt, tools, images,
-  } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, tools, images, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no LLM provider is configured for this college (missing apiKey)');
   }
@@ -247,6 +249,7 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
     model: cfg.model,
     messages: [
       { role: 'system', content: systemPrompt },
+      ...buildOpenAiCompatibleHistoryMessages(historyTurns),
       { role: 'user', content: buildUserContent(userPrompt, images) },
       ...buildPriorTurnMessages(priorTurns),
     ],
@@ -277,7 +280,12 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
     // ADR-030 P0 telemetry — see gemini.js's own equivalent comment.
     const usage = extractOpenAiCompatibleUsage(payload && payload.usage);
     return {
-      type: 'tool_call', toolName: fn.name, arguments: toolArguments, callId: toolCalls[0].id, rawToolCall: toolCalls[0], usage,
+      type: 'tool_call',
+      toolName: fn.name,
+      arguments: toolArguments,
+      callId: toolCalls[0].id,
+      rawToolCall: toolCalls[0],
+      usage,
     };
   }
 

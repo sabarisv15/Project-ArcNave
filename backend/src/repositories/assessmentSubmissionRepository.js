@@ -5,9 +5,7 @@
 // subject, assessment_type_id) batch; findOne is the lookup every
 // lock/submit/direct-edit-gate check in the service goes through.
 
-async function create(client, {
-  collegeId, academicYear, classId, subject, assessmentTypeId, status,
-}) {
+async function create(client, { collegeId, academicYear, classId, subject, assessmentTypeId, status }) {
   const result = await client.query(
     `INSERT INTO assessment_submissions
        (college_id, academic_year, class_id, subject, assessment_type_id, status)
@@ -23,9 +21,7 @@ async function findById(client, id) {
   return result.rows[0] || null;
 }
 
-async function findOne(client, {
-  academicYear, classId, subject, assessmentTypeId,
-}) {
+async function findOne(client, { academicYear, classId, subject, assessmentTypeId }) {
   const result = await client.query(
     `SELECT * FROM assessment_submissions
      WHERE academic_year = $1 AND class_id = $2 AND subject = $3 AND assessment_type_id = $4`,
@@ -59,5 +55,8 @@ async function update(client, id, fields) {
 }
 
 module.exports = {
-  create, findById, findOne, update,
+  create,
+  findById,
+  findOne,
+  update,
 };

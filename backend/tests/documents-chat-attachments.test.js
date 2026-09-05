@@ -82,10 +82,10 @@ function hostFor(subdomain) {
 async function seedTenant(adminPool, label) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const college = { collegeId: `chatatt${label}${suffix}`, subdomain: `chatatttenant${label}${suffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [college.collegeId, college.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    college.collegeId,
+    college.subdomain,
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userIds = {};
   for (const [username, role] of [
@@ -190,12 +190,10 @@ test('documents chat-attachments', async (t) => {
   });
 
   async function login(username) {
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/auth/login',
-      'POST',
-      { headers: { host: hostFor(college.subdomain) }, body: { username, password: PASSWORD } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/auth/login', 'POST', {
+      headers: { host: hostFor(college.subdomain) },
+      body: { username, password: PASSWORD },
+    });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -244,15 +242,18 @@ test('documents chat-attachments', async (t) => {
     assert.equal(resp.status, 400);
   });
 
-  await t.test('a payload whose declared mime_type lies (says image/png, but the real bytes are plain text) is rejected — the server sniffs real content, never trusts the client', async () => {
-    const token = await login('userone');
-    const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
-      file_name: 'fake.png',
-      mime_type: 'image/png',
-      file_base64: Buffer.from('this is not actually an image').toString('base64'),
-    });
-    assert.equal(resp.status, 400);
-  });
+  await t.test(
+    'a payload whose declared mime_type lies (says image/png, but the real bytes are plain text) is rejected — the server sniffs real content, never trusts the client',
+    async () => {
+      const token = await login('userone');
+      const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
+        file_name: 'fake.png',
+        mime_type: 'image/png',
+        file_base64: Buffer.from('this is not actually an image').toString('base64'),
+      });
+      assert.equal(resp.status, 400);
+    },
+  );
 
   await t.test('empty file_base64 is rejected', async () => {
     const token = await login('userone');
@@ -324,26 +325,32 @@ test('documents chat-attachments', async (t) => {
     assert.equal(resp.body.mime_type, 'application/vnd.oasis.opendocument.spreadsheet');
   });
 
-  await t.test('a bare zip (ZIP magic, but none of the recognized office/ODF internal parts) is now accepted as a generic archive', async () => {
-    const token = await login('userone');
-    const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
-      file_name: 'archive.zip',
-      file_base64: fakeUnrelatedZipBuffer().toString('base64'),
-    });
-    assert.equal(resp.status, 201);
-    assert.equal(resp.body.category, 'archive_or_container');
-  });
+  await t.test(
+    'a bare zip (ZIP magic, but none of the recognized office/ODF internal parts) is now accepted as a generic archive',
+    async () => {
+      const token = await login('userone');
+      const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
+        file_name: 'archive.zip',
+        file_base64: fakeUnrelatedZipBuffer().toString('base64'),
+      });
+      assert.equal(resp.status, 201);
+      assert.equal(resp.body.category, 'archive_or_container');
+    },
+  );
 
-  await t.test('an APK (ZIP containing AndroidManifest.xml) is rejected outright, never accepted as a generic archive', async () => {
-    const token = await login('userone');
-    const zip = new PizZip();
-    zip.file('AndroidManifest.xml', '<manifest/>');
-    const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
-      file_name: 'app.apk',
-      file_base64: zip.generate({ type: 'nodebuffer' }).toString('base64'),
-    });
-    assert.equal(resp.status, 400);
-  });
+  await t.test(
+    'an APK (ZIP containing AndroidManifest.xml) is rejected outright, never accepted as a generic archive',
+    async () => {
+      const token = await login('userone');
+      const zip = new PizZip();
+      zip.file('AndroidManifest.xml', '<manifest/>');
+      const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
+        file_name: 'app.apk',
+        file_base64: zip.generate({ type: 'nodebuffer' }).toString('base64'),
+      });
+      assert.equal(resp.status, 400);
+    },
+  );
 
   await t.test('md/txt/csv uploads succeed and are sniffed by content shape + the declared extension', async () => {
     const token = await login('userone');
@@ -363,15 +370,18 @@ test('documents chat-attachments', async (t) => {
     }
   });
 
-  await t.test('binary-looking content with a .txt extension (a NUL byte present) is rejected — the content heuristic is the real gate, not the extension', async () => {
-    const token = await login('userone');
-    const binaryLooking = Buffer.from([0x00, 0x01, 0x02, 0xff, 0xfe, 0x00, 0x10, 0x20]);
-    const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
-      file_name: 'disguised.txt',
-      file_base64: binaryLooking.toString('base64'),
-    });
-    assert.equal(resp.status, 400);
-  });
+  await t.test(
+    'binary-looking content with a .txt extension (a NUL byte present) is rejected — the content heuristic is the real gate, not the extension',
+    async () => {
+      const token = await login('userone');
+      const binaryLooking = Buffer.from([0x00, 0x01, 0x02, 0xff, 0xfe, 0x00, 0x10, 0x20]);
+      const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
+        file_name: 'disguised.txt',
+        file_base64: binaryLooking.toString('base64'),
+      });
+      assert.equal(resp.status, 400);
+    },
+  );
 
   await t.test('plain text content with no recognized extension is rejected rather than guessed', async () => {
     const token = await login('userone');
@@ -382,130 +392,170 @@ test('documents chat-attachments', async (t) => {
     assert.equal(resp.status, 400);
   });
 
-  await t.test('an archive attachment with the sandbox unconfigured (this test env) lands in a graceful "failed" status, never a 500', async () => {
-    const token = await login('userone');
-    const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
-      file_name: 'archive.zip',
-      file_base64: fakeUnrelatedZipBuffer().toString('base64'),
-    });
-    assert.equal(resp.status, 201);
-    assert.equal(resp.body.category, 'archive_or_container');
-    assert.equal(resp.body.processing_status, 'failed');
+  await t.test(
+    'an archive attachment with the sandbox unconfigured (this test env) lands in a graceful "failed" status, never a 500',
+    async () => {
+      const token = await login('userone');
+      const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
+        file_name: 'archive.zip',
+        file_base64: fakeUnrelatedZipBuffer().toString('base64'),
+      });
+      assert.equal(resp.status, 201);
+      assert.equal(resp.body.category, 'archive_or_container');
+      assert.equal(resp.body.processing_status, 'failed');
 
-    const intelligence = await get(baseUrl, `/api/v1/documents/chat-attachments/${resp.body.id}/intelligence`, headersFor(token));
-    assert.equal(intelligence.status, 200);
-    assert.equal(intelligence.body.length, 1);
-    assert.equal(intelligence.body[0].processing_status, 'failed');
-    assert.ok(intelligence.body[0].error_message_safe);
-  });
+      const intelligence = await get(
+        baseUrl,
+        `/api/v1/documents/chat-attachments/${resp.body.id}/intelligence`,
+        headersFor(token),
+      );
+      assert.equal(intelligence.status, 200);
+      assert.equal(intelligence.body.length, 1);
+      assert.equal(intelligence.body[0].processing_status, 'failed');
+      assert.ok(intelligence.body[0].error_message_safe);
+    },
+  );
 
-  await t.test('GET .../intelligence: another user in the same college gets 404, never the owner\'s attachment_intelligence rows', async () => {
-    const uploaderToken = await login('userone');
-    const otherUserToken = await login('usertwo');
-    const upload = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(uploaderToken), {
-      file_name: 'mark-sheet.png',
-      file_base64: ONE_PIXEL_PNG.toString('base64'),
-    });
-    assert.equal(upload.status, 201);
+  await t.test(
+    "GET .../intelligence: another user in the same college gets 404, never the owner's attachment_intelligence rows",
+    async () => {
+      const uploaderToken = await login('userone');
+      const otherUserToken = await login('usertwo');
+      const upload = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(uploaderToken), {
+        file_name: 'mark-sheet.png',
+        file_base64: ONE_PIXEL_PNG.toString('base64'),
+      });
+      assert.equal(upload.status, 201);
 
-    const ownerLookup = await get(baseUrl, `/api/v1/documents/chat-attachments/${upload.body.id}/intelligence`, headersFor(uploaderToken));
-    assert.equal(ownerLookup.status, 200);
-    assert.equal(ownerLookup.body.length, 1);
+      const ownerLookup = await get(
+        baseUrl,
+        `/api/v1/documents/chat-attachments/${upload.body.id}/intelligence`,
+        headersFor(uploaderToken),
+      );
+      assert.equal(ownerLookup.status, 200);
+      assert.equal(ownerLookup.body.length, 1);
 
-    const otherLookup = await get(baseUrl, `/api/v1/documents/chat-attachments/${upload.body.id}/intelligence`, headersFor(otherUserToken));
-    assert.equal(otherLookup.status, 404);
-  });
+      const otherLookup = await get(
+        baseUrl,
+        `/api/v1/documents/chat-attachments/${upload.body.id}/intelligence`,
+        headersFor(otherUserToken),
+      );
+      assert.equal(otherLookup.status, 404);
+    },
+  );
 
-  await t.test('archive extraction (mocked sandbox): a normal child, a blocked executable child, and a nested archive child are all handled correctly', async (subT) => {
-    const token = await login('userone');
+  await t.test(
+    'archive extraction (mocked sandbox): a normal child, a blocked executable child, and a nested archive child are all handled correctly',
+    async (subT) => {
+      const token = await login('userone');
 
-    const childPng = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 1, 2, 3, 4]);
-    const childExe = Buffer.from([0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00]);
-    const nestedZip = new PizZip();
-    nestedZip.file('inner.txt', 'nested content');
-    const nestedZipBuffer = nestedZip.generate({ type: 'nodebuffer' });
+      const childPng = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 1, 2, 3, 4]);
+      const childExe = Buffer.from([0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00]);
+      const nestedZip = new PizZip();
+      nestedZip.file('inner.txt', 'nested content');
+      const nestedZipBuffer = nestedZip.generate({ type: 'nodebuffer' });
 
-    let callCount = 0;
-    subT.mock.method(sandboxExecutionService, 'extractArchive', async () => {
-      callCount += 1;
-      if (callCount === 1) {
-        // Top-level archive: one normal file, one blocked executable,
-        // one nested archive (drives the recursive call below).
+      let callCount = 0;
+      subT.mock.method(sandboxExecutionService, 'extractArchive', async () => {
+        callCount += 1;
+        if (callCount === 1) {
+          // Top-level archive: one normal file, one blocked executable,
+          // one nested archive (drives the recursive call below).
+          return {
+            status: 'ok',
+            files: [
+              { name: 'photo.png', buffer: childPng },
+              { name: 'app.exe', buffer: childExe },
+              { name: 'inner.zip', buffer: nestedZipBuffer },
+            ],
+          };
+        }
+        // The recursive call, for inner.zip: one more normal file, no
+        // further nesting — proves recursion actually ran, not just that
+        // the mock was configured to allow it.
         return {
           status: 'ok',
-          files: [
-            { name: 'photo.png', buffer: childPng },
-            { name: 'app.exe', buffer: childExe },
-            { name: 'inner.zip', buffer: nestedZipBuffer },
-          ],
+          files: [{ name: 'deep.png', buffer: childPng }],
         };
-      }
-      // The recursive call, for inner.zip: one more normal file, no
-      // further nesting — proves recursion actually ran, not just that
-      // the mock was configured to allow it.
-      return {
-        status: 'ok',
-        files: [{ name: 'deep.png', buffer: childPng }],
-      };
-    });
+      });
 
-    const topLevelZip = new PizZip();
-    topLevelZip.file('placeholder.bin', 'irrelevant — extraction result is fully mocked above');
-    const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
-      file_name: 'bundle.zip',
-      file_base64: topLevelZip.generate({ type: 'nodebuffer' }).toString('base64'),
-    });
-    assert.equal(resp.status, 201);
-    assert.equal(resp.body.processing_status, 'ready');
-    assert.equal(callCount, 2, 'the nested archive child must trigger a second, recursive extraction call');
+      const topLevelZip = new PizZip();
+      topLevelZip.file('placeholder.bin', 'irrelevant — extraction result is fully mocked above');
+      const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
+        file_name: 'bundle.zip',
+        file_base64: topLevelZip.generate({ type: 'nodebuffer' }).toString('base64'),
+      });
+      assert.equal(resp.status, 201);
+      assert.equal(resp.body.processing_status, 'ready');
+      assert.equal(callCount, 2, 'the nested archive child must trigger a second, recursive extraction call');
 
-    const intelligence = await get(baseUrl, `/api/v1/documents/chat-attachments/${resp.body.id}/intelligence`, headersFor(token));
-    // Top-level (ready) + png child + zip child + the zip child's own
-    // png grandchild = 4 rows. The blocked .exe never gets a row at
-    // all — it was never stored.
-    assert.equal(intelligence.body.length, 4);
-    const categories = intelligence.body.map((row) => row.category).sort();
-    assert.deepEqual(categories, ['archive_or_container', 'archive_or_container', 'native_multimodal_image', 'native_multimodal_image']);
-    assert.ok(!intelligence.body.some((row) => row.detected_mime_type === 'application/x-msdownload'), 'the blocked executable must never appear');
+      const intelligence = await get(
+        baseUrl,
+        `/api/v1/documents/chat-attachments/${resp.body.id}/intelligence`,
+        headersFor(token),
+      );
+      // Top-level (ready) + png child + zip child + the zip child's own
+      // png grandchild = 4 rows. The blocked .exe never gets a row at
+      // all — it was never stored.
+      assert.equal(intelligence.body.length, 4);
+      const categories = intelligence.body.map((row) => row.category).sort();
+      assert.deepEqual(categories, [
+        'archive_or_container',
+        'archive_or_container',
+        'native_multimodal_image',
+        'native_multimodal_image',
+      ]);
+      assert.ok(
+        !intelligence.body.some((row) => row.detected_mime_type === 'application/x-msdownload'),
+        'the blocked executable must never appear',
+      );
 
-    // parent_attachment_id references another attachment_intelligence
-    // row's own id, not a documents.id — the top-level row (no
-    // parent_attachment_id of its own) is the id every direct child
-    // points back at.
-    const topLevelRow = intelligence.body.find((row) => !row.parent_attachment_id);
-    assert.ok(topLevelRow, 'exactly one row has no parent_attachment_id');
-    const childRows = intelligence.body.filter((row) => row.parent_attachment_id === topLevelRow.id);
-    assert.equal(childRows.length, 2, 'exactly the png and the nested zip are direct children of the top-level archive');
-  });
+      // parent_attachment_id references another attachment_intelligence
+      // row's own id, not a documents.id — the top-level row (no
+      // parent_attachment_id of its own) is the id every direct child
+      // points back at.
+      const topLevelRow = intelligence.body.find((row) => !row.parent_attachment_id);
+      assert.ok(topLevelRow, 'exactly one row has no parent_attachment_id');
+      const childRows = intelligence.body.filter((row) => row.parent_attachment_id === topLevelRow.id);
+      assert.equal(
+        childRows.length,
+        2,
+        'exactly the png and the nested zip are direct children of the top-level archive',
+      );
+    },
+  );
 
-  await t.test('archive extraction recursion depth is bounded — a chain of nested archives beyond the limit fails safely, not infinitely', async (subT) => {
-    const token = await login('userone');
-    const nestedZip = new PizZip();
-    nestedZip.file('x.txt', 'x');
-    const nestedZipBuffer = nestedZip.generate({ type: 'nodebuffer' });
+  await t.test(
+    'archive extraction recursion depth is bounded — a chain of nested archives beyond the limit fails safely, not infinitely',
+    async (subT) => {
+      const token = await login('userone');
+      const nestedZip = new PizZip();
+      nestedZip.file('x.txt', 'x');
+      const nestedZipBuffer = nestedZip.generate({ type: 'nodebuffer' });
 
-    let callCount = 0;
-    subT.mock.method(sandboxExecutionService, 'extractArchive', async () => {
-      callCount += 1;
-      // Every call returns ONE more nested archive — an unbounded chain
-      // if depth were not capped.
-      return { status: 'ok', files: [{ name: `level${callCount}.zip`, buffer: nestedZipBuffer }] };
-    });
+      let callCount = 0;
+      subT.mock.method(sandboxExecutionService, 'extractArchive', async () => {
+        callCount += 1;
+        // Every call returns ONE more nested archive — an unbounded chain
+        // if depth were not capped.
+        return { status: 'ok', files: [{ name: `level${callCount}.zip`, buffer: nestedZipBuffer }] };
+      });
 
-    const topLevelZip = new PizZip();
-    topLevelZip.file('placeholder.bin', 'irrelevant');
-    const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
-      file_name: 'infinite.zip',
-      file_base64: topLevelZip.generate({ type: 'nodebuffer' }).toString('base64'),
-    });
-    assert.equal(resp.status, 201);
-    // The top-level attachment itself still reports 'ready' (every
-    // bounded level it reached extracted successfully) — the recursion
-    // cap causes the DEEPEST call to fail quietly rather than the whole
-    // upload turning into a user-facing error, matching "one bad nested
-    // entry doesn't nuke the rest of what was already extracted."
-    assert.equal(resp.body.processing_status, 'ready');
-    assert.ok(callCount <= 7, `recursion must stop at the depth cap (6), saw ${callCount} calls`);
-    assert.ok(callCount >= 6, `recursion should reach the depth cap, saw only ${callCount} calls`);
-  });
+      const topLevelZip = new PizZip();
+      topLevelZip.file('placeholder.bin', 'irrelevant');
+      const resp = await post(baseUrl, '/api/v1/documents/chat-attachments', headersFor(token), {
+        file_name: 'infinite.zip',
+        file_base64: topLevelZip.generate({ type: 'nodebuffer' }).toString('base64'),
+      });
+      assert.equal(resp.status, 201);
+      // The top-level attachment itself still reports 'ready' (every
+      // bounded level it reached extracted successfully) — the recursion
+      // cap causes the DEEPEST call to fail quietly rather than the whole
+      // upload turning into a user-facing error, matching "one bad nested
+      // entry doesn't nuke the rest of what was already extracted."
+      assert.equal(resp.body.processing_status, 'ready');
+      assert.ok(callCount <= 7, `recursion must stop at the depth cap (6), saw ${callCount} calls`);
+      assert.ok(callCount >= 6, `recursion should reach the depth cap, saw only ${callCount} calls`);
+    },
+  );
 });

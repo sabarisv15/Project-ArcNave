@@ -79,7 +79,12 @@ function inviterKeyFor({ level, positionType }) {
 // "the guard fails loudly" convention every other assert* function in
 // this codebase follows (e.g. assertLevelAllowsPositionLogin).
 function assertCanInvite({
-  actorIsPlatformAdmin, actorCapabilities, targetLevel, targetPositionType, targetCollegeId, targetDepartmentId,
+  actorIsPlatformAdmin,
+  actorCapabilities,
+  targetLevel,
+  targetPositionType,
+  targetCollegeId,
+  targetDepartmentId,
 }) {
   const key = inviterKeyFor({ level: targetLevel, positionType: targetPositionType });
   const rule = RECURSIVE_INVITERS[key];
@@ -123,13 +128,18 @@ function assertCanInvite({
   // department. Reuses the same departmentIds the visibility resolver
   // already computes for an HOD rather than re-deriving it here.
   if (rule.scopeCheck === 'ownDepartmentOnly') {
-    if (!Array.isArray(actorCapabilities.departmentIds) || !actorCapabilities.departmentIds.includes(targetDepartmentId)) {
-      throw new PositionInvitationForbiddenError('actor is not the HOD of the target class\'s department');
+    if (
+      !Array.isArray(actorCapabilities.departmentIds) ||
+      !actorCapabilities.departmentIds.includes(targetDepartmentId)
+    ) {
+      throw new PositionInvitationForbiddenError("actor is not the HOD of the target class's department");
     }
     return;
   }
 
-  throw new PositionInvitationLevelNotSupportedError(`scopeCheck ${JSON.stringify(rule.scopeCheck)} not implemented yet`);
+  throw new PositionInvitationLevelNotSupportedError(
+    `scopeCheck ${JSON.stringify(rule.scopeCheck)} not implemented yet`,
+  );
 }
 
 // inviteToPosition given a position whose position_accounts row
@@ -166,7 +176,10 @@ async function ensureStructuralPosition(client, { collegeId, level, title, creat
   const existing = await positionRepository.findActivePositionByCollegeAndLevel(client, collegeId, level);
   if (existing) return existing;
   return positionRepository.createPosition(client, {
-    collegeId, level, title: title || STRUCTURAL_LEVEL_TITLES[level] || `Level ${level}`, createdBy,
+    collegeId,
+    level,
+    title: title || STRUCTURAL_LEVEL_TITLES[level] || `Level ${level}`,
+    createdBy,
   });
 }
 
@@ -187,19 +200,23 @@ async function ensureStructuralPosition(client, { collegeId, level, title, creat
 // STRUCTURAL_LEVEL_TITLES[level]. Previously this function silently
 // ignored inviteToPosition's own `title` argument for Level 3
 // specifically (a real bug — Level 1/2 honored it, Level 3 never did).
-async function ensureHodPositionForInvite(client, {
-  collegeId, departmentId, title, createdBy,
-}) {
+async function ensureHodPositionForInvite(client, { collegeId, departmentId, title, createdBy }) {
   const existingAssignment = await positionRepository.findActiveDepartmentAssignment(client, departmentId);
   if (existingAssignment) {
     return positionRepository.findPositionById(client, existingAssignment.position_id);
   }
-  const chosenTitle = title || await collegeProfileRepository.getLevel3PositionTitle(client, collegeId);
+  const chosenTitle = title || (await collegeProfileRepository.getLevel3PositionTitle(client, collegeId));
   const position = await positionRepository.createPosition(client, {
-    collegeId, level: LEVEL3, title: chosenTitle || 'HOD', createdBy,
+    collegeId,
+    level: LEVEL3,
+    title: chosenTitle || 'HOD',
+    createdBy,
   });
   await positionRepository.createPositionDepartmentAssignment(client, {
-    collegeId, positionId: position.id, departmentId, assignedBy: createdBy,
+    collegeId,
+    positionId: position.id,
+    departmentId,
+    assignedBy: createdBy,
   });
   return position;
 }
@@ -210,19 +227,24 @@ async function ensureHodPositionForInvite(client, {
 // which still only branches on LEVEL3 — wiring Class Tutor invites
 // through this is plan step 18, once assignClassTutor/routes/classes.js
 // migration lands).
-async function ensureClassTutorPositionForInvite(client, {
-  collegeId, classId, title, createdBy,
-}) {
+async function ensureClassTutorPositionForInvite(client, { collegeId, classId, title, createdBy }) {
   const existingAssignment = await positionRepository.findActiveClassAssignment(client, classId);
   if (existingAssignment) {
     return positionRepository.findPositionById(client, existingAssignment.position_id);
   }
-  const chosenTitle = title || await collegeProfileRepository.getLevel4PositionTitle(client, collegeId);
+  const chosenTitle = title || (await collegeProfileRepository.getLevel4PositionTitle(client, collegeId));
   const position = await positionRepository.createPosition(client, {
-    collegeId, level: STAFF_LEVEL, title: chosenTitle || 'Class Tutor', createdBy, positionType: CLASS_TUTOR_TYPE,
+    collegeId,
+    level: STAFF_LEVEL,
+    title: chosenTitle || 'Class Tutor',
+    createdBy,
+    positionType: CLASS_TUTOR_TYPE,
   });
   await positionRepository.createPositionClassAssignment(client, {
-    collegeId, positionId: position.id, classId, assignedBy: createdBy,
+    collegeId,
+    positionId: position.id,
+    classId,
+    assignedBy: createdBy,
   });
   return position;
 }
@@ -234,11 +256,16 @@ async function ensureClassTutorPositionForInvite(client, {
 // PositionAccountAlreadyProvisionedError above), records the
 // invitation, and emails the raw token. Never returns the raw token —
 // same rule every other invitation flow in this codebase follows.
-async function inviteToPosition(client, {
-  collegeId, level, departmentId, title, email, actorIsPlatformAdmin, actorCapabilities, invitedBy,
-}) {
+async function inviteToPosition(
+  client,
+  { collegeId, level, departmentId, title, email, actorIsPlatformAdmin, actorCapabilities, invitedBy },
+) {
   assertCanInvite({
-    actorIsPlatformAdmin, actorCapabilities, targetLevel: level, targetPositionType: null, targetCollegeId: collegeId,
+    actorIsPlatformAdmin,
+    actorCapabilities,
+    targetLevel: level,
+    targetPositionType: null,
+    targetCollegeId: collegeId,
   });
 
   // positions.created_by REFERENCES users(id) — a Platform Admin's id
@@ -256,11 +283,17 @@ async function inviteToPosition(client, {
       throw new PositionInvitationValidationError('departmentId is required for a Level 3 invite');
     }
     position = await ensureHodPositionForInvite(client, {
-      collegeId, departmentId, title, createdBy: positionCreatedBy,
+      collegeId,
+      departmentId,
+      title,
+      createdBy: positionCreatedBy,
     });
   } else {
     position = await ensureStructuralPosition(client, {
-      collegeId, level, title, createdBy: positionCreatedBy,
+      collegeId,
+      level,
+      title,
+      createdBy: positionCreatedBy,
     });
   }
 
@@ -279,7 +312,10 @@ async function inviteToPosition(client, {
   // than a fixed value.
   const placeholderHash = await security.hashPassword(security.generateTemporaryPassword());
   const account = await positionRepository.createPositionAccount(client, {
-    collegeId, positionId: position.id, officialEmail: email, passwordHash: placeholderHash,
+    collegeId,
+    positionId: position.id,
+    officialEmail: email,
+    passwordHash: placeholderHash,
   });
 
   const rawToken = security.generateRefreshToken();
@@ -296,7 +332,11 @@ async function inviteToPosition(client, {
   });
 
   await notificationService.sendPositionAccountInvitationEmail(client, {
-    to: email, collegeId, positionTitle: position.title, token: rawToken, expiresAt: invitation.expires_at,
+    to: email,
+    collegeId,
+    positionTitle: position.title,
+    token: rawToken,
+    expiresAt: invitation.expires_at,
   });
 
   return { invitation, position, account };
@@ -350,7 +390,9 @@ async function acceptInvitation(client, invitation, { password }) {
 
   const account = await positionRepository.findPositionAccountByPositionId(client, invitation.position_id);
   if (account === null) {
-    throw new PositionInvitationInvalidError(`no Position Account exists for invitation ${JSON.stringify(invitation.id)}`);
+    throw new PositionInvitationInvalidError(
+      `no Position Account exists for invitation ${JSON.stringify(invitation.id)}`,
+    );
   }
 
   await positionRepository.updatePositionAccountCredentials(client, account.id, await security.hashPassword(password));
@@ -404,7 +446,9 @@ async function reassignPositionOccupant(client, { positionAccountId, newOccupant
 
   const account = await positionRepository.findPositionAccountById(client, positionAccountId);
   if (account === null) {
-    throw new PositionAccountReassignmentNotFoundError(`position account ${JSON.stringify(positionAccountId)} does not exist`);
+    throw new PositionAccountReassignmentNotFoundError(
+      `position account ${JSON.stringify(positionAccountId)} does not exist`,
+    );
   }
   const position = await positionRepository.findPositionById(client, account.position_id);
 
@@ -443,7 +487,10 @@ async function reassignPositionOccupant(client, { positionAccountId, newOccupant
   });
 
   const occupant = await positionRepository.createPositionOccupant(client, {
-    collegeId: account.college_id, positionAccountId, userId: newOccupantUserId, assignedBy: actorUserId,
+    collegeId: account.college_id,
+    positionAccountId,
+    userId: newOccupantUserId,
+    assignedBy: actorUserId,
   });
 
   return { occupant, invitation };

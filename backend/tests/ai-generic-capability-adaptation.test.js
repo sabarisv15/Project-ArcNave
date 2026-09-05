@@ -18,7 +18,13 @@ const aiToolRegistry = require('../src/services/aiToolRegistry');
 const aiInteractionService = require('../src/services/aiInteractionService');
 
 const NEW_GENERIC_TOOLS = [
-  'ai_memory_list', 'ask_user_choice', 'conversation_search', 'present_options', 'present_quiz', 'present_translation', 'present_steps',
+  'ai_memory_list',
+  'ask_user_choice',
+  'conversation_search',
+  'present_options',
+  'present_quiz',
+  'present_translation',
+  'present_steps',
 ];
 
 test('AI tool registry — generic capability adaptation registration', async (t) => {
@@ -47,21 +53,36 @@ test('conversation_search (ADL-060) — self-scoped, no caller-supplied userId',
   await t.test('handler always resolves against the acting user, never a caller-supplied id', () => {
     const tool = aiToolRegistry.getTool('conversation_search');
     assert.deepEqual(Object.keys(tool.params.properties), ['query']);
-    assert.ok(!('userId' in tool.params.properties), 'must not accept a caller-supplied userId — always the acting user');
+    assert.ok(
+      !('userId' in tool.params.properties),
+      'must not accept a caller-supplied userId — always the acting user',
+    );
   });
 });
 
 test('present_options / present_quiz / present_translation / present_steps — presentation-only, no data access', async (t) => {
   await t.test('present_options rejects fewer than 2 or more than 6 alternatives', () => {
-    assert.throws(() => aiInteractionService.buildOptionsCard('X', [{ label: 'only one' }]), aiInteractionService.AiInteractionValidationError);
+    assert.throws(
+      () => aiInteractionService.buildOptionsCard('X', [{ label: 'only one' }]),
+      aiInteractionService.AiInteractionValidationError,
+    );
     const seven = Array.from({ length: 7 }, (_, i) => ({ label: `opt ${i}` }));
-    assert.throws(() => aiInteractionService.buildOptionsCard('X', seven), aiInteractionService.AiInteractionValidationError);
+    assert.throws(
+      () => aiInteractionService.buildOptionsCard('X', seven),
+      aiInteractionService.AiInteractionValidationError,
+    );
   });
 
-  await t.test('present_options accepts a valid card and never implies ranking (no rank/recommended field in the shape)', () => {
-    const card = aiInteractionService.buildOptionsCard('Title', [{ label: 'A', description: 'first' }, { label: 'B' }]);
-    assert.deepEqual(Object.keys(card.options[0]).sort(), ['description', 'label']);
-  });
+  await t.test(
+    'present_options accepts a valid card and never implies ranking (no rank/recommended field in the shape)',
+    () => {
+      const card = aiInteractionService.buildOptionsCard('Title', [
+        { label: 'A', description: 'first' },
+        { label: 'B' },
+      ]);
+      assert.deepEqual(Object.keys(card.options[0]).sort(), ['description', 'label']);
+    },
+  );
 
   await t.test('present_quiz rejects an out-of-range correctIndex', () => {
     assert.throws(
@@ -83,8 +104,14 @@ test('present_options / present_quiz / present_translation / present_steps — p
   });
 
   await t.test('present_translation requires sourceText, targetText, and targetLang', () => {
-    assert.throws(() => aiInteractionService.buildTranslationCard('hi', 'en', '', 'ta'), aiInteractionService.AiInteractionValidationError);
-    assert.throws(() => aiInteractionService.buildTranslationCard('hi', 'en', 'vanakkam', ''), aiInteractionService.AiInteractionValidationError);
+    assert.throws(
+      () => aiInteractionService.buildTranslationCard('hi', 'en', '', 'ta'),
+      aiInteractionService.AiInteractionValidationError,
+    );
+    assert.throws(
+      () => aiInteractionService.buildTranslationCard('hi', 'en', 'vanakkam', ''),
+      aiInteractionService.AiInteractionValidationError,
+    );
   });
 
   await t.test('present_translation sourceLang is optional', () => {
@@ -98,7 +125,10 @@ test('present_options / present_quiz / present_translation / present_steps — p
 
   await t.test('present_steps rejects more than 15 steps', () => {
     const sixteen = Array.from({ length: 16 }, (_, i) => `step ${i}`);
-    assert.throws(() => aiInteractionService.buildSteps('T', sixteen), aiInteractionService.AiInteractionValidationError);
+    assert.throws(
+      () => aiInteractionService.buildSteps('T', sixteen),
+      aiInteractionService.AiInteractionValidationError,
+    );
   });
 
   await t.test('present_steps accepts a valid sequence', () => {
@@ -152,14 +182,23 @@ test('aiInteractionService.buildChoicePrompt', async (t) => {
 test('ask_user_choice tool handler delegates straight to aiInteractionService, no data access', async (t) => {
   await t.test('valid params return the validated {prompt, options} shape', () => {
     const tool = aiToolRegistry.getTool('ask_user_choice');
-    const result = tool.handler(null, { prompt: 'Which category?', options: ['Circulars', 'Curriculum'] }, { userId: 'u1', role: 'staff', collegeId: 'c1' });
+    const result = tool.handler(
+      null,
+      { prompt: 'Which category?', options: ['Circulars', 'Curriculum'] },
+      { userId: 'u1', role: 'staff', collegeId: 'c1' },
+    );
     assert.deepEqual(result, { prompt: 'Which category?', options: ['Circulars', 'Curriculum'] });
   });
 
   await t.test('invalid params (1 option) throw before any Business Service would be touched', () => {
     const tool = aiToolRegistry.getTool('ask_user_choice');
     assert.throws(
-      () => tool.handler(null, { prompt: 'Which one?', options: ['only one'] }, { userId: 'u1', role: 'staff', collegeId: 'c1' }),
+      () =>
+        tool.handler(
+          null,
+          { prompt: 'Which one?', options: ['only one'] },
+          { userId: 'u1', role: 'staff', collegeId: 'c1' },
+        ),
       aiInteractionService.AiInteractionValidationError,
     );
   });

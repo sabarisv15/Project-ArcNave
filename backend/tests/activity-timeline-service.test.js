@@ -10,7 +10,7 @@ const auditLogRepository = require('../src/repositories/auditLogRepository');
 const activityTimelineService = require('../src/services/activityTimelineService');
 
 test('activityTimelineService.getOwnActivity', async (t) => {
-  await t.test('always queries by the actor\'s own userId, never a caller-supplied one', async () => {
+  await t.test("always queries by the actor's own userId, never a caller-supplied one", async () => {
     const findMock = t.mock.method(auditLogRepository, 'findByUser', async (client, userId, opts) => {
       assert.equal(userId, 'u1');
       assert.deepEqual(opts, { limit: 10, offset: 0 });

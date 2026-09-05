@@ -11,9 +11,7 @@ import { DepartmentScopeHeader } from '../components/DepartmentScopeHeader';
 import { NoAssignedDepartment, NoClasses, NothingPending } from '../components/InstitutionalState';
 import { TABLE_HEAD, TableEmptyState } from '../components/WorkspaceLayout';
 import { useDepartmentClasses } from '../hooks/useDepartmentClasses';
-import { useAcademicRoster } from '../store/AcademicRosterProvider';
-import { useAcademicTerm } from '../store/AcademicTermProvider';
-import { useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import { useAcademicRoster, useAcademicTerm, useInstitutionalLifecycle } from '@/features/institution';
 import { mean } from '../lib/rosterData';
 import { cn } from '../lib/utils';
 
@@ -218,7 +216,7 @@ function ClassHealthTable({ classes, onOpen }) {
               aria-label={`${c.code} — open class`}
               className={cn(
                 HEALTH_GRID,
-                'w-full h-[46px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2'
+                'w-full h-[46px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2',
               )}
             >
               <span className="min-w-0 text-[13px] text-ink truncate" title={c.code}>
@@ -243,7 +241,7 @@ function ClassHealthTable({ classes, onOpen }) {
               <span
                 className={cn(
                   'text-[13px] tabular-nums',
-                  c.attendance < ATTENDANCE_THRESHOLD ? 'font-[500] text-danger' : 'text-ink'
+                  c.attendance < ATTENDANCE_THRESHOLD ? 'font-[500] text-danger' : 'text-ink',
                 )}
               >
                 {c.attendance}%
@@ -257,7 +255,7 @@ function ClassHealthTable({ classes, onOpen }) {
                 <span
                   className={cn(
                     'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500] max-w-full truncate',
-                    ATTENTION_STATES[c.attention].tone
+                    ATTENTION_STATES[c.attention].tone,
                   )}
                 >
                   {ATTENTION_STATES[c.attention].label}

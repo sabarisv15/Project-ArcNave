@@ -5,9 +5,10 @@
 // decision is a permanent fact (see the migration's file-level
 // comment).
 
-async function create(client, {
-  collegeId, studentId, schemeName, eligible, reason, supportingDocumentId, decidedByUserId,
-}) {
+async function create(
+  client,
+  { collegeId, studentId, schemeName, eligible, reason, supportingDocumentId, decidedByUserId },
+) {
   const result = await client.query(
     `INSERT INTO scholarship_decisions
        (college_id, student_id, scheme_name, eligible, reason, supporting_document_id, decided_by_user_id)

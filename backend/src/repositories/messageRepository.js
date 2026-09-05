@@ -76,10 +76,7 @@ async function listByConversation(client, conversationId, { limit, offset } = {}
 }
 
 async function update(client, id, { content }) {
-  const result = await client.query(
-    'UPDATE messages SET content = $2 WHERE id = $1 RETURNING *',
-    [id, content],
-  );
+  const result = await client.query('UPDATE messages SET content = $2 WHERE id = $1 RETURNING *', [id, content]);
   return result.rows[0] || null;
 }
 
@@ -88,10 +85,10 @@ async function update(client, id, { content }) {
 // listByConversation's own `ORDER BY created_at ASC` as the single
 // source of truth for "what came after" a given message.
 async function deleteAfter(client, conversationId, createdAt) {
-  await client.query(
-    'DELETE FROM messages WHERE conversation_id = $1 AND created_at > $2',
-    [conversationId, createdAt],
-  );
+  await client.query('DELETE FROM messages WHERE conversation_id = $1 AND created_at > $2', [
+    conversationId,
+    createdAt,
+  ]);
 }
 
 module.exports = {

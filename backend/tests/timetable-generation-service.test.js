@@ -39,16 +39,22 @@ test('generateTimetable validation', async (t) => {
     const findClassMock = t.mock.method(classRepository, 'findById', async () => null);
     t.after(() => findClassMock.mock.restore());
     await assert.rejects(
-      () => academicService.generateTimetable({}, 'missing', [{ subject: 'DBMS', staffUserId: 'u1', periodsPerWeek: 1 }]),
+      () =>
+        academicService.generateTimetable({}, 'missing', [{ subject: 'DBMS', staffUserId: 'u1', periodsPerWeek: 1 }]),
       academicService.ClassValidationError,
     );
   });
 
   await t.test('rejects regenerating an already-Approved class', async () => {
-    const findClassMock = t.mock.method(classRepository, 'findById', async () => ({ id: 'class-1', college_id: 'c1', timetable_status: 'Approved' }));
+    const findClassMock = t.mock.method(classRepository, 'findById', async () => ({
+      id: 'class-1',
+      college_id: 'c1',
+      timetable_status: 'Approved',
+    }));
     t.after(() => findClassMock.mock.restore());
     await assert.rejects(
-      () => academicService.generateTimetable({}, 'class-1', [{ subject: 'DBMS', staffUserId: 'u1', periodsPerWeek: 1 }]),
+      () =>
+        academicService.generateTimetable({}, 'class-1', [{ subject: 'DBMS', staffUserId: 'u1', periodsPerWeek: 1 }]),
       academicService.TimetableGenerationClassApprovedError,
     );
   });
@@ -56,7 +62,11 @@ test('generateTimetable validation', async (t) => {
 
 test('generateTimetable placement', async (t) => {
   function mockLookups(t, { periods = PERIODS, existingForClass = [] } = {}) {
-    const findClassMock = t.mock.method(classRepository, 'findById', async () => ({ id: 'class-1', college_id: 'c1', timetable_status: 'Draft' }));
+    const findClassMock = t.mock.method(classRepository, 'findById', async () => ({
+      id: 'class-1',
+      college_id: 'c1',
+      timetable_status: 'Draft',
+    }));
     const findPeriodsMock = t.mock.method(timetablePeriodRepository, 'findAllByCollege', async () => periods);
     const findExistingMock = t.mock.method(facultyAllocationRepository, 'findByClassId', async () => existingForClass);
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
@@ -77,15 +87,21 @@ test('generateTimetable placement', async (t) => {
 
   await t.test('places requirements into the earliest available periods in calendar order', async () => {
     const { restore } = mockLookups(t);
-    const createMock = t.mock.method(facultyAllocationRepository, 'create', async (client, fields) => ({ id: `alloc-${fields.periodId}`, ...fields }));
+    const createMock = t.mock.method(facultyAllocationRepository, 'create', async (client, fields) => ({
+      id: `alloc-${fields.periodId}`,
+      ...fields,
+    }));
     t.after(() => {
       restore();
       createMock.mock.restore();
     });
 
-    const result = await academicService.generateTimetable({}, 'class-1', [
-      { subject: 'DBMS', staffUserId: 'staff-1', periodsPerWeek: 2 },
-    ], { actorUserId: 'principal-1' });
+    const result = await academicService.generateTimetable(
+      {},
+      'class-1',
+      [{ subject: 'DBMS', staffUserId: 'staff-1', periodsPerWeek: 2 }],
+      { actorUserId: 'principal-1' },
+    );
 
     assert.equal(result.placements.length, 2);
     assert.equal(result.conflicts.length, 0);
@@ -95,7 +111,10 @@ test('generateTimetable placement', async (t) => {
 
   await t.test('skips a period already used by this class', async () => {
     const { restore } = mockLookups(t, { existingForClass: [{ period_id: 'mon-1' }] });
-    const createMock = t.mock.method(facultyAllocationRepository, 'create', async (client, fields) => ({ id: `alloc-${fields.periodId}`, ...fields }));
+    const createMock = t.mock.method(facultyAllocationRepository, 'create', async (client, fields) => ({
+      id: `alloc-${fields.periodId}`,
+      ...fields,
+    }));
     t.after(() => {
       restore();
       createMock.mock.restore();
@@ -107,31 +126,37 @@ test('generateTimetable placement', async (t) => {
     assert.equal(result.placements[0].periodId, 'mon-2');
   });
 
-  await t.test('falls back to the next period when the staff member is already booked elsewhere (DB conflict)', async () => {
-    const { restore } = mockLookups(t);
-    const createMock = t.mock.method(facultyAllocationRepository, 'create', async (client, fields) => {
-      if (fields.periodId === 'mon-1') {
-        const err = new Error('dup');
-        err.code = '23505';
-        throw err;
-      }
-      return { id: `alloc-${fields.periodId}`, ...fields };
-    });
-    t.after(() => {
-      restore();
-      createMock.mock.restore();
-    });
+  await t.test(
+    'falls back to the next period when the staff member is already booked elsewhere (DB conflict)',
+    async () => {
+      const { restore } = mockLookups(t);
+      const createMock = t.mock.method(facultyAllocationRepository, 'create', async (client, fields) => {
+        if (fields.periodId === 'mon-1') {
+          const err = new Error('dup');
+          err.code = '23505';
+          throw err;
+        }
+        return { id: `alloc-${fields.periodId}`, ...fields };
+      });
+      t.after(() => {
+        restore();
+        createMock.mock.restore();
+      });
 
-    const result = await academicService.generateTimetable({}, 'class-1', [
-      { subject: 'DBMS', staffUserId: 'staff-1', periodsPerWeek: 1 },
-    ]);
-    assert.equal(result.placements.length, 1);
-    assert.equal(result.placements[0].periodId, 'mon-2');
-  });
+      const result = await academicService.generateTimetable({}, 'class-1', [
+        { subject: 'DBMS', staffUserId: 'staff-1', periodsPerWeek: 1 },
+      ]);
+      assert.equal(result.placements.length, 1);
+      assert.equal(result.placements[0].periodId, 'mon-2');
+    },
+  );
 
   await t.test('reports a conflict when there are not enough free periods', async () => {
     const { restore } = mockLookups(t);
-    const createMock = t.mock.method(facultyAllocationRepository, 'create', async (client, fields) => ({ id: `alloc-${fields.periodId}`, ...fields }));
+    const createMock = t.mock.method(facultyAllocationRepository, 'create', async (client, fields) => ({
+      id: `alloc-${fields.periodId}`,
+      ...fields,
+    }));
     t.after(() => {
       restore();
       createMock.mock.restore();
@@ -148,7 +173,10 @@ test('generateTimetable placement', async (t) => {
 
   await t.test('a later requirement does not reuse a period already placed by an earlier one', async () => {
     const { restore } = mockLookups(t);
-    const createMock = t.mock.method(facultyAllocationRepository, 'create', async (client, fields) => ({ id: `alloc-${fields.periodId}`, ...fields }));
+    const createMock = t.mock.method(facultyAllocationRepository, 'create', async (client, fields) => ({
+      id: `alloc-${fields.periodId}`,
+      ...fields,
+    }));
     t.after(() => {
       restore();
       createMock.mock.restore();

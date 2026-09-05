@@ -129,9 +129,7 @@ const CSE_STATE = {
 };
 
 export const TIMETABLE_STATES = DEPARTMENTS.map((d) =>
-  d.id === CSE_DEPARTMENT.id
-    ? CSE_STATE
-    : { departmentId: d.id, ...SEEDED_STATES[d.id] }
+  d.id === CSE_DEPARTMENT.id ? CSE_STATE : { departmentId: d.id, ...SEEDED_STATES[d.id] },
 );
 
 /**
@@ -145,9 +143,7 @@ export function awaitsFinalApproval(state) {
   return canFinalApprove(state?.endorsementState);
 }
 
-export const TIMETABLE_STATE_BY_DEPT = Object.fromEntries(
-  TIMETABLE_STATES.map((s) => [s.departmentId, s])
-);
+export const TIMETABLE_STATE_BY_DEPT = Object.fromEntries(TIMETABLE_STATES.map((s) => [s.departmentId, s]));
 
 export function timetableStateOf(departmentId) {
   return TIMETABLE_STATE_BY_DEPT[departmentId] ?? null;
@@ -190,7 +186,8 @@ export const INSTITUTION_EXCEPTIONS = [
     id: 'exc-cal-01',
     kind: 'calendar',
     title: 'Autonomous exam week — 07 to 12 Sep',
-    detail: 'Six working days are lost across every department; the recovery plan needs a Principal decision before departments reschedule',
+    detail:
+      'Six working days are lost across every department; the recovery plan needs a Principal decision before departments reschedule',
     departmentIds: DEPARTMENTS.map((d) => d.id),
     raisedAt: ago(4 * DAY_MS),
     to: '/institution/timetable',

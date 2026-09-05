@@ -21,7 +21,7 @@ export function VersionBadge({ versionId, className }) {
       className={cn(
         'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[10.5px] font-[500] whitespace-nowrap',
         meta.active ? 'bg-accent-soft text-accent' : 'bg-tint2 text-ink-muted',
-        className
+        className,
       )}
     >
       {meta.label}
@@ -41,7 +41,10 @@ export function TimetableVersionSelect({ value, onChange, label = 'Timetable ver
           aria-label={`${label} · ${meta?.label}`}
           className="inline-flex items-center gap-[6px] h-[28px] pl-[9px] pr-[7px] border border-line rounded-[9px] bg-paper font-sans text-[11.5px] font-[500] text-ink-soft cursor-pointer transition-colors duration-200 hover:bg-tint2 data-[state=open]:border-accent-line"
         >
-          <span className={cn('flex-none w-[6px] h-[6px] rounded-full', meta?.active ? 'bg-accent' : 'bg-ink-disabled')} aria-hidden="true" />
+          <span
+            className={cn('flex-none w-[6px] h-[6px] rounded-full', meta?.active ? 'bg-accent' : 'bg-ink-disabled')}
+            aria-hidden="true"
+          />
           {meta?.label}
           <ChevronDown size={12} strokeWidth={2} className="text-ink-faint" aria-hidden="true" />
         </button>
@@ -57,11 +60,16 @@ export function TimetableVersionSelect({ value, onChange, label = 'Timetable ver
                   onClick={() => onChange(v.id)}
                   className={cn(
                     'flex items-center gap-[8px] w-full px-[9px] py-[7px] border-0 bg-transparent rounded-[10px] font-sans text-left cursor-pointer hover:bg-tint2',
-                    on && 'bg-accent-soft hover:bg-accent-soft'
+                    on && 'bg-accent-soft hover:bg-accent-soft',
                   )}
                 >
                   <span className="min-w-0 flex-1">
-                    <span className={cn('flex items-center gap-[6px] text-[12.5px]', on ? 'text-accent font-[500]' : 'text-ink font-[500]')}>
+                    <span
+                      className={cn(
+                        'flex items-center gap-[6px] text-[12.5px]',
+                        on ? 'text-accent font-[500]' : 'text-ink font-[500]',
+                      )}
+                    >
                       {v.label}
                       {v.active && (
                         <span className="flex-none inline-flex items-center h-[15px] px-[5px] rounded-[5px] bg-accent-soft text-accent text-[9px] font-[600] uppercase tracking-[.04em]">

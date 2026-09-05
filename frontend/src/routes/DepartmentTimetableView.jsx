@@ -27,13 +27,8 @@ import { seatTitle } from '../lib/seatTitles';
 import { HOD_L3, LEVEL_2, PRINCIPAL_L1 } from '../lib/roles';
 import { DepartmentScopeHeader } from '../components/DepartmentScopeHeader';
 import { WorkflowTimeline } from '../components/WorkflowTimeline';
-import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '../components/AttendanceActionDrawer';
-import {
-  NoAssignedDepartment,
-  NoConflicts,
-  NoResults,
-  NoTimetable,
-} from '../components/InstitutionalState';
+import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '@/components/ui/Drawer';
+import { NoAssignedDepartment, NoConflicts, NoResults, NoTimetable } from '../components/InstitutionalState';
 import { PANE, STICKY_HEAD, TABLE_HEAD, StickyTableShell } from '../components/WorkspaceLayout';
 import { cn } from '../lib/utils';
 
@@ -75,7 +70,7 @@ function Pill({ state }) {
     <span
       className={cn(
         'inline-flex items-center gap-[4px] h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-        def.tone
+        def.tone,
       )}
     >
       {state === 'approved_locked' && <Lock size={10} strokeWidth={2.1} aria-hidden="true" />}
@@ -105,7 +100,7 @@ function Chain({ state }) {
                 ? 'text-accent font-[500]'
                 : step.state === 'done'
                   ? 'text-ink-muted'
-                  : 'text-ink-faint'
+                  : 'text-ink-faint',
             )}
           >
             {step.title}
@@ -152,10 +147,16 @@ function DepartmentGrid({ version, day, conflicts }) {
             return (
               <span
                 key={hour}
-                title={clash ? clash.detail : cell ? `${cell.subject} · ${facultyName(cell.facultyId)} · ${cell.room}` : 'Free period'}
+                title={
+                  clash
+                    ? clash.detail
+                    : cell
+                      ? `${cell.subject} · ${facultyName(cell.facultyId)} · ${cell.room}`
+                      : 'Free period'
+                }
                 className={cn(
                   'min-w-0 rounded-[8px] px-[8px] py-[6px] border',
-                  clash ? 'bg-warning-soft border-warning/30' : 'bg-tint border-transparent'
+                  clash ? 'bg-warning-soft border-warning/30' : 'bg-tint border-transparent',
                 )}
               >
                 {cell ? (
@@ -164,7 +165,7 @@ function DepartmentGrid({ version, day, conflicts }) {
                     <span
                       className={cn(
                         'block text-[11px] truncate',
-                        cell.facultyId ? 'text-ink-faint' : 'text-danger font-[500]'
+                        cell.facultyId ? 'text-ink-faint' : 'text-danger font-[500]',
                       )}
                     >
                       {cell.facultyId ? facultyName(cell.facultyId) : 'Unassigned'}
@@ -183,7 +184,8 @@ function DepartmentGrid({ version, day, conflicts }) {
   );
 }
 
-const CONFLICT_GRID = 'grid grid-cols-[minmax(0,130px)_112px_minmax(0,1.6fr)_minmax(0,1fr)] gap-x-[12px] items-center px-[16px]';
+const CONFLICT_GRID =
+  'grid grid-cols-[minmax(0,130px)_112px_minmax(0,1.6fr)_minmax(0,1fr)] gap-x-[12px] items-center px-[16px]';
 
 function ConflictsTab({ conflicts }) {
   if (conflicts.length === 0) {
@@ -210,7 +212,7 @@ function ConflictsTab({ conflicts }) {
               <span
                 className={cn(
                   'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-                  c.kind === 'unassigned_period' ? 'text-danger bg-danger-soft' : 'text-pending bg-pending-soft'
+                  c.kind === 'unassigned_period' ? 'text-danger bg-danger-soft' : 'text-pending bg-pending-soft',
                 )}
               >
                 {CONFLICT_LABELS[c.kind]}
@@ -236,17 +238,23 @@ function ConflictsTab({ conflicts }) {
       </StickyTableShell>
 
       <p className="flex-none m-0 mt-[8px] text-[11.5px] text-ink-faint">
-        Conflicts are found by checking the live timetable, not recorded against it — resolving one requires an
-        approved revision.
+        Conflicts are found by checking the live timetable, not recorded against it — resolving one requires an approved
+        revision.
       </p>
     </>
   );
 }
 
-const VERSION_GRID = 'grid grid-cols-[minmax(0,1.5fr)_minmax(0,150px)_minmax(0,1fr)] gap-x-[12px] items-start px-[16px]';
+const VERSION_GRID =
+  'grid grid-cols-[minmax(0,1.5fr)_minmax(0,150px)_minmax(0,1fr)] gap-x-[12px] items-start px-[16px]';
 
 function RevisionsTab({ versions, onOpen }) {
-  if (versions.length === 0) return <StickyTableShell><NoResults what="revisions" /></StickyTableShell>;
+  if (versions.length === 0)
+    return (
+      <StickyTableShell>
+        <NoResults what="revisions" />
+      </StickyTableShell>
+    );
 
   return (
     <StickyTableShell minWidth={680}>
@@ -266,7 +274,7 @@ function RevisionsTab({ versions, onOpen }) {
             aria-label={`${v.label} — open revision`}
             className={cn(
               VERSION_GRID,
-              'w-full py-[11px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2'
+              'w-full py-[11px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2',
             )}
           >
             <span className="min-w-0">
@@ -347,7 +355,9 @@ function RevisionDrawer({ version, decision, onClose, onDecide }) {
             </div>
 
             <div>
-              <div className="text-[11px] font-[500] tracking-[.05em] uppercase text-ink-muted">Conflicts in this version</div>
+              <div className="text-[11px] font-[500] tracking-[.05em] uppercase text-ink-muted">
+                Conflicts in this version
+              </div>
               {conflicts.length === 0 ? (
                 <p className="m-0 mt-[5px] text-[13px] text-ink">
                   None — this version schedules every class without a clash.
@@ -421,8 +431,7 @@ function RevisionDrawer({ version, decision, onClose, onDecide }) {
             <DrawerRail
               meta={
                 <span className="text-[11.5px] text-ink-faint">
-                  Endorsement is not final approval — it routes this revision to{' '}
-                  {nextSeatFor(endorsedStateFor())}.
+                  Endorsement is not final approval — it routes this revision to {nextSeatFor(endorsedStateFor())}.
                 </span>
               }
             >
@@ -501,7 +510,7 @@ export function DepartmentTimetableView() {
           ],
         };
       }),
-    [decisions]
+    [decisions],
   );
 
   /*
@@ -519,7 +528,7 @@ export function DepartmentTimetableView() {
     setDecisions((prev) => ({ ...prev, [id]: { outcome, note, at: new Date() } }));
     setOpenId(null);
     toast.success(
-      outcome === 'endorsed' ? `Revision endorsed — sent to ${nextSeatFor(endorsedStateFor())}` : 'Revision rejected'
+      outcome === 'endorsed' ? `Revision endorsed — sent to ${nextSeatFor(endorsedStateFor())}` : 'Revision rejected',
     );
   }
 
@@ -553,7 +562,7 @@ export function DepartmentTimetableView() {
                 'flex-none h-[27px] px-[10px] border-0 rounded-[8px] bg-transparent font-sans text-[12.5px] cursor-pointer transition-colors duration-200',
                 tab === t.key
                   ? 'bg-accent-soft text-accent font-[600]'
-                  : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2'
+                  : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2',
               )}
             >
               {t.label}
@@ -579,7 +588,7 @@ export function DepartmentTimetableView() {
                   'flex-none h-[26px] px-[9px] border rounded-[8px] font-sans text-[12px] cursor-pointer transition-colors duration-200',
                   day === d
                     ? 'border-accent-line bg-accent-soft text-accent font-[600]'
-                    : 'border-line bg-paper text-ink-muted font-[500] hover:bg-tint2 hover:text-ink'
+                    : 'border-line bg-paper text-ink-muted font-[500] hover:bg-tint2 hover:text-ink',
                 )}
               >
                 {d}
@@ -640,7 +649,7 @@ export function DepartmentTimetableView() {
 
       <RevisionDrawer
         version={open}
-        decision={openId ? decisions[openId] ?? null : null}
+        decision={openId ? (decisions[openId] ?? null) : null}
         onClose={() => setOpenId(null)}
         onDecide={decide}
       />

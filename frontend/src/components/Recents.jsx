@@ -13,10 +13,8 @@ export function Recents() {
   const params = useParams();
   const [searchParams] = useSearchParams();
   const [searchOpen, setSearchOpen] = useState(false);
-  const {
-    chats, recentQuery, setRecentQuery, recentFilter, setRecentFilter,
-    seedThread, projConv, artConv,
-  } = useWorkspace();
+  const { chats, recentQuery, setRecentQuery, recentFilter, setRecentFilter, seedThread, projConv, artConv } =
+    useWorkspace();
 
   const q = recentQuery.toLowerCase();
   const list = chats.filter((c) => {

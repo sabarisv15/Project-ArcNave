@@ -20,7 +20,7 @@ import { OWNED_CLASS, classLabel } from '../lib/classTutorData';
 import { seatTitle } from '../lib/seatTitles';
 import { CLASS_TUTOR_L4 } from '../lib/roles';
 import { SeatScopeHeader } from './SeatScopeHeader';
-import { useAcademicTerm } from '../store/AcademicTermProvider';
+import { useAcademicTerm } from '@/features/institution';
 
 export function ClassScopeHeader({ cls = OWNED_CLASS, roleLabel = seatTitle(CLASS_TUTOR_L4), trail }) {
   /*

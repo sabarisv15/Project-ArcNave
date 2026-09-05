@@ -1,12 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import * as Tooltip from '@radix-ui/react-tooltip';
 import { describe, expect, it } from 'vitest';
-import App from '../App';
-import { WorkspaceProvider } from '../store/WorkspaceProvider';
-import { ComposerProvider } from '../store/ComposerProvider';
 import { InstitutionSetupPanel } from '../components/InstitutionSetupPanel';
 import {
   INSTITUTION_SETUP,
@@ -18,6 +13,7 @@ import {
 import { NOT_SUBMITTED_CLASS_IDS, PENDING_CLASS_IDS } from '../lib/timetableState';
 import { tutorCoverage } from '../lib/seatState';
 import { DEPARTMENTS, INST_CLASSES, INSTITUTION, hodOf } from '../lib/institutionData';
+import { renderApp as renderAppShared } from './renderApp';
 
 const derive = (key) => deriveInstitutionSetup(SETUP_SNAPSHOTS[key]);
 
@@ -25,29 +21,16 @@ function renderPanel(setup = INSTITUTION_SETUP) {
   return render(
     <MemoryRouter>
       <InstitutionSetupPanel setup={setup} />
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
-function renderApp(route = '/') {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[route]}>
-        <Tooltip.Provider>
-          <WorkspaceProvider>
-            <ComposerProvider>
-              <App />
-            </ComposerProvider>
-          </WorkspaceProvider>
-        </Tooltip.Provider>
-      </MemoryRouter>
-    </QueryClientProvider>
-  );
+function renderApp(route = '/', options) {
+  return renderAppShared(route, options);
 }
 
 async function usePrincipalView(user) {
-  await user.click(screen.getByRole('button', { name: /open profile/i }));
+  await user.click(await screen.findByRole('button', { name: /open profile/i }));
   const group = await screen.findByRole('radiogroup', { name: /workspace view/i });
   await user.click(within(group).getByRole('radio', { name: /principal/i }));
   await user.click(screen.getByRole('button', { name: /close profile/i }));
@@ -147,7 +130,7 @@ describe('Institution setup — status calculation', () => {
     // are both stated on their own rows.
     const { withHod, departmentCount } = INSTITUTION_SETUP.counts;
     expect(
-      screen.getByText(new RegExp(`${withHod} of ${departmentCount} departments have an active head`))
+      screen.getByText(new RegExp(`${withHod} of ${departmentCount} departments have an active head`)),
     ).toBeInTheDocument();
     expect(screen.getByText('1 vacancy')).toBeInTheDocument();
     expect(screen.getByText('4 not submitted')).toBeInTheDocument();
@@ -224,9 +207,7 @@ describe('Institution setup — a pending revision does not un-approve the live 
      * it already had, and no register opens against a timetable that is
      * mid-decision.
      */
-    expect(INSTITUTION_SETUP.counts.attendanceLive).toBe(
-      INSTITUTION_SETUP.counts.approved - pendingClasses.length
-    );
+    expect(INSTITUTION_SETUP.counts.attendanceLive).toBe(INSTITUTION_SETUP.counts.approved - pendingClasses.length);
   });
 
   it('describes a pending revision as review, never as a failure', () => {
@@ -266,9 +247,7 @@ describe('Institution setup — attendance is derived, never switched on', () =>
     expect(setup.counts.attendanceLive).toBe(0);
 
     renderPanel(setup);
-    expect(
-      screen.getByText(/attendance is not available without an active academic year/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/attendance is not available without an active academic year/i)).toBeInTheDocument();
   });
 
   it('explains both conditions and offers no enable control', () => {
@@ -276,8 +255,8 @@ describe('Institution setup — attendance is derived, never switched on', () =>
     const row = screen.getByText('Attendance readiness').closest('li');
     expect(
       within(row).getByText(
-        /attendance becomes available after a class timetable is approved and an academic year is active/i
-      )
+        /attendance becomes available after a class timetable is approved and an academic year is active/i,
+      ),
     ).toBeInTheDocument();
     expect(within(row).queryByRole('button')).not.toBeInTheDocument();
     expect(within(row).queryByRole('link')).not.toBeInTheDocument();
@@ -291,9 +270,7 @@ describe('Institution setup — Class Tutor coverage is read-only', () => {
     const row = screen.getByText('Class Tutor coverage').closest('li');
     expect(within(row).queryByRole('button')).not.toBeInTheDocument();
     expect(within(row).queryByRole('link')).not.toBeInTheDocument();
-    expect(
-      within(row).getByText(/class tutor assignment is managed by each department hod/i)
-    ).toBeInTheDocument();
+    expect(within(row).getByText(/class tutor assignment is managed by each department hod/i)).toBeInTheDocument();
   });
 
   it('does not control timetable or attendance readiness', () => {
@@ -344,11 +321,7 @@ describe('Institution setup — only built destinations are clickable', () => {
   });
 
   it('gives every action it does render a route that exists', () => {
-    const built = [
-      '/institution/departments',
-      '/institution/timetable',
-      '/institution/academic-year',
-    ];
+    const built = ['/institution/departments', '/institution/timetable', '/institution/academic-year'];
     INSTITUTION_SETUP.rows.forEach((row) => {
       if (!row.action) return;
       expect(built).toContain(row.action.to);

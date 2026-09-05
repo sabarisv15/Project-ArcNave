@@ -48,10 +48,11 @@ const QUESTION = 'In the attached day book, which entries are below 5000? List t
 async function seedTenant(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const collegeId = `idp${suffix}`;
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain, address) VALUES ($1, $1, $2, $3)',
-    [collegeId, `idptenant${suffix}`, 'identity-pattern-live-address'],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain, address) VALUES ($1, $1, $2, $3)', [
+    collegeId,
+    `idptenant${suffix}`,
+    'identity-pattern-live-address',
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userResult = await adminPool.query(
     `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
@@ -114,9 +115,9 @@ async function runTurn(appPool, collegeId, identityContext, attachmentId, cap, c
   config.maxToolCallsPerTurn = cap;
   calls.length = 0;
   try {
-    return await withTenantClient(appPool, collegeId, (client) => aiService.askAgent(
-      client, QUESTION, { identityContext, attachmentIds: [attachmentId] },
-    ));
+    return await withTenantClient(appPool, collegeId, (client) =>
+      aiService.askAgent(client, QUESTION, { identityContext, attachmentIds: [attachmentId] }),
+    );
   } catch (err) {
     return { error: err };
   } finally {
@@ -143,7 +144,9 @@ function reportTurn(label, turn, calls) {
     console.log(`    -> status      : ${call.result && call.result.status}`);
     const judged = judgeIdentities(call.result);
     if (judged) {
-      console.log(`    -> matched ${call.result.matchedCount} of ${call.result.scopedCount}, total ${call.result.total}`);
+      console.log(
+        `    -> matched ${call.result.matchedCount} of ${call.result.scopedCount}, total ${call.result.total}`,
+      );
       console.log(`    -> identities: ${judged.named}/${judged.rows} named, ${judged.distinct} distinct`);
       console.log(`    -> examples  : ${JSON.stringify(judged.examples)}`);
     }
@@ -172,13 +175,18 @@ async function main() {
   };
 
   try {
-    const attachment = await withTenantClient(appPool, collegeId, (client) => documentService.uploadChatAttachment(
-      client,
-      {
-        collegeId, fileName: 'APRDAYBOOK.pdf', mimeType: 'application/pdf', fileBuffer: fs.readFileSync(DAYBOOK),
-      },
-      { actorUserId: userId },
-    ));
+    const attachment = await withTenantClient(appPool, collegeId, (client) =>
+      documentService.uploadChatAttachment(
+        client,
+        {
+          collegeId,
+          fileName: 'APRDAYBOOK.pdf',
+          mimeType: 'application/pdf',
+          fileBuffer: fs.readFileSync(DAYBOOK),
+        },
+        { actorUserId: userId },
+      ),
+    );
     const attachmentId = attachment.id || (attachment.document && attachment.document.id);
     console.log(`Seeded tenant ${collegeId}, attachment ${attachmentId}`);
     console.log(`Question: ${QUESTION}`);
@@ -201,4 +209,7 @@ async function main() {
   }
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

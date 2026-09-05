@@ -25,13 +25,15 @@ class AttachmentIntelligenceNotFoundError extends Error {}
 // `documents` row yet pass the parent document's id, since
 // CLAUDE.md rule 2 keeps DocumentService the sole owner of file bytes —
 // this table never stores a second copy.
-async function classifyAndRecord(client, {
-  collegeId, documentId, buffer, fileName, declaredMimeType, parentAttachmentId,
-}) {
+async function classifyAndRecord(
+  client,
+  { collegeId, documentId, buffer, fileName, declaredMimeType, parentAttachmentId },
+) {
   const classification = fileIntelligenceRouter.classifyAttachment(buffer, { fileName, declaredMimeType });
-  const processingStatus = classification.processingMode === fileIntelligenceRouter.PROCESSING_MODES.BLOCKED
-    ? fileIntelligenceRouter.PROCESSING_STATUSES.BLOCKED
-    : fileIntelligenceRouter.PROCESSING_STATUSES.UPLOADED;
+  const processingStatus =
+    classification.processingMode === fileIntelligenceRouter.PROCESSING_MODES.BLOCKED
+      ? fileIntelligenceRouter.PROCESSING_STATUSES.BLOCKED
+      : fileIntelligenceRouter.PROCESSING_STATUSES.UPLOADED;
 
   const record = await attachmentIntelligenceRepository.create(client, {
     collegeId,
@@ -68,9 +70,19 @@ function describeBlockReason(code) {
   return BLOCK_REASON_MESSAGES[code] || 'File type is not supported for AI analysis.';
 }
 
-async function updateStatus(client, id, {
-  processingStatus, providerFileReference, provider, conversionArtifacts, extractedTextReference, extractionMetadata, errorCode,
-}) {
+async function updateStatus(
+  client,
+  id,
+  {
+    processingStatus,
+    providerFileReference,
+    provider,
+    conversionArtifacts,
+    extractedTextReference,
+    extractionMetadata,
+    errorCode,
+  },
+) {
   return attachmentIntelligenceRepository.update(client, id, {
     processingStatus,
     providerFileReference,
@@ -101,9 +113,10 @@ async function updateStatus(client, id, {
 async function getForDocument(client, documentId, { actorUserId }) {
   const downloaded = await documentService.downloadDocument(client, documentId);
   const document = downloaded && downloaded.document;
-  const isOwnedChatAttachment = document
-    && document.doc_type === documentService.CHAT_ATTACHMENT_DOC_TYPE
-    && document.uploaded_by_user_id === actorUserId;
+  const isOwnedChatAttachment =
+    document &&
+    document.doc_type === documentService.CHAT_ATTACHMENT_DOC_TYPE &&
+    document.uploaded_by_user_id === actorUserId;
   if (!isOwnedChatAttachment) {
     throw new AttachmentIntelligenceNotFoundError(`attachment ${JSON.stringify(documentId)} was not found`);
   }
@@ -113,7 +126,9 @@ async function getForDocument(client, documentId, { actorUserId }) {
   let frontier = topLevelRows;
   while (frontier.length > 0) {
     // eslint-disable-next-line no-await-in-loop
-    const childLists = await Promise.all(frontier.map((row) => attachmentIntelligenceRepository.findByParentAttachmentId(client, row.id)));
+    const childLists = await Promise.all(
+      frontier.map((row) => attachmentIntelligenceRepository.findByParentAttachmentId(client, row.id)),
+    );
     const children = childLists.flat();
     allRows.push(...children);
     frontier = children;
@@ -158,9 +173,10 @@ const ARCHIVE_MIME_TO_KIND = {
 // even though its contents were never actually extracted — caught
 // before this shipped by a depth-limit test asserting every row
 // reaches a terminal status, not just the top-level one.
-async function extractArchiveChildren(client, {
-  collegeId, actorUserId, parentAttachmentId, buffer, fileName, archiveKind, depth,
-}) {
+async function extractArchiveChildren(
+  client,
+  { collegeId, actorUserId, parentAttachmentId, buffer, fileName, archiveKind, depth },
+) {
   if (depth >= MAX_ARCHIVE_RECURSION_DEPTH) {
     return { status: 'failed', reason: 'archive_limit_exceeded' };
   }
@@ -195,12 +211,16 @@ async function extractArchiveChildren(client, {
     }
 
     // eslint-disable-next-line no-await-in-loop
-    const childDocument = await documentService.uploadChatAttachment(client, {
-      collegeId,
-      fileName: child.name,
-      mimeType: classification.detectedMimeType,
-      fileBuffer: child.buffer,
-    }, { actorUserId });
+    const childDocument = await documentService.uploadChatAttachment(
+      client,
+      {
+        collegeId,
+        fileName: child.name,
+        mimeType: classification.detectedMimeType,
+        fileBuffer: child.buffer,
+      },
+      { actorUserId },
+    );
 
     // eslint-disable-next-line no-await-in-loop
     const childRecord = await attachmentIntelligenceRepository.create(client, {
@@ -227,9 +247,10 @@ async function extractArchiveChildren(client, {
       });
       // eslint-disable-next-line no-await-in-loop
       await attachmentIntelligenceRepository.update(client, childRecord.id, {
-        processingStatus: nestedResult.status === 'ok'
-          ? fileIntelligenceRouter.PROCESSING_STATUSES.READY
-          : fileIntelligenceRouter.PROCESSING_STATUSES.FAILED,
+        processingStatus:
+          nestedResult.status === 'ok'
+            ? fileIntelligenceRouter.PROCESSING_STATUSES.READY
+            : fileIntelligenceRouter.PROCESSING_STATUSES.FAILED,
         errorCode: nestedResult.status === 'ok' ? null : nestedResult.reason,
       });
     }
@@ -254,9 +275,10 @@ async function extractArchiveChildren(client, {
 // throw out of extractArchiveChildren (a real DB fault, a document-
 // service validation error) is a genuine bug and should surface as a
 // real 500, not be silently absorbed into 'archive_extraction_unavailable'.
-async function processArchiveAttachment(client, {
-  collegeId, actorUserId, attachmentIntelligenceId, buffer, fileName, detectedMimeType,
-}) {
+async function processArchiveAttachment(
+  client,
+  { collegeId, actorUserId, attachmentIntelligenceId, buffer, fileName, detectedMimeType },
+) {
   const archiveKind = ARCHIVE_MIME_TO_KIND[detectedMimeType];
   const result = await extractArchiveChildren(client, {
     collegeId,
@@ -269,7 +291,9 @@ async function processArchiveAttachment(client, {
   });
 
   if (result.status === 'ok') {
-    return updateStatus(client, attachmentIntelligenceId, { processingStatus: fileIntelligenceRouter.PROCESSING_STATUSES.READY });
+    return updateStatus(client, attachmentIntelligenceId, {
+      processingStatus: fileIntelligenceRouter.PROCESSING_STATUSES.READY,
+    });
   }
   return updateStatus(client, attachmentIntelligenceId, {
     processingStatus: fileIntelligenceRouter.PROCESSING_STATUSES.FAILED,

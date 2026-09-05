@@ -117,7 +117,15 @@ class StudentTransferNoPendingRequestError extends Error {}
 // layer, same house convention as every other status-like column in
 // this schema — no DB CHECK constraint exists for it.
 const LIFECYCLE_STATES = [
-  'Applied', 'Admitted', 'Active', 'Suspended', 'Discontinued', 'Debarred', 'Dismissed', 'Graduated', 'Alumni',
+  'Applied',
+  'Admitted',
+  'Active',
+  'Suspended',
+  'Discontinued',
+  'Debarred',
+  'Dismissed',
+  'Graduated',
+  'Alumni',
 ];
 
 // RS-STU-007 (D6, ADL-012): "Suspended, Discontinued, Debarred and
@@ -279,9 +287,10 @@ function pickStudentFields(source) {
 // resolved class (StudentClassMismatchError if it disagrees) rather
 // than silently ignored — same "don't guess" reasoning
 // StudentClassMismatchError's own comment gives.
-async function createStudent(client, {
-  collegeId, rollNo, fullName, userId, actorRole, classId: assertedClassId, ...rest
-}) {
+async function createStudent(
+  client,
+  { collegeId, rollNo, fullName, userId, actorRole, classId: assertedClassId, ...rest },
+) {
   if (!rollNo || !fullName) {
     throw new StudentValidationError('rollNo and fullName are required');
   }
@@ -294,7 +303,9 @@ async function createStudent(client, {
   // position — occupancy alone (Position Occupancy, "A") must never
   // substitute for login identity (Current Login Identity, "B").
   if (actorRole !== 'class_tutor') {
-    throw new StudentNotClassTutorError(`user ${JSON.stringify(userId)}'s current login (role ${JSON.stringify(actorRole)}) is not a Class Tutor Position Account`);
+    throw new StudentNotClassTutorError(
+      `user ${JSON.stringify(userId)}'s current login (role ${JSON.stringify(actorRole)}) is not a Class Tutor Position Account`,
+    );
   }
 
   // Phase 2 step 16: the reverse (user -> their tutored class) lookup
@@ -310,7 +321,9 @@ async function createStudent(client, {
     throw new StudentNotClassTutorError(`user ${JSON.stringify(userId)} is not the tutor of any class`);
   }
   if (assertedClassId !== undefined && assertedClassId !== null && assertedClassId !== tutorClassId) {
-    throw new StudentClassMismatchError(`classId ${JSON.stringify(assertedClassId)} is not a class user ${JSON.stringify(userId)} tutors`);
+    throw new StudentClassMismatchError(
+      `classId ${JSON.stringify(assertedClassId)} is not a class user ${JSON.stringify(userId)} tutors`,
+    );
   }
 
   let student;
@@ -382,7 +395,9 @@ async function assertIsHodOfDepartment(client, collegeId, departmentId, actorUse
     await visibilityService.assertIsHodOfDepartment(client, collegeId, departmentId, actorUserId);
   } catch (err) {
     if (err instanceof visibilityService.VisibilityForbiddenError) {
-      throw new StudentNotAuthorizedError(`user ${JSON.stringify(actorUserId)} is not the hod of department ${JSON.stringify(departmentId)}, required to modify student ${JSON.stringify(studentId)}`);
+      throw new StudentNotAuthorizedError(
+        `user ${JSON.stringify(actorUserId)} is not the hod of department ${JSON.stringify(departmentId)}, required to modify student ${JSON.stringify(studentId)}`,
+      );
     }
     throw err;
   }
@@ -396,7 +411,9 @@ async function assertIsPrincipalOfCollege(client, collegeId, actorUserId) {
     await visibilityService.assertIsPrincipalOfCollege(client, collegeId, actorUserId);
   } catch (err) {
     if (err instanceof visibilityService.VisibilityForbiddenError) {
-      throw new StudentNotAuthorizedError(`user ${JSON.stringify(actorUserId)} is not the principal of college ${JSON.stringify(collegeId)}`);
+      throw new StudentNotAuthorizedError(
+        `user ${JSON.stringify(actorUserId)} is not the principal of college ${JSON.stringify(collegeId)}`,
+      );
     }
     throw err;
   }
@@ -451,10 +468,18 @@ async function assertCanModifyStudent(client, student, targetClassId, { actorUse
   // matched plain 'staff', deliberately merging the two logins'
   // authority — that merge is exactly what this architecture removes.
   if (actorRole === 'class_tutor') {
-    const tutorClassId = await identityService.resolveActiveClassTutorPosition(client, { userId: actorUserId, collegeId: student.college_id });
-    if (tutorClassId === null || sourceClassId !== tutorClassId
-      || (targetClassId !== undefined && targetClassId !== tutorClassId)) {
-      throw new StudentNotAuthorizedError(`user ${JSON.stringify(actorUserId)} does not tutor student ${JSON.stringify(student.id)}'s class`);
+    const tutorClassId = await identityService.resolveActiveClassTutorPosition(client, {
+      userId: actorUserId,
+      collegeId: student.college_id,
+    });
+    if (
+      tutorClassId === null ||
+      sourceClassId !== tutorClassId ||
+      (targetClassId !== undefined && targetClassId !== tutorClassId)
+    ) {
+      throw new StudentNotAuthorizedError(
+        `user ${JSON.stringify(actorUserId)} does not tutor student ${JSON.stringify(student.id)}'s class`,
+      );
     }
     return;
   }
@@ -462,7 +487,9 @@ async function assertCanModifyStudent(client, student, targetClassId, { actorUse
   if (actorRole === 'hod') {
     const sourceClass = sourceClassId ? await classRepository.findById(client, sourceClassId) : null;
     if (sourceClass === null || !sourceClass.department_id) {
-      throw new StudentNotAuthorizedError(`student ${JSON.stringify(student.id)} has no department-linked class to authorize against`);
+      throw new StudentNotAuthorizedError(
+        `student ${JSON.stringify(student.id)} has no department-linked class to authorize against`,
+      );
     }
     await assertIsHodOfDepartment(client, student.college_id, sourceClass.department_id, actorUserId, student.id);
 
@@ -472,7 +499,9 @@ async function assertCanModifyStudent(client, student, targetClassId, { actorUse
         throw new StudentClassNotFoundError(`classId ${JSON.stringify(targetClassId)} does not exist`);
       }
       if (!targetClass.department_id) {
-        throw new StudentNotAuthorizedError(`class ${JSON.stringify(targetClassId)} has no department, cannot verify hod authorization`);
+        throw new StudentNotAuthorizedError(
+          `class ${JSON.stringify(targetClassId)} has no department, cannot verify hod authorization`,
+        );
       }
       await assertIsHodOfDepartment(client, student.college_id, targetClass.department_id, actorUserId, student.id);
     }
@@ -525,7 +554,10 @@ async function flagStudent(client, studentId, { remark }, { actorUserId, actorRo
   await assertCanFlagStudent(client, student, { actorUserId, actorRole });
 
   const flag = await studentFlagRepository.create(client, {
-    collegeId: student.college_id, studentId, remark: remark || null, flaggedByUserId: actorUserId,
+    collegeId: student.college_id,
+    studentId,
+    remark: remark || null,
+    flaggedByUserId: actorUserId,
   });
 
   await auditLogRepository.createAuditLogEntry(client, {
@@ -603,14 +635,19 @@ const VALID_RESULT_STATUSES = new Set(['pass', 'ra']);
 class StudentSemesterResultValidationError extends Error {}
 class StudentSemesterResultStudentNotFoundError extends Error {}
 
-async function recordSemesterResult(client, studentId, {
-  academicYear, semester, subject, resultStatus, documentId,
-}, { actorUserId, actorRole }) {
+async function recordSemesterResult(
+  client,
+  studentId,
+  { academicYear, semester, subject, resultStatus, documentId },
+  { actorUserId, actorRole },
+) {
   if (!academicYear || !semester || !subject || !resultStatus) {
     throw new StudentSemesterResultValidationError('academicYear, semester, subject, and resultStatus are required');
   }
   if (!VALID_RESULT_STATUSES.has(resultStatus)) {
-    throw new StudentSemesterResultValidationError(`resultStatus must be one of ${JSON.stringify([...VALID_RESULT_STATUSES])}`);
+    throw new StudentSemesterResultValidationError(
+      `resultStatus must be one of ${JSON.stringify([...VALID_RESULT_STATUSES])}`,
+    );
   }
   const student = await studentRepository.findById(client, studentId);
   if (student === null) {
@@ -636,7 +673,11 @@ async function recordSemesterResult(client, studentId, {
     entity: 'student_semester_results',
     entityId: row.id,
     metadata: {
-      studentId, academicYear, semester, subject, resultStatus,
+      studentId,
+      academicYear,
+      semester,
+      subject,
+      resultStatus,
     },
   });
 
@@ -666,7 +707,10 @@ async function computeBacklogCountForStudents(client, students) {
   if (students.length === 0) {
     return new Map();
   }
-  const rows = await studentSemesterResultRepository.findByStudentIds(client, students.map((s) => s.id));
+  const rows = await studentSemesterResultRepository.findByStudentIds(
+    client,
+    students.map((s) => s.id),
+  );
   const result = new Map(students.map((s) => [s.id, 0]));
   for (const row of rows) {
     if (row.result_status === 'ra') {
@@ -860,9 +904,7 @@ async function listStudents(client, { limit = 50, offset = 0, rollNumbers } = {}
     if (classIds.length === 0) {
       return [];
     }
-    const rosters = await Promise.all(
-      classIds.map((classId) => studentRepository.findByClassId(client, classId)),
-    );
+    const rosters = await Promise.all(classIds.map((classId) => studentRepository.findByClassId(client, classId)));
     let all = rosters.flat().sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     if (Array.isArray(rollNumbers) && rollNumbers.length > 0) {
       all = all.filter((s) => rollNumbers.includes(s.roll_no));
@@ -904,7 +946,12 @@ async function listStudentsForClass(client, classId) {
 // this to a department the way Staff's HOD->Principal chain needs a
 // real HOD to resolve, same reasoning
 // financeService.submitFeeStructureApproval gives for fee_structures.
-async function requestInternalTransfer(client, studentId, { destinationClassId, reason }, { requestedByUserId, origin = 'human' } = {}) {
+async function requestInternalTransfer(
+  client,
+  studentId,
+  { destinationClassId, reason },
+  { requestedByUserId, origin = 'human' } = {},
+) {
   if (!destinationClassId) {
     throw new StudentTransferValidationError('destinationClassId is required');
   }
@@ -964,7 +1011,12 @@ async function requestInternalTransfer(client, studentId, { destinationClassId, 
 // separate, later action on that college's own side — most likely
 // through its own admission/onboarding flow, not automated by this
 // function.
-async function requestInterCollegeTransfer(client, studentId, { destinationCollegeId, reason }, { requestedByUserId, origin = 'human' } = {}) {
+async function requestInterCollegeTransfer(
+  client,
+  studentId,
+  { destinationCollegeId, reason },
+  { requestedByUserId, origin = 'human' } = {},
+) {
   if (!destinationCollegeId) {
     throw new StudentTransferValidationError('destinationCollegeId is required');
   }
@@ -1010,11 +1062,15 @@ async function loadPendingTransferRequest(client, studentId, transferRequestId) 
     );
   }
   if (transferRequest.workflow_request_id === null) {
-    throw new StudentTransferNoPendingRequestError(`transfer request ${JSON.stringify(transferRequestId)} has no workflow request`);
+    throw new StudentTransferNoPendingRequestError(
+      `transfer request ${JSON.stringify(transferRequestId)} has no workflow request`,
+    );
   }
   const pending = await workflowService.getRequest(client, transferRequest.workflow_request_id);
   if (pending === null || pending.status !== 'Pending') {
-    throw new StudentTransferNoPendingRequestError(`transfer request ${JSON.stringify(transferRequestId)} has no pending approval request`);
+    throw new StudentTransferNoPendingRequestError(
+      `transfer request ${JSON.stringify(transferRequestId)} has no pending approval request`,
+    );
   }
   return { transferRequest, pending };
 }
@@ -1041,7 +1097,10 @@ async function approveStudentTransfer(client, studentId, transferRequestId, { ac
   await auditLogRepository.createAuditLogEntry(client, {
     collegeId: transferRequest.college_id,
     userId: actorUserId,
-    action: transferRequest.transfer_type === 'internal' ? 'student_internal_transfer_approved' : 'student_inter_college_transfer_approved',
+    action:
+      transferRequest.transfer_type === 'internal'
+        ? 'student_internal_transfer_approved'
+        : 'student_inter_college_transfer_approved',
     entity: 'students',
     entityId: studentId,
     metadata: null,
@@ -1057,7 +1116,10 @@ async function rejectStudentTransfer(client, studentId, transferRequestId, { act
   await auditLogRepository.createAuditLogEntry(client, {
     collegeId: transferRequest.college_id,
     userId: actorUserId,
-    action: transferRequest.transfer_type === 'internal' ? 'student_internal_transfer_rejected' : 'student_inter_college_transfer_rejected',
+    action:
+      transferRequest.transfer_type === 'internal'
+        ? 'student_internal_transfer_rejected'
+        : 'student_inter_college_transfer_rejected',
     entity: 'students',
     entityId: studentId,
     metadata: null,
@@ -1072,7 +1134,9 @@ async function listTransferRequestsForStudent(client, studentId) {
 
 function assertKnownLifecycleStatus(newStatus) {
   if (!LIFECYCLE_STATES.includes(newStatus)) {
-    throw new StudentLifecycleValidationError(`newStatus ${JSON.stringify(newStatus)} is not a recognized lifecycle state`);
+    throw new StudentLifecycleValidationError(
+      `newStatus ${JSON.stringify(newStatus)} is not a recognized lifecycle state`,
+    );
   }
 }
 
@@ -1083,7 +1147,12 @@ function assertKnownLifecycleStatus(newStatus) {
 // caller attempting Suspended/Discontinued/Debarred/Dismissed/Graduated
 // here is rejected outright (StudentLifecycleApprovalRequiredError),
 // not silently downgraded to "still requires approval" after the fact.
-async function updateStudentLifecycleStatus(client, studentId, { newStatus, reason, effectiveDate }, { actorUserId } = {}) {
+async function updateStudentLifecycleStatus(
+  client,
+  studentId,
+  { newStatus, reason, effectiveDate },
+  { actorUserId } = {},
+) {
   if (!reason) {
     throw new StudentLifecycleValidationError('reason is required');
   }
@@ -1119,7 +1188,12 @@ async function updateStudentLifecycleStatus(client, studentId, { newStatus, reas
 // Principal, but resolveApproverChain's own floor enforcement rejects
 // any configured chain that never reaches L3 (hod or above), so this
 // can never resolve to a Tutor-only chain.
-async function requestLifecycleStatusChange(client, studentId, { newStatus, reason, effectiveDate }, { requestedByUserId, origin = 'human' } = {}) {
+async function requestLifecycleStatusChange(
+  client,
+  studentId,
+  { newStatus, reason, effectiveDate },
+  { requestedByUserId, origin = 'human' } = {},
+) {
   if (!reason) {
     throw new StudentLifecycleValidationError('reason is required');
   }
@@ -1191,7 +1265,9 @@ async function loadPendingLifecycleChange(client, studentId) {
   }
   const pending = await workflowService.findPendingForEntity(client, 'student_lifecycle_change', studentId);
   if (pending === null) {
-    throw new StudentLifecycleNoPendingRequestError(`student ${JSON.stringify(studentId)} has no pending lifecycle change request`);
+    throw new StudentLifecycleNoPendingRequestError(
+      `student ${JSON.stringify(studentId)} has no pending lifecycle change request`,
+    );
   }
   return { student, pending };
 }
@@ -1309,7 +1385,10 @@ async function promoteSemesterForClass(client, classId, { actorUserId } = {}) {
       continue; // eslint-disable-line no-continue
     }
     if (student.lifecycle_status === 'Suspended' && !promoteSuspended) {
-      exceptions.push({ studentId: student.id, reason: 'Suspended and institution policy does not promote Suspended students' });
+      exceptions.push({
+        studentId: student.id,
+        reason: 'Suspended and institution policy does not promote Suspended students',
+      });
       continue; // eslint-disable-line no-continue
     }
 

@@ -19,7 +19,9 @@ class ProjectDocumentAlreadyAttachedError extends Error {}
 
 function assertOwnedBy(project, actorUserId) {
   if (project.user_id !== actorUserId) {
-    throw new ProjectForbiddenError(`user ${JSON.stringify(actorUserId)} does not own project ${JSON.stringify(project.id)}`);
+    throw new ProjectForbiddenError(
+      `user ${JSON.stringify(actorUserId)} does not own project ${JSON.stringify(project.id)}`,
+    );
   }
 }
 
@@ -94,14 +96,21 @@ async function attachProjectDocument(client, id, { documentId }, { userId }) {
     throw new ProjectNotFoundError(`document ${JSON.stringify(documentId)} does not exist`);
   }
   if (document.uploaded_by_user_id !== userId) {
-    throw new ProjectForbiddenError(`user ${JSON.stringify(userId)} does not own document ${JSON.stringify(documentId)}`);
+    throw new ProjectForbiddenError(
+      `user ${JSON.stringify(userId)} does not own document ${JSON.stringify(documentId)}`,
+    );
   }
   const existing = await projectDocumentRepository.findByProjectAndDocument(client, id, documentId);
   if (existing !== null) {
-    throw new ProjectDocumentAlreadyAttachedError(`document ${JSON.stringify(documentId)} is already attached to project ${JSON.stringify(id)}`);
+    throw new ProjectDocumentAlreadyAttachedError(
+      `document ${JSON.stringify(documentId)} is already attached to project ${JSON.stringify(id)}`,
+    );
   }
   return projectDocumentRepository.create(client, {
-    collegeId: project.college_id, projectId: id, documentId, addedByUserId: userId,
+    collegeId: project.college_id,
+    projectId: id,
+    documentId,
+    addedByUserId: userId,
   });
 }
 

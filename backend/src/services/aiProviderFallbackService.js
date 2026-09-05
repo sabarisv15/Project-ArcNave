@@ -22,6 +22,7 @@
 // up answering a call that hasn't been attempted yet.
 
 const { LlmNotConfiguredError, LlmRequestError } = require('./aiProviders/errors');
+const circuitBreaker = require('./aiProviders/circuitBreaker');
 
 // Transient = worth falling back for.
 // - LlmRequestError: retry.js's own MAX_ATTEMPTS is already exhausted by
@@ -48,7 +49,13 @@ function isFallbackEligible(err) {
 // exactly the same "not a function" a caller would see without this
 // wrapper at all.
 const WRAPPABLE_METHODS = [
-  'complete', 'completeWithMeta', 'completeStream', 'completeWithTools', 'embed', 'generateImage', 'countTokens',
+  'complete',
+  'completeWithMeta',
+  'completeStream',
+  'completeWithTools',
+  'embed',
+  'generateImage',
+  'countTokens',
 ];
 
 // cfg (the first argument every wrapped method takes) is passed through
@@ -63,10 +70,26 @@ function wrapMethod(methodName, primaryAdapter, fallbackAdapter, fallbackConfig,
   const fallbackFn = fallbackAdapter[methodName];
 
   return async (...args) => {
+    // Is a fallback actually usable for THIS method? Computed before the
+    // breaker is consulted, because an open breaker must never short-
+    // circuit to a path that doesn't exist — see circuitBreaker.js note 3.
+    const fallbackUsable = typeof fallbackFn === 'function' && fallbackAdapter.isConfigured(fallbackConfig);
+
+    // P3 4.9 — skip a primary already known to be down, but only when
+    // there is somewhere else to go. The breaker never fails a call on
+    // its own authority.
+    if (fallbackUsable && !circuitBreaker.shouldAttemptPrimary(primaryAdapter.name)) {
+      onFallback(methodName, new Error(`circuit open for ${primaryAdapter.name}`));
+      return fallbackFn.call(fallbackAdapter, fallbackConfig, ...args.slice(1));
+    }
+
     try {
-      return await primaryFn.apply(primaryAdapter, args);
+      const result = await primaryFn.apply(primaryAdapter, args);
+      circuitBreaker.recordSuccess(primaryAdapter.name);
+      return result;
     } catch (err) {
-      if (!isFallbackEligible(err) || typeof fallbackFn !== 'function' || !fallbackAdapter.isConfigured(fallbackConfig)) {
+      circuitBreaker.recordFailure(primaryAdapter.name, err);
+      if (!isFallbackEligible(err) || !fallbackUsable) {
         throw err;
       }
       onFallback(methodName, err);

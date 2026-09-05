@@ -28,14 +28,15 @@ const { LlmRequestError } = require('./errors');
 // failure (DNS, connection reset, or the abort firing) is wrapped in the
 // same LlmRequestError shape every adapter already threw, naming the
 // calling provider so the message stays distinguishable in logs.
-async function fetchWithTimeout({
-  url, headers, body, timeoutMs, providerLabel,
-}) {
+async function fetchWithTimeout({ url, headers, body, timeoutMs, providerLabel }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, {
-      method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal,
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
     });
   } catch (err) {
     throw new LlmRequestError(`request to ${providerLabel} failed: ${err.message}`);
@@ -88,12 +89,51 @@ function buildOpenAiCompatiblePriorTurnMessages(priorTurns) {
     {
       role: 'assistant',
       content: null,
-      tool_calls: [turn.rawToolCall || {
-        id: turn.callId, type: 'function', function: { name: turn.toolName, arguments: JSON.stringify(turn.arguments || {}) },
-      }],
+      tool_calls: [
+        turn.rawToolCall || {
+          id: turn.callId,
+          type: 'function',
+          function: { name: turn.toolName, arguments: JSON.stringify(turn.arguments || {}) },
+        },
+      ],
     },
     { role: 'tool', tool_call_id: turn.callId, content: turn.resultText },
   ]);
+}
+
+// ARCNAVE modernization P2 / 1.6 — historyTurns -> real prior 'user'/
+// 'assistant' messages, placed BEFORE the current user turn — see
+// gemini.js's own buildHistoryContents comment for the shared reasoning.
+// The OpenAI-compatible convention already uses plain {role, content}
+// message objects for both roles, so no shape translation is needed
+// beyond passing the fields through.
+function buildOpenAiCompatibleHistoryMessages(historyTurns) {
+  if (!Array.isArray(historyTurns)) return [];
+  return historyTurns.map((turn) => ({ role: turn.role, content: turn.content }));
+}
+
+// ARCNAVE modernization P3 (1.12) — "forced-format replies only half-
+// supported ... only two providers enforce it natively." Was
+// openai.js's own private `responseFormatFor` (CEO audit #12/C3,
+// 2026-08-30); moved here, unchanged, so selfHosted.js and
+// vertexMaas.js — the other two adapters speaking this SAME OpenAI-
+// compatible `/chat/completions` convention (openai.js's own header
+// comment; selfHosted.js's and vertexMaas.js's own headers say the same)
+// — get real native JSON-Schema enforcement instead of silently
+// dropping `responseSchema` on the floor, matching gemini.js's/
+// openai.js's own existing behavior rather than duplicating this
+// function a second and third time. `strict: true` asks the server to
+// enforce the schema itself, not just validate after the fact. A
+// self-hosted/MaaS server that doesn't understand `response_format`
+// simply ignores the unrecognized field (same "unrecognized field is
+// harmless" degradation `buildOpenAiCompatibleHistoryMessages`'s own
+// stream_options precedent already relies on) — never a hard failure.
+function responseFormatFor(responseSchema) {
+  if (!responseSchema) return undefined;
+  return {
+    type: 'json_schema',
+    json_schema: { name: 'arcnave_extraction', schema: responseSchema, strict: true },
+  };
 }
 
 module.exports = {
@@ -101,4 +141,6 @@ module.exports = {
   parseJsonResponse,
   extractOpenAiCompatibleUsage,
   buildOpenAiCompatiblePriorTurnMessages,
+  buildOpenAiCompatibleHistoryMessages,
+  responseFormatFor,
 };

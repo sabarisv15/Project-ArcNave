@@ -25,19 +25,9 @@
  * of them import each other.
  */
 
-import {
-  DEPARTMENTS,
-  DEPT_ATTENTION_THRESHOLD,
-  facultyOfDepartment,
-  hodOf,
-  workloadOf,
-} from './institutionData';
+import { DEPARTMENTS, DEPT_ATTENTION_THRESHOLD, facultyOfDepartment, hodOf, workloadOf } from './institutionData';
 import { pendingCountOfDepartment } from './institutionApprovalsData';
-import {
-  INSTITUTION_EXCEPTIONS,
-  awaitsFinalApproval,
-  timetableStateOf,
-} from './institutionTimetableData';
+import { INSTITUTION_EXCEPTIONS, awaitsFinalApproval, timetableStateOf } from './institutionTimetableData';
 import { hodSeat } from './seatState';
 
 /**
@@ -81,7 +71,7 @@ function exceptionsOfDepartment(departmentId) {
     // A calendar exception applies to every department, so it would otherwise
     // put the same badge on all six rows and say nothing. It is an institution
     // signal, listed once in Institution attention, not a department state.
-    (e) => e.kind !== 'calendar' && e.departmentIds.includes(departmentId)
+    (e) => e.kind !== 'calendar' && e.departmentIds.includes(departmentId),
   );
 }
 

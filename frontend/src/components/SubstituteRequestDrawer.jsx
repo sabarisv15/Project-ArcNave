@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, Search } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { DrawerShell, DrawerRail, PRIMARY_BTN } from './AttendanceActionDrawer';
-import { useAttendanceStore } from '../store/AttendanceProvider';
+import { DrawerRail, DrawerShell, PRIMARY_BTN } from '@/components/ui/Drawer';
+import { useAttendanceStore } from '@/features/attendance';
 import {
   ME,
   dateFromDayKey,
@@ -31,7 +31,11 @@ function FieldLabel({ children, hint }) {
 /** Two-option segmented control — the request's scope and its recipient mode both use it. */
 function Segmented({ value, onChange, options, ariaLabel }) {
   return (
-    <div role="radiogroup" aria-label={ariaLabel} className="inline-flex items-center gap-[2px] p-[2px] bg-frame rounded-[10px]">
+    <div
+      role="radiogroup"
+      aria-label={ariaLabel}
+      className="inline-flex items-center gap-[2px] p-[2px] bg-frame rounded-[10px]"
+    >
       {options.map((o) => (
         <button
           key={o.value}
@@ -41,7 +45,9 @@ function Segmented({ value, onChange, options, ariaLabel }) {
           onClick={() => onChange(o.value)}
           className={cn(
             'h-[28px] px-[12px] border-0 rounded-[8px] font-sans text-[12px] cursor-pointer transition-colors duration-200',
-            value === o.value ? 'bg-paper text-ink font-[600] shadow-seg' : 'bg-transparent text-ink-muted font-[500] hover:text-ink'
+            value === o.value
+              ? 'bg-paper text-ink font-[600] shadow-seg'
+              : 'bg-transparent text-ink-muted font-[500] hover:text-ink',
           )}
         >
           {o.label}
@@ -61,7 +67,7 @@ function PeriodRow({ slot, selected, onSelect, selectable }) {
         'w-full flex items-center gap-[10px] px-[11px] py-[8px] border rounded-[10px] text-left transition-colors duration-200',
         selectable && 'cursor-pointer',
         selected ? 'border-accent-line bg-accent-soft' : 'border-line bg-paper',
-        selectable && !selected && 'hover:bg-tint2'
+        selectable && !selected && 'hover:bg-tint2',
       )}
     >
       <span className="flex-none w-[52px] text-[11px] font-[500] text-ink-faint tabular-nums">P{slot.period}</span>
@@ -72,7 +78,9 @@ function PeriodRow({ slot, selected, onSelect, selectable }) {
           {slot.batch ? ` · ${slot.batch}` : ''}
         </span>
       </span>
-      <span className="flex-none text-[11.5px] text-ink-muted tabular-nums whitespace-nowrap">{slotTimeRange(slot)}</span>
+      <span className="flex-none text-[11.5px] text-ink-muted tabular-nums whitespace-nowrap">
+        {slotTimeRange(slot)}
+      </span>
       {selected && <Check size={14} strokeWidth={2.4} className="flex-none text-accent" aria-hidden="true" />}
     </Tag>
   );
@@ -150,7 +158,7 @@ export function SubstituteRequestDrawer({ open, onClose, prefill }) {
 
   const { eligible, blocked } = useMemo(
     () => (periodNumbers.length ? eligibleStaffFor(dateKey, periodNumbers) : { eligible: [], blocked: [] }),
-    [dateKey, periodNumbers.join(',')]
+    [dateKey, periodNumbers.join(',')],
   );
 
   // A specific recipient who stops being eligible (date/period changed) is dropped, never silently kept.
@@ -164,9 +172,7 @@ export function SubstituteRequestDrawer({ open, onClose, prefill }) {
     return { eligible: eligible.filter(match), blocked: blocked.filter(match) };
   }, [eligible, blocked, staffQuery]);
 
-  const canSubmit =
-    selectedSlots.length > 0 &&
-    (recipientMode === 'available' ? eligible.length > 0 : !!staffId);
+  const canSubmit = selectedSlots.length > 0 && (recipientMode === 'available' ? eligible.length > 0 : !!staffId);
 
   const submit = () => {
     const ok = createSubstituteRequest({
@@ -178,7 +184,10 @@ export function SubstituteRequestDrawer({ open, onClose, prefill }) {
       recipientCount: eligible.length,
       reason,
     });
-    if (ok) { autosave.markClean(); onClose(); }
+    if (ok) {
+      autosave.markClean();
+      onClose();
+    }
   };
 
   const noTeaching = dayPeriods.length === 0;
@@ -186,7 +195,12 @@ export function SubstituteRequestDrawer({ open, onClose, prefill }) {
   return (
     <DrawerShell
       open={open}
-      onOpenChange={(v) => { if (!v) { autosave.flush(); onClose(); } }}
+      onOpenChange={(v) => {
+        if (!v) {
+          autosave.flush();
+          onClose();
+        }
+      }}
       title="Request substitute"
       contextLine={`${formatDayDateDMY(dateFromDayKey(dateKey))} · ${dayPeriods.length} scheduled period${dayPeriods.length === 1 ? '' : 's'}`}
       description="Request another staff member to cover your scheduled periods."
@@ -197,14 +211,23 @@ export function SubstituteRequestDrawer({ open, onClose, prefill }) {
           <Segmented
             ariaLabel="Request type"
             value={scope}
-            onChange={(v) => { setScope(v); if (v === 'day') setSlotKey(null); }}
-            options={[{ value: 'period', label: 'One period' }, { value: 'day', label: 'Full day' }]}
+            onChange={(v) => {
+              setScope(v);
+              if (v === 'day') setSlotKey(null);
+            }}
+            options={[
+              { value: 'period', label: 'One period' },
+              { value: 'day', label: 'Full day' },
+            ]}
           />
           <input
             type="date"
             aria-label="Request date"
             value={dateKey}
-            onChange={(e) => { setDateKey(e.target.value); setSlotKey(null); }}
+            onChange={(e) => {
+              setDateKey(e.target.value);
+              setSlotKey(null);
+            }}
             className={cn(FIELD, 'w-[152px]')}
           />
         </div>
@@ -236,7 +259,10 @@ export function SubstituteRequestDrawer({ open, onClose, prefill }) {
             ariaLabel="Recipient mode"
             value={recipientMode}
             onChange={setRecipientMode}
-            options={[{ value: 'available', label: 'Available staff' }, { value: 'specific', label: 'Specific staff' }]}
+            options={[
+              { value: 'available', label: 'Available staff' },
+              { value: 'specific', label: 'Specific staff' },
+            ]}
           />
 
           {recipientMode === 'available' ? (
@@ -270,7 +296,7 @@ export function SubstituteRequestDrawer({ open, onClose, prefill }) {
                     aria-pressed={staffId === c.id}
                     className={cn(
                       'w-full flex items-center gap-[9px] px-[11px] py-[7px] border rounded-[10px] text-left cursor-pointer transition-colors duration-200',
-                      staffId === c.id ? 'border-accent-line bg-accent-soft' : 'border-line bg-paper hover:bg-tint2'
+                      staffId === c.id ? 'border-accent-line bg-accent-soft' : 'border-line bg-paper hover:bg-tint2',
                     )}
                   >
                     <span className="min-w-0 flex-1">
@@ -278,12 +304,17 @@ export function SubstituteRequestDrawer({ open, onClose, prefill }) {
                       <span className="block text-[11px] text-ink-faint truncate">{c.designation}</span>
                     </span>
                     <span className="flex-none text-[11px] font-[500] text-success">Free</span>
-                    {staffId === c.id && <Check size={14} strokeWidth={2.4} className="flex-none text-accent" aria-hidden="true" />}
+                    {staffId === c.id && (
+                      <Check size={14} strokeWidth={2.4} className="flex-none text-accent" aria-hidden="true" />
+                    )}
                   </button>
                 ))}
                 {/* Shown, never selectable — the reason is more useful than hiding them. */}
                 {filteredStaff.blocked.map((c) => (
-                  <div key={c.id} className="flex items-center gap-[9px] px-[11px] py-[7px] border border-line rounded-[10px] bg-tint2 opacity-70">
+                  <div
+                    key={c.id}
+                    className="flex items-center gap-[9px] px-[11px] py-[7px] border border-line rounded-[10px] bg-tint2 opacity-70"
+                  >
                     <span className="min-w-0 flex-1">
                       <span className="block text-[12.5px] font-[500] text-ink-muted truncate">{c.name}</span>
                       <span className="block text-[11px] text-ink-faint truncate">{c.reason}</span>
@@ -303,7 +334,11 @@ export function SubstituteRequestDrawer({ open, onClose, prefill }) {
           <FieldLabel hint="optional">Reason</FieldLabel>
           <textarea
             value={reason}
-            onChange={(e) => { setReason(e.target.value.slice(0, 300)); setUsedDraft(false); autosave.schedule(); }}
+            onChange={(e) => {
+              setReason(e.target.value.slice(0, 300));
+              setUsedDraft(false);
+              autosave.schedule();
+            }}
             rows={2}
             placeholder="e.g. Attending a faculty development programme."
             aria-label="Reason for this request"
@@ -322,9 +357,11 @@ export function SubstituteRequestDrawer({ open, onClose, prefill }) {
             </span>
             {/* One quiet line: the recovered draft until the user touches it,
                 then ordinary save status. */}
-            {usedDraft
-              ? <DraftRestoredNote show />
-              : <AutosaveStatus status={autosave.status} onRetry={autosave.retry} />}
+            {usedDraft ? (
+              <DraftRestoredNote show />
+            ) : (
+              <AutosaveStatus status={autosave.status} onRetry={autosave.retry} />
+            )}
           </span>
         }
       >
@@ -335,7 +372,7 @@ export function SubstituteRequestDrawer({ open, onClose, prefill }) {
           className={cn(
             canSubmit
               ? PRIMARY_BTN
-              : 'flex-none h-[34px] px-[15px] border-0 rounded-[10px] bg-frame text-ink-disabled font-sans text-[12.5px] font-[500] cursor-not-allowed'
+              : 'flex-none h-[34px] px-[15px] border-0 rounded-[10px] bg-frame text-ink-disabled font-sans text-[12.5px] font-[500] cursor-not-allowed',
           )}
         >
           Submit request

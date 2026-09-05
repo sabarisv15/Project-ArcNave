@@ -103,8 +103,7 @@ export function InstitutionDepartmentsView() {
    * Live rather than the frozen `DEPARTMENT_HEALTH`: a leadership seat filled a
    * moment ago has to read as filled on the page that filled it.
    */
-  const { departments: DEPARTMENT_HEALTH, departmentById: DEPARTMENT_HEALTH_BY_ID } =
-    useInstitutionHealth();
+  const { departments: DEPARTMENT_HEALTH, departmentById: DEPARTMENT_HEALTH_BY_ID } = useInstitutionHealth();
 
   const openId = DEPARTMENT_HEALTH_BY_ID[deptParam] ? deptParam : '';
   const setOpenId = (value) => {
@@ -165,7 +164,7 @@ export function InstitutionDepartmentsView() {
                 'flex-none h-[27px] px-[10px] border-0 rounded-[8px] bg-transparent font-sans text-[12.5px] cursor-pointer transition-colors duration-200',
                 view === v.key
                   ? 'bg-accent-soft text-accent font-[600]'
-                  : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2'
+                  : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2',
               )}
             >
               {v.label}
@@ -199,85 +198,84 @@ export function InstitutionDepartmentsView() {
       {view === 'seats' ? (
         <LeadershipSeats rows={rows} onOpen={setSeatDeptId} />
       ) : (
-      <StickyTableShell minWidth={340}>
-        <div className={cn(GRID, STICKY_HEAD, TABLE_HEAD, 'h-[38px]')}>
-          <span>Department</span>
-          <span className="hidden md:block">Head</span>
-          <span className="hidden md:block">Classes</span>
-          <span className="hidden md:block">Faculty</span>
-          <span className="hidden md:block">Students</span>
-          <span>Attendance</span>
-          <span className="hidden md:block">Pending</span>
-          <span>Status</span>
-          <span className="sr-only">Open</span>
-        </div>
+        <StickyTableShell minWidth={340}>
+          <div className={cn(GRID, STICKY_HEAD, TABLE_HEAD, 'h-[38px]')}>
+            <span>Department</span>
+            <span className="hidden md:block">Head</span>
+            <span className="hidden md:block">Classes</span>
+            <span className="hidden md:block">Faculty</span>
+            <span className="hidden md:block">Students</span>
+            <span>Attendance</span>
+            <span className="hidden md:block">Pending</span>
+            <span>Status</span>
+            <span className="sr-only">Open</span>
+          </div>
 
-        {rows.map((d) => (
-          <button
-            key={d.id}
-            type="button"
-            onClick={() => setOpenId(d.id)}
-            aria-label={`${d.name} — open department`}
-            className={cn(
-              GRID,
-              'w-full h-[48px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2'
-            )}
-          >
-            <span className="min-w-0">
-              <span className="block text-[13px] text-ink truncate" title={d.name}>
-                {d.name}
-              </span>
-              <span className="block text-[11px] text-ink-faint truncate">{d.short}</span>
-            </span>
-
-            <span className="hidden md:block min-w-0 text-[12.5px] truncate">
-              {d.hod ? (
-                <span className="text-ink-muted" title={d.hod.name}>
-                  {d.hod.name}
-                </span>
-              ) : (
-                <span className="text-danger font-[500]">Not recorded</span>
-              )}
-            </span>
-
-            <span className="hidden md:block text-[12.5px] text-ink-muted tabular-nums">{d.classCount}</span>
-            <span className="hidden md:block text-[12.5px] text-ink-muted tabular-nums">{d.facultyCount}</span>
-            <span className="hidden md:block text-[12.5px] text-ink-muted tabular-nums">{d.studentCount}</span>
-
-            {/* Colour marks the one threshold that means something, and never replaces the number. */}
-            <span
+          {rows.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              onClick={() => setOpenId(d.id)}
+              aria-label={`${d.name} — open department`}
               className={cn(
-                'text-[13px] tabular-nums',
-                d.attendance < DEPT_ATTENTION_THRESHOLD ? 'font-[500] text-danger' : 'text-ink'
+                GRID,
+                'w-full h-[48px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2',
               )}
             >
-              {d.attendance}%
-            </span>
+              <span className="min-w-0">
+                <span className="block text-[13px] text-ink truncate" title={d.name}>
+                  {d.name}
+                </span>
+                <span className="block text-[11px] text-ink-faint truncate">{d.short}</span>
+              </span>
 
-            <span className="hidden md:block text-[12.5px] text-ink-muted tabular-nums">
-              {d.pendingCount === 0 ? <span className="text-ink-faint">—</span> : d.pendingCount}
-            </span>
+              <span className="hidden md:block min-w-0 text-[12.5px] truncate">
+                {d.hod ? (
+                  <span className="text-ink-muted" title={d.hod.name}>
+                    {d.hod.name}
+                  </span>
+                ) : (
+                  <span className="text-danger font-[500]">Not recorded</span>
+                )}
+              </span>
 
-            <span className="min-w-0">
+              <span className="hidden md:block text-[12.5px] text-ink-muted tabular-nums">{d.classCount}</span>
+              <span className="hidden md:block text-[12.5px] text-ink-muted tabular-nums">{d.facultyCount}</span>
+              <span className="hidden md:block text-[12.5px] text-ink-muted tabular-nums">{d.studentCount}</span>
+
+              {/* Colour marks the one threshold that means something, and never replaces the number. */}
               <span
                 className={cn(
-                  'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500] max-w-full truncate',
-                  DEPT_ATTENTION_STATES[d.attention].tone
+                  'text-[13px] tabular-nums',
+                  d.attendance < DEPT_ATTENTION_THRESHOLD ? 'font-[500] text-danger' : 'text-ink',
                 )}
               >
-                {DEPT_ATTENTION_STATES[d.attention].label}
+                {d.attendance}%
               </span>
-            </span>
 
-            <span className="flex justify-end text-ink-faint">
-              <ChevronRight size={15} strokeWidth={2} aria-hidden="true" />
-            </span>
-          </button>
-        ))}
+              <span className="hidden md:block text-[12.5px] text-ink-muted tabular-nums">
+                {d.pendingCount === 0 ? <span className="text-ink-faint">—</span> : d.pendingCount}
+              </span>
 
-        {rows.length === 0 &&
-          (DEPARTMENT_HEALTH.length === 0 ? <NoDepartments /> : <NoResults what="departments" />)}
-      </StickyTableShell>
+              <span className="min-w-0">
+                <span
+                  className={cn(
+                    'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500] max-w-full truncate',
+                    DEPT_ATTENTION_STATES[d.attention].tone,
+                  )}
+                >
+                  {DEPT_ATTENTION_STATES[d.attention].label}
+                </span>
+              </span>
+
+              <span className="flex justify-end text-ink-faint">
+                <ChevronRight size={15} strokeWidth={2} aria-hidden="true" />
+              </span>
+            </button>
+          ))}
+
+          {rows.length === 0 && (DEPARTMENT_HEALTH.length === 0 ? <NoDepartments /> : <NoResults what="departments" />)}
+        </StickyTableShell>
       )}
 
       <p className="flex-none m-0 mt-[8px] text-[11.5px] text-ink-faint">
@@ -292,7 +290,7 @@ export function InstitutionDepartmentsView() {
       />
 
       <InstitutionHodSeatDrawer
-        department={seatDeptId ? DEPARTMENT_HEALTH_BY_ID[seatDeptId] ?? null : null}
+        department={seatDeptId ? (DEPARTMENT_HEALTH_BY_ID[seatDeptId] ?? null) : null}
         onClose={() => setSeatDeptId('')}
       />
     </div>
@@ -338,7 +336,7 @@ function LeadershipSeats({ rows, onOpen }) {
           aria-label={`${d.name} — manage ${title.toLowerCase()} seat`}
           className={cn(
             SEAT_GRID,
-            'w-full h-[48px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2'
+            'w-full h-[48px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2',
           )}
         >
           <span className="min-w-0">

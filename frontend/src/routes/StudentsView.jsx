@@ -27,14 +27,18 @@ export function StudentsView() {
 
           <StaffClassSwitcher scope={s.scope} onSelect={s.selectScope} />
           <StudentsToolbar s={s} />
-          <StudentFilterChips chips={s.activeChips} onRemove={(key) => s.setFilter(key, '')} onClearAll={s.clearFilters} />
+          <StudentFilterChips
+            chips={s.activeChips}
+            onRemove={(key) => s.setFilter(key, '')}
+            onClearAll={s.clearFilters}
+          />
           {s.filtersOpen && <StudentsFilters s={s} />}
           <ClassContextHeader scopeIsAll={s.scopeIsAll} scopeClass={s.scopeClass} scopeTotal={s.scopeTotal} />
           <ScopedStudentTable s={s} />
         </div>
       </div>
 
-      {s.anyOverlayOpen && <div onClick={s.closeOverlays} className="fixed inset-0 z-[55]" />}
+      {s.anyOverlayOpen && <div aria-hidden="true" onClick={s.closeOverlays} className="fixed inset-0 z-[55]" />}
       {s.selectedCount > 0 && <StudentBulkTray s={s} />}
       <StudentDetailDrawer s={s} />
     </>

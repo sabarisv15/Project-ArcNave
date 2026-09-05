@@ -10,9 +10,7 @@
 // table: one createEntry function, append-only, plus the list/filter
 // read path the Audit Logs screen needs.
 
-async function createEntry(pool, {
-  actorAdminId, action, entity, entityId, ipAddress, metadata,
-}) {
+async function createEntry(pool, { actorAdminId, action, entity, entityId, ipAddress, metadata }) {
   await pool.query(
     `INSERT INTO platform_audit_log (actor_admin_id, action, entity, entity_id, ip_address, metadata)
      VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -20,9 +18,7 @@ async function createEntry(pool, {
   );
 }
 
-async function listEntries(pool, {
-  limit = 20, offset = 0, action, actorAdminId, fromDate, toDate, search,
-} = {}) {
+async function listEntries(pool, { limit = 20, offset = 0, action, actorAdminId, fromDate, toDate, search } = {}) {
   const conditions = [];
   const params = [limit, offset];
 
@@ -50,7 +46,9 @@ async function listEntries(pool, {
   // string the UI already displays for a null username.
   if (search) {
     params.push(`%${search}%`);
-    conditions.push(`(l.action ILIKE $${params.length} OR a.username ILIKE $${params.length} OR (a.username IS NULL AND 'system' ILIKE $${params.length}))`);
+    conditions.push(
+      `(l.action ILIKE $${params.length} OR a.username ILIKE $${params.length} OR (a.username IS NULL AND 'system' ILIKE $${params.length}))`,
+    );
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';

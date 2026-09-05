@@ -101,10 +101,7 @@ export function coverageReading(coverage) {
     invited,
     vacant,
     complete: total > 0 && active === total,
-    summary:
-      total === 0
-        ? 'None to cover'
-        : `${active} of ${total} active · ${invited} invited · ${vacant} vacant`,
+    summary: total === 0 ? 'None to cover' : `${active} of ${total} active · ${invited} invited · ${vacant} vacant`,
   };
 }
 

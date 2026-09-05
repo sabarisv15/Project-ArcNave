@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { ComposerProvider, composerScope, useComposer } from '../store/ComposerProvider';
-import { useComposerAttachments } from '../hooks/useComposerAttachments';
+import { ComposerProvider, composerScope, useComposer } from '../features/chat';
+import { useComposerAttachments } from '../features/chat/hooks/useComposerAttachments';
 import { aiApi } from '../api/ai';
 
 /**
@@ -39,7 +39,7 @@ function renderPair(keyA, keyB) {
       const b = useComposer(keyB);
       return { a, b, aFiles: useComposerAttachments(a), bFiles: useComposerAttachments(b) };
     },
-    { wrapper }
+    { wrapper },
   );
 }
 
@@ -96,7 +96,7 @@ describe('pasting an image into a composer', () => {
       result.current.aFiles.handlePaste(
         pasteEvent({
           items: [blob({ lastModified: 1 }), blob({ lastModified: 2 }), blob({ lastModified: 3 })],
-        })
+        }),
       );
     });
 

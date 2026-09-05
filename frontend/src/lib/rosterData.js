@@ -30,8 +30,54 @@
 
 import { ACTIVE_CLASSES } from './academicCalendar';
 
-const FIRST = ['Arjun', 'Priya', 'Rahul', 'Ananya', 'Vikram', 'Sneha', 'Karan', 'Divya', 'Rohan', 'Meera', 'Aditya', 'Kavya', 'Nikhil', 'Pooja', 'Sanjay', 'Isha', 'Varun', 'Neha', 'Aakash', 'Ritika', 'Manish', 'Swathi', 'Harsha', 'Deepika', 'Nithin', 'Anjali', 'Gokul', 'Shreya', 'Bharath', 'Lavanya'];
-const LAST = ['Mehta', 'Nair', 'Sharma', 'Iyer', 'Reddy', 'Gupta', 'Rao', 'Kapoor', 'Verma', 'Menon', 'Pillai', 'Krishnan', 'Balan', 'Raghavan'];
+const FIRST = [
+  'Arjun',
+  'Priya',
+  'Rahul',
+  'Ananya',
+  'Vikram',
+  'Sneha',
+  'Karan',
+  'Divya',
+  'Rohan',
+  'Meera',
+  'Aditya',
+  'Kavya',
+  'Nikhil',
+  'Pooja',
+  'Sanjay',
+  'Isha',
+  'Varun',
+  'Neha',
+  'Aakash',
+  'Ritika',
+  'Manish',
+  'Swathi',
+  'Harsha',
+  'Deepika',
+  'Nithin',
+  'Anjali',
+  'Gokul',
+  'Shreya',
+  'Bharath',
+  'Lavanya',
+];
+const LAST = [
+  'Mehta',
+  'Nair',
+  'Sharma',
+  'Iyer',
+  'Reddy',
+  'Gupta',
+  'Rao',
+  'Kapoor',
+  'Verma',
+  'Menon',
+  'Pillai',
+  'Krishnan',
+  'Balan',
+  'Raghavan',
+];
 
 export const ATTENDANCE_THRESHOLD = 75;
 

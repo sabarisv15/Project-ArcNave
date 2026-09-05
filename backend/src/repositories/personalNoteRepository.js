@@ -83,5 +83,10 @@ async function listByUserAndDateRange(client, userId, fromDate, toDate) {
 }
 
 module.exports = {
-  create, findById, update, remove, listByUser, listByUserAndDateRange,
+  create,
+  findById,
+  update,
+  remove,
+  listByUser,
+  listByUserAndDateRange,
 };

@@ -18,12 +18,7 @@ import { useWorkspace } from '../store/WorkspaceProvider';
 export function HomeCurriculumToggle() {
   const navigate = useNavigate();
   const { pathname, search } = useLocation();
-  const {
-    activeWorkspaceMode,
-    setActiveWorkspaceMode,
-    setScheduleOpen,
-    setProfileDrawerOpen,
-  } = useWorkspace();
+  const { activeWorkspaceMode, setActiveWorkspaceMode, setScheduleOpen, setProfileDrawerOpen } = useWorkspace();
   const isCurriculum = activeWorkspaceMode === 'curriculum';
 
   const goHome = () => {
@@ -43,7 +38,7 @@ export function HomeCurriculumToggle() {
         'flex-1 h-[28px] border-0 rounded-[7px] font-sans text-[12.5px] cursor-pointer transition-colors duration-200',
         active
           ? 'bg-paper text-ink-soft font-[600] shadow-seg'
-          : 'bg-transparent text-ink-muted font-[500] hover:text-ink-soft'
+          : 'bg-transparent text-ink-muted font-[500] hover:text-ink-soft',
       )}
     >
       {label}
@@ -54,7 +49,11 @@ export function HomeCurriculumToggle() {
     // The track is `tint2`, not `frame`: the app ground and paper now sit within
     // a percent of each other, so a frame-coloured track would leave the raised
     // active segment with nothing to read against.
-    <div role="tablist" aria-label="Workspace context" className="flex gap-[2px] mx-[4px] mt-[12px] mb-[10px] p-[2px] bg-tint2 rounded-[11px]">
+    <div
+      role="tablist"
+      aria-label="Workspace context"
+      className="flex gap-[2px] mx-[4px] mt-[12px] mb-[10px] p-[2px] bg-tint2 rounded-[11px]"
+    >
       {item('Home', !isCurriculum, goHome)}
       {item('Curriculum', isCurriculum, () => setActiveWorkspaceMode('curriculum'))}
     </div>

@@ -28,21 +28,11 @@ const FOLLOW_UP_MAP = {
     { toolName: 'assessment_record_mark', label: 'Record or update a mark' },
     { toolName: 'students_roster', label: 'View the class roster' },
   ],
-  academic_class_timetable: [
-    { toolName: 'attendance_summary', label: 'View attendance for this class' },
-  ],
-  staff_roster: [
-    { toolName: 'staff_update_profile', label: 'Update a staff profile' },
-  ],
-  finance_status_summary: [
-    { toolName: 'finance_record_payment', label: 'Record a fee payment' },
-  ],
-  draft_notification: [
-    { toolName: 'request_notification_send', label: 'Submit the draft for approval' },
-  ],
-  mark_attendance_nl: [
-    { toolName: 'attendance_summary', label: 'View updated attendance summary' },
-  ],
+  academic_class_timetable: [{ toolName: 'attendance_summary', label: 'View attendance for this class' }],
+  staff_roster: [{ toolName: 'staff_update_profile', label: 'Update a staff profile' }],
+  finance_status_summary: [{ toolName: 'finance_record_payment', label: 'Record a fee payment' }],
+  draft_notification: [{ toolName: 'request_notification_send', label: 'Submit the draft for approval' }],
+  mark_attendance_nl: [{ toolName: 'attendance_summary', label: 'View updated attendance summary' }],
 };
 
 const MAX_SUGGESTIONS = 5;

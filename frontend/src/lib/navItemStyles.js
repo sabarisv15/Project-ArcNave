@@ -32,10 +32,8 @@ const BASE =
 export function navItemClass(active, extra) {
   return cn(
     BASE,
-    active
-      ? 'bg-active text-accent font-[600]'
-      : 'bg-transparent text-ink-soft font-[500] hover:bg-hoverline',
-    extra
+    active ? 'bg-active text-accent font-[600]' : 'bg-transparent text-ink-soft font-[500] hover:bg-hoverline',
+    extra,
   );
 }
 
@@ -56,7 +54,7 @@ export function navItemClass(active, extra) {
 export function navIconClass(active) {
   return cn(
     'transition-transform duration-150 ease-out',
-    active ? 'text-accent nav-icon-settle' : 'text-ink-ghost group-hover:text-ink-soft group-hover:scale-[1.08]'
+    active ? 'text-accent nav-icon-settle' : 'text-ink-ghost group-hover:text-ink-soft group-hover:scale-[1.08]',
   );
 }
 
@@ -65,6 +63,6 @@ export function recentItemClass(active, extra) {
   return cn(
     'flex items-center gap-[9px] w-full h-[32px] min-h-[32px] shrink-0 px-[9px] border-0 rounded-[9px] font-sans cursor-pointer text-left overflow-hidden transition-colors duration-200',
     active ? 'bg-active' : 'bg-transparent hover:bg-hoverline',
-    extra
+    extra,
   );
 }

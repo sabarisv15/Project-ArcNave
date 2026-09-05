@@ -1,8 +1,11 @@
 import { act, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { AcademicTermProvider, useAcademicTerm } from '../store/AcademicTermProvider';
-import { AcademicRosterProvider } from '../store/AcademicRosterProvider';
-import { InstitutionalLifecycleProvider } from '../store/InstitutionalLifecycleProvider';
+import {
+  AcademicTermProvider,
+  useAcademicTerm,
+  AcademicRosterProvider,
+  InstitutionalLifecycleProvider,
+} from '@/features/institution';
 import { ClassScopeHeader } from '../components/ClassScopeHeader';
 import { DepartmentScopeHeader } from '../components/DepartmentScopeHeader';
 import { InstitutionScopeHeader } from '../components/InstitutionScopeHeader';

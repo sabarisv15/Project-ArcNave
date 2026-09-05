@@ -40,13 +40,7 @@
  *  Outcome       'promote' | 'section_change' | 'detain' | 'transfer'
  */
 
-import {
-  ACTIVE_BAND,
-  ACTIVE_CLASS_BY_ID,
-  BAND_SEMESTERS,
-  classIdFor,
-  yearOfSemester,
-} from './academicCalendar';
+import { ACTIVE_BAND, ACTIVE_CLASS_BY_ID, BAND_SEMESTERS, classIdFor, yearOfSemester } from './academicCalendar';
 import { provisionedDepartment } from './provisioning';
 import { DEPARTMENT_ID } from './departmentData';
 
@@ -100,7 +94,7 @@ export function priorClassesFor(activeBand, activeClassById = ACTIVE_CLASS_BY_ID
             targetClassId,
           };
         })
-        .filter(Boolean)
+        .filter(Boolean),
     );
 }
 
@@ -290,7 +284,7 @@ export const OUTCOME_KEYS = Object.keys(PROMOTION_OUTCOMES);
  */
 export function targetSectionsFor(
   candidate,
-  { priorClassById = PRIOR_CLASS_BY_ID, activeClassById = ACTIVE_CLASS_BY_ID } = {}
+  { priorClassById = PRIOR_CLASS_BY_ID, activeClassById = ACTIVE_CLASS_BY_ID } = {},
 ) {
   const priorClass = priorClassById[candidate.priorClassId];
   if (!priorClass) return [];
@@ -327,5 +321,4 @@ export function targetClassIdFor(candidate, outcome, section = null, resolvers =
 }
 
 /** The one line of context the review screens state about what they are. */
-export const REVIEW_CONTEXT_NOTE =
-  'Semester transition review · placements are applied after confirmation';
+export const REVIEW_CONTEXT_NOTE = 'Semester transition review · placements are applied after confirmation';

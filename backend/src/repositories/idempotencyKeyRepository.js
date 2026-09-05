@@ -12,9 +12,7 @@
 // resolved one way or the other)".
 const UNIQUE_VIOLATION = '23505';
 
-async function reserve(client, {
-  collegeId, userId, idempotencyKey, toolName, paramsHash,
-}) {
+async function reserve(client, { collegeId, userId, idempotencyKey, toolName, paramsHash }) {
   const result = await client.query(
     `INSERT INTO idempotency_keys (college_id, user_id, idempotency_key, tool_name, params_hash)
      VALUES ($1, $2, $3, $4, $5)
@@ -34,10 +32,10 @@ async function findByKey(client, { collegeId, userId, idempotencyKey }) {
 }
 
 async function markCompleted(client, id, responseBody) {
-  await client.query(
-    'UPDATE idempotency_keys SET response_body = $2 WHERE id = $1',
-    [id, JSON.stringify(responseBody)],
-  );
+  await client.query('UPDATE idempotency_keys SET response_body = $2 WHERE id = $1', [
+    id,
+    JSON.stringify(responseBody),
+  ]);
 }
 
 module.exports = { UNIQUE_VIOLATION, reserve, findByKey, markCompleted };

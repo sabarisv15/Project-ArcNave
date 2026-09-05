@@ -16,7 +16,10 @@ const { Pool } = require('pg');
 const createApp = require('../src/app');
 const security = require('../src/security');
 const {
-  seedClassTutorPosition, seedHodPosition, seedPrincipalPosition, cleanupPositionRows,
+  seedClassTutorPosition,
+  seedHodPosition,
+  seedPrincipalPosition,
+  cleanupPositionRows,
 } = require('./helpers/positionFixtures');
 
 const MIGRATION_DATABASE_URL = process.env.MIGRATION_DATABASE_URL;
@@ -97,15 +100,15 @@ function hostFor(subdomain) {
 async function seedTenant(adminPool, label) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const college = { collegeId: `stu${label}${suffix}`, subdomain: `stutenant${label}${suffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [college.collegeId, college.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    college.collegeId,
+    college.subdomain,
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userIds = {};
   for (const role of ['principal', 'hod', 'hod2', 'staff', 'staffnoclass']) {
     const username = role === 'staffnoclass' ? 'staffusernoclass' : `${role}user`;
-    const dbRole = role.startsWith('hod') ? 'hod' : (role === 'staffnoclass' ? 'staff' : role);
+    const dbRole = role.startsWith('hod') ? 'hod' : role === 'staffnoclass' ? 'staff' : role;
     // eslint-disable-next-line no-await-in-loop
     const result = await adminPool.query(
       `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
@@ -116,28 +119,33 @@ async function seedTenant(adminPool, label) {
     userIds[role] = result.rows[0].id;
   }
 
-  const deptAResult = await adminPool.query(
-    'INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id',
-    [college.collegeId, `Dept A ${label}`],
-  );
-  const deptBResult = await adminPool.query(
-    'INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id',
-    [college.collegeId, `Dept B ${label}`],
-  );
+  const deptAResult = await adminPool.query('INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id', [
+    college.collegeId,
+    `Dept A ${label}`,
+  ]);
+  const deptBResult = await adminPool.query('INSERT INTO departments (college_id, name) VALUES ($1, $2) RETURNING id', [
+    college.collegeId,
+    `Dept B ${label}`,
+  ]);
   college.departmentId = deptAResult.rows[0].id;
 
-  await adminPool.query(
-    'INSERT INTO staff (college_id, user_id, full_name, department_id) VALUES ($1, $2, $3, $4)',
-    [college.collegeId, userIds.hod, 'Hod User', deptAResult.rows[0].id],
-  );
-  await adminPool.query(
-    'INSERT INTO staff (college_id, user_id, full_name, department_id) VALUES ($1, $2, $3, $4)',
-    [college.collegeId, userIds.hod2, 'Hod User Two', deptBResult.rows[0].id],
-  );
-  await adminPool.query(
-    'INSERT INTO staff (college_id, user_id, full_name) VALUES ($1, $2, $3)',
-    [college.collegeId, userIds.principal, 'Principal User'],
-  );
+  await adminPool.query('INSERT INTO staff (college_id, user_id, full_name, department_id) VALUES ($1, $2, $3, $4)', [
+    college.collegeId,
+    userIds.hod,
+    'Hod User',
+    deptAResult.rows[0].id,
+  ]);
+  await adminPool.query('INSERT INTO staff (college_id, user_id, full_name, department_id) VALUES ($1, $2, $3, $4)', [
+    college.collegeId,
+    userIds.hod2,
+    'Hod User Two',
+    deptBResult.rows[0].id,
+  ]);
+  await adminPool.query('INSERT INTO staff (college_id, user_id, full_name) VALUES ($1, $2, $3)', [
+    college.collegeId,
+    userIds.principal,
+    'Principal User',
+  ]);
 
   const classResult = await adminPool.query(
     `INSERT INTO classes (college_id, class_name, department_id)
@@ -161,7 +169,10 @@ async function seedTenant(adminPool, label) {
   // log into that seat directly (POST /position-accounts/login),
   // separately from staffuser's personal login.
   const { officialEmail } = await seedClassTutorPosition(adminPool, {
-    collegeId: college.collegeId, userId: userIds.staff, classId: college.classId, passwordHash,
+    collegeId: college.collegeId,
+    userId: userIds.staff,
+    classId: college.classId,
+    passwordHash,
   });
   college.classTutorEmail = officialEmail;
 
@@ -176,13 +187,21 @@ async function seedTenant(adminPool, label) {
   // fixture identity-resolvers.test.js/position-account-routes.test.js
   // already use — is what these actors need for real, not a workaround.
   await seedHodPosition(adminPool, {
-    collegeId: college.collegeId, userId: userIds.hod, departmentId: deptAResult.rows[0].id, passwordHash,
+    collegeId: college.collegeId,
+    userId: userIds.hod,
+    departmentId: deptAResult.rows[0].id,
+    passwordHash,
   });
   await seedHodPosition(adminPool, {
-    collegeId: college.collegeId, userId: userIds.hod2, departmentId: deptBResult.rows[0].id, passwordHash,
+    collegeId: college.collegeId,
+    userId: userIds.hod2,
+    departmentId: deptBResult.rows[0].id,
+    passwordHash,
   });
   await seedPrincipalPosition(adminPool, {
-    collegeId: college.collegeId, userId: userIds.principal, passwordHash,
+    collegeId: college.collegeId,
+    userId: userIds.principal,
+    passwordHash,
   });
 
   return college;
@@ -218,12 +237,10 @@ test('students', async (t) => {
   });
 
   async function login(college, username) {
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/auth/login',
-      'POST',
-      { headers: { host: hostFor(college.subdomain) }, body: { username, password: PASSWORD } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/auth/login', 'POST', {
+      headers: { host: hostFor(college.subdomain) },
+      body: { username, password: PASSWORD },
+    });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -234,12 +251,10 @@ test('students', async (t) => {
   // LOGIN whose identity, not staffuser's personal login, is what
   // student create/edit authority actually requires now.
   async function loginTutor(college) {
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/position-accounts/login',
-      'POST',
-      { headers: { host: hostFor(college.subdomain) }, body: { official_email: college.classTutorEmail, password: PASSWORD } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/position-accounts/login', 'POST', {
+      headers: { host: hostFor(college.subdomain) },
+      body: { official_email: college.classTutorEmail, password: PASSWORD },
+    });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -256,18 +271,23 @@ test('students', async (t) => {
   // own-class-only (this session's own task). PUT/DELETE remain
   // principal-only, unchanged.
 
-  await t.test('create returns 201 with the created row, snake_case, class_id auto-set from the tutor\'s own class', async () => {
-    const token = await loginTutor(collegeA);
-    const resp = await post(baseUrl, '/api/v1/students', headersFor(collegeA, token), {
-      roll_no: 'R001', full_name: 'Alice Anand', mark_10th: 91.5,
-    });
-    assert.equal(resp.status, 201);
-    assert.equal(resp.body.roll_no, 'R001');
-    assert.equal(resp.body.full_name, 'Alice Anand');
-    assert.equal(Number(resp.body.mark_10th), 91.5);
-    assert.equal(resp.body.college_id, collegeA.collegeId);
-    assert.equal(resp.body.class_id, collegeA.classId);
-  });
+  await t.test(
+    "create returns 201 with the created row, snake_case, class_id auto-set from the tutor's own class",
+    async () => {
+      const token = await loginTutor(collegeA);
+      const resp = await post(baseUrl, '/api/v1/students', headersFor(collegeA, token), {
+        roll_no: 'R001',
+        full_name: 'Alice Anand',
+        mark_10th: 91.5,
+      });
+      assert.equal(resp.status, 201);
+      assert.equal(resp.body.roll_no, 'R001');
+      assert.equal(resp.body.full_name, 'Alice Anand');
+      assert.equal(Number(resp.body.mark_10th), 91.5);
+      assert.equal(resp.body.college_id, collegeA.collegeId);
+      assert.equal(resp.body.class_id, collegeA.classId);
+    },
+  );
 
   await t.test('create rejects a missing roll_no with 400, not a 500', async () => {
     const token = await loginTutor(collegeA);
@@ -285,23 +305,30 @@ test('students', async (t) => {
     assert.equal(resp.status, 400);
   });
 
-  await t.test('create on a duplicate roll_no within the same tenant is a real 409, from a real DB constraint', async () => {
-    const token = await loginTutor(collegeA);
-    const first = await post(baseUrl, '/api/v1/students', headersFor(collegeA, token), {
-      roll_no: 'R010', full_name: 'First Student',
-    });
-    assert.equal(first.status, 201);
+  await t.test(
+    'create on a duplicate roll_no within the same tenant is a real 409, from a real DB constraint',
+    async () => {
+      const token = await loginTutor(collegeA);
+      const first = await post(baseUrl, '/api/v1/students', headersFor(collegeA, token), {
+        roll_no: 'R010',
+        full_name: 'First Student',
+      });
+      assert.equal(first.status, 201);
 
-    const dup = await post(baseUrl, '/api/v1/students', headersFor(collegeA, token), {
-      roll_no: 'R010', full_name: 'Second Student',
-    });
-    assert.equal(dup.status, 409);
-  });
+      const dup = await post(baseUrl, '/api/v1/students', headersFor(collegeA, token), {
+        roll_no: 'R010',
+        full_name: 'Second Student',
+      });
+      assert.equal(dup.status, 409);
+    },
+  );
 
   await t.test('an aadhaar-shaped field is silently dropped, never stored or echoed back', async () => {
     const token = await loginTutor(collegeA);
     const resp = await post(baseUrl, '/api/v1/students', headersFor(collegeA, token), {
-      roll_no: 'R020', full_name: 'No Aadhaar Here', aadhaar_number: '1234-5678-9012',
+      roll_no: 'R020',
+      full_name: 'No Aadhaar Here',
+      aadhaar_number: '1234-5678-9012',
     });
     assert.equal(resp.status, 201);
     assert.equal('aadhaar_number' in resp.body, false);
@@ -310,7 +337,8 @@ test('students', async (t) => {
   await t.test('get by id returns 200 for an existing student, 404 for an unknown id', async () => {
     const token = await loginTutor(collegeA);
     const created = await post(baseUrl, '/api/v1/students', headersFor(collegeA, token), {
-      roll_no: 'R030', full_name: 'Gettable Student',
+      roll_no: 'R030',
+      full_name: 'Gettable Student',
     });
     const found = await get(baseUrl, `/api/v1/students/${created.body.id}`, headersFor(collegeA, token));
     assert.equal(found.status, 200);
@@ -333,7 +361,8 @@ test('students', async (t) => {
   await t.test('update changes a field and returns 200 with the updated row', async () => {
     const staffToken = await loginTutor(collegeA);
     const created = await post(baseUrl, '/api/v1/students', headersFor(collegeA, staffToken), {
-      roll_no: 'R040', full_name: 'Before Update',
+      roll_no: 'R040',
+      full_name: 'Before Update',
     });
     const principalToken = await login(collegeA, 'principaluser');
     const updated = await put(baseUrl, `/api/v1/students/${created.body.id}`, headersFor(collegeA, principalToken), {
@@ -351,11 +380,15 @@ test('students', async (t) => {
     assert.equal(resp.status, 404);
   });
 
-  await t.test('update onto another student\'s roll_no is a real 409, from a real DB constraint', async () => {
+  await t.test("update onto another student's roll_no is a real 409, from a real DB constraint", async () => {
     const staffToken = await loginTutor(collegeA);
-    await post(baseUrl, '/api/v1/students', headersFor(collegeA, staffToken), { roll_no: 'R050', full_name: 'Taken RollNo' });
+    await post(baseUrl, '/api/v1/students', headersFor(collegeA, staffToken), {
+      roll_no: 'R050',
+      full_name: 'Taken RollNo',
+    });
     const second = await post(baseUrl, '/api/v1/students', headersFor(collegeA, staffToken), {
-      roll_no: 'R051', full_name: 'Will Collide',
+      roll_no: 'R051',
+      full_name: 'Will Collide',
     });
 
     const principalToken = await login(collegeA, 'principaluser');
@@ -365,59 +398,80 @@ test('students', async (t) => {
     assert.equal(resp.status, 409);
   });
 
-  await t.test('delete soft-deletes (sets deleted_at): returns 204, the row is excluded from get/list, a second delete 404s, and no hard DELETE ever ran', async () => {
-    const staffToken = await loginTutor(collegeA);
-    const created = await post(baseUrl, '/api/v1/students', headersFor(collegeA, staffToken), {
-      roll_no: 'R060', full_name: 'Deletable Student',
-    });
+  await t.test(
+    'delete soft-deletes (sets deleted_at): returns 204, the row is excluded from get/list, a second delete 404s, and no hard DELETE ever ran',
+    async () => {
+      const staffToken = await loginTutor(collegeA);
+      const created = await post(baseUrl, '/api/v1/students', headersFor(collegeA, staffToken), {
+        roll_no: 'R060',
+        full_name: 'Deletable Student',
+      });
 
-    const principalToken = await login(collegeA, 'principaluser');
-    const firstDelete = await del(baseUrl, `/api/v1/students/${created.body.id}`, headersFor(collegeA, principalToken));
-    assert.equal(firstDelete.status, 204);
+      const principalToken = await login(collegeA, 'principaluser');
+      const firstDelete = await del(
+        baseUrl,
+        `/api/v1/students/${created.body.id}`,
+        headersFor(collegeA, principalToken),
+      );
+      assert.equal(firstDelete.status, 204);
 
-    const getAfter = await get(baseUrl, `/api/v1/students/${created.body.id}`, headersFor(collegeA, principalToken));
-    assert.equal(getAfter.status, 404);
+      const getAfter = await get(baseUrl, `/api/v1/students/${created.body.id}`, headersFor(collegeA, principalToken));
+      assert.equal(getAfter.status, 404);
 
-    const listAfter = await get(baseUrl, '/api/v1/students?limit=200', headersFor(collegeA, principalToken));
-    assert.equal(listAfter.body.some((s) => s.id === created.body.id), false);
+      const listAfter = await get(baseUrl, '/api/v1/students?limit=200', headersFor(collegeA, principalToken));
+      assert.equal(
+        listAfter.body.some((s) => s.id === created.body.id),
+        false,
+      );
 
-    const secondDelete = await del(baseUrl, `/api/v1/students/${created.body.id}`, headersFor(collegeA, principalToken));
-    assert.equal(secondDelete.status, 404);
+      const secondDelete = await del(
+        baseUrl,
+        `/api/v1/students/${created.body.id}`,
+        headersFor(collegeA, principalToken),
+      );
+      assert.equal(secondDelete.status, 404);
 
-    // Soft delete, not a hard DELETE: the row still physically exists
-    // with deleted_at set — verified directly against the admin
-    // connection (the app's own arcnave_app role never sees it, per
-    // every repository query's own deleted_at IS NULL filter).
-    const row = await adminPool.query('SELECT deleted_at FROM students WHERE id = $1', [created.body.id]);
-    assert.equal(row.rows.length, 1);
-    assert.notEqual(row.rows[0].deleted_at, null);
-  });
+      // Soft delete, not a hard DELETE: the row still physically exists
+      // with deleted_at set — verified directly against the admin
+      // connection (the app's own arcnave_app role never sees it, per
+      // every repository query's own deleted_at IS NULL filter).
+      const row = await adminPool.query('SELECT deleted_at FROM students WHERE id = $1', [created.body.id]);
+      assert.equal(row.rows.length, 1);
+      assert.notEqual(row.rows[0].deleted_at, null);
+    },
+  );
 
   // Known limitation, not fixed by this session's task: UNIQUE
   // (college_id, roll_no) has no partial index excluding deleted_at IS
   // NOT NULL, so a soft-deleted student's roll_no is NOT freed up for
   // reuse (still a real 409) — a hard delete used to free it. Flagged,
   // not silently asserted as working.
-  await t.test('a soft-deleted student\'s roll_no is still taken (known limitation — no partial unique index)', async () => {
-    const staffToken = await loginTutor(collegeA);
-    const created = await post(baseUrl, '/api/v1/students', headersFor(collegeA, staffToken), {
-      roll_no: 'R061', full_name: 'Soft Deleted Student',
-    });
-    const principalToken = await login(collegeA, 'principaluser');
-    await del(baseUrl, `/api/v1/students/${created.body.id}`, headersFor(collegeA, principalToken));
+  await t.test(
+    "a soft-deleted student's roll_no is still taken (known limitation — no partial unique index)",
+    async () => {
+      const staffToken = await loginTutor(collegeA);
+      const created = await post(baseUrl, '/api/v1/students', headersFor(collegeA, staffToken), {
+        roll_no: 'R061',
+        full_name: 'Soft Deleted Student',
+      });
+      const principalToken = await login(collegeA, 'principaluser');
+      await del(baseUrl, `/api/v1/students/${created.body.id}`, headersFor(collegeA, principalToken));
 
-    const second = await post(baseUrl, '/api/v1/students', headersFor(collegeA, staffToken), {
-      roll_no: 'R061', full_name: 'Reuses The Same Roll No',
-    });
-    assert.equal(second.status, 409);
-  });
+      const second = await post(baseUrl, '/api/v1/students', headersFor(collegeA, staffToken), {
+        roll_no: 'R061',
+        full_name: 'Reuses The Same Roll No',
+      });
+      assert.equal(second.status, 409);
+    },
+  );
 
   // --- RBAC ---
 
   await t.test('create is rejected for principal (no longer a creator role)', async () => {
     const token = await login(collegeA, 'principaluser');
     const resp = await post(baseUrl, '/api/v1/students', headersFor(collegeA, token), {
-      roll_no: 'RBAC1', full_name: 'Rbac Test',
+      roll_no: 'RBAC1',
+      full_name: 'Rbac Test',
     });
     assert.equal(resp.status, 403);
   });
@@ -425,7 +479,8 @@ test('students', async (t) => {
   await t.test('create is rejected for a staff member who is not the tutor of any class', async () => {
     const token = await login(collegeA, 'staffusernoclass');
     const resp = await post(baseUrl, '/api/v1/students', headersFor(collegeA, token), {
-      roll_no: 'RBAC1B', full_name: 'Rbac Test',
+      roll_no: 'RBAC1B',
+      full_name: 'Rbac Test',
     });
     assert.equal(resp.status, 403);
   });
@@ -436,17 +491,22 @@ test('students', async (t) => {
   // uses staffuser's PERSONAL login (POST /auth/login), not the L4
   // Position Account login (POST /position-accounts/login). Position
   // Occupancy must never substitute for Current Login Identity.
-  await t.test('create is rejected for staffuser\'s personal login even though that person currently occupies classA\'s L4 seat', async () => {
-    const token = await login(collegeA, 'staffuser');
-    const resp = await post(baseUrl, '/api/v1/students', headersFor(collegeA, token), {
-      roll_no: 'RBAC1C', full_name: 'Rbac Test',
-    });
-    assert.equal(resp.status, 403);
-  });
+  await t.test(
+    "create is rejected for staffuser's personal login even though that person currently occupies classA's L4 seat",
+    async () => {
+      const token = await login(collegeA, 'staffuser');
+      const resp = await post(baseUrl, '/api/v1/students', headersFor(collegeA, token), {
+        roll_no: 'RBAC1C',
+        full_name: 'Rbac Test',
+      });
+      assert.equal(resp.status, 403);
+    },
+  );
 
   await t.test('create requires authentication', async () => {
     const resp = await post(baseUrl, '/api/v1/students', headersFor(collegeA), {
-      roll_no: 'RBAC2', full_name: 'Rbac Test',
+      roll_no: 'RBAC2',
+      full_name: 'Rbac Test',
     });
     assert.equal(resp.status, 401);
   });
@@ -454,7 +514,8 @@ test('students', async (t) => {
   await t.test('read is allowed for principal, even though only the class tutor may create', async () => {
     const staffToken = await loginTutor(collegeA);
     const created = await post(baseUrl, '/api/v1/students', headersFor(collegeA, staffToken), {
-      roll_no: 'RBAC3', full_name: 'Readable By Principal',
+      roll_no: 'RBAC3',
+      full_name: 'Readable By Principal',
     });
 
     const principalToken = await login(collegeA, 'principaluser');
@@ -473,23 +534,28 @@ test('students', async (t) => {
   // regression case for update: same as the create case above, staffuser
   // occupies classA's L4 seat but this request uses their personal
   // login. Must be rejected exactly like a stranger's edit attempt.
-  await t.test('update is rejected for staffuser\'s personal login even though that person currently occupies the student\'s class\'s L4 seat', async () => {
-    const tutorToken = await loginTutor(collegeA);
-    const created = await post(baseUrl, '/api/v1/students', headersFor(collegeA, tutorToken), {
-      roll_no: 'SCOPE1B', full_name: 'Scope Test One B',
-    });
+  await t.test(
+    "update is rejected for staffuser's personal login even though that person currently occupies the student's class's L4 seat",
+    async () => {
+      const tutorToken = await loginTutor(collegeA);
+      const created = await post(baseUrl, '/api/v1/students', headersFor(collegeA, tutorToken), {
+        roll_no: 'SCOPE1B',
+        full_name: 'Scope Test One B',
+      });
 
-    const staffPersonalToken = await login(collegeA, 'staffuser');
-    const resp = await put(baseUrl, `/api/v1/students/${created.body.id}`, headersFor(collegeA, staffPersonalToken), {
-      full_name: 'Hijacked Via Personal Login',
-    });
-    assert.equal(resp.status, 403);
-  });
+      const staffPersonalToken = await login(collegeA, 'staffuser');
+      const resp = await put(baseUrl, `/api/v1/students/${created.body.id}`, headersFor(collegeA, staffPersonalToken), {
+        full_name: 'Hijacked Via Personal Login',
+      });
+      assert.equal(resp.status, 403);
+    },
+  );
 
-  await t.test('update is rejected for a staff member who does not tutor the student\'s class', async () => {
+  await t.test("update is rejected for a staff member who does not tutor the student's class", async () => {
     const staffToken = await loginTutor(collegeA);
     const created = await post(baseUrl, '/api/v1/students', headersFor(collegeA, staffToken), {
-      roll_no: 'SCOPE1', full_name: 'Scope Test One',
+      roll_no: 'SCOPE1',
+      full_name: 'Scope Test One',
     });
 
     const otherStaffToken = await login(collegeA, 'staffusernoclass');
@@ -499,10 +565,11 @@ test('students', async (t) => {
     assert.equal(resp.status, 403);
   });
 
-  await t.test('update succeeds for the hod of the student\'s class\'s department', async () => {
+  await t.test("update succeeds for the hod of the student's class's department", async () => {
     const staffToken = await loginTutor(collegeA);
     const created = await post(baseUrl, '/api/v1/students', headersFor(collegeA, staffToken), {
-      roll_no: 'SCOPE2', full_name: 'Scope Test Two',
+      roll_no: 'SCOPE2',
+      full_name: 'Scope Test Two',
     });
 
     const hodToken = await login(collegeA, 'hoduser');
@@ -516,7 +583,8 @@ test('students', async (t) => {
   await t.test('update is rejected for the hod of a DIFFERENT department', async () => {
     const staffToken = await loginTutor(collegeA);
     const created = await post(baseUrl, '/api/v1/students', headersFor(collegeA, staffToken), {
-      roll_no: 'SCOPE3', full_name: 'Scope Test Three',
+      roll_no: 'SCOPE3',
+      full_name: 'Scope Test Three',
     });
 
     const otherHodToken = await login(collegeA, 'hod2user');
@@ -526,10 +594,11 @@ test('students', async (t) => {
     assert.equal(resp.status, 403);
   });
 
-  await t.test('update succeeds for the principal of the student\'s own college', async () => {
+  await t.test("update succeeds for the principal of the student's own college", async () => {
     const staffToken = await loginTutor(collegeA);
     const created = await post(baseUrl, '/api/v1/students', headersFor(collegeA, staffToken), {
-      roll_no: 'SCOPE4', full_name: 'Scope Test Four',
+      roll_no: 'SCOPE4',
+      full_name: 'Scope Test Four',
     });
 
     const principalToken = await login(collegeA, 'principaluser');
@@ -540,10 +609,11 @@ test('students', async (t) => {
     assert.equal(resp.body.full_name, 'Updated By Principal');
   });
 
-  await t.test('delete is rejected for a staff member who does not tutor the student\'s class', async () => {
+  await t.test("delete is rejected for a staff member who does not tutor the student's class", async () => {
     const staffToken = await loginTutor(collegeA);
     const created = await post(baseUrl, '/api/v1/students', headersFor(collegeA, staffToken), {
-      roll_no: 'SCOPE5', full_name: 'Scope Test Five',
+      roll_no: 'SCOPE5',
+      full_name: 'Scope Test Five',
     });
 
     const otherStaffToken = await login(collegeA, 'staffusernoclass');
@@ -551,10 +621,11 @@ test('students', async (t) => {
     assert.equal(resp.status, 403);
   });
 
-  await t.test('delete succeeds for the hod of the student\'s class\'s department', async () => {
+  await t.test("delete succeeds for the hod of the student's class's department", async () => {
     const staffToken = await loginTutor(collegeA);
     const created = await post(baseUrl, '/api/v1/students', headersFor(collegeA, staffToken), {
-      roll_no: 'SCOPE6', full_name: 'Scope Test Six',
+      roll_no: 'SCOPE6',
+      full_name: 'Scope Test Six',
     });
 
     const hodToken = await login(collegeA, 'hoduser');
@@ -562,10 +633,11 @@ test('students', async (t) => {
     assert.equal(resp.status, 204);
   });
 
-  await t.test('delete succeeds for the principal of the student\'s own college', async () => {
+  await t.test("delete succeeds for the principal of the student's own college", async () => {
     const staffToken = await loginTutor(collegeA);
     const created = await post(baseUrl, '/api/v1/students', headersFor(collegeA, staffToken), {
-      roll_no: 'SCOPE7', full_name: 'Scope Test Seven',
+      roll_no: 'SCOPE7',
+      full_name: 'Scope Test Seven',
     });
 
     const principalToken = await login(collegeA, 'principaluser');
@@ -580,10 +652,12 @@ test('students', async (t) => {
     const tokenB = await loginTutor(collegeB);
 
     const respA = await post(baseUrl, '/api/v1/students', headersFor(collegeA, tokenA), {
-      roll_no: 'SHARED01', full_name: 'Tenant A Student',
+      roll_no: 'SHARED01',
+      full_name: 'Tenant A Student',
     });
     const respB = await post(baseUrl, '/api/v1/students', headersFor(collegeB, tokenB), {
-      roll_no: 'SHARED01', full_name: 'Tenant B Student',
+      roll_no: 'SHARED01',
+      full_name: 'Tenant B Student',
     });
     assert.equal(respA.status, 201);
     assert.equal(respB.status, 201);
@@ -595,7 +669,8 @@ test('students', async (t) => {
   await t.test('a create writes exactly one audit_log row', async () => {
     const token = await loginTutor(collegeA);
     const resp = await post(baseUrl, '/api/v1/students', headersFor(collegeA, token), {
-      roll_no: 'AUDIT01', full_name: 'Audited Student',
+      roll_no: 'AUDIT01',
+      full_name: 'Audited Student',
     });
     assert.equal(resp.status, 201);
 

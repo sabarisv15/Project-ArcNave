@@ -71,76 +71,106 @@ const institutionalActorContext = aiActorContext.buildActorContextForIdentity(in
 const personalActorContext = aiActorContext.buildActorContextForIdentity(personalIdentityContext);
 
 test('analyticsService.getAttendanceRateForActor: Institutional Position Account scope vs. Personal scope', async (t) => {
-  await t.test('an Institutional ActorContext is forwarded straight through to the repository, scoped to the Position Account\'s own class only', async () => {
-    const repoMock = t.mock.method(analyticsRepository, 'attendanceRateByClass', async () => [
-      {
-        class_id: TUTOR_CLASS_ID, class_name: 'Own Class', sessions_count: '1', total_marked: '10', total_present: '10',
-      },
-    ]);
-    t.after(() => repoMock.mock.restore());
+  await t.test(
+    "an Institutional ActorContext is forwarded straight through to the repository, scoped to the Position Account's own class only",
+    async () => {
+      const repoMock = t.mock.method(analyticsRepository, 'attendanceRateByClass', async () => [
+        {
+          class_id: TUTOR_CLASS_ID,
+          class_name: 'Own Class',
+          sessions_count: '1',
+          total_marked: '10',
+          total_present: '10',
+        },
+      ]);
+      t.after(() => repoMock.mock.restore());
 
-    const rows = await analyticsService.getAttendanceRateForActor({}, institutionalActorContext);
+      const rows = await analyticsService.getAttendanceRateForActor({}, institutionalActorContext);
 
-    assert.equal(repoMock.mock.callCount(), 1);
-    assert.deepEqual(repoMock.mock.calls[0].arguments[1].classIds, [TUTOR_CLASS_ID]);
-    assert.equal(rows.length, 1);
-    assert.equal(rows[0].classId, TUTOR_CLASS_ID);
-  });
+      assert.equal(repoMock.mock.callCount(), 1);
+      assert.deepEqual(repoMock.mock.calls[0].arguments[1].classIds, [TUTOR_CLASS_ID]);
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].classId, TUTOR_CLASS_ID);
+    },
+  );
 
-  await t.test('the SAME occupant\'s Personal scope genuinely includes the extra faculty-allocated class — not a coincidence, a real divergence', async () => {
-    const repoMock = t.mock.method(analyticsRepository, 'attendanceRateByClass', async () => [
-      {
-        class_id: TUTOR_CLASS_ID, class_name: 'Own Class', sessions_count: '1', total_marked: '10', total_present: '10',
-      },
-      {
-        class_id: FACULTY_CLASS_ID, class_name: 'Faculty Class', sessions_count: '1', total_marked: '5', total_present: '4',
-      },
-    ]);
-    t.after(() => repoMock.mock.restore());
+  await t.test(
+    "the SAME occupant's Personal scope genuinely includes the extra faculty-allocated class — not a coincidence, a real divergence",
+    async () => {
+      const repoMock = t.mock.method(analyticsRepository, 'attendanceRateByClass', async () => [
+        {
+          class_id: TUTOR_CLASS_ID,
+          class_name: 'Own Class',
+          sessions_count: '1',
+          total_marked: '10',
+          total_present: '10',
+        },
+        {
+          class_id: FACULTY_CLASS_ID,
+          class_name: 'Faculty Class',
+          sessions_count: '1',
+          total_marked: '5',
+          total_present: '4',
+        },
+      ]);
+      t.after(() => repoMock.mock.restore());
 
-    const rows = await analyticsService.getAttendanceRateForActor({}, personalActorContext);
+      const rows = await analyticsService.getAttendanceRateForActor({}, personalActorContext);
 
-    assert.deepEqual(repoMock.mock.calls[0].arguments[1].classIds.slice().sort(), [FACULTY_CLASS_ID, TUTOR_CLASS_ID].sort());
-    assert.equal(rows.length, 2);
-  });
+      assert.deepEqual(
+        repoMock.mock.calls[0].arguments[1].classIds.slice().sort(),
+        [FACULTY_CLASS_ID, TUTOR_CLASS_ID].sort(),
+      );
+      assert.equal(rows.length, 2);
+    },
+  );
 });
 
 test('assessmentService.listMarksForActor: Institutional Position Account scope vs. Personal scope', async (t) => {
-  await t.test('an Institutional ActorContext returns marks scoped to the Position Account\'s own class only', async () => {
-    const repoMock = t.mock.method(assessmentMarkRepository, 'findByFilters', async () => [
-      { id: 'mark-1', class_id: TUTOR_CLASS_ID, student_id: 'student-1', marks_obtained: '80' },
-    ]);
-    t.after(() => repoMock.mock.restore());
+  await t.test(
+    "an Institutional ActorContext returns marks scoped to the Position Account's own class only",
+    async () => {
+      const repoMock = t.mock.method(assessmentMarkRepository, 'findByFilters', async () => [
+        { id: 'mark-1', class_id: TUTOR_CLASS_ID, student_id: 'student-1', marks_obtained: '80' },
+      ]);
+      t.after(() => repoMock.mock.restore());
 
-    const rows = await assessmentService.listMarksForActor({}, institutionalActorContext);
+      const rows = await assessmentService.listMarksForActor({}, institutionalActorContext);
 
-    assert.deepEqual(repoMock.mock.calls[0].arguments[1].classIds, [TUTOR_CLASS_ID]);
-    assert.equal(rows.length, 1);
-    assert.equal(rows[0].class_id, TUTOR_CLASS_ID);
-  });
+      assert.deepEqual(repoMock.mock.calls[0].arguments[1].classIds, [TUTOR_CLASS_ID]);
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].class_id, TUTOR_CLASS_ID);
+    },
+  );
 
-  await t.test('the same occupant\'s Personal scope includes marks from the extra faculty-allocated class too', async () => {
-    const repoMock = t.mock.method(assessmentMarkRepository, 'findByFilters', async () => [
-      { id: 'mark-1', class_id: TUTOR_CLASS_ID, student_id: 'student-1', marks_obtained: '80' },
-      { id: 'mark-2', class_id: FACULTY_CLASS_ID, student_id: 'student-2', marks_obtained: '60' },
-    ]);
-    t.after(() => repoMock.mock.restore());
+  await t.test(
+    "the same occupant's Personal scope includes marks from the extra faculty-allocated class too",
+    async () => {
+      const repoMock = t.mock.method(assessmentMarkRepository, 'findByFilters', async () => [
+        { id: 'mark-1', class_id: TUTOR_CLASS_ID, student_id: 'student-1', marks_obtained: '80' },
+        { id: 'mark-2', class_id: FACULTY_CLASS_ID, student_id: 'student-2', marks_obtained: '60' },
+      ]);
+      t.after(() => repoMock.mock.restore());
 
-    const rows = await assessmentService.listMarksForActor({}, personalActorContext);
+      const rows = await assessmentService.listMarksForActor({}, personalActorContext);
 
-    assert.deepEqual(repoMock.mock.calls[0].arguments[1].classIds.slice().sort(), [FACULTY_CLASS_ID, TUTOR_CLASS_ID].sort());
-    assert.equal(rows.length, 2);
-  });
+      assert.deepEqual(
+        repoMock.mock.calls[0].arguments[1].classIds.slice().sort(),
+        [FACULTY_CLASS_ID, TUTOR_CLASS_ID].sort(),
+      );
+      assert.equal(rows.length, 2);
+    },
+  );
 });
 
 test('academicService.getClassTimetableForActor: Institutional Position Account scope vs. Personal scope', async (t) => {
-  await t.test('an Institutional ActorContext returns only the Position Account\'s own class', async () => {
+  await t.test("an Institutional ActorContext returns only the Position Account's own class", async () => {
     // Second optimization pass: getClassTimetableForActor now batches
     // via findByIds/findByClassIds instead of one findById/findByClassId
     // call per class — same scope-fidelity claim, updated mock seam.
-    const findByIdsMock = t.mock.method(classRepository, 'findByIds', async (client, ids) => (
-      ids.includes(TUTOR_CLASS_ID) ? [{ id: TUTOR_CLASS_ID, class_name: 'Own Class' }] : []
-    ));
+    const findByIdsMock = t.mock.method(classRepository, 'findByIds', async (client, ids) =>
+      ids.includes(TUTOR_CLASS_ID) ? [{ id: TUTOR_CLASS_ID, class_name: 'Own Class' }] : [],
+    );
     const allocationsMock = t.mock.method(facultyAllocationRepository, 'findByClassIds', async () => []);
     t.after(() => {
       findByIdsMock.mock.restore();
@@ -153,10 +183,13 @@ test('academicService.getClassTimetableForActor: Institutional Position Account 
     assert.equal(result[0].classId, TUTOR_CLASS_ID);
   });
 
-  await t.test('the same occupant\'s Personal scope includes the extra faculty-allocated class too', async () => {
-    const findByIdsMock = t.mock.method(classRepository, 'findByIds', async (client, ids) => ids.map((id) => ({
-      id, class_name: id === TUTOR_CLASS_ID ? 'Own Class' : 'Faculty Class',
-    })));
+  await t.test("the same occupant's Personal scope includes the extra faculty-allocated class too", async () => {
+    const findByIdsMock = t.mock.method(classRepository, 'findByIds', async (client, ids) =>
+      ids.map((id) => ({
+        id,
+        class_name: id === TUTOR_CLASS_ID ? 'Own Class' : 'Faculty Class',
+      })),
+    );
     const allocationsMock = t.mock.method(facultyAllocationRepository, 'findByClassIds', async () => []);
     t.after(() => {
       findByIdsMock.mock.restore();

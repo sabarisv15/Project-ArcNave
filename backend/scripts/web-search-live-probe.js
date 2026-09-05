@@ -13,7 +13,8 @@ const COLLEGE_ID = process.env.PROBE_COLLEGE_ID || 'demo';
     await client.query('BEGIN');
     await client.query("SELECT set_config('app.current_tenant', $1, true)", [COLLEGE_ID]);
     const existing = await configurationService.getConfiguration(client, {
-      collegeId: COLLEGE_ID, category: webSearchService.CONFIG_CATEGORY,
+      collegeId: COLLEGE_ID,
+      category: webSearchService.CONFIG_CATEGORY,
     });
     if (!existing || !existing.configuration || !existing.configuration.enabled) {
       await configurationService.setConfiguration(client, {

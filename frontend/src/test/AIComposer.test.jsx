@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { AIComposer } from '../components/AIComposer';
+import { AIComposer } from '@/features/chat';
 import * as Tooltip from '@radix-ui/react-tooltip';
 
 function setup(props = {}) {
@@ -18,7 +18,7 @@ function setup(props = {}) {
         onMode={onMode}
         placeholder="Ask ArcNave anything about your campus…"
       />
-    </Tooltip.Provider>
+    </Tooltip.Provider>,
   );
   return { onSend, onChange, onMode };
 }

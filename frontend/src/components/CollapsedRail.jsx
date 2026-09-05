@@ -55,9 +55,15 @@ export function CollapsedRail() {
         aria-label="Reveal sidebar"
         title="Sidebar"
         aria-expanded={open}
-        onMouseEnter={() => { cancelClose(); setRevealed(true); }}
+        onMouseEnter={() => {
+          cancelClose();
+          setRevealed(true);
+        }}
         onMouseLeave={scheduleClose}
-        onFocus={() => { cancelClose(); setRevealed(true); }}
+        onFocus={() => {
+          cancelClose();
+          setRevealed(true);
+        }}
         onClick={() => setPinned((v) => !v)}
         className="group h-full w-[12px] shrink-0 border-0 p-0 bg-transparent cursor-pointer outline-none"
       >
@@ -76,7 +82,7 @@ export function CollapsedRail() {
         onMouseLeave={scheduleClose}
         className={cn(
           'fixed left-[12px] top-[12px] bottom-[12px] z-[90] w-[298px] transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none',
-          open ? 'opacity-100 translate-x-0' : 'pointer-events-none opacity-0 -translate-x-[10px]'
+          open ? 'opacity-100 translate-x-0' : 'pointer-events-none opacity-0 -translate-x-[10px]',
         )}
       >
         <div className="h-full rounded-[18px] shadow-pop">

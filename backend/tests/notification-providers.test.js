@@ -33,7 +33,12 @@ test('email/smtp.js', async (t) => {
     const result = await smtp.send('a@b.com', 'hello', {
       subject: 'Hi',
       credentials: {
-        host: 'smtp.college.edu', port: 587, secure: false, user: 'u', password: 'p', fromAddress: 'no-reply@college.edu',
+        host: 'smtp.college.edu',
+        port: 587,
+        secure: false,
+        user: 'u',
+        password: 'p',
+        fromAddress: 'no-reply@college.edu',
       },
     });
 
@@ -42,7 +47,9 @@ test('email/smtp.js', async (t) => {
   });
 
   await t.test('reports failed (does not throw) when the real send rejects', async () => {
-    const sendMailMock = t.mock.fn(async () => { throw new Error('connection refused'); });
+    const sendMailMock = t.mock.fn(async () => {
+      throw new Error('connection refused');
+    });
     const createTransportMock = t.mock.method(nodemailer, 'createTransport', () => ({ sendMail: sendMailMock }));
     t.after(() => createTransportMock.mock.restore());
 
@@ -55,7 +62,9 @@ test('email/smtp.js', async (t) => {
 
 test('sms/msg91.js', async (t) => {
   await t.test('stubs when no credentials are supplied', async () => {
-    const fetchMock = t.mock.method(global, 'fetch', async () => { throw new Error('must not be called'); });
+    const fetchMock = t.mock.method(global, 'fetch', async () => {
+      throw new Error('must not be called');
+    });
     t.after(() => fetchMock.mock.restore());
 
     const result = await msg91.send('+919999999999', 'hello sms', {});
@@ -100,7 +109,9 @@ test('sms/msg91.js', async (t) => {
 
 test('whatsapp/meta.js', async (t) => {
   await t.test('stubs when no credentials are supplied', async () => {
-    const fetchMock = t.mock.method(global, 'fetch', async () => { throw new Error('must not be called'); });
+    const fetchMock = t.mock.method(global, 'fetch', async () => {
+      throw new Error('must not be called');
+    });
     t.after(() => fetchMock.mock.restore());
 
     const result = await meta.send('919999999999', 'hello whatsapp', {});
@@ -143,5 +154,68 @@ test('whatsapp/meta.js', async (t) => {
 
     assert.equal(result.status, 'failed');
     assert.equal(result.error, 'recipient not opted in');
+  });
+});
+
+// P3 4.9 — outbound timeouts. Both REST adapters previously called
+// Node's fetch with no AbortSignal at all, so a hung provider endpoint
+// pinned the calling request (and any TenantConnection it holds open)
+// indefinitely. These assert the signal is actually wired and that an
+// abort surfaces as a clearly-worded timeout rather than fetch's own
+// opaque "This operation was aborted" — without sleeping through the
+// real 10s window.
+test('P3 4.9 — outbound REST adapters pass an AbortSignal and report an abort as a timeout', async (t) => {
+  await t.test('msg91.send passes an AbortSignal to fetch', async () => {
+    let seenSignal;
+    const fetchMock = t.mock.method(global, 'fetch', async (url, options) => {
+      seenSignal = options.signal;
+      return { ok: true, status: 200, json: async () => ({ request_id: 'r1' }) };
+    });
+    t.after(() => fetchMock.mock.restore());
+
+    await msg91.send('919999999999', 'hi', { credentials: { authKey: 'k', senderId: 's' } });
+    assert.ok(seenSignal instanceof AbortSignal, 'msg91 must pass an AbortSignal');
+    assert.equal(seenSignal.aborted, false);
+  });
+
+  await t.test('msg91.send reports a timeout (not a raw abort message) when fetch aborts', async () => {
+    const fetchMock = t.mock.method(global, 'fetch', async () => {
+      const err = new Error('This operation was aborted');
+      err.name = 'AbortError';
+      throw err;
+    });
+    t.after(() => fetchMock.mock.restore());
+
+    const result = await msg91.send('919999999999', 'hi', { credentials: { authKey: 'k', senderId: 's' } });
+    assert.equal(result.status, 'failed');
+    assert.match(result.error, /MSG91 request timed out after \d+ms/);
+  });
+
+  await t.test('meta.send passes an AbortSignal to fetch', async () => {
+    let seenSignal;
+    const fetchMock = t.mock.method(global, 'fetch', async (url, options) => {
+      seenSignal = options.signal;
+      return { ok: true, status: 200, json: async () => ({ messages: [{ id: 'w1' }] }) };
+    });
+    t.after(() => fetchMock.mock.restore());
+
+    await meta.send('919999999999', 'hi', { credentials: { accessToken: 't', phoneNumberId: 'p' } });
+    assert.ok(seenSignal instanceof AbortSignal, 'meta must pass an AbortSignal');
+    assert.equal(seenSignal.aborted, false);
+  });
+
+  await t.test('meta.send reports a timeout (not a raw abort message) when fetch aborts', async () => {
+    const fetchMock = t.mock.method(global, 'fetch', async () => {
+      const err = new Error('This operation was aborted');
+      err.name = 'AbortError';
+      throw err;
+    });
+    t.after(() => fetchMock.mock.restore());
+
+    const result = await meta.send('919999999999', 'hi', {
+      credentials: { accessToken: 't', phoneNumberId: 'p' },
+    });
+    assert.equal(result.status, 'failed');
+    assert.match(result.error, /Meta request timed out after \d+ms/);
   });
 });

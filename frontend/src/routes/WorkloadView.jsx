@@ -4,7 +4,7 @@ import { formatHours, versionMeta, workloadForVersion } from '../lib/timetableDa
 import { PANE, TABLE_HEAD, TableEmptyState } from '../components/WorkspaceLayout';
 import { SESSION_TYPES, SessionTypeChip } from '../components/SessionType';
 import { TimetableVersionSelect } from '../components/TimetableVersionSelect';
-import { useAttendanceStore } from '../store/AttendanceProvider';
+import { useAttendanceStore } from '@/features/attendance';
 
 const GRID = 'grid grid-cols-[1.5fr_120px_1.4fr_112px] gap-x-[12px] items-center px-[16px]';
 
@@ -13,7 +13,9 @@ function Figure({ label, value, muted }) {
   return (
     <div className="min-w-0">
       <div className="text-[10px] tracking-[.05em] uppercase text-ink-faint mb-[2px]">{label}</div>
-      <div className={cn('text-[13px] font-[500] tabular-nums whitespace-nowrap', muted ? 'text-ink-muted' : 'text-ink')}>
+      <div
+        className={cn('text-[13px] font-[500] tabular-nums whitespace-nowrap', muted ? 'text-ink-muted' : 'text-ink')}
+      >
         {value}
       </div>
     </div>
@@ -40,9 +42,7 @@ export function WorkloadView() {
     <div className={PANE}>
       <div className="flex-none flex items-center gap-[10px] flex-wrap mb-[12px]">
         <h2 className="m-0 text-[14px] font-[600] tracking-[-.01em] text-ink">Weekly workload</h2>
-        <span className="text-[11px] text-ink-faint">
-          Based on Timetable · {meta?.label}
-        </span>
+        <span className="text-[11px] text-ink-faint">Based on Timetable · {meta?.label}</span>
         <div className="flex-1" />
         <span className="inline-flex items-center h-[20px] px-[7px] rounded-[6px] bg-tint2 text-[10.5px] font-[500] text-ink-muted">
           Read-only
@@ -59,7 +59,9 @@ export function WorkloadView() {
               {formatHours(workload.totalHours)}
             </span>
             <span className="text-[12px] text-ink-muted">/ week</span>
-            <span className="text-ink-faint" aria-hidden="true">·</span>
+            <span className="text-ink-faint" aria-hidden="true">
+              ·
+            </span>
             <span className="text-[12px] font-[500] text-accent">{meta?.label}</span>
           </div>
         </div>
@@ -84,7 +86,9 @@ export function WorkloadView() {
                 <span className="min-w-0 text-[13px] font-[500] text-ink truncate" title={row.subject}>
                   {row.subject}
                 </span>
-                <span><SessionTypeChip type={row.type} /></span>
+                <span>
+                  <SessionTypeChip type={row.type} />
+                </span>
                 <span className="min-w-0 text-[12px] text-ink-muted truncate" title={row.code}>
                   {row.code}
                   {row.batch ? ` · ${row.batch}` : ''}
@@ -99,9 +103,7 @@ export function WorkloadView() {
               </div>
             ))}
 
-            {workload.rows.length === 0 && (
-              <TableEmptyState title="No teaching sessions in this timetable version." />
-            )}
+            {workload.rows.length === 0 && <TableEmptyState title="No teaching sessions in this timetable version." />}
           </div>
         </div>
       </div>

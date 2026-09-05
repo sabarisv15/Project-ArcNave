@@ -24,73 +24,92 @@
 // route with a much smaller test surface than tenantMiddleware's own.
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { appPool } = require('../db/pool');
 const { openTenantTransaction } = require('../db/tenantTransaction');
 const authService = require('../services/authService');
 
+const acceptInvitationSchema = z.object({
+  body: z
+    .object({
+      token: z.string().optional(),
+      username: z.string().optional(),
+      password: z.string().optional(),
+    })
+    .optional(),
+});
+
 function createInvitationsRouter() {
   const router = express.Router();
 
-  router.post('/invitations/accept', asyncHandler(async (req, res) => {
-    const { token, username, password } = req.body || {};
+  router.post(
+    '/invitations/accept',
+    validate(acceptInvitationSchema),
+    asyncHandler(async (req, res) => {
+      const { token, username, password } = req.body || {};
 
-    // Quick lookup on a short-lived connection — principal_invitations
-    // has no RLS (see the 0002 migration), so this doesn't need any
-    // tenant context at all; the same "open a resolution connection,
-    // query, release" shape tenantMiddleware's own colleges lookup
-    // uses, for the same reason: we don't yet know which tenant to
-    // scope a real transaction to. Validation itself (expired/revoked/
-    // already-accepted/unknown, all one generic 401 — don't let the
-    // error message be an oracle) lives in authService.lookupPendingInvitation
-    // now, not this route.
-    const lookupClient = await appPool.connect();
-    let invitation;
-    try {
-      invitation = await authService.lookupPendingInvitation(lookupClient, token);
-    } catch (err) {
-      if (err instanceof authService.InvitationInvalidError) {
-        res.status(401).json({ detail: 'Invalid or expired invitation' });
-        return;
+      // Quick lookup on a short-lived connection — principal_invitations
+      // has no RLS (see the 0002 migration), so this doesn't need any
+      // tenant context at all; the same "open a resolution connection,
+      // query, release" shape tenantMiddleware's own colleges lookup
+      // uses, for the same reason: we don't yet know which tenant to
+      // scope a real transaction to. Validation itself (expired/revoked/
+      // already-accepted/unknown, all one generic 401 — don't let the
+      // error message be an oracle) lives in authService.lookupPendingInvitation
+      // now, not this route.
+      const lookupClient = await appPool.connect();
+      let invitation;
+      try {
+        invitation = await authService.lookupPendingInvitation(lookupClient, token);
+      } catch (err) {
+        if (err instanceof authService.InvitationInvalidError) {
+          res.status(401).json({ detail: 'Invalid or expired invitation' });
+          return;
+        }
+        throw err;
+      } finally {
+        lookupClient.release();
       }
-      throw err;
-    } finally {
-      lookupClient.release();
-    }
 
-    // The one deliberate, narrow bypass of tenantMiddleware's normal
-    // resolution anywhere in this codebase — see this file's module
-    // comment. invitation.college_id, already proven authentic by the
-    // token lookup above, is the one and only source of tenant scope
-    // for the rest of this request.
-    await openTenantTransaction(req, res, invitation.college_id);
+      // The one deliberate, narrow bypass of tenantMiddleware's normal
+      // resolution anywhere in this codebase — see this file's module
+      // comment. invitation.college_id, already proven authentic by the
+      // token lookup above, is the one and only source of tenant scope
+      // for the rest of this request.
+      await openTenantTransaction(req, res, invitation.college_id);
 
-    let user;
-    try {
-      user = await authService.acceptInvitation(req.dbClient, invitation, { username, password });
-    } catch (err) {
-      if (err instanceof authService.InvitationUsernameConflictError) {
-        await req.rollbackTransaction();
-        res.status(409).json({ detail: err.message });
-        return;
+      let user;
+      try {
+        user = await authService.acceptInvitation(req.dbClient, invitation, { username, password });
+      } catch (err) {
+        if (err instanceof authService.InvitationUsernameConflictError) {
+          await req.rollbackTransaction();
+          res.status(409).json({ detail: err.message });
+          return;
+        }
+        if (err instanceof authService.PasswordResetValidationError) {
+          await req.rollbackTransaction();
+          res.status(400).json({ detail: err.message });
+          return;
+        }
+        throw err;
       }
-      if (err instanceof authService.PasswordResetValidationError) {
-        await req.rollbackTransaction();
-        res.status(400).json({ detail: err.message });
-        return;
-      }
-      throw err;
-    }
 
-    res.status(201).json({
-      user_id: user.id,
-      college_id: user.college_id,
-      username: user.username,
-      role: user.role,
-    });
-  }));
+      res.status(201).json({
+        user_id: user.id,
+        college_id: user.college_id,
+        username: user.username,
+        role: user.role,
+      });
+    }),
+  );
 
   return router;
 }
 
 module.exports = createInvitationsRouter;
+module.exports.schemas = {
+  '/invitations/accept': { post: acceptInvitationSchema },
+};

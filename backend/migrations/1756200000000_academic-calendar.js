@@ -44,7 +44,9 @@ exports.up = (pgm) => {
     )
   `);
 
-  pgm.sql('CREATE INDEX academic_calendar_events_college_start_idx ON academic_calendar_events (college_id, start_date)');
+  pgm.sql(
+    'CREATE INDEX academic_calendar_events_college_start_idx ON academic_calendar_events (college_id, start_date)',
+  );
 
   pgm.sql('ALTER TABLE academic_calendar_events ENABLE ROW LEVEL SECURITY');
   pgm.sql('ALTER TABLE academic_calendar_events FORCE ROW LEVEL SECURITY');

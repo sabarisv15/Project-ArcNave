@@ -126,9 +126,9 @@ export function buildSeatsFor(classes, { overrides = {}, defaultState = 'active'
       classId: cls.id,
       departmentId: cls.departmentId,
       state,
-      holderId: state === 'active' ? override?.holderId ?? defaultHolderFor(cls, index) : null,
-      invitedEmail: state === 'invite_pending' ? override?.invitedEmail ?? null : null,
-      since: state === 'active' ? override?.since ?? '02 Jul 2026' : null,
+      holderId: state === 'active' ? (override?.holderId ?? defaultHolderFor(cls, index)) : null,
+      invitedEmail: state === 'invite_pending' ? (override?.invitedEmail ?? null) : null,
+      since: state === 'active' ? (override?.since ?? '02 Jul 2026') : null,
       history: override?.history ?? [],
     };
   });
@@ -322,8 +322,8 @@ export const HOD_SEATS = PROVISIONED_DEPARTMENTS.map((d) => {
   return {
     departmentId: d.id,
     state,
-    holderId: state === 'active' ? HOD_HOLDERS[d.id] ?? null : null,
-    invitedEmail: state === 'invite_pending' ? override?.invitedEmail ?? null : null,
+    holderId: state === 'active' ? (HOD_HOLDERS[d.id] ?? null) : null,
+    invitedEmail: state === 'invite_pending' ? (override?.invitedEmail ?? null) : null,
     history: override?.history ?? [],
   };
 });
@@ -441,10 +441,10 @@ export function level2Seat(provisioning = PROVISIONING) {
   return {
     key: LEVEL_2,
     state,
-    holderName: state === 'active' ? occupancy.holderName ?? null : null,
-    holderDesignation: state === 'active' ? occupancy.holderDesignation ?? null : null,
-    since: state === 'active' ? occupancy.since ?? null : null,
-    invitedEmail: state === 'invite_pending' ? occupancy.invitedEmail ?? null : null,
+    holderName: state === 'active' ? (occupancy.holderName ?? null) : null,
+    holderDesignation: state === 'active' ? (occupancy.holderDesignation ?? null) : null,
+    since: state === 'active' ? (occupancy.since ?? null) : null,
+    invitedEmail: state === 'invite_pending' ? (occupancy.invitedEmail ?? null) : null,
   };
 }
 

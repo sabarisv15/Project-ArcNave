@@ -3,8 +3,7 @@ import { DEPARTMENT_ID, DEPT_CLASSES } from '../lib/departmentData';
 import { classHealth } from '../lib/departmentSignals';
 import { mean } from '../lib/rosterData';
 import { attendanceLiveFor, isTimetableReady, timetableStateOfClass } from '../lib/timetableState';
-import { useAcademicRoster } from '../store/AcademicRosterProvider';
-import { useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import { useAcademicRoster, useInstitutionalLifecycle } from '@/features/institution';
 
 /**
  * The department's active classes, resolved against everything that can move.

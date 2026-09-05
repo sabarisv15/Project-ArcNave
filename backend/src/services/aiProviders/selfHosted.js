@@ -22,7 +22,12 @@ const { LlmNotConfiguredError, LlmRequestError, AiProviderCapabilityError } = re
 const { withRetry } = require('./retry');
 const { iterateSseLines } = require('./sse');
 const {
-  fetchWithTimeout, parseJsonResponse, extractOpenAiCompatibleUsage, buildOpenAiCompatiblePriorTurnMessages,
+  fetchWithTimeout,
+  parseJsonResponse,
+  extractOpenAiCompatibleUsage,
+  buildOpenAiCompatiblePriorTurnMessages,
+  buildOpenAiCompatibleHistoryMessages,
+  responseFormatFor,
 } = require('./openAiCompatibleUtils');
 const { flattenToPrompts } = require('../aiContextAssembly');
 
@@ -54,33 +59,46 @@ async function postJson(cfg, path, body) {
   const headers = { 'content-type': 'application/json' };
   if (cfg.apiKey) headers.authorization = `Bearer ${cfg.apiKey}`;
 
-  const response = await withRetry(() => fetchWithTimeout({
-    url: `${cfg.baseUrl}${path}`,
-    headers,
-    body,
-    timeoutMs: REQUEST_TIMEOUT_MS,
-    providerLabel: 'self-hosted LLM provider',
-  }));
+  const response = await withRetry(() =>
+    fetchWithTimeout({
+      url: `${cfg.baseUrl}${path}`,
+      headers,
+      body,
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      providerLabel: 'self-hosted LLM provider',
+    }),
+  );
 
   return parseJsonResponse(response, 'self-hosted LLM provider');
 }
 
 // Token/cost telemetry (P1.1) — see openai.js's own comment; same
 // shape, same OpenAI-compatible `usage` block.
+// P3 1.12 — "forced-format replies only half-supported ... only two
+// providers enforce it natively." responseSchema used to be silently
+// dropped here (flattenToPrompts returns it, but this function never
+// read it) — now forwarded as the same `response_format` shape
+// openai.js/vertexMaas.js send, since a self-hosted deployment is
+// defined (this file's own header comment) as speaking the identical
+// OpenAI-compatible convention. A server that doesn't understand the
+// field ignores it — see responseFormatFor's own comment.
 async function completeWithMeta(cfg, arcnaveContext) {
-  const { systemPrompt, userPrompt } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, responseSchema, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no self-hosted LLM provider is configured for this college (missing baseUrl)');
   }
 
+  const responseFormat = responseFormatFor(responseSchema);
   const payload = await postJson(cfg, '/chat/completions', {
     model: cfg.model,
     messages: [
       { role: 'system', content: systemPrompt },
+      ...buildOpenAiCompatibleHistoryMessages(historyTurns),
       { role: 'user', content: userPrompt },
     ],
     max_tokens: MAX_TOKENS,
     temperature: 0.2,
+    ...(responseFormat ? { response_format: responseFormat } : {}),
   });
 
   const choice = payload && Array.isArray(payload.choices) ? payload.choices[0] : null;
@@ -110,7 +128,7 @@ async function complete(cfg, prompts) {
 // ignores the unrecognized `stream_options` field simply never calls
 // onUsage, degrading to "no usage known" rather than an error.
 async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
-  const { systemPrompt, userPrompt } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no self-hosted LLM provider is configured for this college (missing baseUrl)');
   }
@@ -129,6 +147,7 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
           model: cfg.model,
           messages: [
             { role: 'system', content: systemPrompt },
+            ...buildOpenAiCompatibleHistoryMessages(historyTurns),
             { role: 'user', content: userPrompt },
           ],
           max_tokens: MAX_TOKENS,
@@ -160,7 +179,8 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
     } catch {
       continue;
     }
-    const delta = event && event.choices && event.choices[0] && event.choices[0].delta && event.choices[0].delta.content;
+    const delta =
+      event && event.choices && event.choices[0] && event.choices[0].delta && event.choices[0].delta.content;
     if (typeof delta === 'string' && delta.length > 0) {
       full += delta;
       onDelta(delta);
@@ -184,7 +204,7 @@ async function completeStream(cfg, arcnaveContext, onDelta, onUsage) {
 const buildPriorTurnMessages = buildOpenAiCompatiblePriorTurnMessages;
 
 async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
-  const { systemPrompt, userPrompt, tools } = flattenToPrompts(arcnaveContext);
+  const { systemPrompt, userPrompt, tools, historyTurns } = flattenToPrompts(arcnaveContext);
   if (!isConfigured(cfg)) {
     throw new LlmNotConfiguredError('no self-hosted LLM provider is configured for this college (missing baseUrl)');
   }
@@ -193,6 +213,7 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
     model: cfg.model,
     messages: [
       { role: 'system', content: systemPrompt },
+      ...buildOpenAiCompatibleHistoryMessages(historyTurns),
       { role: 'user', content: userPrompt },
       ...buildPriorTurnMessages(priorTurns),
     ],
@@ -223,7 +244,12 @@ async function completeWithTools(cfg, arcnaveContext, priorTurns = []) {
     // ADR-030 P0 telemetry — see gemini.js's own equivalent comment.
     const usage = extractOpenAiCompatibleUsage(payload && payload.usage);
     return {
-      type: 'tool_call', toolName: fn.name, arguments: toolArguments, callId: toolCalls[0].id, rawToolCall: toolCalls[0], usage,
+      type: 'tool_call',
+      toolName: fn.name,
+      arguments: toolArguments,
+      callId: toolCalls[0].id,
+      rawToolCall: toolCalls[0],
+      usage,
     };
   }
 
@@ -264,7 +290,9 @@ async function embed(cfg, texts, { inputType } = {}) {
 // convention this codebase can assume — honest limitation, same
 // AiProviderCapabilityError shape claude.js's own missing embed() uses.
 async function generateImage() {
-  throw new AiProviderCapabilityError('this self-hosted provider has no image-generation endpoint configured — configure a different provider for this feature');
+  throw new AiProviderCapabilityError(
+    'this self-hosted provider has no image-generation endpoint configured — configure a different provider for this feature',
+  );
 }
 
 module.exports = {

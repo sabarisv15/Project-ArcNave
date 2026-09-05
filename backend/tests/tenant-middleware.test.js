@@ -73,10 +73,10 @@ async function seedTwoColleges(adminPool) {
   const tenantA = { collegeId: `tma${suffix}`, subdomain: `tenanta${suffix}` };
   const tenantB = { collegeId: `tmb${suffix}`, subdomain: `tenantb${suffix}` };
   for (const t of [tenantA, tenantB]) {
-    await adminPool.query(
-      'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-      [t.collegeId, t.subdomain],
-    );
+    await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+      t.collegeId,
+      t.subdomain,
+    ]);
   }
   return { tenantA, tenantB };
 }
@@ -108,7 +108,7 @@ test('tenant middleware', async (t) => {
         '/_test_only/partial-write-then-throw',
         asyncHandler(async (req) => {
           await req.dbClient.query(
-            "INSERT INTO configurations (college_id, category, configuration) " +
+            'INSERT INTO configurations (college_id, category, configuration) ' +
               "VALUES (current_setting('app.current_tenant', true), 'rollback_proof', '{}')",
           );
           throw new Error('Intentional failure after a partial write — proving rollback');
@@ -188,10 +188,6 @@ test('tenant middleware', async (t) => {
       "SELECT 1 FROM configurations WHERE college_id = $1 AND category = 'rollback_proof'",
       [tenantA.collegeId],
     );
-    assert.equal(
-      check.rowCount,
-      0,
-      'the INSERT before the throw was persisted — rollback did not actually happen',
-    );
+    assert.equal(check.rowCount, 0, 'the INSERT before the throw was persisted — rollback did not actually happen');
   });
 });

@@ -82,7 +82,7 @@ test('buildActorContextForIdentity maps an Institutional Class Tutor identityCon
   });
 });
 
-test('buildActorContextForIdentity maps an Institutional HOD Position Account identityContext (department scope, independent of occupant\'s own personal scope)', () => {
+test("buildActorContextForIdentity maps an Institutional HOD Position Account identityContext (department scope, independent of occupant's own personal scope)", () => {
   const identityContext = {
     userId: 'occupant-42',
     role: 'hod',

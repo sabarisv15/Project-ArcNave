@@ -20,18 +20,17 @@ async function upsert(client, { collegeId, userId, preferenceKey, value }) {
 }
 
 async function findByUserAndKey(client, userId, preferenceKey) {
-  const result = await client.query(
-    'SELECT * FROM user_preferences WHERE user_id = $1 AND preference_key = $2',
-    [userId, preferenceKey],
-  );
+  const result = await client.query('SELECT * FROM user_preferences WHERE user_id = $1 AND preference_key = $2', [
+    userId,
+    preferenceKey,
+  ]);
   return result.rows[0] || null;
 }
 
 async function listByUser(client, userId) {
-  const result = await client.query(
-    'SELECT * FROM user_preferences WHERE user_id = $1 ORDER BY preference_key',
-    [userId],
-  );
+  const result = await client.query('SELECT * FROM user_preferences WHERE user_id = $1 ORDER BY preference_key', [
+    userId,
+  ]);
   return result.rows;
 }
 
@@ -44,5 +43,8 @@ async function remove(client, userId, preferenceKey) {
 }
 
 module.exports = {
-  upsert, findByUserAndKey, listByUser, remove,
+  upsert,
+  findByUserAndKey,
+  listByUser,
+  remove,
 };

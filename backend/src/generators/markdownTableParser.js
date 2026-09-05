@@ -22,7 +22,11 @@ function isSeparatorRow(line) {
 }
 
 function slugify(label, index) {
-  const slug = String(label).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const slug = String(label)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
   return slug || `column_${index + 1}`;
 }
 
@@ -44,7 +48,9 @@ function parseTableAt(lines, startIndex) {
   while (i < lines.length && PIPE_ROW.test(lines[i])) {
     const cells = splitRow(lines[i]);
     const row = {};
-    columns.forEach((col, index) => { row[col.id] = cells[index] !== undefined ? cells[index] : ''; });
+    columns.forEach((col, index) => {
+      row[col.id] = cells[index] !== undefined ? cells[index] : '';
+    });
     rows.push(row);
     i += 1;
   }

@@ -77,9 +77,15 @@ function requestContextMiddleware(req, res, next) {
   // could reach Postgres before the enqueuing transaction's COMMIT did).
   // A Symbol key, not a plain field — see AFTER_COMMIT_CALLBACKS's own
   // comment for why (kept out of the generic per-request log payload).
-  runWithRequestContext({
-    requestId, collegeId: null, [AFTER_COMMIT_CALLBACKS]: [], [AFTER_ROLLBACK_CALLBACKS]: [],
-  }, () => next());
+  runWithRequestContext(
+    {
+      requestId,
+      collegeId: null,
+      [AFTER_COMMIT_CALLBACKS]: [],
+      [AFTER_ROLLBACK_CALLBACKS]: [],
+    },
+    () => next(),
+  );
 }
 
 module.exports = { requestContextMiddleware };

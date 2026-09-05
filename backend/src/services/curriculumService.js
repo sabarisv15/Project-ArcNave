@@ -51,16 +51,28 @@ async function createRegulation(client, { collegeId, name, description }, { acto
 
   let regulation;
   try {
-    regulation = await regulationRepository.create(client, { collegeId, name, description, createdByUserId: actorUserId });
+    regulation = await regulationRepository.create(client, {
+      collegeId,
+      name,
+      description,
+      createdByUserId: actorUserId,
+    });
   } catch (err) {
     if (err.code === '23505' && err.constraint === 'regulations_college_name_key') {
-      throw new RegulationNameConflictError(`a regulation named ${JSON.stringify(name)} already exists for this college`);
+      throw new RegulationNameConflictError(
+        `a regulation named ${JSON.stringify(name)} already exists for this college`,
+      );
     }
     throw err;
   }
 
   await auditLogRepository.createAuditLogEntry(client, {
-    collegeId, userId: actorUserId, action: 'regulation_created', entity: 'regulations', entityId: regulation.id, metadata: null,
+    collegeId,
+    userId: actorUserId,
+    action: 'regulation_created',
+    entity: 'regulations',
+    entityId: regulation.id,
+    metadata: null,
   });
 
   return regulation;
@@ -74,9 +86,24 @@ async function listRegulations(client, { limit, offset } = {}) {
   return regulationRepository.list(client, { limit, offset });
 }
 
-async function createSubject(client, {
-  collegeId, regulationId, subjectCode, subjectName, semester, credits, lectureHours, tutorialHours, practicalHours, subjectType, prerequisites, sourceDocumentId,
-}, { actorUserId } = {}) {
+async function createSubject(
+  client,
+  {
+    collegeId,
+    regulationId,
+    subjectCode,
+    subjectName,
+    semester,
+    credits,
+    lectureHours,
+    tutorialHours,
+    practicalHours,
+    subjectType,
+    prerequisites,
+    sourceDocumentId,
+  },
+  { actorUserId } = {},
+) {
   if (!regulationId || !subjectCode || !subjectName || !semester) {
     throw new SubjectValidationError('regulationId, subjectCode, subjectName, and semester are required');
   }
@@ -89,17 +116,35 @@ async function createSubject(client, {
   let subject;
   try {
     subject = await subjectRepository.create(client, {
-      collegeId, regulationId, subjectCode, subjectName, semester, credits, lectureHours, tutorialHours, practicalHours, subjectType, prerequisites, sourceDocumentId,
+      collegeId,
+      regulationId,
+      subjectCode,
+      subjectName,
+      semester,
+      credits,
+      lectureHours,
+      tutorialHours,
+      practicalHours,
+      subjectType,
+      prerequisites,
+      sourceDocumentId,
     });
   } catch (err) {
     if (err.code === '23505' && err.constraint === 'subjects_regulation_subject_code_key') {
-      throw new SubjectCodeConflictError(`subject code ${JSON.stringify(subjectCode)} already exists in this regulation`);
+      throw new SubjectCodeConflictError(
+        `subject code ${JSON.stringify(subjectCode)} already exists in this regulation`,
+      );
     }
     throw err;
   }
 
   await auditLogRepository.createAuditLogEntry(client, {
-    collegeId, userId: actorUserId, action: 'subject_created', entity: 'subjects', entityId: subject.id, metadata: null,
+    collegeId,
+    userId: actorUserId,
+    action: 'subject_created',
+    entity: 'subjects',
+    entityId: subject.id,
+    metadata: null,
   });
 
   return subject;
@@ -119,7 +164,9 @@ async function updateSubject(client, id, fields, { userId } = {}) {
     subject = await subjectRepository.update(client, id, fields);
   } catch (err) {
     if (err.code === '23505' && err.constraint === 'subjects_regulation_subject_code_key') {
-      throw new SubjectCodeConflictError(`subject code ${JSON.stringify(fields.subjectCode)} already exists in this regulation`);
+      throw new SubjectCodeConflictError(
+        `subject code ${JSON.stringify(fields.subjectCode)} already exists in this regulation`,
+      );
     }
     throw err;
   }
@@ -128,7 +175,12 @@ async function updateSubject(client, id, fields, { userId } = {}) {
   }
 
   await auditLogRepository.createAuditLogEntry(client, {
-    collegeId: subject.college_id, userId, action: 'subject_updated', entity: 'subjects', entityId: id, metadata: null,
+    collegeId: subject.college_id,
+    userId,
+    action: 'subject_updated',
+    entity: 'subjects',
+    entityId: id,
+    metadata: null,
   });
   return subject;
 }
@@ -139,7 +191,12 @@ async function removeSubject(client, id, { userId } = {}) {
     return null;
   }
   await auditLogRepository.createAuditLogEntry(client, {
-    collegeId: subject.college_id, userId, action: 'subject_removed', entity: 'subjects', entityId: id, metadata: null,
+    collegeId: subject.college_id,
+    userId,
+    action: 'subject_removed',
+    entity: 'subjects',
+    entityId: id,
+    metadata: null,
   });
   return subject;
 }
@@ -152,7 +209,12 @@ async function removeSubject(client, id, { userId } = {}) {
 // submitFeeStructureApproval gives for fee_structures: nothing scopes
 // a student's regulation to one department the way Staff's
 // HOD->Principal chain needs a real HOD to resolve.
-async function requestCurriculumMigration(client, studentId, toRegulationId, { requestedByUserId, origin = 'human' } = {}) {
+async function requestCurriculumMigration(
+  client,
+  studentId,
+  toRegulationId,
+  { requestedByUserId, origin = 'human' } = {},
+) {
   if (!requestedByUserId) {
     throw new CurriculumMigrationValidationError('requestedByUserId is required');
   }
@@ -190,7 +252,9 @@ async function loadPendingCurriculumMigration(client, studentId) {
 
   const pending = await workflowService.findPendingForEntity(client, 'curriculum_migration', studentId);
   if (pending === null) {
-    throw new CurriculumMigrationNoPendingRequestError(`student ${JSON.stringify(studentId)} has no pending curriculum migration request`);
+    throw new CurriculumMigrationNoPendingRequestError(
+      `student ${JSON.stringify(studentId)} has no pending curriculum migration request`,
+    );
   }
 
   return { student, pending };

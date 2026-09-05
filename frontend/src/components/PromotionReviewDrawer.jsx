@@ -1,16 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { AlertTriangle, Lock } from 'lucide-react';
-import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from './AttendanceActionDrawer';
+import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '@/components/ui/Drawer';
 import { DEPARTMENT } from '../lib/departmentData';
-import {
-  PROMOTION_OUTCOMES,
-  REVIEW_CONTEXT_NOTE,
-  priorClassIndex,
-  targetSectionsFor,
-} from '../lib/promotionData';
-import { LIFECYCLE_REJECTION, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
-import { useAcademicTerm } from '../store/AcademicTermProvider';
+import { PROMOTION_OUTCOMES, REVIEW_CONTEXT_NOTE, priorClassIndex, targetSectionsFor } from '../lib/promotionData';
+import { LIFECYCLE_REJECTION, useInstitutionalLifecycle, useAcademicTerm } from '@/features/institution';
 import { cn } from '../lib/utils';
 
 /**
@@ -52,7 +46,7 @@ function OutcomePill({ outcome, className }) {
       className={cn(
         'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
         def.tone,
-        className
+        className,
       )}
     >
       {def.resultLabel}
@@ -74,17 +68,11 @@ export function PromotionReviewDrawer({ candidate, onClose }) {
    * one it ran in the term this module was loaded in.
    */
   const priorClassById = useMemo(() => priorClassIndex(priorClasses), [priorClasses]);
-  const resolvers = useMemo(
-    () => ({ priorClassById, activeClassById }),
-    [priorClassById, activeClassById]
-  );
+  const resolvers = useMemo(() => ({ priorClassById, activeClassById }), [priorClassById, activeClassById]);
 
   const decided = candidate ? reviewOf(candidate.id) : null;
   const priorClass = candidate ? priorClassById[candidate.priorClassId] : null;
-  const sections = useMemo(
-    () => (candidate ? targetSectionsFor(candidate, resolvers) : []),
-    [candidate, resolvers]
-  );
+  const sections = useMemo(() => (candidate ? targetSectionsFor(candidate, resolvers) : []), [candidate, resolvers]);
 
   useEffect(() => {
     // A different student starts from their own recommendation, never from the
@@ -100,7 +88,7 @@ export function PromotionReviewDrawer({ candidate, onClose }) {
     // `reviews` is a dependency because a decision taken elsewhere consumes the
     // capacity this preview is reporting.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [candidate, outcome, section, decided, reviews, previewOutcome]
+    [candidate, outcome, section, decided, reviews, previewOutcome],
   );
 
   function confirm() {
@@ -129,9 +117,7 @@ export function PromotionReviewDrawer({ candidate, onClose }) {
       open={!!candidate}
       onOpenChange={(o) => !o && onClose()}
       title={candidate?.name ?? ''}
-      contextLine={
-        candidate ? `${priorClass?.code ?? ''} · Roll ${candidate.roll} · ${candidate.reg}` : ''
-      }
+      contextLine={candidate ? `${priorClass?.code ?? ''} · Roll ${candidate.roll} · ${candidate.reg}` : ''}
       description="Semester transition review"
       width="sm:w-[520px]"
     >
@@ -182,11 +168,7 @@ export function PromotionReviewDrawer({ candidate, onClose }) {
                       }
                     />
                   ) : (
-                    <Row
-                      label="Placement"
-                      value="None created"
-                      hint={PROMOTION_OUTCOMES[decided.outcome].hint}
-                    />
+                    <Row label="Placement" value="None created" hint={PROMOTION_OUTCOMES[decided.outcome].hint} />
                   )}
                   <Row
                     label="Student id"
@@ -200,11 +182,7 @@ export function PromotionReviewDrawer({ candidate, onClose }) {
               <>
                 <div>
                   <div className="text-[11px] font-[500] tracking-[.05em] uppercase text-ink-muted">Outcome</div>
-                  <div
-                    role="radiogroup"
-                    aria-label="Promotion outcome"
-                    className="mt-[6px] grid grid-cols-2 gap-[6px]"
-                  >
+                  <div role="radiogroup" aria-label="Promotion outcome" className="mt-[6px] grid grid-cols-2 gap-[6px]">
                     {Object.values(PROMOTION_OUTCOMES).map((def) => (
                       <button
                         key={def.key}
@@ -214,9 +192,7 @@ export function PromotionReviewDrawer({ candidate, onClose }) {
                         onClick={() => setOutcome(def.key)}
                         className={cn(
                           'text-left px-[10px] py-[8px] border rounded-[12px] bg-paper font-sans cursor-pointer transition-colors duration-200',
-                          outcome === def.key
-                            ? 'border-accent-line bg-accent-soft'
-                            : 'border-line hover:bg-tint2'
+                          outcome === def.key ? 'border-accent-line bg-accent-soft' : 'border-line hover:bg-tint2',
                         )}
                       >
                         <span className="block text-[13px] font-[500] text-ink">{def.label}</span>
@@ -293,8 +269,8 @@ export function PromotionReviewDrawer({ candidate, onClose }) {
                         {preview?.target?.code}
                         <span className="block mt-[2px] text-[11.5px] text-ink-faint">
                           Semester {preview?.target?.semester} · section {preview?.target?.section} ·{' '}
-                          {preview?.fill?.enrolled} of {preview?.fill?.capacity} filled,{' '}
-                          {preview?.fill?.headroom} free · the student keeps id {candidate.id}
+                          {preview?.fill?.enrolled} of {preview?.fill?.capacity} filled, {preview?.fill?.headroom} free
+                          · the student keeps id {candidate.id}
                         </span>
                       </p>
                     )
@@ -321,11 +297,7 @@ export function PromotionReviewDrawer({ candidate, onClose }) {
             />
           ) : (
             <DrawerRail
-              meta={
-                <span className="text-[11.5px] text-ink-faint">
-                  Nothing is applied until you confirm.
-                </span>
-              }
+              meta={<span className="text-[11.5px] text-ink-faint">Nothing is applied until you confirm.</span>}
             >
               <button type="button" className={GHOST_BTN} onClick={onClose}>
                 Cancel

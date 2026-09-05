@@ -1,8 +1,6 @@
-import { render, screen, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import * as Tooltip from '@radix-ui/react-tooltip';
+import { screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { renderApp as renderAppShared } from './renderApp';
 
 /**
  * What a `/delegated` URL actually renders in an institution that has no
@@ -32,25 +30,8 @@ vi.mock('../lib/delegatedScope', async (importOriginal) => {
   };
 });
 
-const { default: App } = await import('../App');
-const { WorkspaceProvider } = await import('../store/WorkspaceProvider');
-const { ComposerProvider } = await import('../store/ComposerProvider');
-
-function renderApp(route) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[route]}>
-        <Tooltip.Provider>
-          <WorkspaceProvider>
-            <ComposerProvider>
-              <App />
-            </ComposerProvider>
-          </WorkspaceProvider>
-        </Tooltip.Provider>
-      </MemoryRouter>
-    </QueryClientProvider>
-  );
+function renderApp(route, options) {
+  return renderAppShared(route, options);
 }
 
 describe('a delegated deep link in an institution with no delegated seat', () => {

@@ -4,9 +4,7 @@
 // (studentService's job). "Currently flagged" is derived (newest row
 // with cleared_at IS NULL), never a separate boolean anywhere.
 
-async function create(client, {
-  collegeId, studentId, remark, flaggedByUserId,
-}) {
+async function create(client, { collegeId, studentId, remark, flaggedByUserId }) {
   const result = await client.query(
     `INSERT INTO student_flags (college_id, student_id, remark, flagged_by_user_id)
      VALUES ($1, $2, $3, $4)
@@ -47,10 +45,9 @@ async function clear(client, id, { clearedByUserId }) {
 }
 
 async function listHistoryForStudent(client, studentId) {
-  const result = await client.query(
-    'SELECT * FROM student_flags WHERE student_id = $1 ORDER BY flagged_at DESC',
-    [studentId],
-  );
+  const result = await client.query('SELECT * FROM student_flags WHERE student_id = $1 ORDER BY flagged_at DESC', [
+    studentId,
+  ]);
   return result.rows;
 }
 
@@ -71,5 +68,10 @@ async function findActiveByStudentIds(client, studentIds) {
 }
 
 module.exports = {
-  create, findById, findActiveByStudentId, clear, listHistoryForStudent, findActiveByStudentIds,
+  create,
+  findById,
+  findActiveByStudentId,
+  clear,
+  listHistoryForStudent,
+  findActiveByStudentIds,
 };

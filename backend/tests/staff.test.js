@@ -91,10 +91,10 @@ function hostFor(subdomain) {
 async function seedTenant(adminPool, label) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const college = { collegeId: `stf${label}${suffix}`, subdomain: `stftenant${label}${suffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [college.collegeId, college.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    college.collegeId,
+    college.subdomain,
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userIds = {};
   // 'subjectuser' is deliberately NOT the same account as any actor
@@ -102,7 +102,7 @@ async function seedTenant(adminPool, label) {
   // whose profile a principal is creating, the real HOD/Principal
   // Add-Staff-modal flow this slice is grounded against.
   for (const username of ['principaluser', 'staffuser', 'subjectuser', 'subjectuser2']) {
-    const role = username === 'staffuser' ? 'staff' : (username === 'principaluser' ? 'principal' : 'staff');
+    const role = username === 'staffuser' ? 'staff' : username === 'principaluser' ? 'principal' : 'staff';
     // eslint-disable-next-line no-await-in-loop
     const result = await adminPool.query(
       `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
@@ -159,12 +159,10 @@ test('staff', async (t) => {
   });
 
   async function login(college, username) {
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/auth/login',
-      'POST',
-      { headers: { host: hostFor(college.subdomain) }, body: { username, password: PASSWORD } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/auth/login', 'POST', {
+      headers: { host: hostFor(college.subdomain) },
+      body: { username, password: PASSWORD },
+    });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -180,7 +178,9 @@ test('staff', async (t) => {
   await t.test('create returns 201 with the created row, snake_case', async () => {
     const token = await login(collegeA, 'principaluser');
     const resp = await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), {
-      user_id: collegeA.userIds.subjectuser, full_name: 'Priya Prof', designation: 'Professor',
+      user_id: collegeA.userIds.subjectuser,
+      full_name: 'Priya Prof',
+      designation: 'Professor',
     });
     assert.equal(resp.status, 201);
     assert.equal(resp.body.full_name, 'Priya Prof');
@@ -214,15 +214,10 @@ test('staff', async (t) => {
     assert.equal(mailedCredentials.username, username);
     assert.ok(mailedCredentials.password);
 
-    const hodLogin = await requestJson(
-      baseUrl,
-      '/api/v1/auth/login',
-      'POST',
-      {
-        headers: { host: hostFor(collegeA.subdomain) },
-        body: { username, password: mailedCredentials.password },
-      },
-    );
+    const hodLogin = await requestJson(baseUrl, '/api/v1/auth/login', 'POST', {
+      headers: { host: hostFor(collegeA.subdomain) },
+      body: { username, password: mailedCredentials.password },
+    });
     assert.equal(hodLogin.status, 200);
 
     const second = await post(baseUrl, '/api/v1/staff/hod-accounts', headersFor(collegeA, token), {
@@ -250,18 +245,23 @@ test('staff', async (t) => {
     assert.equal(resp.status, 400);
   });
 
-  await t.test('create on a duplicate user_id within the same tenant is a real 409, from a real DB constraint', async () => {
-    const token = await login(collegeA, 'principaluser');
-    const first = await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), {
-      user_id: collegeA.userIds.subjectuser2, full_name: 'First Profile',
-    });
-    assert.equal(first.status, 201);
+  await t.test(
+    'create on a duplicate user_id within the same tenant is a real 409, from a real DB constraint',
+    async () => {
+      const token = await login(collegeA, 'principaluser');
+      const first = await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), {
+        user_id: collegeA.userIds.subjectuser2,
+        full_name: 'First Profile',
+      });
+      assert.equal(first.status, 201);
 
-    const dup = await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), {
-      user_id: collegeA.userIds.subjectuser2, full_name: 'Second Profile For Same Account',
-    });
-    assert.equal(dup.status, 409);
-  });
+      const dup = await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), {
+        user_id: collegeA.userIds.subjectuser2,
+        full_name: 'Second Profile For Same Account',
+      });
+      assert.equal(dup.status, 409);
+    },
+  );
 
   await t.test('create on a duplicate staff_code within the same tenant is a real 409', async () => {
     const token = await login(collegeA, 'principaluser');
@@ -281,12 +281,16 @@ test('staff', async (t) => {
     );
 
     const first = await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), {
-      user_id: u1.rows[0].id, full_name: 'Coded One', staff_code: 'DUPCODE',
+      user_id: u1.rows[0].id,
+      full_name: 'Coded One',
+      staff_code: 'DUPCODE',
     });
     assert.equal(first.status, 201);
 
     const dup = await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), {
-      user_id: u2.rows[0].id, full_name: 'Coded Two', staff_code: 'DUPCODE',
+      user_id: u2.rows[0].id,
+      full_name: 'Coded Two',
+      staff_code: 'DUPCODE',
     });
     assert.equal(dup.status, 409);
   });
@@ -294,7 +298,8 @@ test('staff', async (t) => {
   await t.test('create with a user_id that does not exist returns 404, not a 500', async () => {
     const token = await login(collegeA, 'principaluser');
     const resp = await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), {
-      user_id: crypto.randomUUID(), full_name: 'Ghost Staff',
+      user_id: crypto.randomUUID(),
+      full_name: 'Ghost Staff',
     });
     assert.equal(resp.status, 404);
   });
@@ -308,7 +313,9 @@ test('staff', async (t) => {
       [collegeA.collegeId, passwordHash],
     );
     const resp = await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), {
-      user_id: u.rows[0].id, full_name: 'No Aadhaar Here', aadhaar_number: '1234-5678-9012',
+      user_id: u.rows[0].id,
+      full_name: 'No Aadhaar Here',
+      aadhaar_number: '1234-5678-9012',
     });
     assert.equal(resp.status, 201);
     assert.equal('aadhaar_number' in resp.body, false);
@@ -323,7 +330,8 @@ test('staff', async (t) => {
       [collegeA.collegeId, passwordHash],
     );
     const created = await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), {
-      user_id: u.rows[0].id, full_name: 'Gettable Staff',
+      user_id: u.rows[0].id,
+      full_name: 'Gettable Staff',
     });
     const found = await get(baseUrl, `/api/v1/staff/${created.body.id}`, headersFor(collegeA, token));
     assert.equal(found.status, 200);
@@ -346,8 +354,14 @@ test('staff', async (t) => {
        VALUES ($1, 'listuser2', 'listuser2@example.com', $2, 'staff', true) RETURNING id`,
       [collegeA.collegeId, passwordHash],
     );
-    await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), { user_id: u1.rows[0].id, full_name: 'List One' });
-    await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), { user_id: u2.rows[0].id, full_name: 'List Two' });
+    await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), {
+      user_id: u1.rows[0].id,
+      full_name: 'List One',
+    });
+    await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), {
+      user_id: u2.rows[0].id,
+      full_name: 'List Two',
+    });
 
     const resp = await get(baseUrl, '/api/v1/staff?limit=1', headersFor(collegeA, token));
     assert.equal(resp.status, 200);
@@ -363,7 +377,8 @@ test('staff', async (t) => {
       [collegeA.collegeId, passwordHash],
     );
     const created = await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), {
-      user_id: u.rows[0].id, full_name: 'Before Update',
+      user_id: u.rows[0].id,
+      full_name: 'Before Update',
     });
     const updated = await put(baseUrl, `/api/v1/staff/${created.body.id}`, headersFor(collegeA, token), {
       full_name: 'After Update',
@@ -380,7 +395,7 @@ test('staff', async (t) => {
     assert.equal(resp.status, 404);
   });
 
-  await t.test('update onto another staff row\'s staff_code is a real 409, from a real DB constraint', async () => {
+  await t.test("update onto another staff row's staff_code is a real 409, from a real DB constraint", async () => {
     const token = await login(collegeA, 'principaluser');
     const passwordHash = await security.hashPassword(PASSWORD);
     const u1 = await adminPool.query(
@@ -394,10 +409,13 @@ test('staff', async (t) => {
       [collegeA.collegeId, passwordHash],
     );
     await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), {
-      user_id: u1.rows[0].id, full_name: 'Taken Code', staff_code: 'UPDCODE',
+      user_id: u1.rows[0].id,
+      full_name: 'Taken Code',
+      staff_code: 'UPDCODE',
     });
     const second = await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), {
-      user_id: u2.rows[0].id, full_name: 'Will Collide',
+      user_id: u2.rows[0].id,
+      full_name: 'Will Collide',
     });
 
     const resp = await put(baseUrl, `/api/v1/staff/${second.body.id}`, headersFor(collegeA, token), {
@@ -420,10 +438,12 @@ test('staff', async (t) => {
       [collegeA.collegeId, passwordHash],
     );
     const created = await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), {
-      user_id: original.rows[0].id, full_name: 'Immovable',
+      user_id: original.rows[0].id,
+      full_name: 'Immovable',
     });
     const updated = await put(baseUrl, `/api/v1/staff/${created.body.id}`, headersFor(collegeA, token), {
-      user_id: other.rows[0].id, full_name: 'Still Immovable',
+      user_id: other.rows[0].id,
+      full_name: 'Still Immovable',
     });
     assert.equal(updated.status, 200);
     assert.equal(updated.body.user_id, original.rows[0].id);
@@ -438,7 +458,8 @@ test('staff', async (t) => {
       [collegeA.collegeId, passwordHash],
     );
     const created = await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), {
-      user_id: u.rows[0].id, full_name: 'Deletable Staff',
+      user_id: u.rows[0].id,
+      full_name: 'Deletable Staff',
     });
 
     const firstDelete = await del(baseUrl, `/api/v1/staff/${created.body.id}`, headersFor(collegeA, token));
@@ -456,14 +477,16 @@ test('staff', async (t) => {
   await t.test('create is rejected for a non-principal role', async () => {
     const token = await login(collegeA, 'staffuser');
     const resp = await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), {
-      user_id: collegeA.userIds.subjectuser, full_name: 'Rbac Test',
+      user_id: collegeA.userIds.subjectuser,
+      full_name: 'Rbac Test',
     });
     assert.equal(resp.status, 403);
   });
 
   await t.test('create requires authentication', async () => {
     const resp = await post(baseUrl, '/api/v1/staff', headersFor(collegeA), {
-      user_id: collegeA.userIds.subjectuser, full_name: 'Rbac Test',
+      user_id: collegeA.userIds.subjectuser,
+      full_name: 'Rbac Test',
     });
     assert.equal(resp.status, 401);
   });
@@ -476,7 +499,8 @@ test('staff', async (t) => {
   await t.test('read is allowed for staff viewing their own profile, not just principal', async () => {
     const principalToken = await login(collegeA, 'principaluser');
     const created = await post(baseUrl, '/api/v1/staff', headersFor(collegeA, principalToken), {
-      user_id: collegeA.userIds.staffuser, full_name: 'Readable By Staff',
+      user_id: collegeA.userIds.staffuser,
+      full_name: 'Readable By Staff',
     });
 
     const staffToken = await login(collegeA, 'staffuser');
@@ -484,7 +508,7 @@ test('staff', async (t) => {
     assert.equal(resp.status, 200);
   });
 
-  await t.test('read is forbidden for staff viewing a colleague\'s profile', async () => {
+  await t.test("read is forbidden for staff viewing a colleague's profile", async () => {
     const principalToken = await login(collegeA, 'principaluser');
     const passwordHash = await security.hashPassword(PASSWORD);
     const u = await adminPool.query(
@@ -493,7 +517,8 @@ test('staff', async (t) => {
       [collegeA.collegeId, passwordHash],
     );
     const created = await post(baseUrl, '/api/v1/staff', headersFor(collegeA, principalToken), {
-      user_id: u.rows[0].id, full_name: 'Colleague Profile',
+      user_id: u.rows[0].id,
+      full_name: 'Colleague Profile',
     });
 
     const staffToken = await login(collegeA, 'staffuser');
@@ -524,10 +549,14 @@ test('staff', async (t) => {
     );
 
     const respA = await post(baseUrl, '/api/v1/staff', headersFor(collegeA, tokenA), {
-      user_id: subjectA.rows[0].id, full_name: 'Tenant A Staff', staff_code: 'SHARED01',
+      user_id: subjectA.rows[0].id,
+      full_name: 'Tenant A Staff',
+      staff_code: 'SHARED01',
     });
     const respB = await post(baseUrl, '/api/v1/staff', headersFor(collegeB, tokenB), {
-      user_id: subjectB.rows[0].id, full_name: 'Tenant B Staff', staff_code: 'SHARED01',
+      user_id: subjectB.rows[0].id,
+      full_name: 'Tenant B Staff',
+      staff_code: 'SHARED01',
     });
     assert.equal(respA.status, 201);
     assert.equal(respB.status, 201);
@@ -548,7 +577,8 @@ test('staff', async (t) => {
     );
 
     const resp = await post(baseUrl, '/api/v1/staff', headersFor(collegeA, token), {
-      user_id: subject.rows[0].id, full_name: 'Audited Staff',
+      user_id: subject.rows[0].id,
+      full_name: 'Audited Staff',
     });
     assert.equal(resp.status, 201);
 
@@ -586,63 +616,88 @@ test('staff', async (t) => {
     });
     const username = `invhod${crypto.randomUUID().slice(0, 8)}`;
     const created = await post(baseUrl, '/api/v1/staff/hod-accounts', headersFor(collegeA, principalToken), {
-      username, email: `${username}@example.com`, full_name: `Inviting HOD ${label}`, department_id: dept.rows[0].id,
+      username,
+      email: `${username}@example.com`,
+      full_name: `Inviting HOD ${label}`,
+      department_id: dept.rows[0].id,
     });
     emailMock.mock.restore();
     assert.equal(created.status, 201);
 
     const hodLogin = await requestJson(baseUrl, '/api/v1/auth/login', 'POST', {
-      headers: { host: hostFor(collegeA.subdomain) }, body: { username, password: mailedCredentials.password },
+      headers: { host: hostFor(collegeA.subdomain) },
+      body: { username, password: mailedCredentials.password },
     });
     assert.equal(hodLogin.status, 200);
     return { departmentId: dept.rows[0].id, token: hodLogin.body.access_token };
   }
 
-  await t.test('an hod invites staff by email, the invitee accepts, and the request lands Pending on the hod->principal chain', async () => {
-    const { departmentId, token: hodToken } = await seedInvitingHod('golden');
+  await t.test(
+    'an hod invites staff by email, the invitee accepts, and the request lands Pending on the hod->principal chain',
+    async () => {
+      const { departmentId, token: hodToken } = await seedInvitingHod('golden');
 
-    let invitationToken = null;
-    const inviteEmailMock = t.mock.method(notificationService, 'sendStaffInvitationEmail', async (client, args) => {
-      invitationToken = args.token;
-      return { status: 'stubbed' };
-    });
-    t.after(() => inviteEmailMock.mock.restore());
+      let invitationToken = null;
+      const inviteEmailMock = t.mock.method(notificationService, 'sendStaffInvitationEmail', async (client, args) => {
+        invitationToken = args.token;
+        return { status: 'stubbed' };
+      });
+      t.after(() => inviteEmailMock.mock.restore());
 
-    const inviteResp = await post(baseUrl, '/api/v1/staff/invitations', headersFor(collegeA, hodToken), {
-      email: 'newhire@example.com',
-    });
-    assert.equal(inviteResp.status, 201);
-    assert.equal(inviteResp.body.department_id, departmentId);
-    assert.ok(invitationToken);
+      const inviteResp = await post(baseUrl, '/api/v1/staff/invitations', headersFor(collegeA, hodToken), {
+        email: 'newhire@example.com',
+      });
+      assert.equal(inviteResp.status, 201);
+      assert.equal(inviteResp.body.department_id, departmentId);
+      assert.ok(invitationToken);
 
-    const acceptUsername = `newhire${crypto.randomUUID().slice(0, 8)}`;
-    const acceptResp = await post(baseUrl, '/api/v1/staff/invitations/accept', {}, {
-      token: invitationToken, username: acceptUsername, password: 'Str0ng!Pass', full_name: 'New Hire',
-    });
-    assert.equal(acceptResp.status, 201);
-    assert.equal(acceptResp.body.department_id, departmentId);
-    assert.ok(acceptResp.body.workflow_request_id);
+      const acceptUsername = `newhire${crypto.randomUUID().slice(0, 8)}`;
+      const acceptResp = await post(
+        baseUrl,
+        '/api/v1/staff/invitations/accept',
+        {},
+        {
+          token: invitationToken,
+          username: acceptUsername,
+          password: 'Str0ng!Pass',
+          full_name: 'New Hire',
+        },
+      );
+      assert.equal(acceptResp.status, 201);
+      assert.equal(acceptResp.body.department_id, departmentId);
+      assert.ok(acceptResp.body.workflow_request_id);
 
-    const userRow = await adminPool.query('SELECT is_active, role FROM users WHERE id = $1', [acceptResp.body.user_id]);
-    assert.equal(userRow.rows[0].is_active, false);
-    assert.equal(userRow.rows[0].role, 'staff');
+      const userRow = await adminPool.query('SELECT is_active, role FROM users WHERE id = $1', [
+        acceptResp.body.user_id,
+      ]);
+      assert.equal(userRow.rows[0].is_active, false);
+      assert.equal(userRow.rows[0].role, 'staff');
 
-    const wfRow = await adminPool.query(
-      'SELECT status, current_step, approver_chain FROM workflow_requests WHERE id = $1',
-      [acceptResp.body.workflow_request_id],
-    );
-    assert.equal(wfRow.rows[0].status, 'Pending');
-    assert.equal(wfRow.rows[0].current_step, 1);
-    assert.equal(wfRow.rows[0].approver_chain[0].role, 'hod');
-    assert.equal(wfRow.rows[0].approver_chain[1].role, 'principal');
+      const wfRow = await adminPool.query(
+        'SELECT status, current_step, approver_chain FROM workflow_requests WHERE id = $1',
+        [acceptResp.body.workflow_request_id],
+      );
+      assert.equal(wfRow.rows[0].status, 'Pending');
+      assert.equal(wfRow.rows[0].current_step, 1);
+      assert.equal(wfRow.rows[0].approver_chain[0].role, 'hod');
+      assert.equal(wfRow.rows[0].approver_chain[1].role, 'principal');
 
-    // Reusing the same, now-accepted token is rejected, not silently
-    // re-accepted a second time.
-    const reuseResp = await post(baseUrl, '/api/v1/staff/invitations/accept', {}, {
-      token: invitationToken, username: `reuse${crypto.randomUUID().slice(0, 6)}`, password: 'Str0ng!Pass', full_name: 'Reuse Attempt',
-    });
-    assert.equal(reuseResp.status, 401);
-  });
+      // Reusing the same, now-accepted token is rejected, not silently
+      // re-accepted a second time.
+      const reuseResp = await post(
+        baseUrl,
+        '/api/v1/staff/invitations/accept',
+        {},
+        {
+          token: invitationToken,
+          username: `reuse${crypto.randomUUID().slice(0, 6)}`,
+          password: 'Str0ng!Pass',
+          full_name: 'Reuse Attempt',
+        },
+      );
+      assert.equal(reuseResp.status, 401);
+    },
+  );
 
   await t.test('inviteStaff is forbidden for an ordinary staff actor who is not a real hod', async () => {
     const staffToken = await login(collegeA, 'staffuser');
@@ -653,9 +708,17 @@ test('staff', async (t) => {
   });
 
   await t.test('accept rejects an unknown/invalid token with 401', async () => {
-    const resp = await post(baseUrl, '/api/v1/staff/invitations/accept', {}, {
-      token: 'not-a-real-token', username: 'whoever', password: 'Str0ng!Pass', full_name: 'Whoever',
-    });
+    const resp = await post(
+      baseUrl,
+      '/api/v1/staff/invitations/accept',
+      {},
+      {
+        token: 'not-a-real-token',
+        username: 'whoever',
+        password: 'Str0ng!Pass',
+        full_name: 'Whoever',
+      },
+    );
     assert.equal(resp.status, 401);
   });
 });

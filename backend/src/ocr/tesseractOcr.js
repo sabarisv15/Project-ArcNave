@@ -78,7 +78,8 @@ async function extractTextFromPages(buffers, lang = 'eng') {
         throw new OcrExtractionError(`Tesseract OCR failed: ${err.message}`);
       }
       const text = result && result.data && typeof result.data.text === 'string' ? result.data.text : '';
-      const confidence = result && result.data && typeof result.data.confidence === 'number' ? result.data.confidence : 0;
+      const confidence =
+        result && result.data && typeof result.data.confidence === 'number' ? result.data.confidence : 0;
       results.push({ text: text.trim(), confidence });
     }
     return results;

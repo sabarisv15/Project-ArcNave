@@ -21,7 +21,10 @@ test('skillService.listSkills', async (t) => {
   // does not carry is guidance that fails at the point of use. Adding a
   // name here is the moment to check sandbox-service/Dockerfile backs it.
   await t.test('loads every skill shipped under src/skills/', () => {
-    const names = skillService.listSkills().map((s) => s.name).sort();
+    const names = skillService
+      .listSkills()
+      .map((s) => s.name)
+      .sort();
     assert.deepEqual(names, ['docx', 'file-reading', 'pdf', 'pdf-reading', 'pptx', 'xlsx']);
   });
 
@@ -31,7 +34,7 @@ test('skillService.listSkills', async (t) => {
     });
   });
 
-  await t.test('the list does not include the SKILL.md body — that is describe_skill\'s job', () => {
+  await t.test("the list does not include the SKILL.md body — that is describe_skill's job", () => {
     skillService.listSkills().forEach((skill) => {
       assert.ok(!('content' in skill));
     });

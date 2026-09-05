@@ -48,8 +48,15 @@ export const ACCEPTED_DOCUMENT_TYPES = [
  * other honestly-degraded attachment.
  */
 export const ACCEPTED_MEDIA_TYPES = [
-  'audio/wav', 'audio/mpeg', 'audio/flac', 'audio/ogg', 'audio/mp4',
-  'video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo',
+  'audio/wav',
+  'audio/mpeg',
+  'audio/flac',
+  'audio/ogg',
+  'audio/mp4',
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+  'video/x-msvideo',
 ];
 
 /** Archives are unpacked server-side (fileIntelligenceRouter's
@@ -178,10 +185,7 @@ export function imagesFromClipboard(clipboardData, now = new Date()) {
     const fingerprint = `${type}:${file.size}:${file.lastModified ?? 0}`;
     if (seen.has(fingerprint)) return;
     seen.add(fingerprint);
-    const named =
-      file.name && !/^(image|blob)\.?[a-z]*$/i.test(file.name)
-        ? file.name
-        : pastedImageName(type, now);
+    const named = file.name && !/^(image|blob)\.?[a-z]*$/i.test(file.name) ? file.name : pastedImageName(type, now);
     out.push({ file, type, name: named });
   };
 

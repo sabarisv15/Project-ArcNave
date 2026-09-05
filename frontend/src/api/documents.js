@@ -14,9 +14,11 @@ export const documentsApi = {
   // --- Personal documents (Documents > Personal tab) ---------------
   listPersonalDocuments: () => api.get('/documents/personal'),
   listPersonalFolders: () => api.get('/documents/personal/folders'),
-  createPersonalFolder: ({ name, parentId }) => api.post('/documents/personal/folders', {
-    name, parent_id: parentId ?? null,
-  }),
+  createPersonalFolder: ({ name, parentId }) =>
+    api.post('/documents/personal/folders', {
+      name,
+      parent_id: parentId ?? null,
+    }),
   renamePersonalFolder: (id, name) => api.patch(`/documents/personal/folders/${id}`, { name }),
   movePersonalFolder: (id, parentId) => api.patch(`/documents/personal/folders/${id}`, { parent_id: parentId ?? null }),
   removePersonalFolder: (id) => api.delete(`/documents/personal/folders/${id}`),
@@ -31,14 +33,13 @@ export const documentsApi = {
       file_base64: fileBase64,
     });
   },
-  renamePersonalDocument: (id, fileName) => api.patch(`/documents/personal/${id}`, { file_name: fileName, title: fileName }),
+  renamePersonalDocument: (id, fileName) =>
+    api.patch(`/documents/personal/${id}`, { file_name: fileName, title: fileName }),
   movePersonalDocument: (id, folderName) => api.patch(`/documents/personal/${id}`, { folder_name: folderName ?? null }),
   duplicatePersonalDocument: (id) => api.post(`/documents/personal/${id}/duplicate`),
 
   // --- Institutional documents (Documents > Institutional tab, read-only) ---
-  listInstitutionalDocuments: ({
-    categoryId, departmentId, academicYearId, search,
-  } = {}) => {
+  listInstitutionalDocuments: ({ categoryId, departmentId, academicYearId, search } = {}) => {
     const params = new URLSearchParams();
     if (categoryId) params.set('category_id', categoryId);
     if (departmentId) params.set('department_id', departmentId);

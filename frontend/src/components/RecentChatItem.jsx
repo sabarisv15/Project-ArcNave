@@ -95,7 +95,7 @@ export function RecentChatItem({ chat, active, onClick }) {
             'block max-w-full whitespace-nowrap will-change-transform motion-reduce:!transform-none motion-reduce:!transition-none',
             // The ellipsis is the resting state and has to be gone while the
             // text walks, or the reveal would slide out from behind a "…".
-            run ? 'overflow-visible text-clip' : 'overflow-hidden text-ellipsis'
+            run ? 'overflow-visible text-clip' : 'overflow-hidden text-ellipsis',
           )}
           style={
             run

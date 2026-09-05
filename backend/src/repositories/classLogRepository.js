@@ -69,9 +69,7 @@ async function remove(client, id) {
 // caller (the class_log_list AI tool) gets a capped, most-recent-first
 // result — already the query's own ORDER BY, so a LIMIT here is a
 // genuine "recent entries" view, not an arbitrary truncation.
-async function list(client, {
-  classId, classIds, subject, fromDate, toDate, limit,
-} = {}) {
+async function list(client, { classId, classIds, subject, fromDate, toDate, limit } = {}) {
   const conditions = [];
   const values = [];
 
@@ -109,5 +107,9 @@ async function list(client, {
 }
 
 module.exports = {
-  create, findById, update, remove, list,
+  create,
+  findById,
+  update,
+  remove,
+  list,
 };

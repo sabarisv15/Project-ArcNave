@@ -47,6 +47,9 @@ function parseCsvLine(line) {
 // prefix convention, so a file this codebase generated is parsed back
 // correctly, not left with a stray character on the first header.
 function parse(fileBuffer) {
+  // The U+FEFF below literally IS the BOM character being stripped,
+  // not accidental whitespace; see the comment above.
+  // eslint-disable-next-line no-irregular-whitespace
   const text = fileBuffer.toString('utf8').replace(/^﻿/, '');
   const lines = text.split(/\r?\n/).filter((line) => line.trim() !== '');
   if (lines.length === 0) {

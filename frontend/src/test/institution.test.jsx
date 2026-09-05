@@ -1,12 +1,6 @@
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import * as Tooltip from '@radix-ui/react-tooltip';
 import { describe, expect, it } from 'vitest';
-import App from '../App';
-import { WorkspaceProvider } from '../store/WorkspaceProvider';
-import { ComposerProvider } from '../store/ComposerProvider';
 import {
   ATTENDANCE_THRESHOLD,
   DEPARTMENTS,
@@ -40,27 +34,15 @@ import {
   DEPT_STUDENT_TOTAL,
 } from '../lib/departmentData';
 import { LIVE_VERSION, PENDING_REVISION } from '../lib/departmentTimetableData';
+import { renderApp as renderAppShared } from './renderApp';
 
-function renderApp(route = '/') {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[route]}>
-        <Tooltip.Provider>
-          <WorkspaceProvider>
-            <ComposerProvider>
-              <App />
-            </ComposerProvider>
-          </WorkspaceProvider>
-        </Tooltip.Provider>
-      </MemoryRouter>
-    </QueryClientProvider>
-  );
+function renderApp(route = '/', options) {
+  return renderAppShared(route, options);
 }
 
 /** Switches the prototype into the Principal view through the profile drawer. */
 async function usePrincipalView(user) {
-  await user.click(screen.getByRole('button', { name: /open profile/i }));
+  await user.click(await screen.findByRole('button', { name: /open profile/i }));
   const group = await screen.findByRole('radiogroup', { name: /workspace view/i });
   await user.click(within(group).getByRole('radio', { name: /principal/i }));
   await user.click(screen.getByRole('button', { name: /close profile/i }));
@@ -116,8 +98,11 @@ describe('Principal view — navigation', () => {
     const nav = await screen.findByRole('navigation', { name: /curriculum navigation/i });
     // Finance, Examinations, Reports, Alerts and Settings are planned but not
     // implemented for this seat — a menu entry for any would be a dead link.
+    // Anchored, not a loose substring: 'AI settings' (/institution/ai-settings)
+    // IS built and is a legitimate destination, so an unanchored /settings/i
+    // matched it and failed a test whose actual subject is dead links.
     ['examinations', 'reports', 'alerts', 'finance', 'settings'].forEach((label) => {
-      expect(within(nav).queryByRole('link', { name: new RegExp(label, 'i') })).not.toBeInTheDocument();
+      expect(within(nav).queryByRole('link', { name: new RegExp(`^${label}$`, 'i') })).not.toBeInTheDocument();
     });
   });
 
@@ -160,9 +145,7 @@ describe('Institution mock data — internal consistency', () => {
   });
 
   it('averages attendance over every student, not over department averages', () => {
-    const overStudents = Math.round(
-      INST_STUDENTS.reduce((s, x) => s + x.attendance, 0) / INST_STUDENTS.length
-    );
+    const overStudents = Math.round(INST_STUDENTS.reduce((s, x) => s + x.attendance, 0) / INST_STUDENTS.length);
     expect(INST_ATTENDANCE).toBe(overStudents);
 
     // The distinction is only meaningful if the two actually differ here — a
@@ -321,7 +304,7 @@ describe('Principal approvals', () => {
     await navigateVia(user, /^approvals$/i);
 
     await user.click(
-      await screen.findByRole('button', { name: /timetable revision — hod endorsed from dr\. k\. anand/i })
+      await screen.findByRole('button', { name: /timetable revision — hod endorsed from dr\. k\. anand/i }),
     );
 
     const dialog = await screen.findByRole('dialog');
@@ -332,7 +315,7 @@ describe('Principal approvals', () => {
 
     await user.click(await screen.findByRole('tab', { name: /decided/i }));
     await user.click(
-      await screen.findByRole('button', { name: /timetable revision — hod endorsed from dr\. k\. anand/i })
+      await screen.findByRole('button', { name: /timetable revision — hod endorsed from dr\. k\. anand/i }),
     );
 
     const decided = await screen.findByRole('dialog');
@@ -362,7 +345,9 @@ describe('Principal screens', () => {
     // The department-level view: one row per department, not 1,285 students.
     expect(await screen.findByText(new RegExp(`${INST_STUDENT_TOTAL} across`, 'i'))).toBeInTheDocument();
     DEPARTMENTS.forEach((d) => {
-      expect(screen.getByRole('button', { name: new RegExp(`${d.name} — open student roster`, 'i') })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: new RegExp(`${d.name} — open student roster`, 'i') }),
+      ).toBeInTheDocument();
     });
     expect(screen.queryByRole('button', { name: /open record/i })).not.toBeInTheDocument();
   });

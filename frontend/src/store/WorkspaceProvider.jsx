@@ -1,12 +1,8 @@
-import {
-  createContext, useCallback, useContext, useEffect, useMemo, useState,
-} from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import {
-  fetchContextFiles,
-  queryKeys,
-} from '../lib/mockApi';
+import { useWorkspaceUi, useWorkspaceUiLifecycle } from '../features/chat/store/workspaceUiStore';
+import { fetchContextFiles, queryKeys } from '../lib/mockApi';
 import { fetchChatsReal, fetchProjectsReal, fetchArtifactsReal } from '../lib/realWorkspaceApi';
 import { conversationsApi } from '@/api/conversations';
 import { aiApi } from '@/api/ai';
@@ -58,7 +54,7 @@ async function saveMessageWithRetry(conversationId, payload, { attempts = 3, tur
     }
   }
   toast(
-    `Couldn't save ${turnLabel} to this conversation's history — later follow-up questions in this chat may lose that context. Try resending if this matters.`
+    `Couldn't save ${turnLabel} to this conversation's history — later follow-up questions in this chat may lose that context. Try resending if this matters.`,
   );
   return null;
 }
@@ -84,66 +80,62 @@ export function WorkspaceProvider({ children }) {
 
   // Real backend data — no more mockApi fetchers for these three lists.
   const { data: chats = [] } = useQuery({
-    queryKey: queryKeys.chats, queryFn: fetchChatsReal, enabled: isAuthenticated,
+    queryKey: queryKeys.chats,
+    queryFn: fetchChatsReal,
+    enabled: isAuthenticated,
   });
   const { data: projects = [] } = useQuery({
-    queryKey: queryKeys.projects, queryFn: fetchProjectsReal, enabled: isAuthenticated,
+    queryKey: queryKeys.projects,
+    queryFn: fetchProjectsReal,
+    enabled: isAuthenticated,
   });
   const { data: artifacts = [] } = useQuery({
-    queryKey: queryKeys.artifacts, queryFn: fetchArtifactsReal, enabled: isAuthenticated,
+    queryKey: queryKeys.artifacts,
+    queryFn: fetchArtifactsReal,
+    enabled: isAuthenticated,
   });
   const { data: contextFiles = [] } = useQuery({ queryKey: queryKeys.contextFiles, queryFn: fetchContextFiles });
   const { data: threads = {} } = useQuery({ queryKey: queryKeys.threads, queryFn: async () => ({}) });
 
-  // UI state
-  /**
-   * Which sidebar menu is showing. Deliberately its own state, never inferred
-   * from the pathname: switching context swaps the menu only, so whatever
-   * workspace is open stays open until the user picks an item themselves.
-   */
-  const [activeWorkspaceMode, setActiveWorkspaceMode] = useState('home');
-  /**
-   * `pinned`  — docked; occupies real layout width and never overlaps content.
-   * `overlay` — floating above the workspace, temporary.
-   * `hidden`  — no width reserved; only the left edge trigger remains.
-   */
-  const [sidebarMode, setSidebarMode] = useState('pinned');
-  /**
-   * Which institutional seat the prototype is being viewed as.
-   *
-   * `teaching_staff` — the original experience, unchanged in every respect.
-   * `class_tutor_l4` — the Class Tutor seat: one owned class, its own
-   *                    Curriculum menu and landing.
-   *
-   * This is a **review affordance for a design prototype**, not an
-   * authorization mechanism. This app has no auth at all, so nothing here
-   * protects anything — it only decides which experience renders. In the real
-   * product the active seat is resolved server-side from the signed-in
-   * Position Account and a switcher like this one does not exist.
-   *
-   * Explicit state next to `activeWorkspaceMode`, never derived from the
-   * pathname, for the same reason that one isn't: a mode that re-derives
-   * itself on every remount fights the user.
-   */
-  const [activeRole, setActiveRole] = useState('teaching_staff');
-  /*
-   * There is deliberately no `input`/`mode` here any more. A single global
-   * composer slot is what let Home's text turn up in a project's composer;
-   * every composer now owns a scoped draft in `ComposerProvider`, and
-   * `sendMessage` is handed the text explicitly rather than reaching for a
-   * shared one.
-   */
-  const [recentQuery, setRecentQuery] = useState('');
-  const [recentFilter, setRecentFilter] = useState('All conversations');
-  const [projectQuery, setProjectQuery] = useState('');
-  const [projectSort, setProjectSort] = useState('Last updated');
-  const [artifactQuery, setArtifactQuery] = useState('');
-  const [artifactFilter, setArtifactFilter] = useState('All artifacts');
-  const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
-  const [instructions, setInstructions] = useState('');
-  const [projConv, setProjConv] = useState({}); // projectId -> conversationId
-  const [artConv, setArtConv] = useState({}); // artifactId -> conversationId
+  // UI state — activeWorkspaceMode/sidebarMode/activeRole/recentQuery/
+  // recentFilter/projectQuery/projectSort/artifactQuery/artifactFilter/
+  // scheduleOpen/profileDrawerOpen/instructions/projConv/artConv all live in
+  // `useWorkspaceUi` (features/chat/store/workspaceUiStore.js) now — see that
+  // file for what each field means and why it isn't bundled with server
+  // state. `useWorkspaceUiLifecycle` resets it on this provider's first
+  // render, the per-mount behaviour a module-global store doesn't get for
+  // free (see that file's own note on why the first wiring attempt broke).
+  useWorkspaceUiLifecycle();
+  const {
+    activeWorkspaceMode,
+    setActiveWorkspaceMode,
+    sidebarMode,
+    setSidebarMode,
+    activeRole,
+    setActiveRole,
+    recentQuery,
+    setRecentQuery,
+    recentFilter,
+    setRecentFilter,
+    projectQuery,
+    setProjectQuery,
+    projectSort,
+    setProjectSort,
+    artifactQuery,
+    setArtifactQuery,
+    artifactFilter,
+    setArtifactFilter,
+    scheduleOpen,
+    setScheduleOpen,
+    profileDrawerOpen,
+    setProfileDrawerOpen,
+    instructions,
+    setInstructions,
+    projConv,
+    setProjConv,
+    artConv,
+    setArtConv,
+  } = useWorkspaceUi();
 
   // artConv otherwise only ever gains an entry when a revision message is
   // sent live in *this* browser session (the `scope === 'artifact'` branch
@@ -168,7 +160,7 @@ export function WorkspaceProvider({ children }) {
       }
       return changed ? next : m;
     });
-  }, [artifacts]);
+  }, [artifacts, setArtConv]);
 
   // chatId -> file[]. This is message/upload **metadata**, not a surface: the
   // "Files in this chat" widget and its header button are gone (Sources
@@ -202,7 +194,7 @@ export function WorkspaceProvider({ children }) {
 
   const setThreads = useCallback(
     (updater) => qc.setQueryData(queryKeys.threads, (prev = {}) => updater(prev || {})),
-    [qc]
+    [qc],
   );
 
   /**
@@ -227,34 +219,42 @@ export function WorkspaceProvider({ children }) {
         .listMessages(chat.id)
         .then((rows) => {
           const list = Array.isArray(rows) ? rows : (rows?.messages ?? []);
-          const messages = list.map((m) => (
+          const messages = list.map((m) =>
             m.role === 'user'
               ? {
-                id: String(m.id), role: 'user', text: m.content, createdAt: m.created_at,
-                // Round-tripped from the same `attachments` JSONB column
-                // sendMessage's own addMessage call above just wrote —
-                // without this, a reloaded transcript showed the prompt
-                // text but silently dropped which file(s) had been sent
-                // with it (SentFileChip/the image thumbnail above both
-                // need this array, not just the ids).
-                attachments: m.attachments || undefined,
-              }
+                  id: String(m.id),
+                  role: 'user',
+                  text: m.content,
+                  createdAt: m.created_at,
+                  // Round-tripped from the same `attachments` JSONB column
+                  // sendMessage's own addMessage call above just wrote —
+                  // without this, a reloaded transcript showed the prompt
+                  // text but silently dropped which file(s) had been sent
+                  // with it (SentFileChip/the image thumbnail above both
+                  // need this array, not just the ids).
+                  attachments: m.attachments || undefined,
+                }
               : {
-                id: String(m.id), role: 'ai', generating: false, body: m.content, createdAt: m.created_at,
-                // raw_data is the same generic JSONB column addMessage's
-                // own rawData just wrote a { document } payload into
-                // (see runAiTurn above) — round-tripped back out here so
-                // a reloaded transcript still shows the download card.
-                document: m.raw_data?.document,
-                // messages.input_tokens/output_tokens (P1.6/ADL-048) —
-                // undefined (not 0) when either is null, so a reloaded
-                // pre-migration or usage-unknown message renders no line
-                // rather than a fabricated zero.
-                usage: (m.input_tokens != null || m.output_tokens != null)
-                  ? { inputTokens: m.input_tokens ?? undefined, outputTokens: m.output_tokens ?? undefined }
-                  : undefined,
-              }
-          ));
+                  id: String(m.id),
+                  role: 'ai',
+                  generating: false,
+                  body: m.content,
+                  createdAt: m.created_at,
+                  // raw_data is the same generic JSONB column addMessage's
+                  // own rawData just wrote a { document } payload into
+                  // (see runAiTurn above) — round-tripped back out here so
+                  // a reloaded transcript still shows the download card.
+                  document: m.raw_data?.document,
+                  // messages.input_tokens/output_tokens (P1.6/ADL-048) —
+                  // undefined (not 0) when either is null, so a reloaded
+                  // pre-migration or usage-unknown message renders no line
+                  // rather than a fabricated zero.
+                  usage:
+                    m.input_tokens != null || m.output_tokens != null
+                      ? { inputTokens: m.input_tokens ?? undefined, outputTokens: m.output_tokens ?? undefined }
+                      : undefined,
+                },
+          );
           setThreads((prev) => ({ ...prev, [chat.id]: messages }));
         })
         .catch(() => {
@@ -265,7 +265,7 @@ export function WorkspaceProvider({ children }) {
           // transcript correctly (a real new conversation looks the same).
         });
     },
-    [qc, setThreads]
+    [qc, setThreads],
   );
 
   /**
@@ -293,9 +293,10 @@ export function WorkspaceProvider({ children }) {
    * kept running after send() returned.
    */
   const runAiTurn = useCallback(
-    async (id, {
-      scope, projectId, artifactId, body, aiId, attachmentIds, sentAttachments = [], mode, thinkingLevel,
-    }) => {
+    async (
+      id,
+      { scope, projectId, artifactId, body, aiId, attachmentIds, sentAttachments = [], mode, thinkingLevel, model },
+    ) => {
       const patchAiMessage = (patch) => {
         setThreads((prev) => ({
           ...prev,
@@ -328,6 +329,12 @@ export function WorkspaceProvider({ children }) {
             // unrecognized falls through to routes/ai.js's own default
             // ('fast' — gemini.js's existing LOW, zero behavior change).
             thinkingLevel,
+            // ADL-099 (2026-09-04) — ModelSelectorToggle.jsx's own real model
+            // id, this message only. `null`/unrecognized falls through to
+            // routes/ai.js's resolveModelChoice -> the tenant's own configured
+            // provider (zero behavior change for a composer nobody has
+            // touched).
+            model,
           },
           (event) => {
             if (event.type === 'delta') {
@@ -343,7 +350,7 @@ export function WorkspaceProvider({ children }) {
               const label = stepStatusLabel(event.step);
               if (label) patchAiMessage({ status: label, stepPhase: event.step.phase });
             }
-          }
+          },
         );
         if (!result) throw new Error('No result from the AI');
 
@@ -377,14 +384,16 @@ export function WorkspaceProvider({ children }) {
           origin: 'Attached to this message',
         }));
         const documentSource = result.document
-          ? [{
-            id: `document-${result.document.id}`,
-            title: result.document.fileName || result.document.title,
-            kind: 'uploaded',
-            documentId: result.document.id,
-            type: result.document.mimeType,
-            origin: 'Generated by ArcNave',
-          }]
+          ? [
+              {
+                id: `document-${result.document.id}`,
+                title: result.document.fileName || result.document.title,
+                kind: 'uploaded',
+                documentId: result.document.id,
+                type: result.document.mimeType,
+                origin: 'Generated by ArcNave',
+              },
+            ]
           : [];
         const sources = [...evidenceSources, ...attachmentSources, ...documentSource];
 
@@ -433,7 +442,7 @@ export function WorkspaceProvider({ children }) {
             inputTokens: result.usage?.inputTokens,
             outputTokens: result.usage?.outputTokens,
           },
-          { turnLabel: 'this reply' }
+          { turnLabel: 'this reply' },
         );
       } catch {
         patchAiMessage({
@@ -444,13 +453,11 @@ export function WorkspaceProvider({ children }) {
         });
       }
     },
-    [setThreads]
+    [setThreads],
   );
 
   const sendMessage = useCallback(
-    async ({
-      scope = 'chat', convId, projectId, artifactId, text, attachments = [], mode, thinkingLevel,
-    }) => {
+    async ({ scope = 'chat', convId, projectId, artifactId, text, attachments = [], mode, thinkingLevel, model }) => {
       const body = (text ?? '').trim();
       if (!/[a-zA-Z0-9]/.test(body)) return null;
 
@@ -470,7 +477,14 @@ export function WorkspaceProvider({ children }) {
         id = String(conversation.id);
         const record =
           scope === 'project'
-            ? { id, title: conversation.title, kind: 'project', project: project?.title ?? '', projectId, meta: 'Just now' }
+            ? {
+                id,
+                title: conversation.title,
+                kind: 'project',
+                project: project?.title ?? '',
+                projectId,
+                meta: 'Just now',
+              }
             : { id, title: conversation.title, kind: 'chat', meta: 'Just now', artifactId };
         qc.setQueryData(queryKeys.chats, (prev = []) => [record, ...prev]);
         if (scope === 'project') setProjConv((m) => ({ ...m, [projectId]: id }));
@@ -500,7 +514,7 @@ export function WorkspaceProvider({ children }) {
             meta: `${imageKind(a.type)} · ${formatBytes(a.size)}`,
             type: a.type,
             previewUrl: a.previewUrl,
-          }))
+          })),
         );
       }
 
@@ -522,7 +536,12 @@ export function WorkspaceProvider({ children }) {
           // it's the one skeleton line shown only until the first real chunk
           // arrives, not a running progress log.
           {
-            id: aiId, role: 'ai', generating: true, body: '', status: 'Thinking…', createdAt: sentAt,
+            id: aiId,
+            role: 'ai',
+            generating: true,
+            body: '',
+            status: 'Thinking…',
+            createdAt: sentAt,
           },
         ],
       }));
@@ -541,7 +560,11 @@ export function WorkspaceProvider({ children }) {
       const sentAttachments = sent
         .filter((a) => a.serverId)
         .map((a) => ({
-          id: a.serverId, serverId: a.serverId, name: a.name, type: a.type, size: a.size,
+          id: a.serverId,
+          serverId: a.serverId,
+          name: a.name,
+          type: a.type,
+          size: a.size,
         }));
       const attachmentIds = sentAttachments.map((a) => a.id);
 
@@ -559,7 +582,7 @@ export function WorkspaceProvider({ children }) {
       saveMessageWithRetry(
         id,
         { role: 'user', content: body, attachments: sentAttachments.length ? sentAttachments : undefined },
-        { turnLabel: 'your message' }
+        { turnLabel: 'your message' },
       ).then((saved) => {
         if (!saved?.id) return;
         setThreads((prev) => ({
@@ -573,12 +596,21 @@ export function WorkspaceProvider({ children }) {
       // can list the real files this turn attached as Sources — the ids
       // alone have no name/type to show.
       runAiTurn(id, {
-        scope, projectId, artifactId, body, aiId, attachmentIds, sentAttachments, mode, thinkingLevel,
+        scope,
+        projectId,
+        artifactId,
+        body,
+        aiId,
+        attachmentIds,
+        sentAttachments,
+        mode,
+        thinkingLevel,
+        model,
       });
 
       return id;
     },
-    [addChatFiles, projects, qc, setThreads, runAiTurn]
+    [addChatFiles, projects, qc, setThreads, runAiTurn, setProjConv, setArtConv],
   );
 
   /**
@@ -598,9 +630,7 @@ export function WorkspaceProvider({ children }) {
    * same project/artifact/mode context a brand-new send would.
    */
   const editMessage = useCallback(
-    async ({
-      scope = 'chat', convId, projectId, artifactId, messageId, text, mode, thinkingLevel,
-    }) => {
+    async ({ scope = 'chat', convId, projectId, artifactId, messageId, text, mode, thinkingLevel, model }) => {
       const next = (text ?? '').trim();
       if (!convId || !next) return false;
       // A message sent earlier THIS session keeps its client-generated
@@ -610,7 +640,7 @@ export function WorkspaceProvider({ children }) {
       // PATCH yet, so this refuses rather than sending a request the
       // backend can only 404.
       if (!isUuidLike(messageId)) {
-        toast("Still saving your message — try editing again in a moment.");
+        toast('Still saving your message — try editing again in a moment.');
         return false;
       }
 
@@ -639,7 +669,12 @@ export function WorkspaceProvider({ children }) {
           [convId]: [
             ...kept,
             {
-              id: aiId, role: 'ai', generating: true, body: '', status: 'Thinking…', createdAt: editedAt,
+              id: aiId,
+              role: 'ai',
+              generating: true,
+              body: '',
+              status: 'Thinking…',
+              createdAt: editedAt,
             },
           ],
         };
@@ -649,12 +684,21 @@ export function WorkspaceProvider({ children }) {
       // Deliberately not awaited — see sendMessage's own comment on why
       // runAiTurn is fire-and-forget from its caller's point of view.
       runAiTurn(convId, {
-        scope, projectId, artifactId, body: next, aiId, attachmentIds, sentAttachments, mode, thinkingLevel,
+        scope,
+        projectId,
+        artifactId,
+        body: next,
+        aiId,
+        attachmentIds,
+        sentAttachments,
+        mode,
+        thinkingLevel,
+        model,
       });
 
       return true;
     },
-    [qc, setThreads, runAiTurn]
+    [qc, setThreads, runAiTurn],
   );
 
   const renameChat = useCallback(
@@ -664,7 +708,7 @@ export function WorkspaceProvider({ children }) {
       qc.setQueryData(queryKeys.chats, (prev = []) => prev.map((c) => (c.id === id ? { ...c, title: next } : c)));
       conversationsApi.update(id, { title: next }).catch(() => qc.invalidateQueries({ queryKey: queryKeys.chats }));
     },
-    [qc]
+    [qc],
   );
 
   const deleteChat = useCallback(
@@ -681,19 +725,19 @@ export function WorkspaceProvider({ children }) {
       conversationsApi.remove(id).catch(() => qc.invalidateQueries({ queryKey: queryKeys.chats }));
       toast('Chat deleted');
     },
-    [qc, setThreads]
+    [qc, setThreads, setProjConv, setArtConv],
   );
 
   const addChatToProject = useCallback(
     (chatId, projectId) => {
       const project = projects.find((p) => p.id === projectId);
       qc.setQueryData(queryKeys.chats, (prev = []) =>
-        prev.map((c) => (c.id === chatId ? { ...c, kind: 'project', project: project?.title ?? '', projectId } : c))
+        prev.map((c) => (c.id === chatId ? { ...c, kind: 'project', project: project?.title ?? '', projectId } : c)),
       );
       setProjConv((m) => ({ ...m, [projectId]: chatId }));
       toast(`Added to ${project?.title ?? 'project'}.`);
     },
-    [qc, projects]
+    [qc, projects, setProjConv],
   );
 
   const createProject = useCallback(
@@ -712,7 +756,7 @@ export function WorkspaceProvider({ children }) {
       toast('Project created');
       return project;
     },
-    [qc]
+    [qc],
   );
 
   const deleteProject = useCallback(
@@ -721,7 +765,7 @@ export function WorkspaceProvider({ children }) {
       projectsApi.remove(id).catch(() => qc.invalidateQueries({ queryKey: queryKeys.projects }));
       toast('Project deleted');
     },
-    [qc]
+    [qc],
   );
 
   const togglePin = useCallback(
@@ -732,11 +776,13 @@ export function WorkspaceProvider({ children }) {
           if (p.id !== id) return p;
           nextPinned = !p.pinned;
           return { ...p, pinned: nextPinned };
-        })
+        }),
       );
-      projectsApi.setPinned(id, { pinned: nextPinned }).catch(() => qc.invalidateQueries({ queryKey: queryKeys.projects }));
+      projectsApi
+        .setPinned(id, { pinned: nextPinned })
+        .catch(() => qc.invalidateQueries({ queryKey: queryKeys.projects }));
     },
-    [qc]
+    [qc],
   );
 
   const createArtifact = useCallback(
@@ -748,22 +794,25 @@ export function WorkspaceProvider({ children }) {
       // that satisfies that and still reads correctly as a blank starting point.
       const row = await artifactsApi.create({ title, content: `# ${title}\n\n`, artifactType: type });
       const artifact = {
-        id: String(row.id), title: row.title, type, edited: 'Edited just now', link: '', status: row.status,
+        id: String(row.id),
+        title: row.title,
+        type,
+        edited: 'Edited just now',
+        link: '',
+        status: row.status,
       };
       qc.setQueryData(queryKeys.artifacts, (prev = []) => [artifact, ...prev]);
       return artifact;
     },
-    [qc]
+    [qc],
   );
 
   const renameArtifact = useCallback(
     (id, title) => {
-      qc.setQueryData(queryKeys.artifacts, (prev = []) =>
-        prev.map((a) => (a.id === id ? { ...a, title } : a))
-      );
+      qc.setQueryData(queryKeys.artifacts, (prev = []) => prev.map((a) => (a.id === id ? { ...a, title } : a)));
       artifactsApi.update(id, { title }).catch(() => qc.invalidateQueries({ queryKey: queryKeys.artifacts }));
     },
-    [qc]
+    [qc],
   );
 
   // The deterministic counterpart to the export_artifact AI tool
@@ -784,11 +833,11 @@ export function WorkspaceProvider({ children }) {
         return;
       }
       qc.setQueryData(queryKeys.artifacts, (prev = []) =>
-        prev.map((a) => (a.id === id ? { ...a, status: row.status } : a))
+        prev.map((a) => (a.id === id ? { ...a, status: row.status } : a)),
       );
       toast('Exported to Documents → AI Artifacts.');
     },
-    [qc]
+    [qc],
   );
 
   // The retroactive "give me this AS docx too" action — the deterministic
@@ -808,46 +857,120 @@ export function WorkspaceProvider({ children }) {
 
   const addContextFile = useCallback(
     (file) => qc.setQueryData(queryKeys.contextFiles, (prev = []) => [...prev, file]),
-    [qc]
+    [qc],
   );
   const removeContextFile = useCallback(
     (id) => qc.setQueryData(queryKeys.contextFiles, (prev = []) => prev.filter((f) => f.id !== id)),
-    [qc]
+    [qc],
   );
 
   const value = useMemo(
     () => ({
-      chats, projects, artifacts, contextFiles, threads, chatFiles,
-      addChatFiles, removeChatFile,
-      activeWorkspaceMode, setActiveWorkspaceMode,
-      activeRole, setActiveRole,
-      sidebarMode, setSidebarMode,
+      chats,
+      projects,
+      artifacts,
+      contextFiles,
+      threads,
+      chatFiles,
+      addChatFiles,
+      removeChatFile,
+      activeWorkspaceMode,
+      setActiveWorkspaceMode,
+      activeRole,
+      setActiveRole,
+      sidebarMode,
+      setSidebarMode,
       pinSidebar: () => setSidebarMode('pinned'),
       collapseSidebar: () => setSidebarMode('hidden'),
       revealSidebar: () => setSidebarMode((m) => (m === 'hidden' ? 'overlay' : m)),
       hideOverlay: () => setSidebarMode((m) => (m === 'overlay' ? 'hidden' : m)),
-      recentQuery, setRecentQuery, recentFilter, setRecentFilter,
-      projectQuery, setProjectQuery, projectSort, setProjectSort,
-      artifactQuery, setArtifactQuery, artifactFilter, setArtifactFilter,
-      scheduleOpen, setScheduleOpen,
-      profileDrawerOpen, setProfileDrawerOpen,
-      instructions, setInstructions,
-      projConv, artConv,
-      sendMessage, seedThread, editMessage,
-      renameChat, deleteChat, addChatToProject,
-      createProject, deleteProject, togglePin, createArtifact, renameArtifact, publishArtifact, exportArtifactAs,
-      addContextFile, removeContextFile,
+      recentQuery,
+      setRecentQuery,
+      recentFilter,
+      setRecentFilter,
+      projectQuery,
+      setProjectQuery,
+      projectSort,
+      setProjectSort,
+      artifactQuery,
+      setArtifactQuery,
+      artifactFilter,
+      setArtifactFilter,
+      scheduleOpen,
+      setScheduleOpen,
+      profileDrawerOpen,
+      setProfileDrawerOpen,
+      instructions,
+      setInstructions,
+      projConv,
+      artConv,
+      sendMessage,
+      seedThread,
+      editMessage,
+      renameChat,
+      deleteChat,
+      addChatToProject,
+      createProject,
+      deleteProject,
+      togglePin,
+      createArtifact,
+      renameArtifact,
+      publishArtifact,
+      exportArtifactAs,
+      addContextFile,
+      removeContextFile,
     }),
     [
-      chats, projects, artifacts, contextFiles, threads, chatFiles,
-      addChatFiles, removeChatFile,
-      activeWorkspaceMode, activeRole, sidebarMode,
-      recentQuery, recentFilter, projectQuery, projectSort, artifactQuery, artifactFilter,
-      scheduleOpen, profileDrawerOpen, instructions, projConv, artConv,
-      sendMessage, seedThread, editMessage, renameChat, deleteChat, addChatToProject,
-      createProject, deleteProject, togglePin, createArtifact, renameArtifact, publishArtifact, exportArtifactAs,
-      addContextFile, removeContextFile,
-    ]
+      chats,
+      projects,
+      artifacts,
+      contextFiles,
+      threads,
+      chatFiles,
+      addChatFiles,
+      removeChatFile,
+      activeWorkspaceMode,
+      setActiveWorkspaceMode,
+      activeRole,
+      setActiveRole,
+      sidebarMode,
+      setSidebarMode,
+      recentQuery,
+      setRecentQuery,
+      recentFilter,
+      setRecentFilter,
+      projectQuery,
+      setProjectQuery,
+      projectSort,
+      setProjectSort,
+      artifactQuery,
+      setArtifactQuery,
+      artifactFilter,
+      setArtifactFilter,
+      scheduleOpen,
+      setScheduleOpen,
+      profileDrawerOpen,
+      setProfileDrawerOpen,
+      instructions,
+      setInstructions,
+      projConv,
+      artConv,
+      sendMessage,
+      seedThread,
+      editMessage,
+      renameChat,
+      deleteChat,
+      addChatToProject,
+      createProject,
+      deleteProject,
+      togglePin,
+      createArtifact,
+      renameArtifact,
+      publishArtifact,
+      exportArtifactAs,
+      addContextFile,
+      removeContextFile,
+    ],
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

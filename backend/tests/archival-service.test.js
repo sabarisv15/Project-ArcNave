@@ -15,15 +15,17 @@ const archivalService = require('../src/services/archivalService');
 
 test('archiveRecord', async (t) => {
   await t.test('rejects missing entityType/entityId', async () => {
-    await assert.rejects(
-      () => archivalService.archiveRecord({}, {}),
-      archivalService.ArchivalValidationError,
-    );
+    await assert.rejects(() => archivalService.archiveRecord({}, {}), archivalService.ArchivalValidationError);
   });
 
   await t.test('maps a duplicate active-archive constraint violation', async () => {
-    const err = Object.assign(new Error('dup'), { code: '23505', constraint: 'archived_records_one_active_per_entity' });
-    const createMock = t.mock.method(archivedRecordRepository, 'create', async () => { throw err; });
+    const err = Object.assign(new Error('dup'), {
+      code: '23505',
+      constraint: 'archived_records_one_active_per_entity',
+    });
+    const createMock = t.mock.method(archivedRecordRepository, 'create', async () => {
+      throw err;
+    });
     t.after(() => createMock.mock.restore());
     await assert.rejects(
       () => archivalService.archiveRecord({}, { entityType: 'students', entityId: 's1' }),
@@ -32,13 +34,20 @@ test('archiveRecord', async (t) => {
   });
 
   await t.test('creates and audit-logs an archival', async () => {
-    const createMock = t.mock.method(archivedRecordRepository, 'create', async (client, fields) => ({ id: 'arc-1', ...fields }));
+    const createMock = t.mock.method(archivedRecordRepository, 'create', async (client, fields) => ({
+      id: 'arc-1',
+      ...fields,
+    }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
       createMock.mock.restore();
       auditMock.mock.restore();
     });
-    const result = await archivalService.archiveRecord({}, { entityType: 'students', entityId: 's1', reason: 'graduated 7 years ago' }, { actorUserId: 'principal-1', collegeId: 'c1' });
+    const result = await archivalService.archiveRecord(
+      {},
+      { entityType: 'students', entityId: 's1', reason: 'graduated 7 years ago' },
+      { actorUserId: 'principal-1', collegeId: 'c1' },
+    );
     assert.equal(result.id, 'arc-1');
     assert.equal(auditMock.mock.calls[0].arguments[1].action, 'record_archived');
   });
@@ -69,7 +78,10 @@ test('requestRestoration / approveRestoration / rejectRestoration', async (t) =>
   });
 
   await t.test('rejects a record that has already been restored', async () => {
-    const findMock = t.mock.method(archivedRecordRepository, 'findById', async () => ({ id: 'arc-1', restored_at: '2026-01-01T00:00:00Z' }));
+    const findMock = t.mock.method(archivedRecordRepository, 'findById', async () => ({
+      id: 'arc-1',
+      restored_at: '2026-01-01T00:00:00Z',
+    }));
     t.after(() => findMock.mock.restore());
     await assert.rejects(
       () => archivalService.requestRestoration({}, 'arc-1', {}, { requestedByUserId: 'u1' }),
@@ -78,10 +90,18 @@ test('requestRestoration / approveRestoration / rejectRestoration', async (t) =>
   });
 
   await t.test('submits a workflow request via workflowChainService and attaches it to the row', async () => {
-    const findMock = t.mock.method(archivedRecordRepository, 'findById', async () => ({ id: 'arc-1', restored_at: null }));
-    const resolveChainMock = t.mock.method(workflowChainService, 'resolveApproverChain', async () => [{ step: 1, role: 'principal', user_id: 'principal-1' }]);
+    const findMock = t.mock.method(archivedRecordRepository, 'findById', async () => ({
+      id: 'arc-1',
+      restored_at: null,
+    }));
+    const resolveChainMock = t.mock.method(workflowChainService, 'resolveApproverChain', async () => [
+      { step: 1, role: 'principal', user_id: 'principal-1' },
+    ]);
     const submitMock = t.mock.method(workflowService, 'submitRequest', async () => ({ id: 'wf-1', status: 'Pending' }));
-    const attachMock = t.mock.method(archivedRecordRepository, 'attachWorkflowRequest', async () => ({ id: 'arc-1', workflow_request_id: 'wf-1' }));
+    const attachMock = t.mock.method(archivedRecordRepository, 'attachWorkflowRequest', async () => ({
+      id: 'arc-1',
+      workflow_request_id: 'wf-1',
+    }));
     t.after(() => {
       findMock.mock.restore();
       resolveChainMock.mock.restore();
@@ -89,7 +109,12 @@ test('requestRestoration / approveRestoration / rejectRestoration', async (t) =>
       attachMock.mock.restore();
     });
 
-    const result = await archivalService.requestRestoration({}, 'arc-1', { reason: 'needed for audit' }, { requestedByUserId: 'u1', collegeId: 'c1' });
+    const result = await archivalService.requestRestoration(
+      {},
+      'arc-1',
+      { reason: 'needed for audit' },
+      { requestedByUserId: 'u1', collegeId: 'c1' },
+    );
     assert.equal(result.workflowRequest.id, 'wf-1');
     assert.equal(attachMock.mock.calls[0].arguments[1], 'arc-1');
     assert.equal(attachMock.mock.calls[0].arguments[2], 'wf-1');
@@ -97,16 +122,26 @@ test('requestRestoration / approveRestoration / rejectRestoration', async (t) =>
 
   function mockPendingRestoration(t) {
     const findMock = t.mock.method(archivedRecordRepository, 'findById', async () => ({
-      id: 'arc-1', college_id: 'c1', entity_type: 'students', entity_id: 's1', workflow_request_id: 'wf-1',
+      id: 'arc-1',
+      college_id: 'c1',
+      entity_type: 'students',
+      entity_id: 's1',
+      workflow_request_id: 'wf-1',
     }));
-    const getRequestMock = t.mock.method(workflowService, 'getRequest', async () => ({ id: 'wf-1', status: 'Pending' }));
+    const getRequestMock = t.mock.method(workflowService, 'getRequest', async () => ({
+      id: 'wf-1',
+      status: 'Pending',
+    }));
     return { findMock, getRequestMock };
   }
 
   await t.test('approveRestoration marks the record restored and audit-logs it', async () => {
     const { findMock, getRequestMock } = mockPendingRestoration(t);
     const approveMock = t.mock.method(workflowService, 'approveRequest', async () => ({}));
-    const markRestoredMock = t.mock.method(archivedRecordRepository, 'markRestored', async (client, id) => ({ id, restored_at: '2026-02-01T00:00:00Z' }));
+    const markRestoredMock = t.mock.method(archivedRecordRepository, 'markRestored', async (client, id) => ({
+      id,
+      restored_at: '2026-02-01T00:00:00Z',
+    }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
       findMock.mock.restore();
@@ -139,8 +174,14 @@ test('requestRestoration / approveRestoration / rejectRestoration', async (t) =>
   });
 
   await t.test('throws ArchivalNoPendingRestorationError when the workflow request is already resolved', async () => {
-    const findMock = t.mock.method(archivedRecordRepository, 'findById', async () => ({ id: 'arc-1', workflow_request_id: 'wf-1' }));
-    const getRequestMock = t.mock.method(workflowService, 'getRequest', async () => ({ id: 'wf-1', status: 'Approved' }));
+    const findMock = t.mock.method(archivedRecordRepository, 'findById', async () => ({
+      id: 'arc-1',
+      workflow_request_id: 'wf-1',
+    }));
+    const getRequestMock = t.mock.method(workflowService, 'getRequest', async () => ({
+      id: 'wf-1',
+      status: 'Approved',
+    }));
     t.after(() => {
       findMock.mock.restore();
       getRequestMock.mock.restore();

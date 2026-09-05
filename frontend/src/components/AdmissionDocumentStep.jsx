@@ -26,8 +26,8 @@ export function AdmissionDocumentStep({ files, onAdd, onRemove, extraction, onEx
   return (
     <div className="flex flex-col gap-[14px]">
       <p className="m-0 text-[12.5px] text-ink-muted">
-        Upload what the student has provided. Nothing here is required — a student can be
-        admitted now and their documents added later.
+        Upload what the student has provided. Nothing here is required — a student can be admitted now and their
+        documents added later.
       </p>
 
       <ul className="m-0 p-0 list-none flex flex-col gap-[7px]">
@@ -87,9 +87,8 @@ export function AdmissionDocumentStep({ files, onAdd, onRemove, extraction, onEx
             </span>
           </div>
           <p className="m-0 mt-[6px] text-[12px] text-ink-muted">
-            These values are a mock, produced locally from the file name. They are proposals only:
-            every one of them appears as an editable field on the next step, and nothing is saved
-            until you have checked it.
+            These values are a mock, produced locally from the file name. They are proposals only: every one of them
+            appears as an editable field on the next step, and nothing is saved until you have checked it.
           </p>
           <ul className="m-0 mt-[8px] p-0 list-none flex flex-wrap gap-x-[18px] gap-y-[4px]">
             {Object.entries(extraction.values)

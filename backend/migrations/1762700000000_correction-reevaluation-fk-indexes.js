@@ -15,9 +15,15 @@
 exports.shorthands = undefined;
 
 exports.up = (pgm) => {
-  pgm.sql('CREATE INDEX attendance_corrections_attendance_session_id_idx ON attendance_corrections (attendance_session_id)');
-  pgm.sql('CREATE INDEX assessment_mark_corrections_assessment_mark_id_idx ON assessment_mark_corrections (assessment_mark_id)');
-  pgm.sql('CREATE INDEX assessment_mark_reevaluations_assessment_mark_id_idx ON assessment_mark_reevaluations (assessment_mark_id)');
+  pgm.sql(
+    'CREATE INDEX attendance_corrections_attendance_session_id_idx ON attendance_corrections (attendance_session_id)',
+  );
+  pgm.sql(
+    'CREATE INDEX assessment_mark_corrections_assessment_mark_id_idx ON assessment_mark_corrections (assessment_mark_id)',
+  );
+  pgm.sql(
+    'CREATE INDEX assessment_mark_reevaluations_assessment_mark_id_idx ON assessment_mark_reevaluations (assessment_mark_id)',
+  );
 };
 
 exports.down = (pgm) => {

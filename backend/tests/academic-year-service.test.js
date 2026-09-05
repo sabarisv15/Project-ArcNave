@@ -37,7 +37,10 @@ test('AcademicYearService.createAcademicYear', async (t) => {
 
   await t.test('creates a Draft year and audit-logs it', async () => {
     const createMock = t.mock.method(academicYearRepository, 'create', async (client, fields) => ({
-      id: 'ay-1', college_id: fields.collegeId, year_label: fields.yearLabel, status: 'Draft',
+      id: 'ay-1',
+      college_id: fields.collegeId,
+      year_label: fields.yearLabel,
+      status: 'Draft',
     }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
@@ -45,15 +48,24 @@ test('AcademicYearService.createAcademicYear', async (t) => {
       auditMock.mock.restore();
     });
 
-    const result = await academicYearService.createAcademicYear({}, { collegeId: 'c1', yearLabel: '2026-2027' }, { actorUserId: 'u1' });
+    const result = await academicYearService.createAcademicYear(
+      {},
+      { collegeId: 'c1', yearLabel: '2026-2027' },
+      { actorUserId: 'u1' },
+    );
     assert.equal(result.status, 'Draft');
     assert.equal(auditMock.mock.callCount(), 1);
     assert.equal(auditMock.mock.calls[0].arguments[1].action, 'academic_year_created');
   });
 
   await t.test('maps a duplicate year_label constraint violation to AcademicYearLabelConflictError', async () => {
-    const err = Object.assign(new Error('duplicate key'), { code: '23505', constraint: 'academic_years_college_year_label_key' });
-    const createMock = t.mock.method(academicYearRepository, 'create', async () => { throw err; });
+    const err = Object.assign(new Error('duplicate key'), {
+      code: '23505',
+      constraint: 'academic_years_college_year_label_key',
+    });
+    const createMock = t.mock.method(academicYearRepository, 'create', async () => {
+      throw err;
+    });
     t.after(() => createMock.mock.restore());
 
     await assert.rejects(
@@ -85,7 +97,9 @@ test('AcademicYearService lifecycle transitions', async (t) => {
   await t.test('activateAcademicYear moves Draft -> Active and audit-logs it', async () => {
     mockFindById(t, { id: 'ay-1', college_id: 'c1', status: 'Draft' });
     const updateMock = t.mock.method(academicYearRepository, 'update', async (client, id, fields) => ({
-      id, college_id: 'c1', status: fields.status,
+      id,
+      college_id: 'c1',
+      status: fields.status,
     }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {
@@ -98,17 +112,25 @@ test('AcademicYearService lifecycle transitions', async (t) => {
     assert.equal(auditMock.mock.calls[0].arguments[1].action, 'academic_year_activated');
   });
 
-  await t.test('activateAcademicYear maps a second-active-year constraint violation to AcademicYearActiveConflictError', async () => {
-    mockFindById(t, { id: 'ay-2', college_id: 'c1', status: 'Draft' });
-    const err = Object.assign(new Error('duplicate key'), { code: '23505', constraint: 'academic_years_one_active_per_college' });
-    const updateMock = t.mock.method(academicYearRepository, 'update', async () => { throw err; });
-    t.after(() => updateMock.mock.restore());
+  await t.test(
+    'activateAcademicYear maps a second-active-year constraint violation to AcademicYearActiveConflictError',
+    async () => {
+      mockFindById(t, { id: 'ay-2', college_id: 'c1', status: 'Draft' });
+      const err = Object.assign(new Error('duplicate key'), {
+        code: '23505',
+        constraint: 'academic_years_one_active_per_college',
+      });
+      const updateMock = t.mock.method(academicYearRepository, 'update', async () => {
+        throw err;
+      });
+      t.after(() => updateMock.mock.restore());
 
-    await assert.rejects(
-      () => academicYearService.activateAcademicYear({}, 'ay-2'),
-      academicYearService.AcademicYearActiveConflictError,
-    );
-  });
+      await assert.rejects(
+        () => academicYearService.activateAcademicYear({}, 'ay-2'),
+        academicYearService.AcademicYearActiveConflictError,
+      );
+    },
+  );
 
   await t.test('completeAcademicYear rejects a non-Active row', async () => {
     mockFindById(t, { id: 'ay-1', college_id: 'c1', status: 'Draft' });
@@ -121,7 +143,9 @@ test('AcademicYearService lifecycle transitions', async (t) => {
   await t.test('completeAcademicYear moves Active -> Completed', async () => {
     mockFindById(t, { id: 'ay-1', college_id: 'c1', status: 'Active' });
     const updateMock = t.mock.method(academicYearRepository, 'update', async (client, id, fields) => ({
-      id, college_id: 'c1', status: fields.status,
+      id,
+      college_id: 'c1',
+      status: fields.status,
     }));
     const auditMock = t.mock.method(auditLogRepository, 'createAuditLogEntry', async () => {});
     t.after(() => {

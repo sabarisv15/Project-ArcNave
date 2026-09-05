@@ -7,7 +7,7 @@ import { InstitutionScopeHeader } from '../components/InstitutionScopeHeader';
 import { CommenceSemesterDialog } from '../components/CommenceSemesterDialog';
 import { InstitutionDelegatedSummary } from '../components/InstitutionDelegatedSummary';
 import { PANE, TABLE_HEAD } from '../components/WorkspaceLayout';
-import { useAcademicTerm } from '../store/AcademicTermProvider';
+import { useAcademicTerm } from '@/features/institution';
 import { useInstitutionHealth } from '../hooks/useInstitutionHealth';
 import { cn } from '../lib/utils';
 
@@ -34,12 +34,7 @@ import { cn } from '../lib/utils';
 
 function Badge({ tone, children }) {
   return (
-    <span
-      className={cn(
-        'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-        tone
-      )}
-    >
+    <span className={cn('inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]', tone)}>
       {children}
     </span>
   );
@@ -49,9 +44,7 @@ function Metric({ label, value, caption }) {
   return (
     <div className="flex-1 min-w-[152px] bg-paper border border-line rounded-[16px] px-[14px] py-[12px] shadow-[inset_2px_0_0_rgb(var(--c-accent-line))]">
       <div className={TABLE_HEAD}>{label}</div>
-      <div className="mt-[6px] text-[20px] font-[600] tracking-[-.01em] tabular-nums text-ink">
-        {value}
-      </div>
+      <div className="mt-[6px] text-[20px] font-[600] tracking-[-.01em] tabular-nums text-ink">{value}</div>
       <div className="mt-[3px] text-[12px] text-ink-faint">{caption}</div>
     </div>
   );
@@ -103,11 +96,7 @@ export function InstitutionAcademicYearView() {
       </div>
 
       <div className="flex-none flex flex-wrap gap-[10px] mb-[10px]">
-        <Metric
-          label="Academic year"
-          value={term?.yearLabel ?? '—'}
-          caption={state.hint}
-        />
+        <Metric label="Academic year" value={term?.yearLabel ?? '—'} caption={state.hint} />
         <Metric
           label="Active band"
           value={term ? bandLabel(term.band) : '—'}
@@ -201,8 +190,7 @@ export function InstitutionAcademicYearView() {
           <Section title="Previous terms">
             {priorTerms.length === 0 ? (
               <p className="m-0 px-[14px] py-[12px] text-[13px] text-ink-muted">
-                No term has closed in this session. A term that closes stays here, readable and
-                unchangeable.
+                No term has closed in this session. A term that closes stays here, readable and unchangeable.
               </p>
             ) : (
               <ul className="m-0 p-0 list-none">
@@ -211,12 +199,7 @@ export function InstitutionAcademicYearView() {
                     key={t.id}
                     className="flex flex-wrap items-center gap-[9px] px-[14px] py-[10px] border-t border-line-light first:border-t-0"
                   >
-                    <Lock
-                      size={13}
-                      strokeWidth={1.9}
-                      aria-hidden="true"
-                      className="flex-none text-ink-faint"
-                    />
+                    <Lock size={13} strokeWidth={1.9} aria-hidden="true" className="flex-none text-ink-faint" />
                     <span className="text-[13px] text-ink">{t.yearLabel}</span>
                     <span className="text-[12.5px] text-ink-muted">{bandLabel(t.band)}</span>
                     <Badge tone={TERM_STATES.completed.tone}>{TERM_STATES.completed.label}</Badge>

@@ -9,8 +9,46 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "size": "size-limit",
+    "audit:gate": "npm audit --json | node scripts/audit-policy-gate.cjs audit-allowlist.json"
   },
+  "size-limit": [
+    {
+      "name": "app entry chunk (eager-loaded, referenced directly from index.html)",
+      "path": "dist/assets/app-entry-*.js",
+      "gzip": true,
+      "limit": "248 KB"
+    },
+    {
+      "name": "vendor-radix chunk",
+      "path": "dist/assets/vendor-radix-*.js",
+      "gzip": true,
+      "limit": "54 KB"
+    },
+    {
+      "name": "vendor-query chunk",
+      "path": "dist/assets/vendor-query-*.js",
+      "gzip": true,
+      "limit": "31 KB"
+    },
+    {
+      "name": "vendor-react chunk",
+      "path": "dist/assets/vendor-react-*.js",
+      "gzip": true,
+      "limit": "15 KB"
+    },
+    {
+      "name": "main CSS",
+      "path": "dist/assets/*.css",
+      "gzip": true,
+      "limit": "28 KB"
+    }
+  ],
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
     "@radix-ui/react-alert-dialog": "^1.1.19",
@@ -31,6 +69,7 @@
     "@radix-ui/react-toast": "^1.2.2",
     "@radix-ui/react-tooltip": "^1.2.12",
     "@tanstack/react-query": "^5.59.0",
+    "@tanstack/react-router": "^1.170.32",
     "@tanstack/react-table": "^8.20.5",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
@@ -50,20 +89,32 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.5.3",
     "tailwindcss-animate": "^1.0.7",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@size-limit/file": "^13.0.3",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.0.1",
     "@testing-library/user-event": "^14.5.2",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.19",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.11.0",
     "jsdom": "^25.0.1",
     "postcss": "^8.4.38",
+    "prettier": "^3.9.6",
+    "size-limit": "^13.0.3",
     "tailwindcss": "^3.4.3",
+    "typescript": "^7.0.2",
     "vite": "^5.4.0",
     "vitest": "^2.1.4"
   }

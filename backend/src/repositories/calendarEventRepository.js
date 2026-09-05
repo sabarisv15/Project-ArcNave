@@ -72,9 +72,7 @@ async function remove(client, id) {
 // gets a capped result — a safety backstop against an unfiltered
 // college-wide, all-time query being fully serialized into an LLM
 // prompt, not a functional limit for realistic event counts.
-async function list(client, {
-  collegeId, fromDate, toDate, limit,
-} = {}) {
+async function list(client, { collegeId, fromDate, toDate, limit } = {}) {
   const conditions = [];
   const values = [];
 

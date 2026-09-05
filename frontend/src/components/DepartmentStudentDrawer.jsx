@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { DrawerShell } from './AttendanceActionDrawer';
+import { DrawerShell } from '@/components/ui/Drawer';
 import { ATTENDANCE_THRESHOLD, CLASS_BY_ID, tutorOf } from '../lib/departmentData';
 import { StudentOriginBadge } from './StudentOriginBadge';
 import { PROMOTION_OUTCOMES } from '../lib/promotionData';
-import { useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import { useInstitutionalLifecycle } from '@/features/institution';
 import { cn } from '../lib/utils';
 
 /**
@@ -103,9 +103,7 @@ function ProfileTab({ s, review }) {
       />
       <Row
         label="Academic"
-        value={
-          s.backlogCount === 0 ? `CGPA ${s.cgpa}` : `${s.backlogCount} backlog${s.backlogCount > 1 ? 's' : ''}`
-        }
+        value={s.backlogCount === 0 ? `CGPA ${s.cgpa}` : `${s.backlogCount} backlog${s.backlogCount > 1 ? 's' : ''}`}
       />
     </dl>
   );
@@ -169,8 +167,8 @@ function FinanceTab({ s }) {
         }
       />
       <p className="m-0 mt-[10px] text-[11.5px] text-ink-faint">
-        Amounts, schedules and payments are not handled here — only whether the fee is settled, and fee decisions
-        belong to the class tutor.
+        Amounts, schedules and payments are not handled here — only whether the fee is settled, and fee decisions belong
+        to the class tutor.
       </p>
     </dl>
   );
@@ -255,7 +253,7 @@ export function DepartmentStudentDrawer({ student, onClose }) {
                   'flex-none h-[27px] px-[10px] border-0 rounded-[8px] bg-transparent font-sans text-[12.5px] cursor-pointer transition-colors duration-200',
                   tab === t.key
                     ? 'bg-accent-soft text-accent font-[600]'
-                    : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2'
+                    : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2',
                 )}
               >
                 {t.label}

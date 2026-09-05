@@ -1,0 +1,263 @@
+name: CI
+
+# ARCNAVE modernization P0 (ARCNAVE-modernization-english.md, "O1 —
+# No build/test pipeline" / "4.7 — No automated build/test pipeline
+# (CI)") — this repo's first-ever CI pipeline. Runs the exact
+# docker-compose.yml stack every developer already uses locally
+# (db → migrate → test), rather than reinventing role provisioning
+# (docker/postgres/init/*) in workflow YAML — that init script is the
+# real source of truth for the three-role separation (ADR-015), so CI
+# should exercise it too, not a simplified stand-in that could pass
+# while the real bootstrap is broken.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  # CI-only values — never real secrets, this stack only ever runs
+  # against a throwaway container DB with no real tenant data.
+  POSTGRES_PASSWORD: ci-postgres-password
+  ARCNAVE_APP_PASSWORD: ci-app-password
+  ARCNAVE_PLATFORM_PASSWORD: ci-platform-password
+  JWT_SECRET_KEY: ci-jwt-secret-not-a-real-credential
+  PLATFORM_JWT_SECRET_KEY: ci-platform-jwt-secret-not-a-real-credential
+  DOCUMENT_STORAGE_ENCRYPTION_KEY: ci-document-storage-key-not-a-real-credential
+
+# ARCNAVE modernization P5 (O5: "no software bill of materials/
+# signing... policy checks"). id-token: write is needed workflow-wide
+# for cosign's keyless (Sigstore/OIDC) SBOM signing — no signing key to
+# manage, no paid infra (the P0-P5 mandate's own "new investment" stop
+# condition doesn't apply here). contents: read matches the existing
+# implicit default explicitly.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start db
+        run: docker compose up -d db
+      - name: Wait for db healthcheck
+        run: |
+          for i in $(seq 1 30); do
+            status=$(docker compose ps db --format json | node -e "process.stdin.on('data',d=>console.log(JSON.parse(d).Health))")
+            [ "$status" = "healthy" ] && exit 0
+            sleep 2
+          done
+          echo "db never became healthy" && docker compose logs db && exit 1
+      - name: Build app image
+        run: docker compose build app
+      - name: Start app (for its own dependency install + as a shell to run commands in)
+        run: docker compose up -d app
+      - name: Lint
+        run: docker compose exec -T app npm run lint
+      - name: Format check
+        run: docker compose exec -T app npm run format:check
+      # P3 4.3/5.2, clash C7, ADR-016 Amendment 1 (ADL-072) — TypeScript
+      # is opt-in for new files only, zero existing .js files touched.
+      # Blocking (not informational like the audit step above) because
+      # today's baseline is trivially clean (no .ts files exist yet) —
+      # this only ever fails on a REAL new type error, never pre-existing
+      # debt.
+      - name: Typecheck
+        run: docker compose exec -T app npm run typecheck
+      # Dependency scanning (P0 item 3) — real findings already exist
+      # today (see dependency-scan-baseline.md, 6 vulnerabilities, 4
+      # high) that each need a breaking-change upgrade + its own
+      # regression pass, not a blind `--force` in this CI-setup slice.
+      # Informational for now: every PR sees the current audit output,
+      # but it doesn't fail the build until that baseline is triaged —
+      # see the doc for what's tracked and why each isn't force-fixed
+      # yet.
+      - name: Dependency audit (informational — see dependency-scan-baseline.md)
+        run: docker compose exec -T app npm audit || true
+      # ARCNAVE modernization P5 (O5). Real regression gate on top of
+      # the informational audit above: fails only on a HIGH/CRITICAL
+      # advisory not already triaged in audit-allowlist.json (see that
+      # file + scripts/audit-policy-gate.js for the reasoning) — never
+      # forces the pre-existing, already-accepted vulnerabilities in
+      # dependency-scan-baseline.md to be fixed blind.
+      - name: Dependency policy gate (blocking — see audit-allowlist.json)
+        run: docker compose exec -T app npm run audit:gate
+      # SBOM (Software Bill of Materials, CycloneDX format) — the
+      # backend bind-mounts ./backend:/app into the container
+      # (docker-compose.yml), so sbom.json written at the container's
+      # /app/sbom.json lands directly on the runner at backend/sbom.json,
+      # no docker cp needed.
+      - name: Generate SBOM (CycloneDX)
+        run: docker compose exec -T app npm run sbom
+      - uses: sigstore/cosign-installer@v3
+      # Keyless signing (Sigstore, GitHub Actions OIDC — see this
+      # workflow's own `permissions: id-token: write`) — no signing key
+      # to generate, store, or rotate, no paid infra. Verifiable later
+      # with `cosign verify-blob --certificate-identity-regexp ...
+      # --certificate-oidc-issuer https://token.actions.githubusercontent.com`.
+      - name: Sign SBOM (keyless, Sigstore)
+        run: |
+          cosign sign-blob --yes \
+            --output-signature backend/sbom.json.sig \
+            --output-certificate backend/sbom.json.crt \
+            backend/sbom.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-sbom
+          path: |
+            backend/sbom.json
+            backend/sbom.json.sig
+            backend/sbom.json.crt
+      - name: Migrate up
+        run: docker compose exec -T app npm run migrate
+      # Reversibility (CLAUDE.md rule 6: "every migration must be
+      # reversible") is asserted here, not just claimed in a comment.
+      - name: Migrate down (reversibility check)
+        run: docker compose exec -T app npm run migrate:down
+      - name: Migrate up again (confirms down didn't corrupt state)
+        run: docker compose exec -T app npm run migrate
+      - name: Test
+        run: docker compose exec -T app npm test
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # --legacy-peer-deps: an existing, pre-P0 peer-dependency
+      # conflict in this project's own dependency tree (react19 vs.
+      # next-themes/@radix-ui's stated peer ranges), not introduced by
+      # this pipeline — tracked as a dependency-scan follow-up.
+      # --workspaces=false: P5's 5.13 (npm workspaces, ADL-090) added a
+      # root package.json declaring this directory a workspace member —
+      # npm then auto-infers `--workspace=frontend` for any `npm ci` run
+      # from inside here, which silently skips installing platform-
+      # specific optionalDependencies (confirmed live: TypeScript 7's
+      # `@typescript/typescript-linux-x64` native binary never installs
+      # under that auto-inferred workspace mode, breaking `tsc` outright
+      # — this is what broke CI's first-ever real run, ADL-094). This
+      # flag restores the exact standalone-install behavior this step
+      # had before 5.13 existed; confirmed live (a clean container, this
+      # exact flag combination) that the platform binary installs
+      # correctly again.
+      - run: npm ci --legacy-peer-deps --workspaces=false
+      - name: Lint
+        run: npm run lint
+      - name: Format check
+        run: npm run format:check
+      # P3 4.3/5.2, clash C7, ADR-016 Amendment 1 (ADL-072) — see the
+      # matching backend step's comment.
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Dependency audit (informational — see dependency-scan-baseline.md)
+        run: npm audit || true
+      # ARCNAVE modernization P5 (O5) — same mechanism as the matching
+      # backend step. See backend/scripts/audit-policy-gate.js's header
+      # comment for the reasoning; this is frontend/scripts/audit-policy-gate.cjs.
+      - name: Dependency policy gate (blocking — see audit-allowlist.json)
+        run: npm run audit:gate
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+      # ARCNAVE modernization P4 (5.5/5.6: "bundle-size limit in CI").
+      # frontend/package.json's "size-limit" array budgets 5 assets: the
+      # eager entry chunk + the 3 manualChunks vendor bundles (all from
+      # vite.config.js's build.rollupOptions.output — the entry chunk was
+      # given a stable "app-entry-[hash].js" name there specifically so
+      # this check's glob can't ambiguously match an unrelated lazy
+      # chunk that also happens to start with "index-") + the main CSS
+      # file. Every limit is the real gzipped size measured from an
+      # actual `npm run build` (not a guessed number) plus ~20%
+      # headroom: entry 206.74kB->248KB, vendor-radix 44.27kB->54KB,
+      # vendor-query 25.74kB->31KB, vendor-react 12.45kB->15KB, CSS
+      # 23.14kB->28KB. This guards the *existing* code-split shape
+      # (5.6's own recorded decision: "fine for an internal dashboard —
+      # just split the bundle") against silent regression — it is not a
+      # bundle-size optimization pass, and a real breach should prompt
+      # revisiting the change that grew it, not loosening this budget
+      # reflexively.
+      - name: Bundle size limit
+        run: npm run size
+      # ARCNAVE modernization P5 (O5). Uses syft (anchore/sbom-action)
+      # instead of the backend's local cyclonedx-npm script: that npm-ls-
+      # based tool crashes against this repo's own tracked react19/
+      # @radix-ui peer-dependency conflict (the same one --legacy-peer-
+      # deps above already works around) — confirmed live, not assumed —
+      # even with its documented --ignore-npm-errors escape hatch. syft
+      # scans the filesystem directly, no `npm ls` involved, so it
+      # sidesteps that crash entirely. Free, no paid infra.
+      - name: Generate SBOM (CycloneDX, syft)
+        uses: anchore/sbom-action@v0
+        with:
+          path: frontend
+          format: cyclonedx-json
+          output-file: frontend/sbom.json
+          upload-artifact: false
+      - uses: sigstore/cosign-installer@v3
+      # Keyless signing (Sigstore, GitHub Actions OIDC) — see the
+      # matching backend step's comment for the reasoning.
+      - name: Sign SBOM (keyless, Sigstore)
+        run: |
+          cosign sign-blob --yes \
+            --output-signature sbom.json.sig \
+            --output-certificate sbom.json.crt \
+            sbom.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-sbom
+          path: |
+            frontend/sbom.json
+            frontend/sbom.json.sig
+            frontend/sbom.json.crt
+
+  # ARCNAVE modernization P1 (PDF 1.17: "AI test set — run offline and
+  # in CI"). The offline half is already satisfied by the `backend`
+  # job above: 223 AI-related tests inside `npm test` (ai-service.test.js
+  # alone), deterministic and mocked, blocking on every push/PR. This
+  # job is the OTHER half — scripts/ai-behavioral-suite.js, ~50
+  # scenarios seeded from real previously-caught bugs, but making REAL
+  # Gemini calls (real API cost, sometimes-fuzzy model output). Its own
+  # header comment (ADR-030/ADL-049) deliberately keeps it a manual
+  # check, not an every-push gate — respected here: `workflow_dispatch`
+  # only, never on push/pull_request, so it costs nothing until someone
+  # deliberately clicks "Run workflow." Making it push-blocking is a
+  # real recurring-cost decision the owner hasn't made yet.
+  ai-behavioral-suite:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start db
+        run: docker compose up -d db
+      - name: Build app image
+        run: docker compose build app
+      - name: Start app
+        run: docker compose up -d app
+      - name: Migrate
+        run: docker compose exec -T app npm run migrate
+      - name: Run behavioral suite (real Gemini calls, real cost)
+        # GEMINI_PROJECT_ID/ADC must already be configured as repo/org
+        # secrets for this job to do anything real — left unconfigured
+        # here deliberately; wiring real credentials into CI is its own
+        # decision, this job only adds the button.
+        run: docker compose exec -T app node scripts/ai-behavioral-suite.js
+
+# Branch protection note: this workflow being green is only an actual
+# merge gate if the repo's branch-protection rule for `master` requires
+# both jobs to pass — that's a GitHub repo setting (Settings → Branches),
+# not something this file can turn on by itself; needs a repo admin.

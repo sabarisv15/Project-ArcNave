@@ -24,7 +24,7 @@ test('resolveMediaSupport: a Vertex-backed adapter (supportsCapability) is check
   const adapter = {
     supportsCapability: (cfg, capability) => vertexCapabilityRegistry.hasCapability(cfg, capability),
   };
-  const cfg = { projectId: 'p', location: 'global', model: 'gemini-3.7-flash' };
+  const cfg = { projectId: 'p', location: 'global', model: 'gemini-3.8-flash' };
   const result = resolveMediaSupport(adapter, cfg, [{ mimeType: 'image/png' }], [{ mimeType: 'audio/wav' }]);
   assert.equal(result.imagesSupported, true);
   assert.equal(result.imageAnalysisUnavailable, false);

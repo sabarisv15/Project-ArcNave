@@ -14,28 +14,40 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  fetchWithTimeout, parseJsonResponse, extractOpenAiCompatibleUsage, buildOpenAiCompatiblePriorTurnMessages,
+  fetchWithTimeout,
+  parseJsonResponse,
+  extractOpenAiCompatibleUsage,
+  buildOpenAiCompatiblePriorTurnMessages,
 } = require('../src/services/aiProviders/openAiCompatibleUtils');
 const { LlmRequestError } = require('../src/services/aiProviders/errors');
 
 function withStubbedFetch(impl, fn) {
   const original = global.fetch;
   global.fetch = impl;
-  return fn().finally(() => { global.fetch = original; });
+  return fn().finally(() => {
+    global.fetch = original;
+  });
 }
 
 // --- fetchWithTimeout ---
 
 test('fetchWithTimeout: posts to the exact url/headers/body given, no hidden defaults added', async () => {
   let captured;
-  await withStubbedFetch(async (url, options) => {
-    captured = { url, options };
-    return { ok: true };
-  }, async () => {
-    await fetchWithTimeout({
-      url: 'https://example.test/chat', headers: { 'x-custom': 'v' }, body: { a: 1 }, timeoutMs: 1000, providerLabel: 'Test Provider',
-    });
-  });
+  await withStubbedFetch(
+    async (url, options) => {
+      captured = { url, options };
+      return { ok: true };
+    },
+    async () => {
+      await fetchWithTimeout({
+        url: 'https://example.test/chat',
+        headers: { 'x-custom': 'v' },
+        body: { a: 1 },
+        timeoutMs: 1000,
+        providerLabel: 'Test Provider',
+      });
+    },
+  );
   assert.equal(captured.url, 'https://example.test/chat');
   assert.equal(captured.options.method, 'POST');
   assert.deepEqual(captured.options.headers, { 'x-custom': 'v' });
@@ -44,33 +56,52 @@ test('fetchWithTimeout: posts to the exact url/headers/body given, no hidden def
 });
 
 test('fetchWithTimeout: a network-level throw is wrapped in LlmRequestError naming the given providerLabel', async () => {
-  await withStubbedFetch(async () => { throw new Error('ECONNRESET'); }, async () => {
-    await assert.rejects(
-      () => fetchWithTimeout({
-        url: 'https://example.test/chat', headers: {}, body: {}, timeoutMs: 1000, providerLabel: 'Test Provider',
-      }),
-      (err) => err instanceof LlmRequestError && /request to Test Provider failed: ECONNRESET/.test(err.message),
-    );
-  });
+  await withStubbedFetch(
+    async () => {
+      throw new Error('ECONNRESET');
+    },
+    async () => {
+      await assert.rejects(
+        () =>
+          fetchWithTimeout({
+            url: 'https://example.test/chat',
+            headers: {},
+            body: {},
+            timeoutMs: 1000,
+            providerLabel: 'Test Provider',
+          }),
+        (err) => err instanceof LlmRequestError && /request to Test Provider failed: ECONNRESET/.test(err.message),
+      );
+    },
+  );
 });
 
 test('fetchWithTimeout: aborts and rejects once timeoutMs elapses on a hanging request', async () => {
-  await withStubbedFetch((url, options) => new Promise((resolve, reject) => {
-    options.signal.addEventListener('abort', () => {
-      const err = new Error('The operation was aborted');
-      err.name = 'AbortError';
-      reject(err);
-    });
-  }), async () => {
-    const startedAt = Date.now();
-    await assert.rejects(
-      () => fetchWithTimeout({
-        url: 'https://example.test/chat', headers: {}, body: {}, timeoutMs: 50, providerLabel: 'Test Provider',
+  await withStubbedFetch(
+    (url, options) =>
+      new Promise((resolve, reject) => {
+        options.signal.addEventListener('abort', () => {
+          const err = new Error('The operation was aborted');
+          err.name = 'AbortError';
+          reject(err);
+        });
       }),
-      LlmRequestError,
-    );
-    assert.ok(Date.now() - startedAt < 2000, 'must not wait beyond the given timeoutMs');
-  });
+    async () => {
+      const startedAt = Date.now();
+      await assert.rejects(
+        () =>
+          fetchWithTimeout({
+            url: 'https://example.test/chat',
+            headers: {},
+            body: {},
+            timeoutMs: 50,
+            providerLabel: 'Test Provider',
+          }),
+        LlmRequestError,
+      );
+      assert.ok(Date.now() - startedAt < 2000, 'must not wait beyond the given timeoutMs');
+    },
+  );
 });
 
 // --- parseJsonResponse ---
@@ -83,7 +114,9 @@ test('parseJsonResponse: a successful response returns the parsed JSON body', as
 
 test('parseJsonResponse: a non-ok response throws LlmRequestError with the status and up to 500 chars of the body, naming the provider', async () => {
   const response = {
-    ok: false, status: 503, text: async () => 'x'.repeat(600),
+    ok: false,
+    status: 503,
+    text: async () => 'x'.repeat(600),
   };
   await assert.rejects(
     () => parseJsonResponse(response, 'Test Provider'),
@@ -98,7 +131,11 @@ test('parseJsonResponse: a non-ok response throws LlmRequestError with the statu
 
 test('parseJsonResponse: a response whose body text read itself fails still throws cleanly (empty body assumed)', async () => {
   const response = {
-    ok: false, status: 500, text: async () => { throw new Error('stream already consumed'); },
+    ok: false,
+    status: 500,
+    text: async () => {
+      throw new Error('stream already consumed');
+    },
   };
   await assert.rejects(
     () => parseJsonResponse(response, 'Test Provider'),
@@ -107,20 +144,27 @@ test('parseJsonResponse: a response whose body text read itself fails still thro
 });
 
 test('parseJsonResponse: a non-JSON ok response throws LlmRequestError naming the provider, never crashes uncaught', async () => {
-  const response = { ok: true, json: async () => { throw new SyntaxError('Unexpected token <'); } };
+  const response = {
+    ok: true,
+    json: async () => {
+      throw new SyntaxError('Unexpected token <');
+    },
+  };
   await assert.rejects(
     () => parseJsonResponse(response, 'Test Provider'),
-    (err) => err instanceof LlmRequestError && /Test Provider returned a non-JSON response: Unexpected token/.test(err.message),
+    (err) =>
+      err instanceof LlmRequestError &&
+      /Test Provider returned a non-JSON response: Unexpected token/.test(err.message),
   );
 });
 
 // --- extractOpenAiCompatibleUsage ---
 
 test('extractOpenAiCompatibleUsage: maps prompt_tokens/completion_tokens to inputTokens/outputTokens', () => {
-  assert.deepEqual(
-    extractOpenAiCompatibleUsage({ prompt_tokens: 12, completion_tokens: 34 }),
-    { inputTokens: 12, outputTokens: 34 },
-  );
+  assert.deepEqual(extractOpenAiCompatibleUsage({ prompt_tokens: 12, completion_tokens: 34 }), {
+    inputTokens: 12,
+    outputTokens: 34,
+  });
 });
 
 test('extractOpenAiCompatibleUsage: undefined/null/missing usage returns undefined, never a fabricated zero', () => {
@@ -133,10 +177,16 @@ test('extractOpenAiCompatibleUsage: undefined/null/missing usage returns undefin
 test('buildOpenAiCompatiblePriorTurnMessages: one assistant/tool_calls + tool/result pair per prior turn, in order', () => {
   const messages = buildOpenAiCompatiblePriorTurnMessages([
     {
-      toolName: 'tool_a', arguments: { x: 1 }, callId: 'call_1', resultText: 'RESULT_1',
+      toolName: 'tool_a',
+      arguments: { x: 1 },
+      callId: 'call_1',
+      resultText: 'RESULT_1',
     },
     {
-      toolName: 'tool_b', arguments: { y: 2 }, callId: 'call_2', resultText: 'RESULT_2',
+      toolName: 'tool_b',
+      arguments: { y: 2 },
+      callId: 'call_2',
+      resultText: 'RESULT_2',
     },
   ]);
   assert.equal(messages.length, 4);
@@ -156,11 +206,19 @@ test('buildOpenAiCompatiblePriorTurnMessages: one assistant/tool_calls + tool/re
 
 test('buildOpenAiCompatiblePriorTurnMessages: rawToolCall is replayed verbatim when present, never reconstructed', () => {
   const rawToolCall = {
-    id: 'call_9', type: 'function', function: { name: 'tool_a', arguments: '{"x":1,"y":2}' },
+    id: 'call_9',
+    type: 'function',
+    function: { name: 'tool_a', arguments: '{"x":1,"y":2}' },
   };
-  const messages = buildOpenAiCompatiblePriorTurnMessages([{
-    toolName: 'tool_a', arguments: { x: 1, y: 2 }, callId: 'call_9', rawToolCall, resultText: 'R',
-  }]);
+  const messages = buildOpenAiCompatiblePriorTurnMessages([
+    {
+      toolName: 'tool_a',
+      arguments: { x: 1, y: 2 },
+      callId: 'call_9',
+      rawToolCall,
+      resultText: 'R',
+    },
+  ]);
   assert.equal(messages[0].tool_calls[0], rawToolCall, 'the exact same object, not a reconstruction');
 });
 

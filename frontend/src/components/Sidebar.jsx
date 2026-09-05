@@ -4,6 +4,7 @@ import { HomeCurriculumToggle } from './HomeCurriculumToggle';
 import { SidebarNavigation } from './SidebarNavigation';
 import { SeatContextIndicator } from './SeatContextIndicator';
 import { SidebarUtilityCluster } from './SidebarUtilityCluster';
+import { NotificationBell } from './NotificationBell';
 import { Recents } from './Recents';
 import { ProfileFooter } from './ProfileFooter';
 
@@ -39,13 +40,16 @@ export function Sidebar({ floating = false }) {
         // rounded right corners and one restrained lift.
         floating
           ? 'bg-raised rounded-r-[20px] border-r border-line-strong shadow-pop'
-          : 'bg-sidebar rounded-none border-0'
+          : 'bg-sidebar rounded-none border-0',
       )}
     >
       <div className="flex-none">
         <div className="flex items-center justify-between pl-[6px] pr-[4px] pb-[2px]">
           <span className="text-[23px] font-[700] tracking-[-.02em]">ArcNave</span>
-          <SidebarUtilityCluster />
+          <div className="flex items-center gap-[2px]">
+            <NotificationBell />
+            <SidebarUtilityCluster />
+          </div>
         </div>
         <HomeCurriculumToggle />
         {/*

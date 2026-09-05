@@ -1,19 +1,13 @@
-import { act, render, renderHook, screen, waitFor, within } from '@testing-library/react';
+import { act, renderHook, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import * as Tooltip from '@radix-ui/react-tooltip';
 import { describe, expect, it } from 'vitest';
-import App from '../App';
-import { WorkspaceProvider } from '../store/WorkspaceProvider';
-import { ComposerProvider } from '../store/ComposerProvider';
-import { AcademicRosterProvider, useAcademicRoster } from '../store/AcademicRosterProvider';
-import { AcademicTermProvider } from '../store/AcademicTermProvider';
+import { AcademicRosterProvider, useAcademicRoster, AcademicTermProvider } from '@/features/institution';
 import { OWNED_CLASS, PROMOTED_STUDENTS, PRIOR_SEMESTER } from '../lib/classTutorData';
 import { ACTIVE_CLASSES } from '../lib/academicCalendar';
 import { studentsOfClass as baselineStudentsOfClass } from '../lib/rosterData';
 import { attendanceLiveFor, timetableStateOfClass } from '../lib/timetableState';
 import { hasClassTutor } from '../lib/seatState';
+import { renderApp as renderAppShared } from './renderApp';
 import {
   classifyRows,
   guessMapping,
@@ -23,25 +17,12 @@ import {
   summarise,
 } from '../lib/bulkImportData';
 
-function renderApp(route = '/curriculum') {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[route]}>
-        <Tooltip.Provider>
-          <WorkspaceProvider>
-            <ComposerProvider>
-              <App />
-            </ComposerProvider>
-          </WorkspaceProvider>
-        </Tooltip.Provider>
-      </MemoryRouter>
-    </QueryClientProvider>
-  );
+function renderApp(route = '/curriculum', options) {
+  return renderAppShared(route, options);
 }
 
 async function useClassTutorView(user) {
-  await user.click(screen.getByRole('button', { name: /open profile/i }));
+  await user.click(await screen.findByRole('button', { name: /open profile/i }));
   const group = await screen.findByRole('radiogroup', { name: /workspace view/i });
   await user.click(within(group).getByRole('radio', { name: /class tutor/i }));
   await user.click(screen.getByRole('button', { name: /close profile/i }));
@@ -64,9 +45,7 @@ const roster = () => renderHook(() => useAcademicRoster(), { wrapper });
 describe('ClassGate — the class workspace is one seat’s', () => {
   it('does not render the class workspace under another workspace view', async () => {
     renderApp('/curriculum/my-class');
-    expect(
-      await screen.findByText(/the class workspace is not part of the workspace view/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/the class workspace is not part of the workspace view/i)).toBeInTheDocument();
     // It says what happened rather than redirecting — the URL the user asked
     // for is not discarded.
     expect(screen.queryByRole('heading', { name: /^my class$/i })).toBeNull();
@@ -173,7 +152,7 @@ describe('Individual admission', () => {
       outcome = result.current.admitStudent(
         OWNED_CLASS.id,
         { name: 'Someone Else', reg: promoted.reg },
-        { scopeClassId: OWNED_CLASS.id }
+        { scopeClassId: OWNED_CLASS.id },
       );
     });
 
@@ -191,7 +170,7 @@ describe('Individual admission', () => {
         result.current.admitStudent(
           OWNED_CLASS.id,
           { name: `Filler ${i}`, reg: `REG-FILL-${i}` },
-          { scopeClassId: OWNED_CLASS.id }
+          { scopeClassId: OWNED_CLASS.id },
         );
       }
     });
@@ -203,7 +182,7 @@ describe('Individual admission', () => {
       outcome = result.current.admitStudent(
         OWNED_CLASS.id,
         { name: 'One Too Many', reg: 'REG-OVER-1' },
-        { scopeClassId: OWNED_CLASS.id }
+        { scopeClassId: OWNED_CLASS.id },
       );
     });
     expect(outcome.ok).toBe(false);
@@ -221,9 +200,7 @@ describe('Individual admission', () => {
 
     expect(outcome.ok).toBe(false);
     expect(outcome.reason).toBe('out_of_scope');
-    expect(result.current.studentsOfClass(other.id)).toHaveLength(
-      baselineStudentsOfClass(other.id).length
-    );
+    expect(result.current.studentsOfClass(other.id)).toHaveLength(baselineStudentsOfClass(other.id).length);
   });
 
   it('never mutates the immutable baseline fixture', () => {
@@ -244,7 +221,7 @@ describe('Bulk import', () => {
       result.current.validateAdmission(OWNED_CLASS.id, values, {
         scopeClassId: OWNED_CLASS.id,
         pending,
-      })
+      }),
     );
     return { parsed, mapping, classified };
   }
@@ -305,13 +282,13 @@ describe('Bulk import', () => {
         'Name,Register Number,Student Phone,Guardian Phone',
         'Twice Over,REG-2024-8801,+91 9800000010,+91 8800000010',
         'Twice Over Again,REG-2024-8801,+91 9800000011,+91 8800000011',
-      ].join('\n')
+      ].join('\n'),
     );
     const classified = classifyRows(parsed.rows, guessMapping(parsed.headers), (values, pending) =>
       result.current.validateAdmission(OWNED_CLASS.id, values, {
         scopeClassId: OWNED_CLASS.id,
         pending,
-      })
+      }),
     );
 
     expect(classified[0].state).not.toBe('rejected');
@@ -323,11 +300,9 @@ describe('Bulk import', () => {
     const { result } = roster();
     let created;
     act(() => {
-      created = result.current.importStudents(
-        OWNED_CLASS.id,
-        [{ name: 'Shared Identity', reg: 'REG-2024-8899' }],
-        { scopeClassId: OWNED_CLASS.id }
-      ).accepted[0];
+      created = result.current.importStudents(OWNED_CLASS.id, [{ name: 'Shared Identity', reg: 'REG-2024-8899' }], {
+        scopeClassId: OWNED_CLASS.id,
+      }).accepted[0];
     });
 
     expect(result.current.studentById(created.id)).toBe(created);
@@ -352,9 +327,7 @@ describe('Promoted students and prior-semester history', () => {
     await user.click(row);
     const drawer = await screen.findByRole('dialog');
     expect(within(drawer).getByText('Promoted')).toBeInTheDocument();
-    expect(
-      within(drawer).getByText(/no onboarding is needed/i)
-    ).toBeInTheDocument();
+    expect(within(drawer).getByText(/no onboarding is needed/i)).toBeInTheDocument();
     // The drawer offers nothing that would onboard a student who is already
     // enrolled — no admit, no import, no re-enrol.
     ['admit', 'onboard', 'enrol', 'import'].forEach((word) => {
@@ -395,9 +368,7 @@ describe('Attendance follows the timetable, never the seat', () => {
     expect(pending).toBeTruthy();
     expect(attendanceLiveFor(pending.id)).toBe(false);
     // The seat is irrelevant to it, in both directions.
-    const tutoredAndLocked = ACTIVE_CLASSES.filter(
-      (c) => hasClassTutor(c.id) && !attendanceLiveFor(c.id)
-    );
+    const tutoredAndLocked = ACTIVE_CLASSES.filter((c) => hasClassTutor(c.id) && !attendanceLiveFor(c.id));
     expect(tutoredAndLocked.length).toBeGreaterThan(0);
   });
 
@@ -451,7 +422,7 @@ describe('The admission wizard, end to end', () => {
 
     // …and present in the roster behind it.
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: /Checked By Hand.*open record/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Checked By Hand.*open record/i })).toBeInTheDocument(),
     );
   });
 });

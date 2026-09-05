@@ -83,10 +83,10 @@ function stopServer(server) {
 async function seedCollegeAndUser(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const college = { collegeId: `rbac${suffix}`, subdomain: `rbactenant${suffix}` };
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [college.collegeId, college.subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    college.collegeId,
+    college.subdomain,
+  ]);
   const passwordHash = await argon2.hash('irrelevant-for-this-test');
   const result = await adminPool.query(
     `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
@@ -169,7 +169,13 @@ test('rbac', async (t) => {
       });
       assert.equal(resp.status, 200);
       assert.deepEqual(resp.body, {
-        user_id: userId, college_id: collegeId, role, full_name: null, designation: null, phone: null, address: null,
+        user_id: userId,
+        college_id: collegeId,
+        role,
+        full_name: null,
+        designation: null,
+        phone: null,
+        address: null,
       });
     });
   }

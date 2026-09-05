@@ -6,7 +6,14 @@ import { configurationsApi } from '@/api/configurations';
 import { aiConfigApi } from '@/api/aiConfig';
 import { cn } from '../lib/utils';
 
-const DEFAULT_ALLOWED_DOMAINS = ['ugc.gov.in', 'aicte-india.org', 'aicte.gov.in', 'nirfindia.org', 'naac.gov.in', 'nic.in'];
+const DEFAULT_ALLOWED_DOMAINS = [
+  'ugc.gov.in',
+  'aicte-india.org',
+  'aicte.gov.in',
+  'nirfindia.org',
+  'naac.gov.in',
+  'nic.in',
+];
 
 function Section({ title, description, children }) {
   return (
@@ -28,7 +35,9 @@ function StatusChip({ label, tone = 'neutral' }) {
     warn: 'bg-[rgb(var(--c-accent)/0.14)] text-[rgb(var(--c-accent))]',
   }[tone];
   return (
-    <span className={cn('inline-flex items-center h-[22px] px-[8px] rounded-[6px] text-[11.5px] font-[500]', toneClass)}>
+    <span
+      className={cn('inline-flex items-center h-[22px] px-[8px] rounded-[6px] text-[11.5px] font-[500]', toneClass)}
+    >
       {label}
     </span>
   );
@@ -40,7 +49,10 @@ function UsageBar({ percent, warn }) {
   return (
     <div className="h-[8px] w-full rounded-[4px] bg-tint2 overflow-hidden">
       <div
-        className={cn('h-full rounded-[4px] transition-[width] duration-300', warn ? 'bg-[rgb(var(--c-accent))]' : 'bg-ink-faint')}
+        className={cn(
+          'h-full rounded-[4px] transition-[width] duration-300',
+          warn ? 'bg-[rgb(var(--c-accent))]' : 'bg-ink-faint',
+        )}
         style={{ width: `${clamped}%` }}
       />
     </div>
@@ -113,7 +125,10 @@ function OpsStatusSection() {
           <p className="m-0 text-[11.5px] text-ink-faint">
             Configured: <span className="font-mono">{status.modelVersion.configured}</span>
             {status.modelVersion.lastObserved && (
-              <> — last real response reported <span className="font-mono">{status.modelVersion.lastObserved}</span>.</>
+              <>
+                {' '}
+                — last real response reported <span className="font-mono">{status.modelVersion.lastObserved}</span>.
+              </>
             )}
           </p>
         </div>
@@ -128,8 +143,10 @@ function OpsStatusSection() {
           </div>
           <UsageBar percent={status.quota.percentUsed} warn={!status.quota.withinBudget} />
           <p className="m-0 mt-[6px] text-[11.5px] text-ink-faint">
-            {status.quota.callCount.toLocaleString()} AI calls since {new Date(status.quota.periodStart).toLocaleDateString()}.
-            {!status.quota.withinBudget && ' This college has reached its monthly quota — further AI requests are refused until next month, or until the quota is raised.'}
+            {status.quota.callCount.toLocaleString()} AI calls since{' '}
+            {new Date(status.quota.periodStart).toLocaleDateString()}.
+            {!status.quota.withinBudget &&
+              ' This college has reached its monthly quota — further AI requests are refused until next month, or until the quota is raised.'}
           </p>
         </div>
 
@@ -273,7 +290,7 @@ export function InstitutionAiSettingsView() {
               rows={4}
               className={cn(
                 'w-full resize-y rounded-[10px] border border-line bg-paper px-[10px] py-[8px]',
-                'font-mono text-[12.5px] text-ink outline-none focus-visible:border-accent'
+                'font-mono text-[12.5px] text-ink outline-none focus-visible:border-accent',
               )}
             />
             <div className="mt-[10px] flex justify-end">
@@ -289,8 +306,8 @@ export function InstitutionAiSettingsView() {
           </Section>
 
           <p className="m-0 text-[11.5px] text-ink-faint">
-            Available to every role once enabled — principal, HOD, staff, and class tutors can all ask ArcNave to
-            look up an allowed page for reference or research.
+            Available to every role once enabled — principal, HOD, staff, and class tutors can all ask ArcNave to look
+            up an allowed page for reference or research.
           </p>
         </div>
       )}

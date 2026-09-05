@@ -41,8 +41,8 @@ export function PriorSemesterPanel({ prior = PRIOR_SEMESTER }) {
       </div>
 
       <p className="m-0 mt-[9px] text-[12px] text-ink-muted">
-        {prior.promotedIn} of this class arrived by promotion from that cohort. Their attendance,
-        assessments and documents from it stay on their record and cannot be changed here.
+        {prior.promotedIn} of this class arrived by promotion from that cohort. Their attendance, assessments and
+        documents from it stay on their record and cannot be changed here.
       </p>
     </section>
   );

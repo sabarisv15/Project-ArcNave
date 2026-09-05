@@ -35,8 +35,7 @@ import { cn } from '../lib/utils';
  * bleed), and the vertical padding is taken back out of the 10px bottom margin
  * the line already had. Same box, same rhythm, one more surface.
  */
-const BAND =
-  'px-[10px] py-[6px] mx-[-10px] mt-[-6px] mb-[4px] rounded-[10px] bg-mist';
+const BAND = 'px-[10px] py-[6px] mx-[-10px] mt-[-6px] mb-[4px] rounded-[10px] bg-mist';
 
 function Dot() {
   return (
@@ -68,13 +67,7 @@ export function SeatScopeHeader({ parts = [], year, band, title, empty, classNam
   const segments = parts.filter(Boolean);
 
   return (
-    <div
-      className={cn(
-        'flex-none flex items-center gap-[7px] flex-wrap text-[12px] text-ink-muted',
-        BAND,
-        className
-      )}
-    >
+    <div className={cn('flex-none flex items-center gap-[7px] flex-wrap text-[12px] text-ink-muted', BAND, className)}>
       {segments.map((part, i) => (
         <span key={`${part.label}-${i}`} className="flex items-center gap-[7px]">
           {i > 0 && <Dot />}

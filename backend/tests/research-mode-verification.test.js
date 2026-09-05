@@ -41,7 +41,9 @@ function withOpenAiConfig(apiKey, fn) {
 function withMockFetch(mockFetch, fn) {
   const original = global.fetch;
   global.fetch = mockFetch;
-  return fn().finally(() => { global.fetch = original; });
+  return fn().finally(() => {
+    global.fetch = original;
+  });
 }
 
 function mockAnswerResponse(text) {
@@ -75,13 +77,19 @@ test('verifyResearchNumericClaims: a direct count claim matching a trusted fact 
 // --- Test 3: derived percentage -------------------------------------------
 
 test('verifyResearchNumericClaims: a percentage correctly derivable from trusted appeared/passed counts -> verified', () => {
-  const evidence = [{ label: 'appeared', value: 200 }, { label: 'passed', value: 165 }];
+  const evidence = [
+    { label: 'appeared', value: 200 },
+    { label: 'passed', value: 165 },
+  ];
   const result = verifyResearchNumericClaims('Pass percentage was 82.5%.', evidence);
   assert.equal(result.status, RESEARCH_VERIFICATION_STATUS.VERIFIED);
 });
 
 test('verifyResearchNumericClaims: a percentage that does NOT match any derivable ratio -> verification_failed', () => {
-  const evidence = [{ label: 'appeared', value: 200 }, { label: 'passed', value: 165 }];
+  const evidence = [
+    { label: 'appeared', value: 200 },
+    { label: 'passed', value: 165 },
+  ];
   const result = verifyResearchNumericClaims('Pass percentage was 90.0%.', evidence);
   assert.equal(result.status, RESEARCH_VERIFICATION_STATUS.VERIFICATION_FAILED);
 });
@@ -90,20 +98,26 @@ test('verifyResearchNumericClaims: a percentage that does NOT match any derivabl
 
 test('verifyResearchNumericClaims: a correct ranking claim, checked against all trusted year values -> verified', () => {
   const evidence = [
-    { label: '2022', value: 70.1 }, { label: '2023', value: 75.2 }, { label: '2024', value: 82.5 },
+    { label: '2022', value: 70.1 },
+    { label: '2023', value: 75.2 },
+    { label: '2024', value: 82.5 },
   ];
-  const answer = 'Across the years, 2022 was 70.1%, 2023 was 75.2%, and 2024 was 82.5%. '
-    + 'This means 2024 had the highest pass percentage.';
+  const answer =
+    'Across the years, 2022 was 70.1%, 2023 was 75.2%, and 2024 was 82.5%. ' +
+    'This means 2024 had the highest pass percentage.';
   const result = verifyResearchNumericClaims(answer, evidence);
   assert.equal(result.status, RESEARCH_VERIFICATION_STATUS.VERIFIED);
 });
 
 test('verifyResearchNumericClaims: an incorrect ranking claim is never treated as verified, even when the individual figures are correct', () => {
   const evidence = [
-    { label: '2022', value: 70.1 }, { label: '2023', value: 75.2 }, { label: '2024', value: 82.5 },
+    { label: '2022', value: 70.1 },
+    { label: '2023', value: 75.2 },
+    { label: '2024', value: 82.5 },
   ];
-  const answer = 'Across the years, 2022 was 70.1%, 2023 was 75.2%, and 2024 was 82.5%. '
-    + 'This means 2023 had the highest pass percentage.';
+  const answer =
+    'Across the years, 2022 was 70.1%, 2023 was 75.2%, and 2024 was 82.5%. ' +
+    'This means 2023 had the highest pass percentage.';
   const result = verifyResearchNumericClaims(answer, evidence);
   assert.equal(result.status, RESEARCH_VERIFICATION_STATUS.VERIFICATION_FAILED);
 });
@@ -117,7 +131,7 @@ test('verifyResearchNumericClaims: an institution-specific number with no truste
 
 // --- Test 6: unreliable PDF/document evidence -----------------------------
 
-test('verifyResearchNumericClaims: evidence marked unreliable_extraction (Finding #3\'s own status field) is never trusted, even though the arithmetic itself is correct', () => {
+test("verifyResearchNumericClaims: evidence marked unreliable_extraction (Finding #3's own status field) is never trusted, even though the arithmetic itself is correct", () => {
   const evidence = [
     { label: 'appeared', value: 200, status: 'unreliable_extraction' },
     { label: 'passed', value: 165, status: 'unreliable_extraction' },
@@ -153,30 +167,45 @@ test('verifyResearchNumericClaims: non-string/missing answer text is handled saf
 test('aiService.askAgent (mode general): a general research question is returned completely unchanged, no verification note appended', async () => {
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'hod', collegeId: 'college-a' };
-  await withOpenAiConfig('test-key', () => withMockFetch(
-    async () => mockAnswerResponse('Qualitative research explores meaning; quantitative research measures magnitude.'),
-    async () => {
-      const result = await aiService.askAgent(client, 'Explain the difference between qualitative and quantitative research.', { identityContext, mode: 'general' });
-      assert.equal(result.answer, 'Qualitative research explores meaning; quantitative research measures magnitude.');
-      assert.equal(result.verification.status, RESEARCH_VERIFICATION_STATUS.NOT_APPLICABLE);
-    },
-  ));
+  await withOpenAiConfig('test-key', () =>
+    withMockFetch(
+      async () =>
+        mockAnswerResponse('Qualitative research explores meaning; quantitative research measures magnitude.'),
+      async () => {
+        const result = await aiService.askAgent(
+          client,
+          'Explain the difference between qualitative and quantitative research.',
+          { identityContext, mode: 'general' },
+        );
+        assert.equal(result.answer, 'Qualitative research explores meaning; quantitative research measures magnitude.');
+        assert.equal(result.verification.status, RESEARCH_VERIFICATION_STATUS.NOT_APPLICABLE);
+      },
+    ),
+  );
 });
 
 test('aiService.askAgent (mode general): an institution-specific numeric claim with no evidence gets a limitation note appended, never presented as verified', async () => {
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'hod', collegeId: 'college-a' };
-  await withOpenAiConfig('test-key', () => withMockFetch(
-    async () => mockAnswerResponse('Our college pass percentage was 87.4% in 2025.'),
-    async () => {
-      const result = await aiService.askAgent(client, 'What was our pass percentage last year?', { identityContext, mode: 'general' });
-      assert.equal(result.verification.status, RESEARCH_VERIFICATION_STATUS.NOT_VERIFIABLE);
-      assert.ok(result.answer.startsWith('Our college pass percentage was 87.4% in 2025.'), 'the original answer text must still be present, not replaced');
-      assert.match(result.answer, /cannot verify/i);
-      // No internal status name, hidden reasoning, or provider name leaks into the user-facing note.
-      assert.ok(!/not_verifiable|openai|gemini|vertex/i.test(result.answer));
-    },
-  ));
+  await withOpenAiConfig('test-key', () =>
+    withMockFetch(
+      async () => mockAnswerResponse('Our college pass percentage was 87.4% in 2025.'),
+      async () => {
+        const result = await aiService.askAgent(client, 'What was our pass percentage last year?', {
+          identityContext,
+          mode: 'general',
+        });
+        assert.equal(result.verification.status, RESEARCH_VERIFICATION_STATUS.NOT_VERIFIABLE);
+        assert.ok(
+          result.answer.startsWith('Our college pass percentage was 87.4% in 2025.'),
+          'the original answer text must still be present, not replaced',
+        );
+        assert.match(result.answer, /cannot verify/i);
+        // No internal status name, hidden reasoning, or provider name leaks into the user-facing note.
+        assert.ok(!/not_verifiable|openai|gemini|vertex/i.test(result.answer));
+      },
+    ),
+  );
 });
 
 // --- Test 9: experimental reasoning model cannot bypass the boundary -------
@@ -191,12 +220,17 @@ test('aiService.askAgent (mode general): an institution-specific numeric claim w
 test('askGeneralChat verification boundary is provider-agnostic: applies to answer text regardless of which adapter produced it', async () => {
   const client = fakeClient();
   const identityContext = { userId: 'u1', role: 'hod', collegeId: 'college-a' };
-  await withOpenAiConfig('test-key', () => withMockFetch(
-    async () => mockAnswerResponse('The exact figure for this college was 99.9% in 2025.'),
-    async () => {
-      const result = await aiService.askAgent(client, 'general research question about our figures', { identityContext, mode: 'general' });
-      assert.equal(result.verification.status, RESEARCH_VERIFICATION_STATUS.NOT_VERIFIABLE);
-      assert.match(result.answer, /cannot verify/i);
-    },
-  ));
+  await withOpenAiConfig('test-key', () =>
+    withMockFetch(
+      async () => mockAnswerResponse('The exact figure for this college was 99.9% in 2025.'),
+      async () => {
+        const result = await aiService.askAgent(client, 'general research question about our figures', {
+          identityContext,
+          mode: 'general',
+        });
+        assert.equal(result.verification.status, RESEARCH_VERIFICATION_STATUS.NOT_VERIFIABLE);
+        assert.match(result.answer, /cannot verify/i);
+      },
+    ),
+  );
 });

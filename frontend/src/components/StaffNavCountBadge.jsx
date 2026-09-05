@@ -8,7 +8,7 @@ export function StaffNavCountBadge({ active, count = STAFF_TOTAL }) {
       title={`${count} staff in the directory`}
       className={cn(
         'ml-auto min-w-[27px] h-[19px] inline-flex items-center justify-center px-[6px] rounded-[7px] text-[10.5px] font-[500] tabular-nums transition-colors duration-200',
-        active ? 'bg-paper text-accent' : 'bg-tint2 text-ink-muted'
+        active ? 'bg-paper text-accent' : 'bg-tint2 text-ink-muted',
       )}
     >
       {count}

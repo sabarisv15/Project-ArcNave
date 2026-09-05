@@ -79,13 +79,16 @@ function hostFor(subdomain) {
 async function seedTenant(adminPool, label) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const collegeId = `aicfg${label}${suffix}`;
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [collegeId, `aicfgtenant${label}${suffix}`],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    collegeId,
+    `aicfgtenant${label}${suffix}`,
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userIds = {};
-  for (const [username, role] of [['principaluser', 'principal'], ['staffuser', 'staff']]) {
+  for (const [username, role] of [
+    ['principaluser', 'principal'],
+    ['staffuser', 'staff'],
+  ]) {
     // eslint-disable-next-line no-await-in-loop
     const result = await adminPool.query(
       `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
@@ -138,7 +141,8 @@ test('ai-config API', async (t) => {
 
   async function login(college, username) {
     const resp = await requestJson(baseUrl, '/api/v1/auth/login', 'POST', {
-      headers: { host: hostFor(college.subdomain) }, body: { username, password: PASSWORD },
+      headers: { host: hostFor(college.subdomain) },
+      body: { username, password: PASSWORD },
     });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
@@ -172,22 +176,32 @@ test('ai-config API', async (t) => {
     assert.equal(resp.body.hasApiKey, Boolean(globalConfig.openai.apiKey));
   });
 
-  await t.test('PUT sets a college-specific provider; api_key never appears in the response body, raw or otherwise', async () => {
-    const token = await login(collegeA, 'principaluser');
-    const resp = await put(baseUrl, '/api/v1/ai-config', headersFor(collegeA, token), {
-      provider: 'gemini', api_key: 'sk-super-secret-real-key-value', model: 'gemini-2.5-flash',
-    });
-    assert.equal(resp.status, 200);
-    assert.equal(resp.body.provider, 'gemini');
-    assert.equal(resp.body.model, 'gemini-2.5-flash');
-    assert.equal(resp.body.hasApiKey, true);
-    assert.equal('apiKey' in resp.body, false);
-    assert.equal('api_key' in resp.body, false);
-    assert.ok(!resp.rawText.includes('sk-super-secret-real-key-value'), 'raw response body must never contain the api_key');
+  await t.test(
+    'PUT sets a college-specific provider; api_key never appears in the response body, raw or otherwise',
+    async () => {
+      const token = await login(collegeA, 'principaluser');
+      const resp = await put(baseUrl, '/api/v1/ai-config', headersFor(collegeA, token), {
+        provider: 'gemini',
+        api_key: 'sk-super-secret-real-key-value',
+        model: 'gemini-2.5-flash',
+      });
+      assert.equal(resp.status, 200);
+      assert.equal(resp.body.provider, 'gemini');
+      assert.equal(resp.body.model, 'gemini-2.5-flash');
+      assert.equal(resp.body.hasApiKey, true);
+      assert.equal('apiKey' in resp.body, false);
+      assert.equal('api_key' in resp.body, false);
+      assert.ok(
+        !resp.rawText.includes('sk-super-secret-real-key-value'),
+        'raw response body must never contain the api_key',
+      );
 
-    const dbRow = await adminPool.query('SELECT api_key FROM college_ai_config WHERE college_id = $1', [collegeA.collegeId]);
-    assert.notEqual(dbRow.rows[0].api_key, 'sk-super-secret-real-key-value');
-  });
+      const dbRow = await adminPool.query('SELECT api_key FROM college_ai_config WHERE college_id = $1', [
+        collegeA.collegeId,
+      ]);
+      assert.notEqual(dbRow.rows[0].api_key, 'sk-super-secret-real-key-value');
+    },
+  );
 
   await t.test('GET reflects the college-specific config just set, still without api_key', async () => {
     const token = await login(collegeA, 'principaluser');
@@ -198,7 +212,7 @@ test('ai-config API', async (t) => {
     assert.ok(!resp.rawText.includes('sk-super-secret-real-key-value'));
   });
 
-  await t.test('setting college A\'s provider never affected college B\'s (still the global default)', async () => {
+  await t.test("setting college A's provider never affected college B's (still the global default)", async () => {
     const token = await login(collegeB, 'principaluser');
     const resp = await get(baseUrl, '/api/v1/ai-config', headersFor(collegeB, token));
     assert.equal(resp.status, 200);
@@ -207,7 +221,9 @@ test('ai-config API', async (t) => {
 
   await t.test('PUT with an unknown provider is rejected with 400, not persisted', async () => {
     const token = await login(collegeB, 'principaluser');
-    const resp = await put(baseUrl, '/api/v1/ai-config', headersFor(collegeB, token), { provider: 'not_a_real_vendor' });
+    const resp = await put(baseUrl, '/api/v1/ai-config', headersFor(collegeB, token), {
+      provider: 'not_a_real_vendor',
+    });
     assert.equal(resp.status, 400);
 
     const dbRow = await adminPool.query('SELECT * FROM college_ai_config WHERE college_id = $1', [collegeB.collegeId]);
@@ -229,45 +245,51 @@ test('ai-config API', async (t) => {
   // makes gemini.isConfigured() false (ADC is a server-level credential,
   // never a per-college secret this table stores), so this must degrade
   // to available:false rather than a guessed capability set or a crash.
-  await t.test('GET /ai-config/capabilities: a college-explicit gemini row with no projectId reports unavailable, not a guessed capability set', async () => {
-    const token = await login(collegeA, 'principaluser');
-    const resp = await get(baseUrl, '/api/v1/ai-config/capabilities', headersFor(collegeA, token));
-    assert.equal(resp.status, 200);
-    assert.equal(resp.body.provider, 'gemini');
-    assert.equal(resp.body.available, false);
-  });
-
-  await t.test('GET /ai-config/capabilities: a real platform-default Vertex config returns the curated capability profile, never the api_key/projectId', async () => {
-    const originalProjectId = globalConfig.gemini.projectId;
-    const originalLocation = globalConfig.gemini.location;
-    const originalModel = globalConfig.gemini.model;
-    const originalProvider = globalConfig.defaultAiProvider;
-    globalConfig.gemini.projectId = 'test-vertex-project';
-    globalConfig.gemini.location = 'global';
-    // Pinned to the registry's own curated key regardless of any real
-    // GEMINI_MODEL this test environment might already have set (e.g.
-    // via backend/.env.local.sh) — this test proves the capability
-    // endpoint's shape, not which model a real deployment happens to run.
-    globalConfig.gemini.model = 'gemini-3.7-flash';
-    globalConfig.defaultAiProvider = 'gemini';
-    try {
-      const token = await login(collegeB, 'principaluser');
-      const resp = await get(baseUrl, '/api/v1/ai-config/capabilities', headersFor(collegeB, token));
+  await t.test(
+    'GET /ai-config/capabilities: a college-explicit gemini row with no projectId reports unavailable, not a guessed capability set',
+    async () => {
+      const token = await login(collegeA, 'principaluser');
+      const resp = await get(baseUrl, '/api/v1/ai-config/capabilities', headersFor(collegeA, token));
       assert.equal(resp.status, 200);
       assert.equal(resp.body.provider, 'gemini');
-      assert.equal(resp.body.available, true);
-      assert.equal(resp.body.capability.provider, 'vertex_ai');
-      assert.equal(resp.body.capability.capabilities.multimodal_audio, true);
-      assert.equal(resp.body.capability.capabilities.batch_prediction, false);
-      assert.ok(!('projectId' in resp.body.capability), 'raw projectId must never reach the frontend');
-      assert.ok(!resp.rawText.includes('test-vertex-project'));
-    } finally {
-      globalConfig.gemini.projectId = originalProjectId;
-      globalConfig.gemini.location = originalLocation;
-      globalConfig.gemini.model = originalModel;
-      globalConfig.defaultAiProvider = originalProvider;
-    }
-  });
+      assert.equal(resp.body.available, false);
+    },
+  );
+
+  await t.test(
+    'GET /ai-config/capabilities: a real platform-default Vertex config returns the curated capability profile, never the api_key/projectId',
+    async () => {
+      const originalProjectId = globalConfig.gemini.projectId;
+      const originalLocation = globalConfig.gemini.location;
+      const originalModel = globalConfig.gemini.model;
+      const originalProvider = globalConfig.defaultAiProvider;
+      globalConfig.gemini.projectId = 'test-vertex-project';
+      globalConfig.gemini.location = 'global';
+      // Pinned to the registry's own curated key regardless of any real
+      // GEMINI_MODEL this test environment might already have set (e.g.
+      // via backend/.env.local.sh) — this test proves the capability
+      // endpoint's shape, not which model a real deployment happens to run.
+      globalConfig.gemini.model = 'gemini-3.8-flash';
+      globalConfig.defaultAiProvider = 'gemini';
+      try {
+        const token = await login(collegeB, 'principaluser');
+        const resp = await get(baseUrl, '/api/v1/ai-config/capabilities', headersFor(collegeB, token));
+        assert.equal(resp.status, 200);
+        assert.equal(resp.body.provider, 'gemini');
+        assert.equal(resp.body.available, true);
+        assert.equal(resp.body.capability.provider, 'vertex_ai');
+        assert.equal(resp.body.capability.capabilities.multimodal_audio, true);
+        assert.equal(resp.body.capability.capabilities.batch_prediction, false);
+        assert.ok(!('projectId' in resp.body.capability), 'raw projectId must never reach the frontend');
+        assert.ok(!resp.rawText.includes('test-vertex-project'));
+      } finally {
+        globalConfig.gemini.projectId = originalProjectId;
+        globalConfig.gemini.location = originalLocation;
+        globalConfig.gemini.model = originalModel;
+        globalConfig.defaultAiProvider = originalProvider;
+      }
+    },
+  );
 
   await t.test('unauthenticated/staff GET /ai-config/capabilities is rejected the same as GET /ai-config', async () => {
     const unauth = await get(baseUrl, '/api/v1/ai-config/capabilities', headersFor(collegeA));
@@ -281,23 +303,26 @@ test('ai-config API', async (t) => {
   // /ai-config/ops-status. collegeA has made zero real AI calls in this
   // test's own fresh tenant, so this proves the honest "nothing observed
   // yet" shape, not a guessed default dressed up as real data.
-  await t.test('GET /ai-config/ops-status: a fresh tenant with zero AI usage reports withinBudget/withinLimit true, no fallback configured, no model version observed yet', async () => {
-    const token = await login(collegeA, 'principaluser');
-    const resp = await get(baseUrl, '/api/v1/ai-config/ops-status', headersFor(collegeA, token));
-    assert.equal(resp.status, 200);
-    assert.equal(resp.body.provider, 'gemini');
-    assert.equal(resp.body.fallback.configured, false);
-    assert.equal(resp.body.fallback.provider, null);
-    assert.equal(resp.body.modelVersion.lastObserved, undefined);
-    assert.equal(resp.body.quota.tokensUsed, 0);
-    assert.equal(resp.body.quota.withinBudget, true);
-    assert.equal(resp.body.rateLimit.callsInWindow, 0);
-    assert.equal(resp.body.rateLimit.withinLimit, true);
-    // Never a raw credential/project id, same discipline every other
-    // route in this file already enforces.
-    assert.ok(!('apiKey' in resp.body));
-    assert.ok(!('projectId' in resp.body));
-  });
+  await t.test(
+    'GET /ai-config/ops-status: a fresh tenant with zero AI usage reports withinBudget/withinLimit true, no fallback configured, no model version observed yet',
+    async () => {
+      const token = await login(collegeA, 'principaluser');
+      const resp = await get(baseUrl, '/api/v1/ai-config/ops-status', headersFor(collegeA, token));
+      assert.equal(resp.status, 200);
+      assert.equal(resp.body.provider, 'gemini');
+      assert.equal(resp.body.fallback.configured, false);
+      assert.equal(resp.body.fallback.provider, null);
+      assert.equal(resp.body.modelVersion.lastObserved, undefined);
+      assert.equal(resp.body.quota.tokensUsed, 0);
+      assert.equal(resp.body.quota.withinBudget, true);
+      assert.equal(resp.body.rateLimit.callsInWindow, 0);
+      assert.equal(resp.body.rateLimit.withinLimit, true);
+      // Never a raw credential/project id, same discipline every other
+      // route in this file already enforces.
+      assert.ok(!('apiKey' in resp.body));
+      assert.ok(!('projectId' in resp.body));
+    },
+  );
 
   await t.test('unauthenticated/staff GET /ai-config/ops-status is rejected the same as GET /ai-config', async () => {
     const unauth = await get(baseUrl, '/api/v1/ai-config/ops-status', headersFor(collegeA));

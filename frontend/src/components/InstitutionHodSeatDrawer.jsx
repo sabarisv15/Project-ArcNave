@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { AlertTriangle } from 'lucide-react';
-import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from './AttendanceActionDrawer';
+import { DrawerRail, DrawerShell, GHOST_BTN, PRIMARY_BTN } from '@/components/ui/Drawer';
 import { SeatStateBadge } from './SeatStateBadge';
 import { FACULTY_BY_ID, facultyInitials, facultyOfDepartment } from '../lib/institutionData';
 import { seatTitle } from '../lib/seatTitles';
 import { HOD_L3 } from '../lib/roles';
-import { LIFECYCLE_REJECTION, useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import { LIFECYCLE_REJECTION, useInstitutionalLifecycle } from '@/features/institution';
 import { cn } from '../lib/utils';
 
 /**
@@ -82,15 +82,12 @@ export function InstitutionHodSeatDrawer({ department, onClose }) {
    * decision exists to do openly.
    */
   const options = useMemo(
-    () =>
-      department
-        ? facultyOfDepartment(department.id).filter((f) => f.id !== seat?.holderId)
-        : [],
-    [department, seat?.holderId]
+    () => (department ? facultyOfDepartment(department.id).filter((f) => f.id !== seat?.holderId) : []),
+    [department, seat?.holderId],
   );
 
-  const holder = seat?.state === 'active' ? FACULTY_BY_ID[seat.holderId] ?? null : null;
-  const picked = pickedId ? FACULTY_BY_ID[pickedId] ?? null : null;
+  const holder = seat?.state === 'active' ? (FACULTY_BY_ID[seat.holderId] ?? null) : null;
+  const picked = pickedId ? (FACULTY_BY_ID[pickedId] ?? null) : null;
   const title = seatTitle(HOD_L3);
 
   function submit() {
@@ -102,7 +99,7 @@ export function InstitutionHodSeatDrawer({ department, onClose }) {
         toast.error(
           result.reason === 'reason_required'
             ? 'An email address is needed to send an invitation.'
-            : LIFECYCLE_REJECTION[result.reason] ?? 'That invitation could not be sent.'
+            : (LIFECYCLE_REJECTION[result.reason] ?? 'That invitation could not be sent.'),
         );
         return;
       }
@@ -133,7 +130,7 @@ export function InstitutionHodSeatDrawer({ department, onClose }) {
       return;
     }
     toast.success(
-      mode === 'reassign' ? `Seat reassigned · ${department.name}` : `${title} assigned · ${department.name}`
+      mode === 'reassign' ? `Seat reassigned · ${department.name}` : `${title} assigned · ${department.name}`,
     );
     onClose();
   }
@@ -143,7 +140,9 @@ export function InstitutionHodSeatDrawer({ department, onClose }) {
       open={!!department}
       onOpenChange={(o) => !o && onClose()}
       title={department ? `${title} — ${department.name}` : ''}
-      contextLine={department ? `${department.short} · ${department.classCount} classes · ${department.facultyCount} faculty` : ''}
+      contextLine={
+        department ? `${department.short} · ${department.classCount} classes · ${department.facultyCount} faculty` : ''
+      }
       description="Department leadership seat"
       width="sm:w-[520px]"
     >
@@ -189,19 +188,12 @@ export function InstitutionHodSeatDrawer({ department, onClose }) {
                 Reassignment history
               </div>
               {(seat.history ?? []).length === 0 ? (
-                <p className="m-0 mt-[5px] text-[13px] text-ink-muted">
-                  This seat has not been handed over.
-                </p>
+                <p className="m-0 mt-[5px] text-[13px] text-ink-muted">This seat has not been handed over.</p>
               ) : (
                 <ol className="m-0 mt-[6px] p-0 list-none">
                   {seat.history.map((h, i) => (
-                    <li
-                      key={`${h.holderId}-${i}`}
-                      className="py-[7px] border-t border-line-light first:border-t-0"
-                    >
-                      <div className="text-[12.5px] text-ink">
-                        {FACULTY_BY_ID[h.holderId]?.name ?? h.holderId}
-                      </div>
+                    <li key={`${h.holderId}-${i}`} className="py-[7px] border-t border-line-light first:border-t-0">
+                      <div className="text-[12.5px] text-ink">{FACULTY_BY_ID[h.holderId]?.name ?? h.holderId}</div>
                       <div className="mt-[1px] text-[11.5px] text-ink-faint">
                         {h.from} → {h.to} · {h.reason}
                       </div>
@@ -225,7 +217,7 @@ export function InstitutionHodSeatDrawer({ department, onClose }) {
                         aria-pressed={pickedId === faculty.id}
                         className={cn(
                           'w-full grid grid-cols-[26px_1fr] gap-x-[9px] items-center px-[8px] py-[7px] border rounded-[10px] bg-paper text-left cursor-pointer transition-colors duration-200 hover:bg-tint2',
-                          pickedId === faculty.id ? 'border-accent-line bg-accent-soft' : 'border-transparent'
+                          pickedId === faculty.id ? 'border-accent-line bg-accent-soft' : 'border-transparent',
                         )}
                       >
                         <span
@@ -236,26 +228,21 @@ export function InstitutionHodSeatDrawer({ department, onClose }) {
                         </span>
                         <span className="min-w-0">
                           <span className="block text-[13px] text-ink truncate">{faculty.name}</span>
-                          <span className="block text-[11.5px] text-ink-faint truncate">
-                            {faculty.designation}
-                          </span>
+                          <span className="block text-[11.5px] text-ink-faint truncate">{faculty.designation}</span>
                         </span>
                       </button>
                     </li>
                   ))}
                 </ul>
                 <p className="m-0 mt-[6px] text-[11.5px] text-ink-faint">
-                  This department's own faculty. Moving somebody between departments is decided in
-                  Approvals.
+                  This department's own faculty. Moving somebody between departments is decided in Approvals.
                 </p>
               </div>
             )}
 
             {(mode === 'reassign' || mode === 'vacate') && (
               <div>
-                <div className="text-[11px] font-[500] tracking-[.05em] uppercase text-ink-muted">
-                  Reason
-                </div>
+                <div className="text-[11px] font-[500] tracking-[.05em] uppercase text-ink-muted">Reason</div>
                 <textarea
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
@@ -288,8 +275,8 @@ export function InstitutionHodSeatDrawer({ department, onClose }) {
                     aria-hidden="true"
                   />
                   <p className="m-0 text-[12px] text-pending">
-                    The department stays without an approver until the invitation is accepted, and does
-                    not count towards leadership coverage in the meantime.
+                    The department stays without an approver until the invitation is accepted, and does not count
+                    towards leadership coverage in the meantime.
                   </p>
                 </div>
               </div>
@@ -317,11 +304,7 @@ export function InstitutionHodSeatDrawer({ department, onClose }) {
             </DrawerRail>
           ) : (
             <DrawerRail
-              meta={
-                <span className="text-[11.5px] text-ink-faint">
-                  A head of department is changed only here.
-                </span>
-              }
+              meta={<span className="text-[11.5px] text-ink-faint">A head of department is changed only here.</span>}
             >
               {seat.state === 'active' && (
                 <button type="button" className={GHOST_BTN} onClick={() => setMode('vacate')}>

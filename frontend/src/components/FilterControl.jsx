@@ -15,7 +15,7 @@ export function FilterControl({ options, value, onChange, label = 'Filter', size
           className={cn(
             'grid place-items-center border-0 bg-transparent cursor-pointer transition-colors duration-200 hover:bg-accent-soft hover:text-accent',
             size === 'sm' ? 'text-ink-faint' : 'text-ink-muted',
-            dim
+            dim,
           )}
         >
           {icon ?? <ListFilter size={iconSize} strokeWidth={1.9} />}

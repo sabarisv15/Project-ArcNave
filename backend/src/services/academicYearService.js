@@ -69,7 +69,11 @@ async function createAcademicYear(client, { collegeId, yearLabel, startDate, end
   let academicYear;
   try {
     academicYear = await academicYearRepository.create(client, {
-      collegeId, yearLabel, startDate, endDate, createdByUserId: actorUserId,
+      collegeId,
+      yearLabel,
+      startDate,
+      endDate,
+      createdByUserId: actorUserId,
     });
   } catch (err) {
     if (err.code === '23505' && err.constraint === 'academic_years_college_year_label_key') {
@@ -120,9 +124,7 @@ async function resolveAcademicYearId(client, collegeId, identifier) {
   }
   const academicYear = await academicYearRepository.findByCollegeAndYearLabel(client, collegeId, identifier);
   if (academicYear === null) {
-    throw new IdentifierResolutionError(
-      `no academic year found named ${JSON.stringify(identifier)} in this college`,
-    );
+    throw new IdentifierResolutionError(`no academic year found named ${JSON.stringify(identifier)} in this college`);
   }
   return academicYear.id;
 }

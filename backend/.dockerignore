@@ -1,2 +1,12 @@
 node_modules
 npm-debug.log
+
+# Dockerfile.prod (P4 O3 Cloud Run image) shouldn't ship test files or
+# local secrets into the deploy image. Dockerfile (dev/CI) is
+# unaffected by this file getting stricter — CI never relies on these
+# paths being present inside the built image itself, only inside the
+# bind-mounted source tree.
+tests/
+*.test.js
+coverage/
+.env

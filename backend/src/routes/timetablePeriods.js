@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const academicService = require('../services/academicService');
 const identityService = require('../services/identityService');
@@ -62,6 +64,37 @@ function mapAcademicServiceError(err, res) {
   return false;
 }
 
+const timetablePeriodIdParams = z.object({ id: z.string() });
+const createTimetablePeriodSchema = z.object({
+  body: z
+    .object({
+      day_of_week: z.any().optional(),
+      hour_index: z.any().optional(),
+      start_time: z.string().optional(),
+      end_time: z.string().optional(),
+    })
+    .optional(),
+});
+const generateSlotGridSchema = z.object({
+  body: z
+    .object({
+      working_days: z.any().optional(),
+      start_time: z.string().optional(),
+      end_time: z.string().optional(),
+      slot_duration_minutes: z.any().optional(),
+      break_after_slots: z.any().optional(),
+    })
+    .optional(),
+});
+const importTimetableCsvSchema = z.object({
+  body: z.object({ file_name: z.string().optional(), file_base64: z.string().optional() }).optional(),
+});
+const getTimetablePeriodSchema = z.object({ params: timetablePeriodIdParams });
+const listTimetablePeriodsSchema = z.object({
+  query: z.object({ limit: z.string().optional(), offset: z.string().optional() }).optional(),
+});
+const deleteTimetablePeriodSchema = z.object({ params: timetablePeriodIdParams });
+
 function createTimetablePeriodsRouter() {
   const router = express.Router();
 
@@ -73,85 +106,113 @@ function createTimetablePeriodsRouter() {
   // middleware/permissions.js) gates writes, requireAuth gates reads,
   // same as every other Module 3 route.
 
-  router.post('/timetable-periods', requirePermission('timetable_periods.create'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const period = await academicService.createTimetablePeriod(
-        req.dbClient,
-        { collegeId: req.collegeId, ...bodyToServiceFields(req.body || {}) },
-        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(201).json(period);
-    } catch (err) {
-      if (mapAcademicServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/timetable-periods',
+    requirePermission('timetable_periods.create'),
+    validate(createTimetablePeriodSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const period = await academicService.createTimetablePeriod(
+          req.dbClient,
+          { collegeId: req.collegeId, ...bodyToServiceFields(req.body || {}) },
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.status(201).json(period);
+      } catch (err) {
+        if (mapAcademicServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // RS-TTB-001 Section 1 — turns Working Days/Start/End/Slot Duration/
   // Break config into the college's own timetable_periods rows in one
   // call, instead of the Class Tutor (or anyone else) creating each
   // slot one at a time via POST /timetable-periods above. Idempotent —
   // see academicService.generateSlotGrid's own comment.
-  router.post('/timetable-periods/generate-grid', requirePermission('timetable_periods.generate_grid'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const {
-      working_days: workingDays, start_time: startTime, end_time: endTime, slot_duration_minutes: slotDurationMinutes, break_after_slots: breakAfterSlots,
-    } = req.body || {};
-    try {
-      const result = await academicService.generateSlotGrid(
-        req.dbClient,
-        req.collegeId,
-        {
-          workingDays, startTime, endTime, slotDurationMinutes, breakAfterSlots,
-        },
-        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(201).json({
-        created: result.created,
-        skipped_count: result.skipped.length,
-        slots_per_day: result.slotsPerDay,
-        total_weekly_slots: result.totalWeeklySlots,
-      });
-    } catch (err) {
-      if (mapAcademicServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/timetable-periods/generate-grid',
+    requirePermission('timetable_periods.generate_grid'),
+    validate(generateSlotGridSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const {
+        working_days: workingDays,
+        start_time: startTime,
+        end_time: endTime,
+        slot_duration_minutes: slotDurationMinutes,
+        break_after_slots: breakAfterSlots,
+      } = req.body || {};
+      try {
+        const result = await academicService.generateSlotGrid(
+          req.dbClient,
+          req.collegeId,
+          {
+            workingDays,
+            startTime,
+            endTime,
+            slotDurationMinutes,
+            breakAfterSlots,
+          },
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.status(201).json({
+          created: result.created,
+          skipped_count: result.skipped.length,
+          slots_per_day: result.slotsPerDay,
+          total_weekly_slots: result.totalWeeklySlots,
+        });
+      } catch (err) {
+        if (mapAcademicServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/timetable-periods/import-csv', requirePermission('timetable_periods.import_csv'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const { file_name: fileName, file_base64: fileBase64 } = req.body || {};
-      const result = await academicService.importTimetablePeriodsCsv(
-        req.dbClient,
-        { collegeId: req.collegeId, fileName, fileBuffer: fileBase64 ? Buffer.from(fileBase64, 'base64') : null },
-        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(201).json({
-        raw_document_id: result.rawDocumentId,
-        imported: result.imported,
-        skipped: result.skipped,
-        total_rows: result.totalRows,
-      });
-    } catch (err) {
-      if (mapAcademicServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/timetable-periods/import-csv',
+    requirePermission('timetable_periods.import_csv'),
+    validate(importTimetableCsvSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const { file_name: fileName, file_base64: fileBase64 } = req.body || {};
+        const result = await academicService.importTimetablePeriodsCsv(
+          req.dbClient,
+          { collegeId: req.collegeId, fileName, fileBuffer: fileBase64 ? Buffer.from(fileBase64, 'base64') : null },
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.status(201).json({
+          raw_document_id: result.rawDocumentId,
+          imported: result.imported,
+          skipped: result.skipped,
+          total_rows: result.totalRows,
+        });
+      } catch (err) {
+        if (mapAcademicServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // Same "no student/staff/class identity on this row" reasoning as
   // GET /timetable-periods below — tenant-wide/requireAuth is correct
   // here too, not a gap.
-  router.get('/timetable-periods/:id', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const period = await academicService.getTimetablePeriod(req.dbClient, req.params.id);
-    if (period === null) {
-      res.status(404).json({ detail: `No timetable period found with id ${JSON.stringify(req.params.id)}` });
-      return;
-    }
-    res.json(period);
-  }));
+  router.get(
+    '/timetable-periods/:id',
+    requireAuth,
+    validate(getTimetablePeriodSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const period = await academicService.getTimetablePeriod(req.dbClient, req.params.id);
+      if (period === null) {
+        res.status(404).json({ detail: `No timetable period found with id ${JSON.stringify(req.params.id)}` });
+        return;
+      }
+      res.json(period);
+    }),
+  );
 
   // limit/offset are passed through as-is — academicService/
   // timetablePeriodRepository already default them to 50/0, not
@@ -167,32 +228,50 @@ function createTimetablePeriodsRouter() {
   // tutor-of-class-A to learn about class B that isn't already
   // published, non-sensitive information every tenant user needs to
   // even read a timetable UI.
-  router.get('/timetable-periods', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { limit: rawLimit, offset: rawOffset } = req.query;
-    const periods = await academicService.listTimetablePeriods(req.dbClient, {
-      limit: rawLimit === undefined ? undefined : Number(rawLimit),
-      offset: rawOffset === undefined ? undefined : Number(rawOffset),
-    });
-    res.json(periods);
-  }));
+  router.get(
+    '/timetable-periods',
+    requireAuth,
+    validate(listTimetablePeriodsSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { limit: rawLimit, offset: rawOffset } = req.query;
+      const periods = await academicService.listTimetablePeriods(req.dbClient, {
+        limit: rawLimit === undefined ? undefined : Number(rawLimit),
+        offset: rawOffset === undefined ? undefined : Number(rawOffset),
+      });
+      res.json(periods);
+    }),
+  );
 
-  router.delete('/timetable-periods/:id', requirePermission('timetable_periods.delete'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const period = await academicService.removeTimetablePeriod(req.dbClient, req.params.id, { actorUserId: identityService.resolveActorUserId(req.capabilities) });
-      if (period === null) {
-        res.status(404).json({ detail: `No timetable period found with id ${JSON.stringify(req.params.id)}` });
-        return;
+  router.delete(
+    '/timetable-periods/:id',
+    requirePermission('timetable_periods.delete'),
+    validate(deleteTimetablePeriodSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const period = await academicService.removeTimetablePeriod(req.dbClient, req.params.id, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+        });
+        if (period === null) {
+          res.status(404).json({ detail: `No timetable period found with id ${JSON.stringify(req.params.id)}` });
+          return;
+        }
+        res.status(204).end();
+      } catch (err) {
+        if (mapAcademicServiceError(err, res)) return;
+        throw err;
       }
-      res.status(204).end();
-    } catch (err) {
-      if (mapAcademicServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+    }),
+  );
 
   return router;
 }
 
 module.exports = createTimetablePeriodsRouter;
+module.exports.schemas = {
+  '/timetable-periods': { post: createTimetablePeriodSchema, get: listTimetablePeriodsSchema },
+  '/timetable-periods/generate-grid': { post: generateSlotGridSchema },
+  '/timetable-periods/import-csv': { post: importTimetableCsvSchema },
+  '/timetable-periods/{id}': { get: getTimetablePeriodSchema, delete: deleteTimetablePeriodSchema },
+};

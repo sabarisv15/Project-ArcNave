@@ -19,14 +19,26 @@
 // never entered by the accepting user themselves. Every other caller
 // (staff/HOD accounts) simply omits these and gets NULLs, same as
 // before this column existed.
-async function createUser(client, {
-  collegeId, username, email, passwordHash, role, isActive, fullName, designation, phone, address,
-}) {
+async function createUser(
+  client,
+  { collegeId, username, email, passwordHash, role, isActive, fullName, designation, phone, address },
+) {
   const result = await client.query(
     `INSERT INTO users (college_id, username, email, password_hash, role, is_active, full_name, designation, phone, address)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING id, college_id, username, email, role, is_active, full_name, designation, phone, address`,
-    [collegeId, username, email, passwordHash, role, isActive, fullName || null, designation || null, phone || null, address || null],
+    [
+      collegeId,
+      username,
+      email,
+      passwordHash,
+      role,
+      isActive,
+      fullName || null,
+      designation || null,
+      phone || null,
+      address || null,
+    ],
   );
   return result.rows[0];
 }
@@ -82,10 +94,9 @@ async function incrementTokenVersion(client, userId) {
 // intent revokeRefreshToken's own WHERE clause has at the single-row
 // level.
 async function revokeAllRefreshTokensForUser(client, userId) {
-  await client.query(
-    'UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL',
-    [userId],
-  );
+  await client.query('UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [
+    userId,
+  ]);
 }
 
 // requestPasswordReset's own lookup: a user identifies themselves by

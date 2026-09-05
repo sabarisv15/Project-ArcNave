@@ -1,18 +1,12 @@
 import { useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { DrawerShell } from './AttendanceActionDrawer';
+import { DrawerShell } from '@/components/ui/Drawer';
 import { WorkflowTimeline } from './WorkflowTimeline';
 import { CLASS_BY_ID } from '../lib/departmentData';
 import { DEPT_REQUESTS, DEPT_REQUEST_KINDS } from '../lib/departmentApprovalsData';
-import {
-  DAYS,
-  HOURS,
-  LIVE_VERSION,
-  WORKLOAD_STATES,
-  periodsFor,
-} from '../lib/departmentTimetableData';
+import { DAYS, HOURS, LIVE_VERSION, WORKLOAD_STATES, periodsFor } from '../lib/departmentTimetableData';
 import { FACULTY_LIFECYCLE_STATES, reassignmentPreflight } from '../lib/facultyLifecycle';
-import { useInstitutionalLifecycle } from '../store/InstitutionalLifecycleProvider';
+import { useInstitutionalLifecycle } from '@/features/institution';
 import { cn } from '../lib/utils';
 
 /**
@@ -95,12 +89,7 @@ function ProfileTab({ row, preflight }) {
       */}
       {preflight?.message && (
         <div className="mt-[12px] flex items-start gap-[7px] px-[11px] py-[8px] border border-line rounded-[12px] bg-pending-soft">
-          <AlertTriangle
-            size={13}
-            strokeWidth={1.9}
-            className="mt-[1px] flex-none text-pending"
-            aria-hidden="true"
-          />
+          <AlertTriangle size={13} strokeWidth={1.9} className="mt-[1px] flex-none text-pending" aria-hidden="true" />
           <p className="m-0 text-[12px] text-pending">{preflight.message}</p>
         </div>
       )}
@@ -158,7 +147,7 @@ function WorkloadTab({ row }) {
                     aria-hidden="true"
                     className={cn(
                       'absolute left-0 right-0 bottom-0 rounded-[6px]',
-                      state === 'high' ? 'bg-pending/50' : 'bg-accent/60'
+                      state === 'high' ? 'bg-pending/50' : 'bg-accent/60',
                     )}
                     style={{ height: `${Math.round((d.count / busiest) * 100)}%` }}
                   />
@@ -225,8 +214,7 @@ function TimelineTab({ row }) {
   const { faculty } = row;
   const requests = DEPT_REQUESTS.filter(
     (r) =>
-      r.requester.name === faculty.name ||
-      r.changes.some((c) => `${c.label} ${c.from} ${c.to}`.includes(faculty.name))
+      r.requester.name === faculty.name || r.changes.some((c) => `${c.label} ${c.from} ${c.to}`.includes(faculty.name)),
   );
 
   if (requests.length === 0) {
@@ -296,7 +284,7 @@ export function DepartmentFacultyDrawer({ row, onClose }) {
                   'flex-none h-[27px] px-[10px] border-0 rounded-[8px] bg-transparent font-sans text-[12.5px] cursor-pointer transition-colors duration-200',
                   tab === t.key
                     ? 'bg-accent-soft text-accent font-[600]'
-                    : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2'
+                    : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2',
                 )}
               >
                 {t.label}

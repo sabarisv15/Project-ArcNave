@@ -131,8 +131,8 @@ export function DepartmentClassesView() {
     );
   }
 
-  const open = openId ? classes.find((c) => c.id === openId) ?? null : null;
-  const seatClass = seatClassId ? classes.find((c) => c.id === seatClassId) ?? null : null;
+  const open = openId ? (classes.find((c) => c.id === openId) ?? null) : null;
+  const seatClass = seatClassId ? (classes.find((c) => c.id === seatClassId) ?? null) : null;
   const tutorWord = seatTitle(CLASS_TUTOR_L4);
 
   return (
@@ -217,7 +217,7 @@ export function DepartmentClassesView() {
               <span
                 className={cn(
                   'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500] max-w-full truncate',
-                  TIMETABLE_STATE_TONE[c.timetableState]
+                  TIMETABLE_STATE_TONE[c.timetableState],
                 )}
               >
                 {TIMETABLE_STATE_LABELS[c.timetableState]}

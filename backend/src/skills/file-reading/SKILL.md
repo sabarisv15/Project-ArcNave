@@ -30,11 +30,11 @@ second file, you cannot get one this way — say so instead of guessing.
 
 ## Dispatch table
 
-| Extension | First move | Dedicated skill |
-|---|---|---|
-| `.pdf` | Read the attachment directly first — no sandbox call needed for a flat, well-aligned document. Reach for the sandbox when you need `pdfplumber`'s per-cell layout for a merged/misaligned table | `pdf-reading` |
-| `.xlsx`, `.xls` | `openpyxl.load_workbook` | `xlsx` |
-| `.csv`, `.tsv` | `pandas.read_csv` | — (below) |
+| Extension       | First move                                                                                                                                                                                      | Dedicated skill |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| `.pdf`          | Read the attachment directly first — no sandbox call needed for a flat, well-aligned document. Reach for the sandbox when you need `pdfplumber`'s per-cell layout for a merged/misaligned table | `pdf-reading`   |
+| `.xlsx`, `.xls` | `openpyxl.load_workbook`                                                                                                                                                                        | `xlsx`          |
+| `.csv`, `.tsv`  | `pandas.read_csv`                                                                                                                                                                               | — (below)       |
 
 ## `.csv` / `.tsv`
 

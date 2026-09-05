@@ -22,7 +22,7 @@ export function JumpToLatest({ onClick }) {
         'absolute -top-[36px] left-1/2 -translate-x-1/2 z-[5]',
         'w-[30px] h-[30px] grid place-items-center rounded-full',
         'border border-line bg-surface text-accent shadow-jump cursor-pointer',
-        'transition-colors duration-200 hover:bg-hoverline'
+        'transition-colors duration-200 hover:bg-hoverline',
       )}
     >
       <ArrowDown size={15} strokeWidth={2} aria-hidden="true" />

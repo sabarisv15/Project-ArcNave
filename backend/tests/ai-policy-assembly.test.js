@@ -10,13 +10,17 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const aiPolicyAssembly = require('../src/services/aiPolicyAssembly');
 
-const {
-  CORE, CONTINUITY, TOOL_SELECTION, PLAN, FILE, ARTIFACT, MODE_PREFIX, buildPolicy,
-} = aiPolicyAssembly;
+const { CORE, CONTINUITY, TOOL_SELECTION, PLAN, FILE, ARTIFACT, MODE_PREFIX, buildPolicy, getActiveModuleNames } =
+  aiPolicyAssembly;
 
 function baseState(overrides = {}) {
   return {
-    mode: 'curriculum', hasHistory: false, toolCount: 0, hasFileTool: false, focusEntityType: null, ...overrides,
+    mode: 'curriculum',
+    hasHistory: false,
+    toolCount: 0,
+    hasFileTool: false,
+    focusEntityType: null,
+    ...overrides,
   };
 }
 
@@ -36,7 +40,7 @@ test('buildPolicy: TOOL_SELECTION included only when toolCount > 0', () => {
   assert.ok(buildPolicy(baseState({ toolCount: 1 })).includes(TOOL_SELECTION));
 });
 
-test('buildPolicy: PLAN included only when toolCount >= 2 (matches askAgent\'s own plan-meta-tool gate)', () => {
+test("buildPolicy: PLAN included only when toolCount >= 2 (matches askAgent's own plan-meta-tool gate)", () => {
   assert.ok(!buildPolicy(baseState({ toolCount: 1 })).includes(PLAN));
   assert.ok(buildPolicy(baseState({ toolCount: 2 })).includes(PLAN));
 });
@@ -59,9 +63,14 @@ test('buildPolicy: ARTIFACT included only when focusEntityType is exactly "artif
 });
 
 test('buildPolicy: every module can be simultaneously present', () => {
-  const policy = buildPolicy(baseState({
-    hasHistory: true, toolCount: 2, hasFileTool: true, focusEntityType: 'artifact',
-  }));
+  const policy = buildPolicy(
+    baseState({
+      hasHistory: true,
+      toolCount: 2,
+      hasFileTool: true,
+      focusEntityType: 'artifact',
+    }),
+  );
   assert.ok(policy.includes(CORE));
   assert.ok(policy.includes(CONTINUITY));
   assert.ok(policy.includes(TOOL_SELECTION));
@@ -72,10 +81,17 @@ test('buildPolicy: every module can be simultaneously present', () => {
 
 test('buildPolicy: assembly order is fixed (CORE first, ARTIFACT last) regardless of state field order', () => {
   const stateA = {
-    focusEntityType: 'artifact', hasFileTool: true, toolCount: 2, hasHistory: true, mode: 'curriculum',
+    focusEntityType: 'artifact',
+    hasFileTool: true,
+    toolCount: 2,
+    hasHistory: true,
+    mode: 'curriculum',
   };
   const stateB = baseState({
-    hasHistory: true, toolCount: 2, hasFileTool: true, focusEntityType: 'artifact',
+    hasHistory: true,
+    toolCount: 2,
+    hasFileTool: true,
+    focusEntityType: 'artifact',
   });
   const policyA = buildPolicy(stateA);
   const policyB = buildPolicy(stateB);
@@ -96,7 +112,7 @@ test('buildPolicy: deterministic — same state in, byte-identical string out, s
   assert.equal(JSON.stringify(state), snapshot, 'buildPolicy must not mutate its input');
 });
 
-test('buildPolicy: modules are joined with a blank line, matching every existing call site\'s separator', () => {
+test("buildPolicy: modules are joined with a blank line, matching every existing call site's separator", () => {
   const policy = buildPolicy(baseState({ hasHistory: true }));
   assert.equal(policy, `${CORE}\n\n${CONTINUITY}`);
 });
@@ -132,4 +148,37 @@ test('MODE_PREFIX.general starts with the exact sentence an existing ai-service.
 test('MODE_PREFIX.curriculum is a short mode-identity opener distinct from CORE', () => {
   assert.match(MODE_PREFIX.curriculum, /^You are ARCNAVE's campus assistant/);
   assert.ok(!CORE.startsWith('You are ARCNAVE'), 'CORE must be mode-agnostic, not open with a mode identity line');
+});
+
+// ARCNAVE modernization P5 ("prompt and model version registry") —
+// getActiveModuleNames must agree with buildPolicy exactly, since both
+// are thin projections of the same resolveActiveModules(state) call.
+test('getActiveModuleNames: CORE only when no other gate is true', () => {
+  assert.deepEqual(getActiveModuleNames(baseState()), ['CORE']);
+});
+
+test("getActiveModuleNames: every module simultaneously, in buildPolicy's exact fixed order", () => {
+  const state = baseState({
+    hasHistory: true,
+    toolCount: 2,
+    hasFileTool: true,
+    focusEntityType: 'artifact',
+  });
+  assert.deepEqual(getActiveModuleNames(state), ['CORE', 'CONTINUITY', 'TOOL_SELECTION', 'PLAN', 'FILE', 'ARTIFACT']);
+});
+
+test('getActiveModuleNames: agrees with buildPolicy across every gate combination (never drifts apart)', () => {
+  const MODULE_TEXT = { CORE, CONTINUITY, TOOL_SELECTION, PLAN, FILE, ARTIFACT };
+  for (const hasHistory of [false, true]) {
+    for (const toolCount of [0, 1, 2]) {
+      for (const hasFileTool of [false, true]) {
+        for (const focusEntityType of [null, 'artifact']) {
+          const state = baseState({ hasHistory, toolCount, hasFileTool, focusEntityType });
+          const names = getActiveModuleNames(state);
+          const policy = buildPolicy(state);
+          assert.equal(policy, names.map((n) => MODULE_TEXT[n]).join('\n\n'));
+        }
+      }
+    }
+  }
 });

@@ -72,7 +72,8 @@ function assertLevelAllowsPositionLogin(position) {
 // effectiveRole, never a second one invented here.
 function positionRequiresMfa(authConfig, position, account) {
   const { effectiveRole } = identityService.deriveEffectiveRoleAndScopeForPosition({
-    level: position.level, positionType: position.position_type,
+    level: position.level,
+    positionType: position.position_type,
   });
   if (authConfig.mfaRoles !== null && !authConfig.mfaRoles.includes(effectiveRole)) {
     return false;
@@ -141,7 +142,9 @@ async function verifyPositionMfaLogin(client, { challengeId, code }) {
   }
 
   if (challenge.attempts >= config.otp.maxAttempts) {
-    throw new PositionMfaMaxAttemptsExceededError(`MFA challenge ${JSON.stringify(challenge.id)} has exceeded the maximum number of attempts`);
+    throw new PositionMfaMaxAttemptsExceededError(
+      `MFA challenge ${JSON.stringify(challenge.id)} has exceeded the maximum number of attempts`,
+    );
   }
 
   if (hashMfaCode(code) !== challenge.code_hash) {
@@ -181,7 +184,9 @@ async function verifyPositionMfaLogin(client, { challengeId, code }) {
   });
 
   return issuePositionTokenPair(client, {
-    collegeId: account.college_id, positionAccountId: account.id, tokenVersion: account.token_version,
+    collegeId: account.college_id,
+    positionAccountId: account.id,
+    tokenVersion: account.token_version,
   });
 }
 
@@ -225,7 +230,9 @@ async function disablePositionMfa(client, positionAccountId) {
 
 async function issuePositionTokenPair(client, { collegeId, positionAccountId, tokenVersion }) {
   const accessToken = security.createPositionAccessToken({
-    positionAccountId, collegeId, tokenVersion,
+    positionAccountId,
+    collegeId,
+    tokenVersion,
   });
   const refreshToken = security.generateRefreshToken();
   const expiresAt = new Date(Date.now() + config.refreshTokenExpireDays * 24 * 60 * 60 * 1000);
@@ -279,7 +286,11 @@ async function login(client, { collegeId, officialEmail, password }) {
   }
 
   if (await security.needsRehash(account.password_hash)) {
-    await positionRepository.updatePositionAccountCredentials(client, account.id, await security.hashPassword(password));
+    await positionRepository.updatePositionAccountCredentials(
+      client,
+      account.id,
+      await security.hashPassword(password),
+    );
   }
 
   // Stage 8e / D17: a password match alone is not yet a successful
@@ -304,7 +315,9 @@ async function login(client, { collegeId, officialEmail, password }) {
   });
 
   return issuePositionTokenPair(client, {
-    collegeId, positionAccountId: account.id, tokenVersion: account.token_version,
+    collegeId,
+    positionAccountId: account.id,
+    tokenVersion: account.token_version,
   });
 }
 
@@ -347,7 +360,9 @@ async function refresh(client, rawRefreshToken) {
 
   await positionRepository.revokePositionAccountRefreshToken(client, stored.id);
   return issuePositionTokenPair(client, {
-    collegeId: account.college_id, positionAccountId: account.id, tokenVersion: account.token_version,
+    collegeId: account.college_id,
+    positionAccountId: account.id,
+    tokenVersion: account.token_version,
   });
 }
 

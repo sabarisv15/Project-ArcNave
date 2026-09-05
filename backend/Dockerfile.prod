@@ -1,0 +1,47 @@
+# P4 O3 — staging/Cloud Run deploy image. Deliberately separate from
+# Dockerfile, which local dev's docker-compose.yml bind-mounts over and
+# CI's `docker compose exec app npm run lint/typecheck/test`
+# (.github/workflows/ci.yml) depends on having devDependencies
+# installed — this file must never replace that one.
+#
+# Multi-stage: stage 1 installs npm deps once with a lockfile-exact
+# `npm ci` (deterministic, unlike Dockerfile's own `npm install`);
+# stage 2 is the actual served image and never has the npm cache or
+# devDependencies in it.
+
+FROM node:20-slim AS deps
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+FROM node:20-slim
+
+# Same apt/PGDG block as Dockerfile (poppler-utils for
+# ocr/pdfRasterizer.js, postgresql-client-16 for
+# scripts/backup-database.js / restore-database.js — Debian bookworm's
+# own postgresql-client is v15, a version mismatch against this
+# project's real pg16 server).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates poppler-utils curl gnupg lsb-release \
+    && update-ca-certificates \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-16 \
+    && apt-get purge -y curl gnupg lsb-release \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Runs as a non-root user — same pattern already established by
+# sandbox-service/Dockerfile:114-117 for exactly the same reason (the
+# container's own root account should never be what runs the served
+# process).
+RUN useradd --no-create-home --shell /usr/sbin/nologin arcnave
+USER arcnave
+
+ENV PORT=8080
+EXPOSE 8080
+CMD ["node", "src/index.js"]

@@ -1,4 +1,4 @@
-import { DrawerShell } from './AttendanceActionDrawer';
+import { DrawerShell } from '@/components/ui/Drawer';
 import { WORKLOAD_STATES } from '../lib/departmentTimetableData';
 import { departmentLabel, hodOf } from '../lib/institutionData';
 import { cn } from '../lib/utils';
@@ -68,7 +68,7 @@ export function InstitutionFacultyDrawer({ row, onClose }) {
                 <span
                   className={cn(
                     'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-                    WORKLOAD_STATES[row.state].tone
+                    WORKLOAD_STATES[row.state].tone,
                   )}
                 >
                   {WORKLOAD_STATES[row.state].label}

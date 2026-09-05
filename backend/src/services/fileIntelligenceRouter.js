@@ -99,9 +99,36 @@ function sniffLegacyImageMimeType(buffer) {
 // below must never guess an ISO-BMFF file's category any other way.
 // ---------------------------------------------------------------------
 
-const ISO_BMFF_IMAGE_BRANDS = new Set(['heic', 'heix', 'heim', 'heis', 'hevc', 'hevx', 'hevm', 'hevs', 'mif1', 'msf1', 'avif', 'avis']);
+const ISO_BMFF_IMAGE_BRANDS = new Set([
+  'heic',
+  'heix',
+  'heim',
+  'heis',
+  'hevc',
+  'hevx',
+  'hevm',
+  'hevs',
+  'mif1',
+  'msf1',
+  'avif',
+  'avis',
+]);
 const ISO_BMFF_AUDIO_BRANDS = new Set(['M4A ', 'M4B ']);
-const ISO_BMFF_VIDEO_BRANDS = new Set(['isom', 'iso2', 'mp41', 'mp42', 'avc1', 'M4V ', 'M4VH', 'M4VP', 'qt  ', '3gp4', '3gp5', 'mmp4', 'MSNV']);
+const ISO_BMFF_VIDEO_BRANDS = new Set([
+  'isom',
+  'iso2',
+  'mp41',
+  'mp42',
+  'avc1',
+  'M4V ',
+  'M4VH',
+  'M4VP',
+  'qt  ',
+  '3gp4',
+  '3gp5',
+  'mmp4',
+  'MSNV',
+]);
 
 function readIsoBmffMajorBrand(buffer) {
   if (buffer.length < 12 || buffer.toString('ascii', 4, 8) !== 'ftyp') return null;
@@ -118,7 +145,10 @@ function sniffIsoBmffMimeType(buffer) {
     return { category: ATTACHMENT_CATEGORIES.NATIVE_MULTIMODAL_AUDIO, mimeType: 'audio/mp4' };
   }
   if (ISO_BMFF_VIDEO_BRANDS.has(brand) || brand.startsWith('mp4')) {
-    return { category: ATTACHMENT_CATEGORIES.NATIVE_MULTIMODAL_VIDEO, mimeType: brand === 'qt  ' ? 'video/quicktime' : 'video/mp4' };
+    return {
+      category: ATTACHMENT_CATEGORIES.NATIVE_MULTIMODAL_VIDEO,
+      mimeType: brand === 'qt  ' ? 'video/quicktime' : 'video/mp4',
+    };
   }
   // An ftyp box with an unrecognized brand is still an MPEG-4-family
   // container by construction — safer to treat it as video (the most
@@ -216,16 +246,29 @@ function sniffZipFamilyMimeType(buffer) {
   }
 
   if (zip.file('AndroidManifest.xml')) {
-    return { category: ATTACHMENT_CATEGORIES.SPECIALIZED_BINARY, mimeType: 'application/vnd.android.package-archive', blocked: true };
+    return {
+      category: ATTACHMENT_CATEGORIES.SPECIALIZED_BINARY,
+      mimeType: 'application/vnd.android.package-archive',
+      blocked: true,
+    };
   }
   if (zip.file('word/document.xml')) {
-    return { category: ATTACHMENT_CATEGORIES.OFFICE_DOCUMENT, mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+    return {
+      category: ATTACHMENT_CATEGORIES.OFFICE_DOCUMENT,
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    };
   }
   if (zip.file('xl/workbook.xml')) {
-    return { category: ATTACHMENT_CATEGORIES.STRUCTURED_DATA, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+    return {
+      category: ATTACHMENT_CATEGORIES.STRUCTURED_DATA,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    };
   }
   if (zip.file('ppt/presentation.xml')) {
-    return { category: ATTACHMENT_CATEGORIES.OFFICE_DOCUMENT, mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' };
+    return {
+      category: ATTACHMENT_CATEGORIES.OFFICE_DOCUMENT,
+      mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    };
   }
   const mimetypeEntry = zip.file('mimetype');
   if (mimetypeEntry) {
@@ -240,7 +283,7 @@ function sniffZipFamilyMimeType(buffer) {
 }
 
 function sniffPdfMimeType(buffer) {
-  return (buffer.length >= 4 && buffer.toString('ascii', 0, 4) === '%PDF')
+  return buffer.length >= 4 && buffer.toString('ascii', 0, 4) === '%PDF'
     ? { category: ATTACHMENT_CATEGORIES.NATIVE_MULTIMODAL_DOCUMENT, mimeType: 'application/pdf' }
     : null;
 }
@@ -284,7 +327,11 @@ function sniffExecutableMimeType(buffer) {
   if (buffer.length >= 4) {
     const magic = buffer.readUInt32BE(0);
     if (machOMagics.includes(magic)) {
-      return { category: ATTACHMENT_CATEGORIES.SPECIALIZED_BINARY, mimeType: 'application/x-mach-binary', blocked: true };
+      return {
+        category: ATTACHMENT_CATEGORIES.SPECIALIZED_BINARY,
+        mimeType: 'application/x-mach-binary',
+        blocked: true,
+      };
     }
   }
   return null;
@@ -344,7 +391,8 @@ const PLAIN_TEXT_SNIFF_SAMPLE_BYTES = 65536;
 
 function looksLikePlainText(buffer) {
   if (buffer.length === 0) return true;
-  const sample = buffer.length > PLAIN_TEXT_SNIFF_SAMPLE_BYTES ? buffer.subarray(0, PLAIN_TEXT_SNIFF_SAMPLE_BYTES) : buffer;
+  const sample =
+    buffer.length > PLAIN_TEXT_SNIFF_SAMPLE_BYTES ? buffer.subarray(0, PLAIN_TEXT_SNIFF_SAMPLE_BYTES) : buffer;
   if (sample.includes(0)) return false;
   const text = sample.toString('utf8');
   if (text.includes('�')) return false;
@@ -408,7 +456,8 @@ function classifyAttachment(buffer, { fileName, declaredMimeType } = {}) {
   if (pdf) return finalize(pdf.category, pdf.mimeType, declaredMimeType);
 
   const zipFamily = sniffZipFamilyMimeType(buffer);
-  if (zipFamily) return finalize(zipFamily.category, zipFamily.mimeType, declaredMimeType, { blocked: zipFamily.blocked });
+  if (zipFamily)
+    return finalize(zipFamily.category, zipFamily.mimeType, declaredMimeType, { blocked: zipFamily.blocked });
 
   const riff = sniffRiffMimeType(buffer);
   if (riff) return finalize(riff.category, riff.mimeType, declaredMimeType);
@@ -416,7 +465,9 @@ function classifyAttachment(buffer, { fileName, declaredMimeType } = {}) {
   const isoBmff = sniffIsoBmffMimeType(buffer);
   if (isoBmff) {
     return finalize(isoBmff.category, isoBmff.mimeType, declaredMimeType, {
-      extractionMetadata: isoBmff.unrecognizedBrand ? { unrecognizedIsoBmffBrand: isoBmff.unrecognizedBrand } : undefined,
+      extractionMetadata: isoBmff.unrecognizedBrand
+        ? { unrecognizedIsoBmffBrand: isoBmff.unrecognizedBrand }
+        : undefined,
     });
   }
 
@@ -430,12 +481,16 @@ function classifyAttachment(buffer, { fileName, declaredMimeType } = {}) {
   if (archive) return finalize(archive.category, archive.mimeType, declaredMimeType);
 
   const executable = sniffExecutableMimeType(buffer);
-  if (executable) return finalize(executable.category, executable.mimeType, declaredMimeType, { blocked: executable.blocked });
+  if (executable)
+    return finalize(executable.category, executable.mimeType, declaredMimeType, { blocked: executable.blocked });
 
   const plainText = sniffPlainTextMimeType(buffer, fileName);
   if (plainText) return finalize(plainText.category, plainText.mimeType, declaredMimeType);
 
-  return finalize(ATTACHMENT_CATEGORIES.UNSUPPORTED_OR_RESTRICTED, null, declaredMimeType, { blocked: true, blockReason: 'unrecognized_content' });
+  return finalize(ATTACHMENT_CATEGORIES.UNSUPPORTED_OR_RESTRICTED, null, declaredMimeType, {
+    blocked: true,
+    blockReason: 'unrecognized_content',
+  });
 }
 
 function finalize(category, detectedMimeType, declaredMimeType, opts = {}) {

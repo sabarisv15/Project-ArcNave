@@ -18,13 +18,9 @@ import { INSTITUTION } from '../lib/institutionData';
 import { seatTitle } from '../lib/seatTitles';
 import { PRINCIPAL_L1 } from '../lib/roles';
 import { SeatScopeHeader } from './SeatScopeHeader';
-import { useAcademicTerm } from '../store/AcademicTermProvider';
+import { useAcademicTerm } from '@/features/institution';
 
-export function InstitutionScopeHeader({
-  institution = INSTITUTION,
-  roleLabel = seatTitle(PRINCIPAL_L1),
-  trail,
-}) {
+export function InstitutionScopeHeader({ institution = INSTITUTION, roleLabel = seatTitle(PRINCIPAL_L1), trail }) {
   /*
    * The year and band come from the **live term**, not from the fixture's own
    * label. They used to be module constants, which was correct while the term

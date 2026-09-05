@@ -33,7 +33,10 @@ function buildCsv() {
     let i = q + 1;
     if (t[i] !== undefined && !NUM.test(t[i])) i += 1;
     const money = [];
-    while (i < t.length && NUM.test(t[i]) && money.length < 7) { money.push(t[i]); i += 1; }
+    while (i < t.length && NUM.test(t[i]) && money.length < 7) {
+      money.push(t[i]);
+      i += 1;
+    }
     if (money.length < 7) continue;
     rows.push([m[1], m[2], m[3], t.slice(0, q).join(' '), money[4], money[5]]);
   }
@@ -56,21 +59,26 @@ async function main() {
 
   console.log('\n  operation "compare" with several patterns a model might write:');
   const identity = aggregate.compileIdentityPattern('(PLB[^0-9]*)').regex;
-  const patterns = [
-    '([\\d,]+\\.\\d{2})$',
-    '\\s0\\s([\\d,]+\\.\\d{2})',
-    '([\\d,]+\\.\\d{2})',
-  ];
+  const patterns = ['([\\d,]+\\.\\d{2})$', '\\s0\\s([\\d,]+\\.\\d{2})', '([\\d,]+\\.\\d{2})'];
   for (const pattern of patterns) {
     try {
       const c = aggregate.compareRecords(plb, {
-        filter: { pattern }, comparison: { operator: 'gt', value: 0 }, identityPattern: identity,
+        filter: { pattern },
+        comparison: { operator: 'gt', value: 0 },
+        identityPattern: identity,
       });
-      console.log(`    ${JSON.stringify(pattern).padEnd(28)} -> total ${c.total}  matched ${c.matchedCount}`
-        + `  multiMatch ${c.multiMatchRows}  unmatched ${c.unmatchedRows}`);
-    } catch (err) { console.log(`    ${pattern} -> ${err.message}`); }
+      console.log(
+        `    ${JSON.stringify(pattern).padEnd(28)} -> total ${c.total}  matched ${c.matchedCount}` +
+          `  multiMatch ${c.multiMatchRows}  unmatched ${c.unmatchedRows}`,
+      );
+    } catch (err) {
+      console.log(`    ${pattern} -> ${err.message}`);
+    }
   }
   console.log('\n  ground truth for PLB credit: 170722.00 across 9 rows');
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

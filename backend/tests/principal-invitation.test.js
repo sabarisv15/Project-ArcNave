@@ -117,10 +117,7 @@ test('principal invitation', async (t) => {
   const createdColleges = [];
   async function seedCollege(label) {
     const cid = `inv${label}${crypto.randomUUID().slice(0, 8)}`;
-    await adminPool.query(
-      'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $1)',
-      [cid],
-    );
+    await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $1)', [cid]);
     createdColleges.push(cid);
     return cid;
   }
@@ -186,10 +183,14 @@ test('principal invitation', async (t) => {
   // the raw token it needs to drive /invitations/accept, the same way
   // a real recipient would read it out of their inbox.
   let lastInvitationToken = null;
-  const emailMock = t.mock.method(notificationService, 'sendPrincipalInvitationEmail', async (client, { to, token }) => {
-    lastInvitationToken = token;
-    return { status: 'stubbed', to };
-  });
+  const emailMock = t.mock.method(
+    notificationService,
+    'sendPrincipalInvitationEmail',
+    async (client, { to, token }) => {
+      lastInvitationToken = token;
+      return { status: 'stubbed', to };
+    },
+  );
   t.after(() => emailMock.mock.restore());
 
   async function invite(token, collegeId, email) {
@@ -343,33 +344,34 @@ test('principal invitation', async (t) => {
 
   // --- Resend / revoke (this session's own task) ---
 
-  await t.test('resend rotates the token, emails the new one, and never returns it; the old token stops working', async () => {
-    // A fresh college — see the 'reuse' test above for why: this test
-    // completes a real accept, and collegeA's one active-principal
-    // slot is already taken.
-    const collegeE = await seedCollege('e');
-    const token = await platformToken();
-    const inviteResp = await invite(token, collegeE, 'resend@example.com');
-    const oldToken = inviteResp.rawToken;
+  await t.test(
+    'resend rotates the token, emails the new one, and never returns it; the old token stops working',
+    async () => {
+      // A fresh college — see the 'reuse' test above for why: this test
+      // completes a real accept, and collegeA's one active-principal
+      // slot is already taken.
+      const collegeE = await seedCollege('e');
+      const token = await platformToken();
+      const inviteResp = await invite(token, collegeE, 'resend@example.com');
+      const oldToken = inviteResp.rawToken;
 
-    lastInvitationToken = null;
-    const resendResp = await post(
-      baseUrl,
-      `/api/v1/platform/invitations/${inviteResp.body.invitation_id}/resend`,
-      { authorization: `Bearer ${token}` },
-    );
-    assert.equal(resendResp.status, 200);
-    assert.equal('token' in resendResp.body, false);
-    const newToken = lastInvitationToken;
-    assert.ok(newToken);
-    assert.notEqual(newToken, oldToken);
+      lastInvitationToken = null;
+      const resendResp = await post(baseUrl, `/api/v1/platform/invitations/${inviteResp.body.invitation_id}/resend`, {
+        authorization: `Bearer ${token}`,
+      });
+      assert.equal(resendResp.status, 200);
+      assert.equal('token' in resendResp.body, false);
+      const newToken = lastInvitationToken;
+      assert.ok(newToken);
+      assert.notEqual(newToken, oldToken);
 
-    const oldAccept = await accept(oldToken, `shouldnotwork${crypto.randomUUID().slice(0, 8)}`);
-    assert.equal(oldAccept.status, 401);
+      const oldAccept = await accept(oldToken, `shouldnotwork${crypto.randomUUID().slice(0, 8)}`);
+      assert.equal(oldAccept.status, 401);
 
-    const newAccept = await accept(newToken, `resendaccepted${crypto.randomUUID().slice(0, 8)}`);
-    assert.equal(newAccept.status, 201);
-  });
+      const newAccept = await accept(newToken, `resendaccepted${crypto.randomUUID().slice(0, 8)}`);
+      assert.equal(newAccept.status, 201);
+    },
+  );
 
   await t.test('resend on an already-accepted invitation is a real 409', async () => {
     const collegeF = await seedCollege('f');
@@ -378,30 +380,29 @@ test('principal invitation', async (t) => {
     const accepted = await accept(inviteResp.rawToken, `resend2accepted${crypto.randomUUID().slice(0, 8)}`);
     assert.equal(accepted.status, 201);
 
-    const resendResp = await post(
-      baseUrl,
-      `/api/v1/platform/invitations/${inviteResp.body.invitation_id}/resend`,
-      { authorization: `Bearer ${token}` },
-    );
+    const resendResp = await post(baseUrl, `/api/v1/platform/invitations/${inviteResp.body.invitation_id}/resend`, {
+      authorization: `Bearer ${token}`,
+    });
     assert.equal(resendResp.status, 409);
   });
 
-  await t.test('revoke invalidates the invitation; accepting a revoked token is rejected with the same generic message', async () => {
-    const token = await platformToken();
-    const inviteResp = await invite(token, collegeA, 'revoke@example.com');
+  await t.test(
+    'revoke invalidates the invitation; accepting a revoked token is rejected with the same generic message',
+    async () => {
+      const token = await platformToken();
+      const inviteResp = await invite(token, collegeA, 'revoke@example.com');
 
-    const revokeResp = await post(
-      baseUrl,
-      `/api/v1/platform/invitations/${inviteResp.body.invitation_id}/revoke`,
-      { authorization: `Bearer ${token}` },
-    );
-    assert.equal(revokeResp.status, 200);
-    assert.ok(revokeResp.body.revoked_at);
+      const revokeResp = await post(baseUrl, `/api/v1/platform/invitations/${inviteResp.body.invitation_id}/revoke`, {
+        authorization: `Bearer ${token}`,
+      });
+      assert.equal(revokeResp.status, 200);
+      assert.ok(revokeResp.body.revoked_at);
 
-    const acceptResp = await accept(inviteResp.rawToken, `revokeattempt${crypto.randomUUID().slice(0, 8)}`);
-    assert.equal(acceptResp.status, 401);
-    assert.equal(acceptResp.body.detail, 'Invalid or expired invitation');
-  });
+      const acceptResp = await accept(inviteResp.rawToken, `revokeattempt${crypto.randomUUID().slice(0, 8)}`);
+      assert.equal(acceptResp.status, 401);
+      assert.equal(acceptResp.body.detail, 'Invalid or expired invitation');
+    },
+  );
 
   await t.test('resend revives a revoked invitation — new token accepts, old one still does not', async () => {
     const collegeG = await seedCollege('g');
@@ -409,19 +410,15 @@ test('principal invitation', async (t) => {
     const inviteResp = await invite(token, collegeG, 'revive@example.com');
     const oldToken = inviteResp.rawToken;
 
-    const revokeResp = await post(
-      baseUrl,
-      `/api/v1/platform/invitations/${inviteResp.body.invitation_id}/revoke`,
-      { authorization: `Bearer ${token}` },
-    );
+    const revokeResp = await post(baseUrl, `/api/v1/platform/invitations/${inviteResp.body.invitation_id}/revoke`, {
+      authorization: `Bearer ${token}`,
+    });
     assert.equal(revokeResp.status, 200);
 
     lastInvitationToken = null;
-    const resendResp = await post(
-      baseUrl,
-      `/api/v1/platform/invitations/${inviteResp.body.invitation_id}/resend`,
-      { authorization: `Bearer ${token}` },
-    );
+    const resendResp = await post(baseUrl, `/api/v1/platform/invitations/${inviteResp.body.invitation_id}/resend`, {
+      authorization: `Bearer ${token}`,
+    });
     assert.equal(resendResp.status, 200);
     const newToken = lastInvitationToken;
     assert.ok(newToken);
@@ -437,56 +434,49 @@ test('principal invitation', async (t) => {
     const token = await platformToken();
     const missingId = crypto.randomUUID();
 
-    const revokeResp = await post(
-      baseUrl,
-      `/api/v1/platform/invitations/${missingId}/revoke`,
-      { authorization: `Bearer ${token}` },
-    );
+    const revokeResp = await post(baseUrl, `/api/v1/platform/invitations/${missingId}/revoke`, {
+      authorization: `Bearer ${token}`,
+    });
     assert.equal(revokeResp.status, 404);
 
-    const resendResp = await post(
-      baseUrl,
-      `/api/v1/platform/invitations/${missingId}/resend`,
-      { authorization: `Bearer ${token}` },
-    );
+    const resendResp = await post(baseUrl, `/api/v1/platform/invitations/${missingId}/resend`, {
+      authorization: `Bearer ${token}`,
+    });
     assert.equal(resendResp.status, 404);
   });
 
   // --- Cross-tenant isolation ---
 
-  await t.test(
-    'one college\'s invitation can never create a user under a different college_id',
-    async () => {
-      // Fresh colleges, not collegeA/collegeB — both already-used
-      // colleges elsewhere in this file may already have their one
-      // active principal; this test only needs two colleges that have
-      // never had a successful accept yet, not specifically A/B.
-      const collegeG = await seedCollege('g');
-      const collegeH = await seedCollege('h');
-      const token = await platformToken();
-      const inviteA = await invite(token, collegeG, 'principal-a@example.com');
-      const inviteB = await invite(token, collegeH, 'principal-b@example.com');
+  await t.test("one college's invitation can never create a user under a different college_id", async () => {
+    // Fresh colleges, not collegeA/collegeB — both already-used
+    // colleges elsewhere in this file may already have their one
+    // active principal; this test only needs two colleges that have
+    // never had a successful accept yet, not specifically A/B.
+    const collegeG = await seedCollege('g');
+    const collegeH = await seedCollege('h');
+    const token = await platformToken();
+    const inviteA = await invite(token, collegeG, 'principal-a@example.com');
+    const inviteB = await invite(token, collegeH, 'principal-b@example.com');
 
-      const sharedUsername = `sharedprincipal${crypto.randomUUID().slice(0, 8)}`;
+    const sharedUsername = `sharedprincipal${crypto.randomUUID().slice(0, 8)}`;
 
-      const respA = await accept(inviteA.rawToken, sharedUsername);
-      const respB = await accept(inviteB.rawToken, sharedUsername);
-      assert.equal(respA.status, 201);
-      assert.equal(respB.status, 201);
-      assert.equal(respA.body.college_id, collegeG);
-      assert.equal(respB.body.college_id, collegeH);
+    const respA = await accept(inviteA.rawToken, sharedUsername);
+    const respB = await accept(inviteB.rawToken, sharedUsername);
+    assert.equal(respA.status, 201);
+    assert.equal(respB.status, 201);
+    assert.equal(respA.body.college_id, collegeG);
+    assert.equal(respB.body.college_id, collegeH);
 
-      // RLS-scoped proof each row landed under its own college, not
-      // the other one.
-      const rowUnderA = await userVisibleUnderTenant(collegeG, sharedUsername);
-      assert.ok(rowUnderA);
-      assert.equal(rowUnderA.college_id, collegeG);
+    // RLS-scoped proof each row landed under its own college, not
+    // the other one.
+    const rowUnderA = await userVisibleUnderTenant(collegeG, sharedUsername);
+    assert.ok(rowUnderA);
+    assert.equal(rowUnderA.college_id, collegeG);
 
-      const rowUnderB = await userVisibleUnderTenant(collegeH, sharedUsername);
-      assert.ok(rowUnderB);
-      assert.equal(rowUnderB.college_id, collegeH);
-    },
-  );
+    const rowUnderB = await userVisibleUnderTenant(collegeH, sharedUsername);
+    assert.ok(rowUnderB);
+    assert.equal(rowUnderB.college_id, collegeH);
+  });
 });
 
 // CLAUDE.md rule 1 ("every route calls a Business Service, never a

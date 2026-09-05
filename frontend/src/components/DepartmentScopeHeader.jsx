@@ -19,7 +19,7 @@ import { DEPARTMENT } from '../lib/departmentData';
 import { seatTitle } from '../lib/seatTitles';
 import { HOD_L3 } from '../lib/roles';
 import { SeatScopeHeader } from './SeatScopeHeader';
-import { useAcademicTerm } from '../store/AcademicTermProvider';
+import { useAcademicTerm } from '@/features/institution';
 
 export function DepartmentScopeHeader({ dept = DEPARTMENT, roleLabel = seatTitle(HOD_L3), trail }) {
   /*

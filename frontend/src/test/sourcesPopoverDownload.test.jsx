@@ -6,10 +6,8 @@ vi.mock('../api/client', () => ({
   downloadFile: vi.fn(() => Promise.resolve()),
 }));
 
-// eslint-disable-next-line import/first
 import { downloadFile } from '../api/client';
-// eslint-disable-next-line import/first
-import { SourcesTrigger } from '../components/SourcesPopover';
+import { SourcesTrigger } from '@/features/chat';
 
 // Regression: an attachment/document source (`kind: 'uploaded'`) fell
 // back to SourcesPopover's KIND.record entry (no href, not previewable),
@@ -21,9 +19,15 @@ import { SourcesTrigger } from '../components/SourcesPopover';
 describe('Sources — uploaded/generated file download', () => {
   it('an uploaded-kind source with a documentId is clickable and triggers a real authenticated download', async () => {
     const user = userEvent.setup();
-    const sources = [{
-      id: 'attachment-doc-1', title: 'arrears.pdf', kind: 'uploaded', documentId: 'doc-1', origin: 'Attached to this message',
-    }];
+    const sources = [
+      {
+        id: 'attachment-doc-1',
+        title: 'arrears.pdf',
+        kind: 'uploaded',
+        documentId: 'doc-1',
+        origin: 'Attached to this message',
+      },
+    ];
     render(<SourcesTrigger sources={sources} />);
 
     await user.click(screen.getByRole('button', { name: /Sources for this response/ }));
@@ -35,9 +39,14 @@ describe('Sources — uploaded/generated file download', () => {
 
   it('a tool-evidence source (no document, no href) renders as a plain, non-interactive row', async () => {
     const user = userEvent.setup();
-    const sources = [{
-      id: 'src-students_roster-t1', title: 'students_roster', kind: 'tool', origin: '5 record(s) · retrieved t1',
-    }];
+    const sources = [
+      {
+        id: 'src-students_roster-t1',
+        title: 'students_roster',
+        kind: 'tool',
+        origin: '5 record(s) · retrieved t1',
+      },
+    ];
     render(<SourcesTrigger sources={sources} />);
 
     await user.click(screen.getByRole('button', { name: /Sources for this response/ }));

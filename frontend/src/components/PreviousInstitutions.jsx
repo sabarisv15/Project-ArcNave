@@ -86,7 +86,7 @@ export function PreviousInstitutions({ entries, editing, onChange }) {
               className={cn(
                 'border rounded-[11px] overflow-hidden transition-colors duration-200',
                 open ? 'border-accent-line bg-tint' : 'border-line bg-paper',
-                !open && hasError && 'border-danger/40'
+                !open && hasError && 'border-danger/40',
               )}
             >
               <div className="flex items-center gap-[8px] pl-[11px] pr-[6px] h-[40px]">
@@ -189,7 +189,9 @@ export function PreviousInstitutions({ entries, editing, onChange }) {
         <AlertDialog.Portal>
           <AlertDialog.Overlay className="fixed inset-0 z-[130] bg-overlay/20 animate-fadeUp" />
           <AlertDialog.Content className="fixed left-1/2 top-1/2 z-[131] w-[min(400px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-[16px] border border-line bg-paper p-[18px] shadow-dialog outline-none data-[state=open]:animate-fadeUp motion-reduce:animate-none">
-            <AlertDialog.Title className="m-0 text-[15px] font-[600] text-ink">Remove this institution?</AlertDialog.Title>
+            <AlertDialog.Title className="m-0 text-[15px] font-[600] text-ink">
+              Remove this institution?
+            </AlertDialog.Title>
             <AlertDialog.Description className="mt-[5px] text-[13px] font-[400] text-ink-muted">
               {pending ? institutionSummary(pending) || 'This entry' : ''} will be removed from your profile.
             </AlertDialog.Description>

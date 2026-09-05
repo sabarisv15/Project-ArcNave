@@ -53,7 +53,9 @@ const MAX_TITLE_CHARS = 120;
 function buildOptionsCard(title, options) {
   const cleanTitle = title ? requireNonEmptyString(title, 'title', MAX_TITLE_CHARS) : null;
   if (!Array.isArray(options) || options.length < MIN_PRESENT_OPTIONS || options.length > MAX_PRESENT_OPTIONS) {
-    throw new AiInteractionValidationError(`options must be an array of ${MIN_PRESENT_OPTIONS}-${MAX_PRESENT_OPTIONS} alternatives`);
+    throw new AiInteractionValidationError(
+      `options must be an array of ${MIN_PRESENT_OPTIONS}-${MAX_PRESENT_OPTIONS} alternatives`,
+    );
   }
   const cleanedOptions = options.map((opt) => {
     if (!opt || typeof opt !== 'object') {
@@ -90,11 +92,17 @@ function buildQuiz(title, questions) {
     }
     const question = requireNonEmptyString(q.question, `question ${index + 1}'s text`, MAX_QUESTION_CHARS);
     if (!Array.isArray(q.options) || q.options.length < MIN_QUIZ_OPTIONS || q.options.length > MAX_QUIZ_OPTIONS) {
-      throw new AiInteractionValidationError(`question ${index + 1} must have ${MIN_QUIZ_OPTIONS}-${MAX_QUIZ_OPTIONS} options`);
+      throw new AiInteractionValidationError(
+        `question ${index + 1} must have ${MIN_QUIZ_OPTIONS}-${MAX_QUIZ_OPTIONS} options`,
+      );
     }
-    const options = q.options.map((opt) => requireNonEmptyString(opt, `question ${index + 1}'s option`, MAX_OPTION_LABEL_CHARS));
+    const options = q.options.map((opt) =>
+      requireNonEmptyString(opt, `question ${index + 1}'s option`, MAX_OPTION_LABEL_CHARS),
+    );
     if (!Number.isInteger(q.correctIndex) || q.correctIndex < 0 || q.correctIndex >= options.length) {
-      throw new AiInteractionValidationError(`question ${index + 1}'s correctIndex must be a valid index into its own options`);
+      throw new AiInteractionValidationError(
+        `question ${index + 1}'s correctIndex must be a valid index into its own options`,
+      );
     }
     return { question, options, correctIndex: q.correctIndex };
   });
@@ -180,11 +188,15 @@ const MAX_COMPARISON_ATTRIBUTES = 8;
 function buildComparisonCard(title, attributes, items) {
   const cleanTitle = title ? requireNonEmptyString(title, 'title', MAX_TITLE_CHARS) : null;
   if (!Array.isArray(attributes) || attributes.length === 0 || attributes.length > MAX_COMPARISON_ATTRIBUTES) {
-    throw new AiInteractionValidationError(`attributes must be an array of 1-${MAX_COMPARISON_ATTRIBUTES} shared attribute names`);
+    throw new AiInteractionValidationError(
+      `attributes must be an array of 1-${MAX_COMPARISON_ATTRIBUTES} shared attribute names`,
+    );
   }
   const cleanAttributes = attributes.map((a) => requireNonEmptyString(a, 'each attribute', MAX_FIELD_LABEL_CHARS));
   if (!Array.isArray(items) || items.length < MIN_COMPARISON_ITEMS || items.length > MAX_COMPARISON_ITEMS) {
-    throw new AiInteractionValidationError(`items must be an array of ${MIN_COMPARISON_ITEMS}-${MAX_COMPARISON_ITEMS} things to compare`);
+    throw new AiInteractionValidationError(
+      `items must be an array of ${MIN_COMPARISON_ITEMS}-${MAX_COMPARISON_ITEMS} things to compare`,
+    );
   }
   const cleanItems = items.map((item) => {
     if (!item || typeof item !== 'object') {
@@ -192,7 +204,9 @@ function buildComparisonCard(title, attributes, items) {
     }
     const name = requireNonEmptyString(item.name, 'each item name', MAX_FEATURED_LABEL_CHARS);
     if (!Array.isArray(item.values) || item.values.length !== cleanAttributes.length) {
-      throw new AiInteractionValidationError(`item ${JSON.stringify(name)} must supply exactly ${cleanAttributes.length} values, one per declared attribute`);
+      throw new AiInteractionValidationError(
+        `item ${JSON.stringify(name)} must supply exactly ${cleanAttributes.length} values, one per declared attribute`,
+      );
     }
     const values = item.values.map((v) => requireNonEmptyString(v, `each value for ${name}`, MAX_FIELD_VALUE_CHARS));
     return { name, values };
@@ -212,7 +226,9 @@ const MAX_CAROUSEL_SUBTITLE_CHARS = 200;
 function buildCarousel(title, items) {
   const cleanTitle = title ? requireNonEmptyString(title, 'title', MAX_TITLE_CHARS) : null;
   if (!Array.isArray(items) || items.length < MIN_CAROUSEL_ITEMS || items.length > MAX_CAROUSEL_ITEMS) {
-    throw new AiInteractionValidationError(`items must be an array of ${MIN_CAROUSEL_ITEMS}-${MAX_CAROUSEL_ITEMS} entries`);
+    throw new AiInteractionValidationError(
+      `items must be an array of ${MIN_CAROUSEL_ITEMS}-${MAX_CAROUSEL_ITEMS} entries`,
+    );
   }
   const cleanItems = items.map((item) => {
     if (!item || typeof item !== 'object') {
@@ -220,7 +236,9 @@ function buildCarousel(title, items) {
     }
     return {
       name: requireNonEmptyString(item.name, 'each item name', MAX_FEATURED_LABEL_CHARS),
-      subtitle: item.subtitle ? requireNonEmptyString(item.subtitle, 'each item subtitle', MAX_CAROUSEL_SUBTITLE_CHARS) : null,
+      subtitle: item.subtitle
+        ? requireNonEmptyString(item.subtitle, 'each item subtitle', MAX_CAROUSEL_SUBTITLE_CHARS)
+        : null,
     };
   });
   return { title: cleanTitle, items: cleanItems };
@@ -287,7 +305,9 @@ function cleanPlace(place, requireCoordinates) {
   const address = place.address ? requireNonEmptyString(place.address, 'each place address', MAX_ADDRESS_CHARS) : null;
   const hasCoordinates = place.latitude !== undefined || place.longitude !== undefined;
   if (requireCoordinates && !hasCoordinates) {
-    throw new AiInteractionValidationError(`place ${JSON.stringify(name)} needs latitude and longitude to appear on a map`);
+    throw new AiInteractionValidationError(
+      `place ${JSON.stringify(name)} needs latitude and longitude to appear on a map`,
+    );
   }
   if (!hasCoordinates) return { name, address, latitude: null, longitude: null };
   const { latitude, longitude } = place;
@@ -332,7 +352,9 @@ function buildRecipe(title, servings, ingredients, steps) {
     throw new AiInteractionValidationError('servings must be a positive integer');
   }
   if (!Array.isArray(ingredients) || ingredients.length < MIN_INGREDIENTS || ingredients.length > MAX_INGREDIENTS) {
-    throw new AiInteractionValidationError(`ingredients must be an array of ${MIN_INGREDIENTS}-${MAX_INGREDIENTS} entries`);
+    throw new AiInteractionValidationError(
+      `ingredients must be an array of ${MIN_INGREDIENTS}-${MAX_INGREDIENTS} entries`,
+    );
   }
   const cleanIngredients = ingredients.map((ing) => {
     if (!ing || typeof ing !== 'object') {
@@ -340,13 +362,22 @@ function buildRecipe(title, servings, ingredients, steps) {
     }
     const name = requireNonEmptyString(ing.name, 'each ingredient name', MAX_FIELD_LABEL_CHARS);
     if (typeof ing.quantity !== 'number' || !Number.isFinite(ing.quantity) || ing.quantity <= 0) {
-      throw new AiInteractionValidationError(`ingredient ${JSON.stringify(name)} needs a positive numeric quantity so servings can be rescaled`);
+      throw new AiInteractionValidationError(
+        `ingredient ${JSON.stringify(name)} needs a positive numeric quantity so servings can be rescaled`,
+      );
     }
-    return { name, quantity: ing.quantity, unit: requireNonEmptyString(ing.unit, `ingredient ${name}'s unit`, MAX_UNIT_CHARS) };
+    return {
+      name,
+      quantity: ing.quantity,
+      unit: requireNonEmptyString(ing.unit, `ingredient ${name}'s unit`, MAX_UNIT_CHARS),
+    };
   });
   const { steps: cleanSteps } = buildSteps(null, steps);
   return {
-    title: cleanTitle, servings, ingredients: cleanIngredients, steps: cleanSteps,
+    title: cleanTitle,
+    servings,
+    ingredients: cleanIngredients,
+    steps: cleanSteps,
   };
 }
 

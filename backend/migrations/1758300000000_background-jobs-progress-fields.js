@@ -20,7 +20,7 @@ exports.shorthands = undefined;
 
 exports.up = (pgm) => {
   pgm.sql('ALTER TABLE background_jobs ADD COLUMN job_type TEXT');
-  pgm.sql("ALTER TABLE background_jobs ADD COLUMN progress INTEGER NOT NULL DEFAULT 0");
+  pgm.sql('ALTER TABLE background_jobs ADD COLUMN progress INTEGER NOT NULL DEFAULT 0');
   pgm.sql('ALTER TABLE background_jobs ADD COLUMN payload JSONB');
   pgm.sql('ALTER TABLE background_jobs ADD COLUMN result JSONB');
 };

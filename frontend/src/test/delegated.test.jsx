@@ -1,12 +1,6 @@
-import { act, render, renderHook, screen, within } from '@testing-library/react';
+import { act, renderHook, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import * as Tooltip from '@radix-ui/react-tooltip';
 import { describe, expect, it } from 'vitest';
-import App from '../App';
-import { WorkspaceProvider } from '../store/WorkspaceProvider';
-import { ComposerProvider } from '../store/ComposerProvider';
 import { PROVISIONING } from '../lib/provisioning';
 import {
   canDelegatedReview,
@@ -19,12 +13,13 @@ import {
 import { curriculumNavFor } from '../components/SidebarNavigation';
 import { LEVEL_2, TEACHING_STAFF } from '../lib/roles';
 import { canFinalApprove, endorsementChainLabel } from '../lib/endorsementChain';
-import { AcademicTermProvider } from '../store/AcademicTermProvider';
-import { AcademicRosterProvider } from '../store/AcademicRosterProvider';
 import {
+  AcademicTermProvider,
+  AcademicRosterProvider,
   InstitutionalLifecycleProvider,
   useInstitutionalLifecycle,
-} from '../store/InstitutionalLifecycleProvider';
+} from '@/features/institution';
+import { renderApp as renderAppShared } from './renderApp';
 
 const wrapper = ({ children }) => (
   <AcademicTermProvider>
@@ -52,26 +47,13 @@ const OUT_OF_SCOPE = 'dept-comm';
  * of approving, and it never resolves to the Staff experience.
  */
 
-function renderApp(route = '/') {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[route]}>
-        <Tooltip.Provider>
-          <WorkspaceProvider>
-            <ComposerProvider>
-              <App />
-            </ComposerProvider>
-          </WorkspaceProvider>
-        </Tooltip.Provider>
-      </MemoryRouter>
-    </QueryClientProvider>
-  );
+function renderApp(route = '/', options) {
+  return renderAppShared(route, options);
 }
 
 /** Enters the delegated seat the only way the interface offers — the switcher. */
 async function useDelegatedSeat(user) {
-  await user.click(screen.getByRole('button', { name: /open profile/i }));
+  await user.click(await screen.findByRole('button', { name: /open profile/i }));
   const group = await screen.findByRole('radiogroup', { name: /workspace view/i });
   await user.click(within(group).getByRole('radio', { name: /Dean — Academic Affairs/i }));
   await user.keyboard('{Escape}');
@@ -95,13 +77,7 @@ describe('delegated scope resolution', () => {
 
   it('builds navigation from configuration, not from a duty list', () => {
     const labels = delegatedNavItems(delegatedScope()).map((i) => i.label);
-    expect(labels).toEqual([
-      'Delegated Overview',
-      'Routed Approvals',
-      'Work Areas',
-      'Documents',
-      'Calendar',
-    ]);
+    expect(labels).toEqual(['Delegated Overview', 'Routed Approvals', 'Work Areas', 'Documents', 'Calendar']);
     // The duty modules a "Dean" is commonly assumed to own are not here.
     expect(labels).not.toContain('Attendance & Class log');
     expect(labels).not.toContain('Assessments');
@@ -132,8 +108,7 @@ describe('no Staff fallthrough', () => {
     renderApp('/delegated');
     await useDelegatedSeat(user);
 
-    expect((await screen.findAllByRole('heading', { name: 'Dean — Academic Affairs' })).length)
-      .toBeGreaterThan(0);
+    expect((await screen.findAllByRole('heading', { name: 'Dean — Academic Affairs' })).length).toBeGreaterThan(0);
     const nav = screen.getByRole('navigation', { name: /curriculum navigation/i });
     expect(within(nav).getByRole('link', { name: /Delegated Overview/i })).toBeTruthy();
     expect(within(nav).queryByRole('link', { name: /^Staff$/i })).toBeNull();
@@ -210,20 +185,15 @@ describe('the boundary of a delegated review', () => {
 
   it('refuses a department outside the delegated scope', () => {
     const scope = delegatedScope();
-    expect(
-      canDelegatedReview('endorsed_pending_l2', scope, { departmentId: 'dept-comm' })
-    ).toBe(false);
-    expect(
-      canDelegatedReview('endorsed_pending_l2', scope, { departmentId: 'dept-ece' })
-    ).toBe(true);
+    expect(canDelegatedReview('endorsed_pending_l2', scope, { departmentId: 'dept-comm' })).toBe(false);
+    expect(canDelegatedReview('endorsed_pending_l2', scope, { departmentId: 'dept-ece' })).toBe(true);
   });
 
   it('refuses every state except the one routed to it', () => {
     const scope = delegatedScope();
-    ['ready_for_endorsement', 'conflict_identified', 'endorsed_pending_l1', 'approved_locked', 'draft']
-      .forEach((state) =>
-        expect(canDelegatedReview(state, scope, { departmentId: ROUTED })).toBe(false)
-      );
+    ['ready_for_endorsement', 'conflict_identified', 'endorsed_pending_l1', 'approved_locked', 'draft'].forEach(
+      (state) => expect(canDelegatedReview(state, scope, { departmentId: ROUTED })).toBe(false),
+    );
   });
 });
 

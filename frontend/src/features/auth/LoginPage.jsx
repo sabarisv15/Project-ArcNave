@@ -31,7 +31,7 @@ export function LoginPage() {
       }
       navigate('/', { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? (err.detail || 'Login failed') : 'Could not reach the server');
+      setError(err instanceof ApiError ? err.detail || 'Login failed' : 'Could not reach the server');
     } finally {
       setSubmitting(false);
     }
@@ -45,7 +45,9 @@ export function LoginPage() {
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink-soft" htmlFor="collegeCode">College code (optional)</label>
+            <label className="mb-1 block text-xs font-medium text-ink-soft" htmlFor="collegeCode">
+              College code (optional)
+            </label>
             <input
               id="collegeCode"
               className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-1 focus:ring-accent"
@@ -54,7 +56,9 @@ export function LoginPage() {
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink-soft" htmlFor="username">Username</label>
+            <label className="mb-1 block text-xs font-medium text-ink-soft" htmlFor="username">
+              Username
+            </label>
             <input
               id="username"
               className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-1 focus:ring-accent"
@@ -65,7 +69,9 @@ export function LoginPage() {
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink-soft" htmlFor="password">Password</label>
+            <label className="mb-1 block text-xs font-medium text-ink-soft" htmlFor="password">
+              Password
+            </label>
             <input
               id="password"
               type="password"

@@ -42,15 +42,17 @@ embeddingService.isAvailable = () => false;
 
 const RESULT_SHEET = path.join(__dirname, '..', 'tmp-inspect.pdf');
 const PASSWORD = 'F15Cap2LiveRetestPass123!';
-const QUESTION = 'Can you give me an Excel file breaking down the arrears in the ECE Sandwich section, with a formula-based total?';
+const QUESTION =
+  'Can you give me an Excel file breaking down the arrears in the ECE Sandwich section, with a formula-based total?';
 
 async function seedTenant(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const collegeId = `f15${suffix}`;
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain, address) VALUES ($1, $1, $2, $3)',
-    [collegeId, `f15tenant${suffix}`, 'f15-cap2-retest-address'],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain, address) VALUES ($1, $1, $2, $3)', [
+    collegeId,
+    `f15tenant${suffix}`,
+    'f15-cap2-retest-address',
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userResult = await adminPool.query(
     `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
@@ -96,7 +98,9 @@ async function withTenantClient(appPool, collegeId, fn) {
 
 async function main() {
   if (!fs.existsSync(RESULT_SHEET)) {
-    console.error(`Missing ${RESULT_SHEET} — copy the result-sheet PDF to backend/tmp-inspect.pdf first (not in git, real PII).`);
+    console.error(
+      `Missing ${RESULT_SHEET} — copy the result-sheet PDF to backend/tmp-inspect.pdf first (not in git, real PII).`,
+    );
     process.exit(2);
   }
 
@@ -109,22 +113,29 @@ async function main() {
   config.maxToolCallsPerTurn = 2; // OBSERVATION ONLY — not config.js's own default.
 
   try {
-    const attachment = await withTenantClient(appPool, collegeId, (client) => documentService.uploadChatAttachment(
-      client,
-      {
-        collegeId, fileName: '111_cons_result_apr2026.pdf', mimeType: 'application/pdf', fileBuffer: fs.readFileSync(RESULT_SHEET),
-      },
-      { actorUserId: userId },
-    ));
+    const attachment = await withTenantClient(appPool, collegeId, (client) =>
+      documentService.uploadChatAttachment(
+        client,
+        {
+          collegeId,
+          fileName: '111_cons_result_apr2026.pdf',
+          mimeType: 'application/pdf',
+          fileBuffer: fs.readFileSync(RESULT_SHEET),
+        },
+        { actorUserId: userId },
+      ),
+    );
     const attachmentId = attachment.id || (attachment.document && attachment.document.id);
-    console.log(`Seeded tenant ${collegeId}, attachment ${attachmentId}, maxToolCallsPerTurn=${config.maxToolCallsPerTurn}`);
+    console.log(
+      `Seeded tenant ${collegeId}, attachment ${attachmentId}, maxToolCallsPerTurn=${config.maxToolCallsPerTurn}`,
+    );
     console.log(`Q: ${QUESTION}`);
 
     let turn;
     try {
-      turn = await withTenantClient(appPool, collegeId, (client) => aiService.askAgent(
-        client, QUESTION, { identityContext, attachmentIds: [attachmentId] },
-      ));
+      turn = await withTenantClient(appPool, collegeId, (client) =>
+        aiService.askAgent(client, QUESTION, { identityContext, attachmentIds: [attachmentId] }),
+      );
     } catch (err) {
       turn = { error: err };
     }

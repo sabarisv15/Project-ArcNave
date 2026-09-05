@@ -21,7 +21,7 @@ const documentTableExtractionService = require('../src/services/documentTableExt
 const DOWNLOADS = 'C:\\Users\\HAI\\Downloads';
 const FILES = ['EXAM FEES ece(sw) III YR 7 SEM.pdf', '111_cons_result_apr2026.pdf'];
 const Y_TOLERANCE = 3;
-const SEPARATORS = { "' | ' (DELIMITER)": ' | ', "tab": '\t', "single space": ' ' };
+const SEPARATORS = { "' | ' (DELIMITER)": ' | ', tab: '\t', 'single space': ' ' };
 
 async function geometryRows(buffer) {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -39,7 +39,8 @@ async function geometryRows(buffer) {
       if (bucket) bucket.items.push(it);
       else buckets.push({ y: it.y, items: [it] });
     });
-    buckets.sort((a, b) => b.y - a.y)
+    buckets
+      .sort((a, b) => b.y - a.y)
       .forEach((b) => rows.push(b.items.sort((p1, q) => p1.x - q.x).map((it) => it.str)));
   }
   return rows;
@@ -52,15 +53,18 @@ function describe(label, text) {
     : 'none (no check runs)';
   const anonymous = r.records.filter((rec) => !rec.key).length;
   console.log(
-    `  ${label.padEnd(20)} strategy=${String(r.strategy).padEnd(14)} records=${String(r.records.length).padStart(5)}`
-    + `  coverage=${cov.padEnd(24)} key:null rows=${anonymous}`,
+    `  ${label.padEnd(20)} strategy=${String(r.strategy).padEnd(14)} records=${String(r.records.length).padStart(5)}` +
+      `  coverage=${cov.padEnd(24)} key:null rows=${anonymous}`,
   );
 }
 
 async function main() {
   for (const name of FILES) {
     const file = path.join(DOWNLOADS, name);
-    if (!fs.existsSync(file)) { console.log(`${name} — MISSING`); continue; }
+    if (!fs.existsSync(file)) {
+      console.log(`${name} — MISSING`);
+      continue;
+    }
     const buffer = fs.readFileSync(file);
     console.log(`\n${name}`);
 
@@ -74,4 +78,7 @@ async function main() {
   }
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

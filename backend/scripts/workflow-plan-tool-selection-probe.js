@@ -86,9 +86,9 @@ async function main() {
       let result;
       try {
         // eslint-disable-next-line no-await-in-loop
-        result = await withTenantClient(appPool, COLLEGE_ID, (client) => aiService.askAgent(
-          client, question, { identityContext },
-        ));
+        result = await withTenantClient(appPool, COLLEGE_ID, (client) =>
+          aiService.askAgent(client, question, { identityContext }),
+        );
       } catch (err) {
         console.log(`THREW ${err.name}: ${err.message}`);
         continue; // eslint-disable-line no-continue
@@ -100,9 +100,13 @@ async function main() {
         result.plan.forEach((p, i) => console.log(`  ${i + 1}. ${p.toolName} (recordCount=${p.recordCount})`));
       }
       if (result.pendingConfirmation) {
-        console.log(`PENDING CONFIRMATION (turn paused before executing): ${JSON.stringify(result.pendingConfirmation)}`);
+        console.log(
+          `PENDING CONFIRMATION (turn paused before executing): ${JSON.stringify(result.pendingConfirmation)}`,
+        );
       }
-      console.log(`Real tools invoked this turn (observed via invokeTool wrapper): ${invocationLog.length === 0 ? 'NONE' : ''}`);
+      console.log(
+        `Real tools invoked this turn (observed via invokeTool wrapper): ${invocationLog.length === 0 ? 'NONE' : ''}`,
+      );
       invocationLog.forEach((c, i) => console.log(`  ${i + 1}. ${c.toolName} params=${JSON.stringify(c.params)}`));
       console.log(`answer: ${(result.answer || '').slice(0, 500)}`);
     }
@@ -112,4 +116,7 @@ async function main() {
   }
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

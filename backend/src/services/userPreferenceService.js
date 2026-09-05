@@ -26,7 +26,10 @@ async function setPreference(client, preferenceKey, value, { actorUserId, colleg
     throw new UserPreferenceValidationError('value is required');
   }
   return userPreferenceRepository.upsert(client, {
-    collegeId, userId: actorUserId, preferenceKey, value,
+    collegeId,
+    userId: actorUserId,
+    preferenceKey,
+    value,
   });
 }
 

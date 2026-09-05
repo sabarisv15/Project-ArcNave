@@ -35,10 +35,7 @@ async function create(client, fields) {
 }
 
 async function findById(client, id) {
-  const result = await client.query(
-    'SELECT * FROM subjects WHERE id = $1 AND deleted_at IS NULL',
-    [id],
-  );
+  const result = await client.query('SELECT * FROM subjects WHERE id = $1 AND deleted_at IS NULL', [id]);
   return result.rows[0] || null;
 }
 
@@ -80,5 +77,9 @@ async function softDelete(client, id) {
 }
 
 module.exports = {
-  create, findById, findByRegulation, update, softDelete,
+  create,
+  findById,
+  findByRegulation,
+  update,
+  softDelete,
 };

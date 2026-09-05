@@ -18,8 +18,14 @@ const MODEL = 'multimodalembedding@001';
 const LOCATION = process.env.MM_EMBED_LOCATION || 'us-central1';
 
 function cosine(a, b) {
-  let dot = 0; let na = 0; let nb = 0;
-  for (let i = 0; i < a.length; i += 1) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
   return dot / Math.sqrt(na * nb);
 }
 
@@ -27,8 +33,9 @@ async function main() {
   const auth = new GoogleAuth({ scopes: 'https://www.googleapis.com/auth/cloud-platform' });
   const { token } = await (await auth.getClient()).getAccessToken();
   const host = LOCATION === 'global' ? 'aiplatform.googleapis.com' : `${LOCATION}-aiplatform.googleapis.com`;
-  const url = `https://${host}/v1/projects/${config.gemini.projectId}/locations/${LOCATION}`
-    + `/publishers/google/models/${MODEL}:predict`;
+  const url =
+    `https://${host}/v1/projects/${config.gemini.projectId}/locations/${LOCATION}` +
+    `/publishers/google/models/${MODEL}:predict`;
 
   const embed = async (instance) => {
     const res = await fetch(url, {
@@ -68,4 +75,7 @@ async function main() {
   }
 }
 
-main().catch((err) => { console.error('FAILED:', err.message); process.exitCode = 1; });
+main().catch((err) => {
+  console.error('FAILED:', err.message);
+  process.exitCode = 1;
+});

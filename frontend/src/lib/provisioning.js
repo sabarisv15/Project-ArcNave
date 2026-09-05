@@ -38,13 +38,7 @@
  *  Section      { section, capacity }
  */
 
-import {
-  CLASS_TUTOR_L4,
-  HOD_L3,
-  LEVEL_2,
-  PRINCIPAL_L1,
-  TEACHING_STAFF,
-} from './roles';
+import { CLASS_TUTOR_L4, HOD_L3, LEVEL_2, PRINCIPAL_L1, TEACHING_STAFF } from './roles';
 
 /**
  * Institution A — the live fixture the browser renders.
@@ -110,7 +104,8 @@ export const PROVISIONING = {
       {
         id: 'timetable-review',
         label: 'Timetable review',
-        detail: 'Reviews an endorsed revision and routes it onward. The final approval stays with the institution head.',
+        detail:
+          'Reviews an endorsed revision and routes it onward. The final approval stays with the institution head.',
       },
       {
         id: 'monitoring',
@@ -297,9 +292,7 @@ export const INSTITUTION_IDENTITY = PROVISIONING.institution;
 
 export const PROVISIONED_DEPARTMENTS = PROVISIONING.departments;
 
-export const DEPARTMENT_BY_ID = Object.fromEntries(
-  PROVISIONED_DEPARTMENTS.map((d) => [d.id, d])
-);
+export const DEPARTMENT_BY_ID = Object.fromEntries(PROVISIONED_DEPARTMENTS.map((d) => [d.id, d]));
 
 export function provisionedDepartment(departmentId) {
   return DEPARTMENT_BY_ID[departmentId] ?? null;

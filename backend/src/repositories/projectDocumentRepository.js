@@ -31,18 +31,18 @@ async function listByProject(client, projectId) {
 }
 
 async function findByProjectAndDocument(client, projectId, documentId) {
-  const result = await client.query(
-    'SELECT * FROM project_documents WHERE project_id = $1 AND document_id = $2',
-    [projectId, documentId],
-  );
+  const result = await client.query('SELECT * FROM project_documents WHERE project_id = $1 AND document_id = $2', [
+    projectId,
+    documentId,
+  ]);
   return result.rows[0] || null;
 }
 
 async function remove(client, projectId, documentId) {
-  await client.query(
-    'DELETE FROM project_documents WHERE project_id = $1 AND document_id = $2',
-    [projectId, documentId],
-  );
+  await client.query('DELETE FROM project_documents WHERE project_id = $1 AND document_id = $2', [
+    projectId,
+    documentId,
+  ]);
 }
 
 module.exports = {

@@ -17,9 +17,7 @@ function toVectorLiteral(embedding) {
   return `[${embedding.join(',')}]`;
 }
 
-async function create(client, {
-  collegeId, documentId, chunkIndex, chunkText, classification, embedding, model,
-}) {
+async function create(client, { collegeId, documentId, chunkIndex, chunkText, classification, embedding, model }) {
   const result = await client.query(
     `INSERT INTO ai_document_chunks (college_id, document_id, chunk_index, chunk_text, classification, embedding, model)
      VALUES ($1, $2, $3, $4, $5, $6::vector, $7)
@@ -30,10 +28,9 @@ async function create(client, {
 }
 
 async function findByDocumentId(client, documentId) {
-  const result = await client.query(
-    'SELECT * FROM ai_document_chunks WHERE document_id = $1 ORDER BY chunk_index',
-    [documentId],
-  );
+  const result = await client.query('SELECT * FROM ai_document_chunks WHERE document_id = $1 ORDER BY chunk_index', [
+    documentId,
+  ]);
   return result.rows;
 }
 
@@ -61,9 +58,7 @@ async function findByDocumentId(client, documentId) {
 // embeddingModel would still be ranked by cosine distance against a
 // query vector from a different, incompatible vector space, producing a
 // plausible-looking but meaningless distance value with no error at all.
-async function search(client, {
-  collegeId, classifications, embedding, limit, classIds, model,
-}) {
+async function search(client, { collegeId, classifications, embedding, limit, classIds, model }) {
   if (!classifications || classifications.length === 0) {
     return [];
   }
@@ -80,7 +75,14 @@ async function search(client, {
        AND ($5::uuid[] IS NULL OR d.student_id IS NULL OR s.class_id = ANY($5))
      ORDER BY c.embedding <=> $3::vector
      LIMIT $4`,
-    [collegeId, classifications, toVectorLiteral(embedding), limit, classIds === null || classIds === undefined ? null : classIds, model],
+    [
+      collegeId,
+      classifications,
+      toVectorLiteral(embedding),
+      limit,
+      classIds === null || classIds === undefined ? null : classIds,
+      model,
+    ],
   );
   return result.rows;
 }

@@ -66,7 +66,7 @@ test('extractRecords: merged 822 record carries BOTH halves of its text (before 
   assert.match(azhagar.block, /4 R2023/); // post-page-break half
 });
 
-test('extractRecords: RA occurrence counts match this session\'s manually verified ground truth', () => {
+test("extractRecords: RA occurrence counts match this session's manually verified ground truth", () => {
   const { records } = extractRecords(SAMPLE_TEXT);
   const byKey = Object.fromEntries(records.map((r) => [r.key, countRa(r.block)]));
   assert.equal(byKey['818:25400121'], 0);
@@ -97,10 +97,16 @@ test('extractRecords: prose text with no recognizable tabular structure returns 
 
 test('extractRecords: empty/non-string input degrades to strategy "none" rather than throwing', () => {
   assert.deepEqual(extractRecords(''), {
-    strategy: 'none', records: [], sections: [], coverage: null,
+    strategy: 'none',
+    records: [],
+    sections: [],
+    coverage: null,
   });
   assert.deepEqual(extractRecords(null), {
-    strategy: 'none', records: [], sections: [], coverage: null,
+    strategy: 'none',
+    records: [],
+    sections: [],
+    coverage: null,
   });
 });
 
@@ -163,7 +169,7 @@ test('extractRecords: a delimited source has no sections (no printed page header
   assert.deepEqual(sections, []);
 });
 
-test('extractRecords: a record\'s startLine lands after its own section\'s startLine, so it can be attributed to the right section', () => {
+test("extractRecords: a record's startLine lands after its own section's startLine, so it can be attributed to the right section", () => {
   const { records, sections } = extractRecords(TWO_SECTION_TEXT);
   const sandwichRecord = records.find((r) => r.key === '1133:24700311');
   const sandwichSection = sections.find((s) => /SANDWICH/.test(s.courseName));
@@ -196,7 +202,12 @@ test('extractRecords: a clean sequential_id roster reports reliable coverage', (
   assert.equal(result.strategy, 'sequential_id');
   assert.equal(result.records.length, 3);
   assert.deepEqual(result.coverage, {
-    applicable: true, reliable: true, markerCount: 3, accountedCount: 3, orphanCount: 0, collapsedRecords: 0,
+    applicable: true,
+    reliable: true,
+    markerCount: 3,
+    accountedCount: 3,
+    orphanCount: 0,
+    collapsedRecords: 0,
   });
 });
 

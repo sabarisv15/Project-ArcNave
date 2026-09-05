@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const documentCategoryService = require('../services/documentCategoryService');
 
@@ -32,30 +34,46 @@ function mapDocumentCategoryError(err, res) {
 // repository needs the category list to pick a destination or filter
 // by it, same "reads are open, writes are gated" split every other
 // router in this codebase draws.
+const createDocumentCategorySchema = z.object({
+  body: z.object({ name: z.string().optional() }).optional(),
+});
+
 function createDocumentCategoriesRouter() {
   const router = express.Router();
 
-  router.get('/document-categories', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const categories = await documentCategoryService.listCategories(req.dbClient);
-    res.json(categories);
-  }));
+  router.get(
+    '/document-categories',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const categories = await documentCategoryService.listCategories(req.dbClient);
+      res.json(categories);
+    }),
+  );
 
-  router.post('/document-categories', requirePermission('document_categories.manage'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const category = await documentCategoryService.createCategory(
-        req.dbClient,
-        { collegeId: req.collegeId, name: (req.body || {}).name },
-      );
-      res.status(201).json(category);
-    } catch (err) {
-      if (mapDocumentCategoryError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/document-categories',
+    requirePermission('document_categories.manage'),
+    validate(createDocumentCategorySchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const category = await documentCategoryService.createCategory(req.dbClient, {
+          collegeId: req.collegeId,
+          name: (req.body || {}).name,
+        });
+        res.status(201).json(category);
+      } catch (err) {
+        if (mapDocumentCategoryError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   return router;
 }
 
 module.exports = createDocumentCategoriesRouter;
+module.exports.schemas = {
+  '/document-categories': { post: createDocumentCategorySchema },
+};

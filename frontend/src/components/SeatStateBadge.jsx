@@ -22,7 +22,7 @@ export function SeatStateBadge({ state, className }) {
       className={cn(
         'inline-flex items-center h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500] max-w-full truncate',
         seat.tone,
-        className
+        className,
       )}
     >
       {seat.label}

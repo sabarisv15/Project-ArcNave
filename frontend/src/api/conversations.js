@@ -12,22 +12,47 @@ export const conversationsApi = {
     return api.get(`/conversations${qs ? `?${qs}` : ''}`);
   },
   create: ({ title, projectId }) => api.post('/conversations', { title, project_id: projectId }),
-  update: (id, { title, projectId, pinned, archived }) => api.put(`/conversations/${id}`, {
-    title, project_id: projectId, pinned, archived,
-  }),
+  update: (id, { title, projectId, pinned, archived }) =>
+    api.put(`/conversations/${id}`, {
+      title,
+      project_id: projectId,
+      pinned,
+      archived,
+    }),
   remove: (id) => api.delete(`/conversations/${id}`),
   listMessages: (conversationId) => api.get(`/conversations/${conversationId}/messages`),
-  addMessage: (conversationId, {
-    role, content, toolUsed, toolParams, presentation, rawData, parentMessageId, attachments, inputTokens, outputTokens,
-  }) => api.post(`/conversations/${conversationId}/messages`, {
-    role, content, tool_used: toolUsed, tool_params: toolParams,
-    presentation, raw_data: rawData, parent_message_id: parentMessageId, attachments,
-    input_tokens: inputTokens, output_tokens: outputTokens,
-  }),
+  addMessage: (
+    conversationId,
+    {
+      role,
+      content,
+      toolUsed,
+      toolParams,
+      presentation,
+      rawData,
+      parentMessageId,
+      attachments,
+      inputTokens,
+      outputTokens,
+    },
+  ) =>
+    api.post(`/conversations/${conversationId}/messages`, {
+      role,
+      content,
+      tool_used: toolUsed,
+      tool_params: toolParams,
+      presentation,
+      raw_data: rawData,
+      parent_message_id: parentMessageId,
+      attachments,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+    }),
   // Real rewind: updates this ONE user message's content and deletes
   // every message after it in the conversation (server-side, atomically
   // — conversationService.editMessage). The caller is responsible for
   // triggering a fresh AI turn from the edited text afterward, the same
   // way a brand-new message would.
-  editMessage: (conversationId, messageId, content) => api.patch(`/conversations/${conversationId}/messages/${messageId}`, { content }),
+  editMessage: (conversationId, messageId, content) =>
+    api.patch(`/conversations/${conversationId}/messages/${messageId}`, { content }),
 };

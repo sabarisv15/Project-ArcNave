@@ -51,13 +51,16 @@ async function seedTenant(adminPool) {
   const suffix = crypto.randomUUID().slice(0, 8);
   const collegeId = `bjob${suffix}`;
   const subdomain = `bjobtenant${suffix}`;
-  await adminPool.query(
-    'INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)',
-    [collegeId, subdomain],
-  );
+  await adminPool.query('INSERT INTO colleges (college_id, name, subdomain) VALUES ($1, $1, $2)', [
+    collegeId,
+    subdomain,
+  ]);
   const passwordHash = await security.hashPassword(PASSWORD);
   const userIds = {};
-  for (const [username, role] of [['principaluser', 'principal'], ['staffuser', 'staff']]) {
+  for (const [username, role] of [
+    ['principaluser', 'principal'],
+    ['staffuser', 'staff'],
+  ]) {
     // eslint-disable-next-line no-await-in-loop
     const result = await adminPool.query(
       `INSERT INTO users (college_id, username, email, password_hash, role, is_active)
@@ -97,12 +100,10 @@ test('background jobs', async (t) => {
   });
 
   async function login(username) {
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/auth/login',
-      'POST',
-      { headers: { host: `${college.subdomain}.arcnave.test` }, body: { username, password: PASSWORD } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/auth/login', 'POST', {
+      headers: { host: `${college.subdomain}.arcnave.test` },
+      body: { username, password: PASSWORD },
+    });
     assert.equal(resp.status, 200);
     return resp.body.access_token;
   }
@@ -115,12 +116,10 @@ test('background jobs', async (t) => {
 
   await t.test('principal starts and checks a background job', async () => {
     const token = await login('principaluser');
-    const created = await requestJson(
-      baseUrl,
-      '/api/v1/background-jobs',
-      'POST',
-      { headers: headersFor(token), body: { name: 'test_job' } },
-    );
+    const created = await requestJson(baseUrl, '/api/v1/background-jobs', 'POST', {
+      headers: headersFor(token),
+      body: { name: 'test_job' },
+    });
     assert.equal(created.status, 202);
     assert.equal(created.body.name, 'test_job');
     assert.ok(['queued', 'running', 'completed'].includes(created.body.status));
@@ -128,14 +127,13 @@ test('background jobs', async (t) => {
     let fetched = null;
     for (let i = 0; i < 10; i += 1) {
       // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => { setTimeout(resolve, 10); });
+      await new Promise((resolve) => {
+        setTimeout(resolve, 10);
+      });
       // eslint-disable-next-line no-await-in-loop
-      fetched = await requestJson(
-        baseUrl,
-        `/api/v1/background-jobs/${created.body.id}`,
-        'GET',
-        { headers: headersFor(token) },
-      );
+      fetched = await requestJson(baseUrl, `/api/v1/background-jobs/${created.body.id}`, 'GET', {
+        headers: headersFor(token),
+      });
       if (fetched.body.status === 'completed') break;
     }
     assert.equal(fetched.status, 200);
@@ -148,12 +146,59 @@ test('background jobs', async (t) => {
 
   await t.test('staff cannot start a background job', async () => {
     const token = await login('staffuser');
-    const resp = await requestJson(
-      baseUrl,
-      '/api/v1/background-jobs',
-      'POST',
-      { headers: headersFor(token), body: { name: 'blocked' } },
-    );
+    const resp = await requestJson(baseUrl, '/api/v1/background-jobs', 'POST', {
+      headers: headersFor(token),
+      body: { name: 'blocked' },
+    });
     assert.equal(resp.status, 403);
+  });
+
+  // P4 (5.4) — live-events stream for job progress, replacing polling.
+  await t.test('principal streams a background job to completion via SSE', async () => {
+    const token = await login('principaluser');
+    const created = await requestJson(baseUrl, '/api/v1/background-jobs', 'POST', {
+      headers: headersFor(token),
+      body: { name: 'stream_test_job' },
+    });
+    assert.equal(created.status, 202);
+
+    const events = await new Promise((resolve, reject) => {
+      const url = new URL(`/api/v1/background-jobs/${created.body.id}/stream`, baseUrl);
+      const req = http.request(url, { method: 'GET', headers: headersFor(token) }, (res) => {
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.headers['content-type'], 'text/event-stream');
+        let buffer = '';
+        const collected = [];
+        res.on('data', (chunk) => {
+          buffer += chunk.toString('utf8');
+          const parts = buffer.split('\n\n');
+          buffer = parts.pop();
+          for (const part of parts) {
+            const eventLine = part.split('\n').find((l) => l.startsWith('event: '));
+            const dataLine = part.split('\n').find((l) => l.startsWith('data: '));
+            if (eventLine && dataLine) {
+              collected.push({
+                event: eventLine.slice('event: '.length),
+                data: JSON.parse(dataLine.slice('data: '.length)),
+              });
+            }
+          }
+        });
+        res.on('end', () => resolve(collected));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+
+    assert.ok(events.length > 0, 'expected at least one SSE event');
+    const doneEvent = events.find((e) => e.event === 'done');
+    assert.ok(doneEvent, 'expected a done event once the job reached a terminal status');
+    assert.equal(doneEvent.data.status, 'completed');
+    assert.equal(doneEvent.data.id, created.body.id);
+    // Every emitted 'job' event should be the real, current job shape —
+    // same fields the plain GET /background-jobs/:id route returns.
+    for (const e of events.filter((ev) => ev.event === 'job')) {
+      assert.equal(e.data.id, created.body.id);
+    }
   });
 });

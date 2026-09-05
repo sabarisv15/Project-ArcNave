@@ -14,9 +14,10 @@ async function getSettings(pool) {
   return result.rows[0] || null;
 }
 
-async function updateSettings(pool, {
-  platformName, supportEmail, defaultTimezone, dateFormat, itemsPerPage, defaultLicense,
-}) {
+async function updateSettings(
+  pool,
+  { platformName, supportEmail, defaultTimezone, dateFormat, itemsPerPage, defaultLicense },
+) {
   const result = await pool.query(
     `UPDATE platform_settings SET
        platform_name = $1,

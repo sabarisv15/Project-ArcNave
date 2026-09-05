@@ -55,18 +55,15 @@ async function findById(client, id) {
 }
 
 async function findByClassAndPeriod(client, classId, periodId) {
-  const result = await client.query(
-    'SELECT * FROM faculty_allocation WHERE class_id = $1 AND period_id = $2',
-    [classId, periodId],
-  );
+  const result = await client.query('SELECT * FROM faculty_allocation WHERE class_id = $1 AND period_id = $2', [
+    classId,
+    periodId,
+  ]);
   return result.rows[0] || null;
 }
 
 async function findByClassId(client, classId) {
-  const result = await client.query(
-    'SELECT * FROM faculty_allocation WHERE class_id = $1',
-    [classId],
-  );
+  const result = await client.query('SELECT * FROM faculty_allocation WHERE class_id = $1', [classId]);
   return result.rows;
 }
 
@@ -79,18 +76,12 @@ async function findByClassIds(client, classIds) {
   if (!Array.isArray(classIds) || classIds.length === 0) {
     return [];
   }
-  const result = await client.query(
-    'SELECT * FROM faculty_allocation WHERE class_id = ANY($1)',
-    [classIds],
-  );
+  const result = await client.query('SELECT * FROM faculty_allocation WHERE class_id = ANY($1)', [classIds]);
   return result.rows;
 }
 
 async function findByStaffUserId(client, staffUserId) {
-  const result = await client.query(
-    'SELECT * FROM faculty_allocation WHERE staff_user_id = $1',
-    [staffUserId],
-  );
+  const result = await client.query('SELECT * FROM faculty_allocation WHERE staff_user_id = $1', [staffUserId]);
   return result.rows;
 }
 
@@ -99,10 +90,10 @@ async function findByStaffUserId(client, staffUserId) {
 // (e.g. a faculty replacement) needs to remove and replace, leaving
 // every other subject's rows (the unaffected sessions) untouched.
 async function findByClassAndSubject(client, classId, subject) {
-  const result = await client.query(
-    'SELECT * FROM faculty_allocation WHERE class_id = $1 AND subject = $2',
-    [classId, subject],
-  );
+  const result = await client.query('SELECT * FROM faculty_allocation WHERE class_id = $1 AND subject = $2', [
+    classId,
+    subject,
+  ]);
   return result.rows;
 }
 
@@ -129,10 +120,10 @@ async function remove(client, id) {
 }
 
 async function list(client, { limit = 50, offset = 0 } = {}) {
-  const result = await client.query(
-    'SELECT * FROM faculty_allocation ORDER BY created_at LIMIT $1 OFFSET $2',
-    [limit, offset],
-  );
+  const result = await client.query('SELECT * FROM faculty_allocation ORDER BY created_at LIMIT $1 OFFSET $2', [
+    limit,
+    offset,
+  ]);
   return result.rows;
 }
 

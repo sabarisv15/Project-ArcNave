@@ -6,9 +6,7 @@
 // just keyed by (college_id, email) instead of user_id since there is
 // no user row yet at this point in the flow.
 
-async function create(pool, {
-  collegeId, email, codeHash, expiresAt,
-}) {
+async function create(pool, { collegeId, email, codeHash, expiresAt }) {
   const result = await pool.query(
     `INSERT INTO principal_invite_verifications (college_id, email, code_hash, expires_at)
      VALUES ($1, $2, $3, $4)

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DrawerShell } from './AttendanceActionDrawer';
+import { DrawerShell } from '@/components/ui/Drawer';
 import { WorkflowTimeline } from './WorkflowTimeline';
 import { DEPT_ATTENTION_STATES } from '../lib/institutionSignals';
 import { DEPT_ATTENTION_THRESHOLD, classesOfDepartment } from '../lib/institutionData';
@@ -65,12 +65,13 @@ function ProfileTab({ d }) {
         }
         hint={d.hod ? d.hod.designation : 'Escalations from this department reach the Principal directly'}
       />
-      <Row label="Status" value={<Pill tone={DEPT_ATTENTION_STATES[d.attention].tone}>{DEPT_ATTENTION_STATES[d.attention].label}</Pill>} />
+      <Row
+        label="Status"
+        value={<Pill tone={DEPT_ATTENTION_STATES[d.attention].tone}>{DEPT_ATTENTION_STATES[d.attention].label}</Pill>}
+      />
       <Row
         label="Attendance"
-        value={
-          <span className={cn('tabular-nums', belowThreshold && 'text-danger font-[500]')}>{d.attendance}%</span>
-        }
+        value={<span className={cn('tabular-nums', belowThreshold && 'text-danger font-[500]')}>{d.attendance}%</span>}
         hint={`Every student in the department, whole term · ${d.atRiskCount} of ${d.studentCount} below ${DEPT_ATTENTION_THRESHOLD}%`}
       />
       <Row label="Classes" value={<span className="tabular-nums">{d.classCount}</span>} />
@@ -93,7 +94,8 @@ function ProfileTab({ d }) {
         />
       )}
       <p className="m-0 mt-[10px] text-[11.5px] text-ink-faint">
-        Class-level and faculty-level decisions belong to the head of department · this seat endorses what they escalate.
+        Class-level and faculty-level decisions belong to the head of department · this seat endorses what they
+        escalate.
       </p>
     </dl>
   );
@@ -127,7 +129,7 @@ function ClassesTab({ d }) {
           <span
             className={cn(
               'flex-none text-[12.5px] tabular-nums',
-              c.attendance < DEPT_ATTENTION_THRESHOLD ? 'text-danger font-[500]' : 'text-ink-muted'
+              c.attendance < DEPT_ATTENTION_THRESHOLD ? 'text-danger font-[500]' : 'text-ink-muted',
             )}
           >
             {c.attendance}%
@@ -207,7 +209,7 @@ export function InstitutionDepartmentDrawer({ department, onClose }) {
                   'flex-none h-[27px] px-[10px] border-0 rounded-[8px] bg-transparent font-sans text-[12.5px] cursor-pointer transition-colors duration-200',
                   tab === t.key
                     ? 'bg-accent-soft text-accent font-[600]'
-                    : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2'
+                    : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2',
                 )}
               >
                 {t.label}

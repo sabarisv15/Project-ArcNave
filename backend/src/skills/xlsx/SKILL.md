@@ -62,6 +62,7 @@ wb.save("breakdown.xlsx")
 ```
 
 Then call `execute_code` with:
+
 - `saveAs: "breakdown.xlsx"` — the exact filename your code saved
 - `expectFormulasIn: ["Summary!B2:B9"]` — every cell/range that must
   hold a formula, sheet-qualified

@@ -42,7 +42,9 @@ export function SearchPopoverField({ value, onChange, placeholder, ariaLabel }) 
         aria-label={ariaLabel}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onBlur={() => { if (!value) setOpen(false); }}
+        onBlur={() => {
+          if (!value) setOpen(false);
+        }}
         placeholder={placeholder}
         className="w-full h-[34px] pl-[32px] pr-[28px] border border-line rounded-[9px] bg-paper font-sans text-[12.5px] text-ink outline-none transition-[border-color,box-shadow] duration-200 focus:border-accent-line focus:shadow-[0_0_0_3px_rgba(11,114,133,.1)]"
       />
@@ -53,7 +55,10 @@ export function SearchPopoverField({ value, onChange, placeholder, ariaLabel }) 
         <button
           type="button"
           aria-label="Clear search"
-          onClick={() => { onChange(''); setOpen(false); }}
+          onClick={() => {
+            onChange('');
+            setOpen(false);
+          }}
           className="absolute right-[6px] top-0 bottom-0 flex items-center text-ink-faint hover:text-ink"
         >
           <X size={13} strokeWidth={2.2} />
@@ -69,7 +74,13 @@ export function SortIconPopover({ options, value, onChange, label = 'Sort' }) {
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
-        <button type="button" aria-label={label} title={label} aria-expanded={open} className={cn(ICON_BTN, open && 'bg-accent-soft text-accent')}>
+        <button
+          type="button"
+          aria-label={label}
+          title={label}
+          aria-expanded={open}
+          className={cn(ICON_BTN, open && 'bg-accent-soft text-accent')}
+        >
           <ArrowUpDown size={15} strokeWidth={1.9} />
         </button>
       </Popover.Trigger>
@@ -81,10 +92,13 @@ export function SortIconPopover({ options, value, onChange, label = 'Sort' }) {
               <button
                 key={opt.key}
                 type="button"
-                onClick={() => { onChange(opt.key); setOpen(false); }}
+                onClick={() => {
+                  onChange(opt.key);
+                  setOpen(false);
+                }}
                 className={cn(
                   'flex items-center justify-between w-full h-[32px] px-[10px] border-0 bg-transparent rounded-[10px] font-sans text-[12.5px] cursor-pointer text-left hover:bg-tint2',
-                  on ? 'text-accent font-[600]' : 'text-ink-soft font-[500]'
+                  on ? 'text-accent font-[600]' : 'text-ink-soft font-[500]',
                 )}
               >
                 <span>{opt.label}</span>
@@ -114,7 +128,11 @@ export function IconToolbar({ children, leading, resultCount }) {
     <div className="flex items-center gap-[6px] flex-wrap mb-[12px]">
       {leading}
       <div className="flex-1" />
-      {resultCount && <span aria-live="polite" className="text-[11.5px] text-ink-faint whitespace-nowrap mr-[2px]">{resultCount}</span>}
+      {resultCount && (
+        <span aria-live="polite" className="text-[11.5px] text-ink-faint whitespace-nowrap mr-[2px]">
+          {resultCount}
+        </span>
+      )}
       {children}
     </div>
   );

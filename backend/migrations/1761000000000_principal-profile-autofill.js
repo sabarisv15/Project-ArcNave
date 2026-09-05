@@ -36,6 +36,10 @@ exports.up = (pgm) => {
 };
 
 exports.down = (pgm) => {
-  pgm.sql('ALTER TABLE principal_invitations DROP COLUMN IF EXISTS full_name, DROP COLUMN IF EXISTS designation, DROP COLUMN IF EXISTS phone, DROP COLUMN IF EXISTS address');
-  pgm.sql('ALTER TABLE users DROP COLUMN IF EXISTS full_name, DROP COLUMN IF EXISTS designation, DROP COLUMN IF EXISTS phone, DROP COLUMN IF EXISTS address');
+  pgm.sql(
+    'ALTER TABLE principal_invitations DROP COLUMN IF EXISTS full_name, DROP COLUMN IF EXISTS designation, DROP COLUMN IF EXISTS phone, DROP COLUMN IF EXISTS address',
+  );
+  pgm.sql(
+    'ALTER TABLE users DROP COLUMN IF EXISTS full_name, DROP COLUMN IF EXISTS designation, DROP COLUMN IF EXISTS phone, DROP COLUMN IF EXISTS address',
+  );
 };

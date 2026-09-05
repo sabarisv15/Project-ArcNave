@@ -75,25 +75,29 @@ async function countTokens(body) {
 // diverged from the real implementation; this is the actual source,
 // confirmed by reading aiService.js directly, not re-derived. ---
 function firstSentence(text) {
-  return String(text || '').split(/(?<=\.)\s/)[0].slice(0, 140).trim();
+  return String(text || '')
+    .split(/(?<=\.)\s/)[0]
+    .slice(0, 140)
+    .trim();
 }
 function buildToolCatalogue(roleTools, offeredNames) {
-  const lines = roleTools
-    .map((t) => `${t.name} — ${firstSentence(t.description)}`)
-    .join('\n');
-  return 'EVERY tool available to you, by name. The ones already described in full above are ready to call '
-    + `directly. For any OTHER name in this list, call describe_tools with that name first to get its `
-    + 'parameters — you cannot call it before doing so. If nothing here fits the question, say so plainly '
-    + 'rather than answering as if you had checked.\n\n'
-    + `${lines}\n\nAlready described in full above: ${offeredNames.join(', ')}.`;
+  const lines = roleTools.map((t) => `${t.name} — ${firstSentence(t.description)}`).join('\n');
+  return (
+    'EVERY tool available to you, by name. The ones already described in full above are ready to call ' +
+    `directly. For any OTHER name in this list, call describe_tools with that name first to get its ` +
+    'parameters — you cannot call it before doing so. If nothing here fits the question, say so plainly ' +
+    'rather than answering as if you had checked.\n\n' +
+    `${lines}\n\nAlready described in full above: ${offeredNames.join(', ')}.`
+  );
 }
 // --- Copied verbatim from aiService.js (buildSchemaMetaTool, ~line 1004) ---
 function buildSchemaMetaToolDecl() {
   return {
     name: 'describe_tools',
-    description: 'Get the full parameters of one or more tools listed in the catalogue but not yet described '
-      + 'above. Use this when the catalogue names a capability that fits the question better than anything '
-      + 'already described. After this returns, those tools become callable in this same turn.',
+    description:
+      'Get the full parameters of one or more tools listed in the catalogue but not yet described ' +
+      'above. Use this when the catalogue names a capability that fits the question better than anything ' +
+      'already described. After this returns, those tools become callable in this same turn.',
     parameters: {
       type: 'object',
       required: ['names'],
@@ -113,12 +117,13 @@ const MAX_PLAN_STEPS = 6;
 function buildPlanMetaToolDecl() {
   return {
     name: 'run_workflow_plan',
-    description: 'Run an ORDERED sequence of the tools above (2 to '
-      + `${MAX_PLAN_STEPS} steps) when ONE tool alone cannot answer the question — e.g. "find students below `
-      + '75% attendance, then check which of them also have pending fee corrections" needs two separate tools. '
-      + 'Do NOT use this for a question one tool alone can answer — call that tool directly instead (this exists '
-      + 'for genuine multi-step requests only, never as a default). Each step names one of the tools above by its '
-      + 'exact name plus that tool\'s own params.',
+    description:
+      'Run an ORDERED sequence of the tools above (2 to ' +
+      `${MAX_PLAN_STEPS} steps) when ONE tool alone cannot answer the question — e.g. "find students below ` +
+      '75% attendance, then check which of them also have pending fee corrections" needs two separate tools. ' +
+      'Do NOT use this for a question one tool alone can answer — call that tool directly instead (this exists ' +
+      'for genuine multi-step requests only, never as a default). Each step names one of the tools above by its ' +
+      "exact name plus that tool's own params.",
     parameters: {
       type: 'object',
       required: ['steps'],
@@ -148,18 +153,21 @@ function toolToFullDecl(tool) {
 // Proposed compact line: tool_name(paramName1, paramName2) — one-line description.
 // Param names read from the REAL registry schema (tool.params.properties keys) — not guessed.
 function toolToCompactLine(tool) {
-  const paramNames = (tool.params && tool.params.properties) ? Object.keys(tool.params.properties) : [];
+  const paramNames = tool.params && tool.params.properties ? Object.keys(tool.params.properties) : [];
   return `${tool.name}(${paramNames.join(', ')}) — ${firstSentence(tool.description)}`;
 }
 
 async function measureRole(client, role) {
   const roleTools = toolRegistry.listTools({ excludeHumanOnly: true, role });
-  const retrieved = await aiToolRetrievalService.retrieveRelevantTools(client, { roleTools, question: DUMMY_CONTENTS[0].parts[0].text });
+  const retrieved = await aiToolRetrievalService.retrieveRelevantTools(client, {
+    roleTools,
+    question: DUMMY_CONTENTS[0].parts[0].text,
+  });
   const offeredNames = [...retrieved.map((t) => t.name), 'run_workflow_plan'];
 
   const currentCatalogueText = buildToolCatalogue(roleTools, offeredNames);
-  const compactCatalogueText = 'CAPABILITY INDEX (compact — name(params) — description):\n\n'
-    + roleTools.map(toolToCompactLine).join('\n');
+  const compactCatalogueText =
+    'CAPABILITY INDEX (compact — name(params) — description):\n\n' + roleTools.map(toolToCompactLine).join('\n');
   const bareNamesText = 'TOOL NAMES:\n\n' + roleTools.map((t) => t.name).join('\n');
 
   const top8FullDecls = retrieved.map(toolToFullDecl);
@@ -246,12 +254,14 @@ async function main() {
   }
 
   console.log('\n\n=== SUMMARY TABLE (raw countTokens totals, includes the fixed DUMMY_CONTENTS floor) ===');
-  console.log('role       | permitted | topK | floor | variantA(current) | variantB(compact) | variantC(compact+meta) | variantD(bare)');
+  console.log(
+    'role       | permitted | topK | floor | variantA(current) | variantB(compact) | variantC(compact+meta) | variantD(bare)',
+  );
   rows.forEach((r) => {
     console.log(
-      `${r.role.padEnd(11)}| ${String(r.totalPermitted).padEnd(10)}| ${String(r.retrievedTopK).padEnd(5)}| `
-      + `${String(r.floor).padEnd(6)}| ${String(r.variantA).padEnd(19)}| ${String(r.variantB).padEnd(19)}| `
-      + `${String(r.variantC).padEnd(23)}| ${r.variantD}`,
+      `${r.role.padEnd(11)}| ${String(r.totalPermitted).padEnd(10)}| ${String(r.retrievedTopK).padEnd(5)}| ` +
+        `${String(r.floor).padEnd(6)}| ${String(r.variantA).padEnd(19)}| ${String(r.variantB).padEnd(19)}| ` +
+        `${String(r.variantC).padEnd(23)}| ${r.variantD}`,
     );
   });
 
@@ -259,8 +269,8 @@ async function main() {
   console.log('role       | floor | catalogueOnly | schemasOnly | metaToolsOnly | variantA(combined)');
   rows.forEach((r) => {
     console.log(
-      `${r.role.padEnd(11)}| ${String(r.floor).padEnd(6)}| ${String(r.catalogueOnly).padEnd(14)}| `
-      + `${String(r.schemasOnly).padEnd(13)}| ${String(r.metaToolsOnly).padEnd(14)}| ${r.variantA}`,
+      `${r.role.padEnd(11)}| ${String(r.floor).padEnd(6)}| ${String(r.catalogueOnly).padEnd(14)}| ` +
+        `${String(r.schemasOnly).padEnd(13)}| ${String(r.metaToolsOnly).padEnd(14)}| ${r.variantA}`,
     );
   });
 
@@ -274,4 +284,7 @@ async function main() {
   });
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

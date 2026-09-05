@@ -63,7 +63,9 @@ test('a server-initiated disconnect on the checked-out transaction client never 
   // on the client. If openTenantTransaction's fix were missing, the
   // process would already have crashed by the time this line is reached
   // — there would be no test failure to report, just a dead test run.
-  await new Promise((resolve) => { setTimeout(resolve, 500); });
+  await new Promise((resolve) => {
+    setTimeout(resolve, 500);
+  });
 
   // The client is provably dead now — any later query on it must reject
   // cleanly, exactly like a normal failed query, never hang and never

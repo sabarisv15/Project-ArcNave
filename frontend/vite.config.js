@@ -21,6 +21,15 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
+        // P4 5.5/5.6 (bundle-size CI limit) — naming only, not chunking:
+        // without this, the real entry chunk's default "index-[hash].js"
+        // name collides with unrelated lazily-loaded chunks (any
+        // component's own index.jsx also builds to "index-[hash].js"),
+        // making a size-limit glob for "the entry bundle" ambiguous. This
+        // renames ONLY the entry's output file; it does not change which
+        // modules go in which chunk (that's manualChunks, below,
+        // untouched).
+        entryFileNames: 'assets/app-entry-[hash].js',
         manualChunks: {
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
           'vendor-radix': [
@@ -49,6 +58,12 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // Without an explicit URL jsdom runs on an opaque origin, and the
+    // Storage API is unavailable on one — so `localStorage` was undefined
+    // in every test, and any test touching it crashed. Giving jsdom the
+    // dev server's own origin restores localStorage (and makes
+    // window.location realistic rather than about:blank).
+    environmentOptions: { jsdom: { url: 'http://localhost:3100' } },
     setupFiles: ['./src/test/setup.js'],
     globals: true,
   },

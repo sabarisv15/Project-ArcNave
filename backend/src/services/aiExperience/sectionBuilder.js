@@ -9,9 +9,7 @@
 // simply omitted here — qualityGuard.js is the final backstop that
 // drops any that slip through empty.
 
-const {
-  isIdLike, humanizeKey, formatValue, formatDate,
-} = require('./formatValues');
+const { isIdLike, humanizeKey, formatValue, formatDate } = require('./formatValues');
 
 function titleFor(tool, toolName, toolUsed) {
   if (tool) return humanizeKey(tool.name.replace(/_/g, ' '));
@@ -78,7 +76,7 @@ function keyMetricsFromData(data) {
   }
   if (data && typeof data === 'object') {
     return Object.entries(data)
-      .filter(([key, value]) => !isIdLike(key, value) && (typeof value === 'number'))
+      .filter(([key, value]) => !isIdLike(key, value) && typeof value === 'number')
       .map(([key, value]) => ({ label: humanizeKey(key), value: formatValue(key, value) }))
       .filter((m) => m.value);
   }
@@ -119,7 +117,11 @@ function buildChart(data) {
     }));
   if (points.length < 2) return null;
   return {
-    type: 'chart', chartType: 'bar', labelKey: humanizeKey(labelKey), valueKey: humanizeKey(valueKey), points,
+    type: 'chart',
+    chartType: 'bar',
+    labelKey: humanizeKey(labelKey),
+    valueKey: humanizeKey(valueKey),
+    points,
   };
 }
 
@@ -154,57 +156,82 @@ function buildTimeline(toolName, data) {
 // presentation tool matches, the data-shaped sections are simply
 // skipped, not computed then discarded.
 const PRESENTATION_TOOL_BUILDERS = {
-  ask_user_choice: (data) => (data && Array.isArray(data.options)
-    ? { kind: 'choices', prompt: data.prompt || null, options: data.options }
-    : null),
-  present_options: (data) => (data && Array.isArray(data.options)
-    ? { kind: 'options', title: data.title || null, options: data.options }
-    : null),
-  present_quiz: (data) => (data && Array.isArray(data.questions)
-    ? { kind: 'quiz', title: data.title || null, questions: data.questions }
-    : null),
-  present_translation: (data) => (data && data.sourceText && data.targetText
-    ? {
-      kind: 'translation', sourceText: data.sourceText, sourceLang: data.sourceLang || null, targetText: data.targetText, targetLang: data.targetLang,
-    }
-    : null),
-  present_steps: (data) => (data && Array.isArray(data.steps)
-    ? { kind: 'steps', title: data.title || null, steps: data.steps }
-    : null),
-  present_featured: (data) => (data && Array.isArray(data.fields)
-    ? {
-      kind: 'featured', title: data.title || null, basis: data.basis || null, fields: data.fields,
-    }
-    : null),
-  present_comparison: (data) => (data && Array.isArray(data.attributes) && Array.isArray(data.items)
-    ? {
-      kind: 'comparison', title: data.title || null, attributes: data.attributes, items: data.items,
-    }
-    : null),
-  present_carousel: (data) => (data && Array.isArray(data.items)
-    ? { kind: 'carousel', title: data.title || null, items: data.items }
-    : null),
-  present_links: (data) => (data && Array.isArray(data.links)
-    ? { kind: 'links', links: data.links, untrusted: data.untrusted !== false }
-    : null),
-  present_places: (data) => (data && Array.isArray(data.places)
-    ? {
-      kind: 'places', title: data.title || null, places: data.places, showMap: false,
-    }
-    : null),
-  present_map: (data) => (data && Array.isArray(data.places)
-    ? {
-      kind: 'places', title: data.title || null, places: data.places, showMap: true,
-    }
-    : null),
-  present_recipe: (data) => (data && Array.isArray(data.ingredients) && Array.isArray(data.steps)
-    ? {
-      kind: 'recipe', title: data.title || null, servings: data.servings, ingredients: data.ingredients, steps: data.steps,
-    }
-    : null),
-  present_diagram: (data) => (data && typeof data.svg === 'string'
-    ? { kind: 'diagram', title: data.title || null, svg: data.svg }
-    : null),
+  ask_user_choice: (data) =>
+    data && Array.isArray(data.options)
+      ? { kind: 'choices', prompt: data.prompt || null, options: data.options }
+      : null,
+  present_options: (data) =>
+    data && Array.isArray(data.options) ? { kind: 'options', title: data.title || null, options: data.options } : null,
+  present_quiz: (data) =>
+    data && Array.isArray(data.questions)
+      ? { kind: 'quiz', title: data.title || null, questions: data.questions }
+      : null,
+  present_translation: (data) =>
+    data && data.sourceText && data.targetText
+      ? {
+          kind: 'translation',
+          sourceText: data.sourceText,
+          sourceLang: data.sourceLang || null,
+          targetText: data.targetText,
+          targetLang: data.targetLang,
+        }
+      : null,
+  present_steps: (data) =>
+    data && Array.isArray(data.steps) ? { kind: 'steps', title: data.title || null, steps: data.steps } : null,
+  present_featured: (data) =>
+    data && Array.isArray(data.fields)
+      ? {
+          kind: 'featured',
+          title: data.title || null,
+          basis: data.basis || null,
+          fields: data.fields,
+        }
+      : null,
+  present_comparison: (data) =>
+    data && Array.isArray(data.attributes) && Array.isArray(data.items)
+      ? {
+          kind: 'comparison',
+          title: data.title || null,
+          attributes: data.attributes,
+          items: data.items,
+        }
+      : null,
+  present_carousel: (data) =>
+    data && Array.isArray(data.items) ? { kind: 'carousel', title: data.title || null, items: data.items } : null,
+  present_links: (data) =>
+    data && Array.isArray(data.links)
+      ? { kind: 'links', links: data.links, untrusted: data.untrusted !== false }
+      : null,
+  present_places: (data) =>
+    data && Array.isArray(data.places)
+      ? {
+          kind: 'places',
+          title: data.title || null,
+          places: data.places,
+          showMap: false,
+        }
+      : null,
+  present_map: (data) =>
+    data && Array.isArray(data.places)
+      ? {
+          kind: 'places',
+          title: data.title || null,
+          places: data.places,
+          showMap: true,
+        }
+      : null,
+  present_recipe: (data) =>
+    data && Array.isArray(data.ingredients) && Array.isArray(data.steps)
+      ? {
+          kind: 'recipe',
+          title: data.title || null,
+          servings: data.servings,
+          ingredients: data.ingredients,
+          steps: data.steps,
+        }
+      : null,
+  present_diagram: (data) =>
+    data && typeof data.svg === 'string' ? { kind: 'diagram', title: data.title || null, svg: data.svg } : null,
 };
 
 function buildPresentationTool(toolName, data) {
@@ -216,9 +243,7 @@ function buildPresentationTool(toolName, data) {
 // this point (the answer already passed through the LLM call, the
 // question is the caller's own authenticated input) — never re-run
 // through any instruction-following step here, only displayed as text.
-function buildSections({
-  toolName, tool, data, question, answer,
-}) {
+function buildSections({ toolName, tool, data, question, answer }) {
   const presentation = buildPresentationTool(toolName, data);
   const hasGenericData = !presentation && data !== undefined;
   const sections = {

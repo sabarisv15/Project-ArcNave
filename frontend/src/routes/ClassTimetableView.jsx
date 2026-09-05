@@ -52,7 +52,7 @@ function Pill({ status }) {
     <span
       className={cn(
         'inline-flex items-center gap-[4px] h-[20px] px-[7px] rounded-[6px] text-[11px] font-[500]',
-        STATUS_TONE[status]
+        STATUS_TONE[status],
       )}
     >
       {status === 'locked' && <Lock size={10} strokeWidth={2.1} aria-hidden="true" />}
@@ -216,7 +216,7 @@ export function ClassTimetableView() {
                 'flex-none h-[27px] px-[10px] border-0 rounded-[8px] bg-transparent font-sans text-[12.5px] cursor-pointer transition-colors duration-200',
                 tab === t.key
                   ? 'bg-accent-soft text-accent font-[600]'
-                  : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2'
+                  : 'text-ink-muted font-[500] hover:text-ink hover:bg-tint2',
               )}
             >
               {t.label}
@@ -250,7 +250,7 @@ export function ClassTimetableView() {
               aria-pressed={v.id === versionId}
               className={cn(
                 'w-full grid grid-cols-[1.4fr_140px_1fr] gap-x-[12px] items-start px-[16px] py-[11px] border-0 border-t border-line-light bg-transparent text-left cursor-pointer transition-colors duration-200 hover:bg-tint2',
-                v.id === versionId && 'bg-accent-soft/40'
+                v.id === versionId && 'bg-accent-soft/40',
               )}
             >
               <span className="min-w-0">
@@ -282,8 +282,8 @@ export function ClassTimetableView() {
 
       {tab === 'timetable' && (
         <p className="flex-none m-0 mt-[8px] text-[11.5px] text-ink-faint">
-          {TODAY_HOURS.length} teaching hours a day · this seat prepares and submits the timetable; the HOD reviews it and
-          the Principal gives final approval.
+          {TODAY_HOURS.length} teaching hours a day · this seat prepares and submits the timetable; the HOD reviews it
+          and the Principal gives final approval.
         </p>
       )}
     </div>

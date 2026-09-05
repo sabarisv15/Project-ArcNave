@@ -88,7 +88,9 @@ async function verifyOtp(client, { userId }, code) {
     throw new StaffPhoneVerificationNotRequestedError(`no live OTP found for staff ${JSON.stringify(staff.id)}`);
   }
   if (otpRow.attempts >= config.otp.maxAttempts) {
-    throw new StaffPhoneVerificationMaxAttemptsExceededError(`OTP ${JSON.stringify(otpRow.id)} has exceeded the maximum number of attempts`);
+    throw new StaffPhoneVerificationMaxAttemptsExceededError(
+      `OTP ${JSON.stringify(otpRow.id)} has exceeded the maximum number of attempts`,
+    );
   }
   if (hashCode(code) !== otpRow.code_hash) {
     await staffPhoneOtpRepository.incrementAttempts(client, otpRow.id);

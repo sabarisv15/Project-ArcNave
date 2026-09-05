@@ -122,8 +122,8 @@ const PROVIDERS = {
       const host = loc === 'global' ? 'aiplatform.googleapis.com' : `${loc}-aiplatform.googleapis.com`;
       const model = config.geminiWebSearchModel || config.gemini.model;
       const url = new URL(
-        `https://${host}/v1/projects/${config.gemini.projectId}/locations/${loc}`
-        + `/publishers/google/models/${model}:generateContent`,
+        `https://${host}/v1/projects/${config.gemini.projectId}/locations/${loc}` +
+          `/publishers/google/models/${model}:generateContent`,
       );
       const { GoogleAuth } = require('google-auth-library'); // eslint-disable-line global-require
       const client = await new GoogleAuth({ scopes: 'https://www.googleapis.com/auth/cloud-platform' }).getClient();
@@ -148,10 +148,14 @@ const PROVIDERS = {
         // decides how many sources it actually grounds against, and
         // runWebSearch slices to count afterwards regardless.
         body: JSON.stringify({
-          contents: [{
-            role: 'user',
-            parts: [{ text: `Search the web and summarise what the most relevant ${count} sources say about: ${query}` }],
-          }],
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { text: `Search the web and summarise what the most relevant ${count} sources say about: ${query}` },
+              ],
+            },
+          ],
           tools: [{ googleSearch: {} }],
         }),
       };
@@ -175,14 +179,16 @@ const PROVIDERS = {
           snippetByChunk.set(i, existing ? `${existing} ${text}` : text);
         });
       });
-      return chunks.map((chunk, i) => {
-        const web = (chunk && chunk.web) || {};
-        return {
-          title: truncate(web.title, 200),
-          url: String(web.uri || ''),
-          snippet: truncate(snippetByChunk.get(i) || '', MAX_SNIPPET_CHARS),
-        };
-      }).filter((result) => result.url !== '');
+      return chunks
+        .map((chunk, i) => {
+          const web = (chunk && chunk.web) || {};
+          return {
+            title: truncate(web.title, 200),
+            url: String(web.uri || ''),
+            snippet: truncate(snippetByChunk.get(i) || '', MAX_SNIPPET_CHARS),
+          };
+        })
+        .filter((result) => result.url !== '');
     },
     // Search grounding has no image index. Declared unsupported rather
     // than faked, same as Tavily — image_search fails honestly on this
@@ -224,9 +230,7 @@ function activeProvider() {
 async function getWebSearchConfig(client, collegeId) {
   const row = await configurationService.getConfiguration(client, { collegeId, category: CONFIG_CATEGORY });
   const stored = (row && row.configuration) || {};
-  const enabled = stored.enabled === undefined || stored.enabled === null
-    ? true
-    : Boolean(stored.enabled);
+  const enabled = stored.enabled === undefined || stored.enabled === null ? true : Boolean(stored.enabled);
   return { enabled };
 }
 
@@ -249,20 +253,23 @@ async function assertSearchable(client, collegeId, query) {
     // — absence now means enabled (see getWebSearchConfig). The message
     // says "turned off", not "opt in first", because after Amendment 2
     // the second sentence would be describing a step nobody skipped.
-    throw new WebSearchNotEnabledError('open web search is turned off for this college — it is on by default, so this college opted out');
+    throw new WebSearchNotEnabledError(
+      'open web search is turned off for this college — it is on by default, so this college opted out',
+    );
   }
   return provider;
 }
 
-async function callProvider({
-  url, method, headers, body, timeoutMs,
-}) {
+async function callProvider({ url, method, headers, body, timeoutMs }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs || SEARCH_TIMEOUT_MS);
   let response;
   try {
     response = await fetch(url.toString(), {
-      method: method || 'GET', headers, body, signal: controller.signal,
+      method: method || 'GET',
+      headers,
+      body,
+      signal: controller.signal,
     });
   } catch (err) {
     throw new WebSearchRequestError(`search request failed: ${err.message}`);
@@ -306,8 +313,8 @@ async function searchFast(client, collegeId, query) {
 // database to say so would be a query that can only ever be discarded.
 async function searchImages() {
   throw new WebSearchNotConfiguredError(
-    'image search has no provider — Vertex search grounding does not return an image index, '
-    + 'and Brave (which did) was removed. This is an absent capability, not an empty result.',
+    'image search has no provider — Vertex search grounding does not return an image index, ' +
+      'and Brave (which did) was removed. This is an absent capability, not an empty result.',
   );
 }
 
@@ -324,19 +331,22 @@ async function searchImages() {
 // nothing is returned at all.
 function readFetchResult(body, requestedUrl) {
   const candidate = body && Array.isArray(body.candidates) ? body.candidates[0] : null;
-  const entries = candidate && candidate.urlContextMetadata
-    && Array.isArray(candidate.urlContextMetadata.urlMetadata)
-    ? candidate.urlContextMetadata.urlMetadata : [];
+  const entries =
+    candidate && candidate.urlContextMetadata && Array.isArray(candidate.urlContextMetadata.urlMetadata)
+      ? candidate.urlContextMetadata.urlMetadata
+      : [];
   const match = entries.find((e) => e && e.retrievedUrl === requestedUrl) || entries[0] || null;
   const status = match && match.urlRetrievalStatus;
   if (status !== URL_RETRIEVAL_SUCCESS) {
     throw new WebFetchFailedError(
-      `the page at ${requestedUrl} could not be retrieved (${status || 'no retrieval status returned'}). `
-      + 'No summary is given: any text produced without the page would be invented rather than read.',
+      `the page at ${requestedUrl} could not be retrieved (${status || 'no retrieval status returned'}). ` +
+        'No summary is given: any text produced without the page would be invented rather than read.',
     );
   }
   const text = ((candidate.content && candidate.content.parts) || [])
-    .map((part) => part.text || '').join('').trim();
+    .map((part) => part.text || '')
+    .join('')
+    .trim();
   if (!text) {
     throw new WebFetchFailedError(`the page at ${requestedUrl} was retrieved but produced no readable content`);
   }
@@ -372,10 +382,12 @@ async function fetchPage(client, collegeId, rawUrl) {
     1,
   );
   request.body = JSON.stringify({
-    contents: [{
-      role: 'user',
-      parts: [{ text: `Read ${url} and report its content faithfully. Do not add anything the page does not say.` }],
-    }],
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: `Read ${url} and report its content faithfully. Do not add anything the page does not say.` }],
+      },
+    ],
     tools: [{ urlContext: {} }],
   });
   return readFetchResult(await callProvider(request), url);

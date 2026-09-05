@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const { createUserScopedRateLimiter } = require('../middleware/rateLimit');
 const staffService = require('../services/staffService');
@@ -250,14 +252,53 @@ function mapStaffWorkHistoryServiceError(err, res) {
   return false;
 }
 
+// P3 4.9 — contract schemas, same permissive discipline students.js's
+// own schema block established: never re-assert a requiredness/format
+// check the route/service already owns (staffService's own
+// createStaff/updateStaff/deactivateStaff etc. are the real
+// validators — see mapStaffServiceError above). Bodies driven by
+// STAFF_BODY_FIELDS/SELF_SERVICE_BODY_FIELDS (~28/~17 fields, several
+// without a definitive type at the route layer) use a permissive
+// z.record, same reasoning students.js's own createStudentSchema
+// comment gives — still rejects a non-object body (array/primitive),
+// the actual crash class this schema exists to prevent. GET routes
+// with no body/params/query worth describing (/staff/me,
+// /staff/me/work-history, /staff/me/phone-verification/otp) get no
+// validate() call, same precedent GET /ai/tools already set.
+const staffIdParams = z.object({ id: z.string() });
+const staffBodyRecordSchema = z.record(z.string(), z.any()).optional();
+
+const createStaffSchema = z.object({ body: staffBodyRecordSchema });
+const inviteStaffSchema = z.object({ body: z.object({ email: z.string().optional() }).optional() });
+const hodAccountSchema = z.object({ body: staffBodyRecordSchema });
+const updateOwnProfileSchema = z.object({ body: staffBodyRecordSchema });
+const verifyOwnPhoneSchema = z.object({ body: z.object({ code: z.string().optional() }).optional() });
+const addWorkHistorySchema = z.object({
+  body: z
+    .object({
+      institution_name: z.string().optional(),
+      designation_held: z.string().optional(),
+      from_date: z.string().optional(),
+      to_date: z.string().optional(),
+    })
+    .optional(),
+});
+const removeWorkHistorySchema = z.object({ params: z.object({ entryId: z.string() }) });
+const getStaffSchema = z.object({ params: staffIdParams });
+const listStaffSchema = z.object({
+  query: z.object({ limit: z.string().optional(), offset: z.string().optional() }).optional(),
+});
+const updateStaffSchema = z.object({ params: staffIdParams, body: staffBodyRecordSchema });
+const submitRegistrationSchema = z.object({ params: staffIdParams });
+const deactivateStaffSchema = z.object({ params: staffIdParams });
+const deleteStaffSchema = z.object({ params: staffIdParams });
+
 function createStaffRouter() {
   const router = express.Router();
 
   // Same OTP-request brute-force protection as students.js's own
   // instance — see middleware/rateLimit.js.
-  const otpRequestLimiter = createUserScopedRateLimiter(
-    (req) => identityService.resolveActorUserId(req.capabilities),
-  );
+  const otpRequestLimiter = createUserScopedRateLimiter((req) => identityService.resolveActorUserId(req.capabilities));
 
   // RBAC here is the same deliberately conservative default
   // students.js uses, not a final decision. BusinessRules.md's real
@@ -281,20 +322,25 @@ function createStaffRouter() {
   // documented gap ("frontend not yet repointed"). This route staying
   // reachable at the API layer for administrative use is a separate,
   // still-open decision, not re-litigated in this pass.
-  router.post('/staff', requirePermission('staff.create'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const staff = await staffService.createStaff(
-        req.dbClient,
-        { collegeId: req.collegeId, ...bodyToServiceFields(req.body || {}) },
-        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(201).json(staff);
-    } catch (err) {
-      if (mapStaffServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/staff',
+    requirePermission('staff.create'),
+    validate(createStaffSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const staff = await staffService.createStaff(
+          req.dbClient,
+          { collegeId: req.collegeId, ...bodyToServiceFields(req.body || {}) },
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.status(201).json(staff);
+      } catch (err) {
+        if (mapStaffServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // RS-STF-001 (D10): the spec-compliant registration entry point —
   // "Staff registration is L3-initiated and invite-first... L3 sends
@@ -305,182 +351,243 @@ function createStaffRouter() {
   // StaffInvitationNotAuthorizedError otherwise) — same "the service is
   // the gate, not requireRole" reasoning submit-registration/deactivate
   // below already use.
-  router.post('/staff/invitations', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const invitation = await staffService.inviteStaff(
-        req.dbClient,
-        { email: (req.body || {}).email },
-        { actorUserId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
-      );
-      res.status(201).json({
-        id: invitation.id, college_id: invitation.college_id, department_id: invitation.department_id, email: invitation.email, expires_at: invitation.expires_at,
-      });
-    } catch (err) {
-      if (mapStaffServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/staff/invitations',
+    requireAuth,
+    validate(inviteStaffSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const invitation = await staffService.inviteStaff(
+          req.dbClient,
+          { email: (req.body || {}).email },
+          { actorUserId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
+        );
+        res.status(201).json({
+          id: invitation.id,
+          college_id: invitation.college_id,
+          department_id: invitation.department_id,
+          email: invitation.email,
+          expires_at: invitation.expires_at,
+        });
+      } catch (err) {
+        if (mapStaffServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/staff/hod-accounts', requirePermission('staff.hod_accounts.create'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const { username, email } = req.body || {};
-      const result = await staffService.provisionHodAccount(
-        req.dbClient,
-        {
-          collegeId: req.collegeId,
-          username,
-          email,
-          ...bodyToServiceFields(req.body || {}),
-        },
-        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(201).json({
-        user_id: result.user.id,
-        staff_id: result.staff.id,
-        college_id: result.staff.college_id,
-        username: result.user.username,
-        email: result.user.email,
-        role: result.user.role,
-        staff_code: result.staff.staff_code,
-        department_id: result.staff.department_id,
-      });
-    } catch (err) {
-      if (mapStaffServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/staff/hod-accounts',
+    requirePermission('staff.hod_accounts.create'),
+    validate(hodAccountSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const { username, email } = req.body || {};
+        const result = await staffService.provisionHodAccount(
+          req.dbClient,
+          {
+            collegeId: req.collegeId,
+            username,
+            email,
+            ...bodyToServiceFields(req.body || {}),
+          },
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.status(201).json({
+          user_id: result.user.id,
+          staff_id: result.staff.id,
+          college_id: result.staff.college_id,
+          username: result.user.username,
+          email: result.user.email,
+          role: result.user.role,
+          staff_code: result.staff.staff_code,
+          department_id: result.staff.department_id,
+        });
+      } catch (err) {
+        if (mapStaffServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // "My Profile" self-service (UAT Priority 1 #4). Registered before
   // GET/PUT /staff/:id so Express never matches the literal path
   // segment "me" as a :id — order-sensitive, same reasoning
   // classes.js's /substitute-assignments/mine comment gives.
-  router.get('/staff/me', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const staff = await staffService.getOwnProfile(req.dbClient, { userId: identityService.resolveActorUserId(req.capabilities) });
-      res.json(staff);
-    } catch (err) {
-      if (mapStaffServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.get(
+    '/staff/me',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const staff = await staffService.getOwnProfile(req.dbClient, {
+          userId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.json(staff);
+      } catch (err) {
+        if (mapStaffServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.put('/staff/me', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const staff = await staffService.updateOwnProfile(
-        req.dbClient,
-        bodyToFields(req.body || {}, SELF_SERVICE_BODY_FIELDS),
-        { userId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.json(staff);
-    } catch (err) {
-      if (mapStaffServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.put(
+    '/staff/me',
+    requireAuth,
+    validate(updateOwnProfileSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const staff = await staffService.updateOwnProfile(
+          req.dbClient,
+          bodyToFields(req.body || {}, SELF_SERVICE_BODY_FIELDS),
+          { userId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.json(staff);
+      } catch (err) {
+        if (mapStaffServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // RS-STF-014 (ADL-030) — self-only phone OTP, mirrors
   // /students/:id/phone-verification/otp|verify's shape exactly, minus
   // the `target` field (staff has one phone, not phone+parent_phone).
-  router.post('/staff/me/phone-verification/otp', requireAuth, otpRequestLimiter, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const result = await staffPhoneVerificationService.requestOtp(
-        req.dbClient, { userId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(201).json(result);
-    } catch (err) {
-      if (mapStaffPhoneVerificationServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/staff/me/phone-verification/otp',
+    requireAuth,
+    otpRequestLimiter,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const result = await staffPhoneVerificationService.requestOtp(req.dbClient, {
+          userId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.status(201).json(result);
+      } catch (err) {
+        if (mapStaffPhoneVerificationServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/staff/me/phone-verification/verify', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const staff = await staffPhoneVerificationService.verifyOtp(
-        req.dbClient, { userId: identityService.resolveActorUserId(req.capabilities) }, (req.body || {}).code,
-      );
-      res.json(staff);
-    } catch (err) {
-      if (mapStaffPhoneVerificationServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/staff/me/phone-verification/verify',
+    requireAuth,
+    validate(verifyOwnPhoneSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const staff = await staffPhoneVerificationService.verifyOtp(
+          req.dbClient,
+          { userId: identityService.resolveActorUserId(req.capabilities) },
+          (req.body || {}).code,
+        );
+        res.json(staff);
+      } catch (err) {
+        if (mapStaffPhoneVerificationServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // "Previous institutions" (ADL-030 follow-up, frontend redesign
   // handoff §3) — self-only repeatable list, same registration-order
   // reasoning as /staff/me above (no :id segment to collide with).
-  router.get('/staff/me/work-history', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const entries = await staffWorkHistoryService.listOwnWorkHistory(
-        req.dbClient, { userId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.json(entries);
-    } catch (err) {
-      if (mapStaffWorkHistoryServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.get(
+    '/staff/me/work-history',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const entries = await staffWorkHistoryService.listOwnWorkHistory(req.dbClient, {
+          userId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.json(entries);
+      } catch (err) {
+        if (mapStaffWorkHistoryServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.post('/staff/me/work-history', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const body = req.body || {};
-      const entry = await staffWorkHistoryService.addOwnWorkHistoryEntry(
-        req.dbClient,
-        {
-          institutionName: body.institution_name,
-          designationHeld: body.designation_held,
-          fromDate: body.from_date,
-          toDate: body.to_date,
-        },
-        { userId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(201).json(entry);
-    } catch (err) {
-      if (mapStaffWorkHistoryServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/staff/me/work-history',
+    requireAuth,
+    validate(addWorkHistorySchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const body = req.body || {};
+        const entry = await staffWorkHistoryService.addOwnWorkHistoryEntry(
+          req.dbClient,
+          {
+            institutionName: body.institution_name,
+            designationHeld: body.designation_held,
+            fromDate: body.from_date,
+            toDate: body.to_date,
+          },
+          { userId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.status(201).json(entry);
+      } catch (err) {
+        if (mapStaffWorkHistoryServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.delete('/staff/me/work-history/:entryId', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      await staffWorkHistoryService.removeOwnWorkHistoryEntry(
-        req.dbClient, req.params.entryId, { userId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(204).end();
-    } catch (err) {
-      if (mapStaffWorkHistoryServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.delete(
+    '/staff/me/work-history/:entryId',
+    requireAuth,
+    validate(removeWorkHistorySchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        await staffWorkHistoryService.removeOwnWorkHistoryEntry(req.dbClient, req.params.entryId, {
+          userId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.status(204).end();
+      } catch (err) {
+        if (mapStaffWorkHistoryServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // requireAuth gates "must be logged in"; the real scope (self, hod of
   // the target's own department, principal college-wide — this
   // session's own task) is visibilityService.assertCanViewStaff's job.
-  router.get('/staff/:id', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    let staff;
-    try {
-      staff = await visibilityService.assertCanViewStaff(req.dbClient, { staffId: req.params.id }, {
-        actorUserId: identityService.resolveActorUserId(req.capabilities), actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
-      });
-    } catch (err) {
-      if (mapStaffServiceError(err, res)) return;
-      throw err;
-    }
-    if (staff === null) {
-      res.status(404).json({ detail: `No staff found with id ${JSON.stringify(req.params.id)}` });
-      return;
-    }
-    res.json(staff);
-  }));
+  router.get(
+    '/staff/:id',
+    requireAuth,
+    validate(getStaffSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      let staff;
+      try {
+        staff = await visibilityService.assertCanViewStaff(
+          req.dbClient,
+          { staffId: req.params.id },
+          {
+            actorUserId: identityService.resolveActorUserId(req.capabilities),
+            actorRole: req.jwtClaims.role || req.capabilities.effectiveRole,
+          },
+        );
+      } catch (err) {
+        if (mapStaffServiceError(err, res)) return;
+        throw err;
+      }
+      if (staff === null) {
+        res.status(404).json({ detail: `No staff found with id ${JSON.stringify(req.params.id)}` });
+        return;
+      }
+      res.json(staff);
+    }),
+  );
 
   // limit/offset are passed through as-is — staffService/
   // staffRepository already default them to 50/0, not re-implemented
@@ -489,56 +596,63 @@ function createStaffRouter() {
   // authenticated): principal sees the whole college, hod sees their
   // own (real, verified) department, ordinary staff see only their own
   // profile.
-  router.get('/staff', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { limit: rawLimit, offset: rawOffset } = req.query;
-    const limit = rawLimit === undefined ? 50 : Number(rawLimit);
-    const offset = rawOffset === undefined ? 0 : Number(rawOffset);
-    const actorRole = req.jwtClaims.role || req.capabilities.effectiveRole;
-    const actorUserId = identityService.resolveActorUserId(req.capabilities);
+  router.get(
+    '/staff',
+    requireAuth,
+    validate(listStaffSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { limit: rawLimit, offset: rawOffset } = req.query;
+      const limit = rawLimit === undefined ? 50 : Number(rawLimit);
+      const offset = rawOffset === undefined ? 0 : Number(rawOffset);
+      const actorRole = req.jwtClaims.role || req.capabilities.effectiveRole;
+      const actorUserId = identityService.resolveActorUserId(req.capabilities);
 
-    if (actorRole === 'principal') {
-      const staff = await staffService.listStaff(req.dbClient, { limit, offset, collegeId: req.collegeId });
-      res.json(staff);
-      return;
-    }
-    if (actorRole === 'hod') {
-      const departmentId = await staffService.findHodDepartmentId(req.dbClient, req.collegeId, actorUserId);
-      if (departmentId === null) {
-        res.json([]);
+      if (actorRole === 'principal') {
+        const staff = await staffService.listStaff(req.dbClient, { limit, offset, collegeId: req.collegeId });
+        res.json(staff);
         return;
       }
-      const all = await staffService.listStaffByDepartment(req.dbClient, departmentId, req.collegeId);
-      res.json(all.slice(offset, offset + limit));
-      return;
-    }
-    // RS-STF-015 (ADL-030): ordinary staff/class_tutor now sees a
-    // limited-field directory of every colleague, not just themselves —
-    // a distinct, narrower shape than the principal/hod branches above,
-    // never the full row.
-    const directory = await staffService.listStaffDirectory(req.dbClient, req.collegeId);
-    res.json(directory);
-  }));
-
-  router.put('/staff/:id', requirePermission('staff.update'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const staff = await staffService.updateStaff(
-        req.dbClient,
-        req.params.id,
-        bodyToServiceFields(req.body || {}),
-        { userId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      if (staff === null) {
-        res.status(404).json({ detail: `No staff found with id ${JSON.stringify(req.params.id)}` });
+      if (actorRole === 'hod') {
+        const departmentId = await staffService.findHodDepartmentId(req.dbClient, req.collegeId, actorUserId);
+        if (departmentId === null) {
+          res.json([]);
+          return;
+        }
+        const all = await staffService.listStaffByDepartment(req.dbClient, departmentId, req.collegeId);
+        res.json(all.slice(offset, offset + limit));
         return;
       }
-      res.json(staff);
-    } catch (err) {
-      if (mapStaffServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+      // RS-STF-015 (ADL-030): ordinary staff/class_tutor now sees a
+      // limited-field directory of every colleague, not just themselves —
+      // a distinct, narrower shape than the principal/hod branches above,
+      // never the full row.
+      const directory = await staffService.listStaffDirectory(req.dbClient, req.collegeId);
+      res.json(directory);
+    }),
+  );
+
+  router.put(
+    '/staff/:id',
+    requirePermission('staff.update'),
+    validate(updateStaffSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const staff = await staffService.updateStaff(req.dbClient, req.params.id, bodyToServiceFields(req.body || {}), {
+          userId: identityService.resolveActorUserId(req.capabilities),
+        });
+        if (staff === null) {
+          res.status(404).json({ detail: `No staff found with id ${JSON.stringify(req.params.id)}` });
+          return;
+        }
+        res.json(staff);
+      } catch (err) {
+        if (mapStaffServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // Module 8 final slice: submitStaffRegistration was built (Module 8
   // first/third slices) but never wired to a route — a staff profile
@@ -559,20 +673,23 @@ function createStaffRouter() {
   // (same "the service is the gate, not requireRole" reasoning
   // attendance.js's router comment already gives for
   // AttendanceForbiddenError), not this route's RBAC.
-  router.post('/staff/:id/submit-registration', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const workflowRequest = await staffService.submitStaffRegistration(
-        req.dbClient,
-        req.params.id,
-        { requestedByUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(201).json(workflowRequest);
-    } catch (err) {
-      if (mapStaffServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/staff/:id/submit-registration',
+    requireAuth,
+    validate(submitRegistrationSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const workflowRequest = await staffService.submitStaffRegistration(req.dbClient, req.params.id, {
+          requestedByUserId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.status(201).json(workflowRequest);
+      } catch (err) {
+        if (mapStaffServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
   // requireAuth, not requirePermission: RS-STF-005 names a real,
   // per-row actor ("L3, own department only"), which requirePermission's
@@ -583,28 +700,56 @@ function createStaffRouter() {
   // department (D16, fixed 2026-07-25) and throws
   // StaffDeactivationNotAuthorizedError otherwise — the per-row check
   // this comment used to flag as missing.
-  router.post('/staff/:id/deactivate', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const result = await staffService.deactivateStaff(req.dbClient, req.params.id, { actorUserId: identityService.resolveActorUserId(req.capabilities) });
-      res.json(result);
-    } catch (err) {
-      if (mapStaffServiceError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/staff/:id/deactivate',
+    requireAuth,
+    validate(deactivateStaffSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const result = await staffService.deactivateStaff(req.dbClient, req.params.id, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.json(result);
+      } catch (err) {
+        if (mapStaffServiceError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.delete('/staff/:id', requirePermission('staff.delete'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const staff = await staffService.removeStaff(req.dbClient, req.params.id, { userId: identityService.resolveActorUserId(req.capabilities) });
-    if (staff === null) {
-      res.status(404).json({ detail: `No staff found with id ${JSON.stringify(req.params.id)}` });
-      return;
-    }
-    res.status(204).end();
-  }));
+  router.delete(
+    '/staff/:id',
+    requirePermission('staff.delete'),
+    validate(deleteStaffSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const staff = await staffService.removeStaff(req.dbClient, req.params.id, {
+        userId: identityService.resolveActorUserId(req.capabilities),
+      });
+      if (staff === null) {
+        res.status(404).json({ detail: `No staff found with id ${JSON.stringify(req.params.id)}` });
+        return;
+      }
+      res.status(204).end();
+    }),
+  );
 
   return router;
 }
 
 module.exports = createStaffRouter;
+// P3 4.9 — same "attached to the factory function" convention as
+// routes/auth.js's own `.schemas`, read by routes/openapi.js.
+module.exports.schemas = {
+  '/staff': { post: createStaffSchema, get: listStaffSchema },
+  '/staff/invitations': { post: inviteStaffSchema },
+  '/staff/hod-accounts': { post: hodAccountSchema },
+  '/staff/me': { put: updateOwnProfileSchema },
+  '/staff/me/phone-verification/verify': { post: verifyOwnPhoneSchema },
+  '/staff/me/work-history': { post: addWorkHistorySchema },
+  '/staff/me/work-history/{entryId}': { delete: removeWorkHistorySchema },
+  '/staff/{id}': { get: getStaffSchema, put: updateStaffSchema, delete: deleteStaffSchema },
+  '/staff/{id}/submit-registration': { post: submitRegistrationSchema },
+  '/staff/{id}/deactivate': { post: deactivateStaffSchema },
+};

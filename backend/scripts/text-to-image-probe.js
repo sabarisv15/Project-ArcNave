@@ -29,13 +29,17 @@ const OUT_DIR = path.join(__dirname, '.out');
 
 async function main() {
   const prompt = process.argv.slice(2).join(' ').trim();
-  if (!prompt) throw new Error('pass a text prompt as argv, e.g. node scripts/text-to-image-probe.js "a campus library, watercolor"');
+  if (!prompt)
+    throw new Error(
+      'pass a text prompt as argv, e.g. node scripts/text-to-image-probe.js "a campus library, watercolor"',
+    );
 
   const auth = new GoogleAuth({ scopes: 'https://www.googleapis.com/auth/cloud-platform' });
   const { token } = await (await auth.getClient()).getAccessToken();
   const host = LOCATION === 'global' ? 'aiplatform.googleapis.com' : `${LOCATION}-aiplatform.googleapis.com`;
-  const url = `https://${host}/v1/projects/${config.gemini.projectId}/locations/${LOCATION}`
-    + `/publishers/google/models/${MODEL}:predict`;
+  const url =
+    `https://${host}/v1/projects/${config.gemini.projectId}/locations/${LOCATION}` +
+    `/publishers/google/models/${MODEL}:predict`;
 
   const started = Date.now();
   const res = await fetch(url, {
@@ -80,4 +84,7 @@ async function main() {
   console.log(`saved: ${outPath}`);
 }
 
-main().catch((err) => { console.error('FAILED:', err.message); process.exitCode = 1; });
+main().catch((err) => {
+  console.error('FAILED:', err.message);
+  process.exitCode = 1;
+});

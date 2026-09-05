@@ -29,9 +29,7 @@ function mockDownload(t, result) {
 }
 
 function mockCreate(t, result) {
-  return t.mock.method(ocrResultRepository, 'create', async (client, fields) => (
-    result || { id: 'ocr-1', ...fields }
-  ));
+  return t.mock.method(ocrResultRepository, 'create', async (client, fields) => result || { id: 'ocr-1', ...fields });
 }
 
 test('ocrService.processDocument', async (t) => {
@@ -50,27 +48,27 @@ test('ocrService.processDocument', async (t) => {
     const downloadMock = mockDownload(t, null);
     t.after(() => downloadMock.mock.restore());
 
-    await assert.rejects(
-      () => ocrService.processDocument({}, 'doc-1', {}),
-      ocrService.OcrValidationError,
-    );
+    await assert.rejects(() => ocrService.processDocument({}, 'doc-1', {}), ocrService.OcrValidationError);
     assert.equal(downloadMock.mock.callCount(), 0);
   });
 
-  await t.test('unsupported/unknown document (downloadDocument returns null) is a real 404-shaped error, not a crash', async () => {
-    const downloadMock = mockDownload(t, null);
-    const createMock = mockCreate(t);
-    t.after(() => {
-      downloadMock.mock.restore();
-      createMock.mock.restore();
-    });
+  await t.test(
+    'unsupported/unknown document (downloadDocument returns null) is a real 404-shaped error, not a crash',
+    async () => {
+      const downloadMock = mockDownload(t, null);
+      const createMock = mockCreate(t);
+      t.after(() => {
+        downloadMock.mock.restore();
+        createMock.mock.restore();
+      });
 
-    await assert.rejects(
-      () => ocrService.processDocument({}, 'missing-doc', { actorUserId: 'u1' }),
-      ocrService.OcrDocumentNotFoundError,
-    );
-    assert.equal(createMock.mock.callCount(), 0);
-  });
+      await assert.rejects(
+        () => ocrService.processDocument({}, 'missing-doc', { actorUserId: 'u1' }),
+        ocrService.OcrDocumentNotFoundError,
+      );
+      assert.equal(createMock.mock.callCount(), 0);
+    },
+  );
 
   await t.test('text/* documents are decoded directly, never routed through OCR', async () => {
     const downloadMock = mockDownload(t, {
@@ -117,63 +115,78 @@ test('ocrService.processDocument', async (t) => {
     assert.equal(fields.extractedText, '');
   });
 
-  await t.test('image/PDF documents are routed to the real Tesseract-backed pipeline, never byte-stripped', async () => {
-    const downloadMock = mockDownload(t, {
-      document: { id: 'doc-1', college_id: 'c1', mime_type: 'application/pdf' },
-      buffer: Buffer.from([0x25, 0x50, 0x44, 0x46, 0x00, 0x01, 0x02, 0xff]), // "%PDF" + binary junk
-    });
-    const createMock = mockCreate(t);
-    const langMock = t.mock.method(documentExtractionService, 'resolveOcrLang', async () => 'eng');
-    const runOcrMock = t.mock.method(documentExtractionService, 'runOcr', async (buffer, mimeType, opts) => {
-      assert.equal(mimeType, 'application/pdf');
-      assert.equal(opts.lang, 'eng');
-      return { text: 'Real Tesseract output', ocrConfidence: 92, ocrEngine: 'tesseract.js', ocrEngineVersion: '7.0.0' };
-    });
-    t.after(() => {
-      downloadMock.mock.restore();
-      createMock.mock.restore();
-      langMock.mock.restore();
-      runOcrMock.mock.restore();
-    });
+  await t.test(
+    'image/PDF documents are routed to the real Tesseract-backed pipeline, never byte-stripped',
+    async () => {
+      const downloadMock = mockDownload(t, {
+        document: { id: 'doc-1', college_id: 'c1', mime_type: 'application/pdf' },
+        buffer: Buffer.from([0x25, 0x50, 0x44, 0x46, 0x00, 0x01, 0x02, 0xff]), // "%PDF" + binary junk
+      });
+      const createMock = mockCreate(t);
+      const langMock = t.mock.method(documentExtractionService, 'resolveOcrLang', async () => 'eng');
+      const runOcrMock = t.mock.method(documentExtractionService, 'runOcr', async (buffer, mimeType, opts) => {
+        assert.equal(mimeType, 'application/pdf');
+        assert.equal(opts.lang, 'eng');
+        return {
+          text: 'Real Tesseract output',
+          ocrConfidence: 92,
+          ocrEngine: 'tesseract.js',
+          ocrEngineVersion: '7.0.0',
+        };
+      });
+      t.after(() => {
+        downloadMock.mock.restore();
+        createMock.mock.restore();
+        langMock.mock.restore();
+        runOcrMock.mock.restore();
+      });
 
-    await ocrService.processDocument({}, 'doc-1', { actorUserId: 'u1' });
+      await ocrService.processDocument({}, 'doc-1', { actorUserId: 'u1' });
 
-    assert.equal(runOcrMock.mock.callCount(), 1);
-    const fields = createMock.mock.calls[0].arguments[1];
-    assert.equal(fields.status, 'completed');
-    assert.equal(fields.extractedText, 'Real Tesseract output');
-    // Never the old byte-stripping behavior — real OCR text has no
-    // resemblance to the raw "%PDF" + binary-junk input buffer.
-    assert.doesNotMatch(fields.extractedText, /%PDF/);
-  });
+      assert.equal(runOcrMock.mock.callCount(), 1);
+      const fields = createMock.mock.calls[0].arguments[1];
+      assert.equal(fields.status, 'completed');
+      assert.equal(fields.extractedText, 'Real Tesseract output');
+      // Never the old byte-stripping behavior — real OCR text has no
+      // resemblance to the raw "%PDF" + binary-junk input buffer.
+      assert.doesNotMatch(fields.extractedText, /%PDF/);
+    },
+  );
 
-  await t.test('a mime type OCR cannot process is an honest unsupported_mime_type result, never fabricated text', async () => {
-    const downloadMock = mockDownload(t, {
-      document: { id: 'doc-1', college_id: 'c1', mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
-      buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04]), // a real .docx's zip magic bytes
-    });
-    const createMock = mockCreate(t);
-    const langMock = t.mock.method(documentExtractionService, 'resolveOcrLang', async () => 'eng');
-    // Explicitly mocked (not left to the real implementation) so this
-    // test is self-contained regardless of test-runner mock-restore
-    // ordering across sibling subtests — same real error class runOcr
-    // itself throws for a mime type outside [image/*, application/pdf].
-    const runOcrMock = t.mock.method(documentExtractionService, 'runOcr', async () => {
-      throw new documentExtractionService.DocumentExtractionValidationError('mimeType is not supported for OCR');
-    });
-    t.after(() => {
-      downloadMock.mock.restore();
-      createMock.mock.restore();
-      langMock.mock.restore();
-      runOcrMock.mock.restore();
-    });
+  await t.test(
+    'a mime type OCR cannot process is an honest unsupported_mime_type result, never fabricated text',
+    async () => {
+      const downloadMock = mockDownload(t, {
+        document: {
+          id: 'doc-1',
+          college_id: 'c1',
+          mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        },
+        buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04]), // a real .docx's zip magic bytes
+      });
+      const createMock = mockCreate(t);
+      const langMock = t.mock.method(documentExtractionService, 'resolveOcrLang', async () => 'eng');
+      // Explicitly mocked (not left to the real implementation) so this
+      // test is self-contained regardless of test-runner mock-restore
+      // ordering across sibling subtests — same real error class runOcr
+      // itself throws for a mime type outside [image/*, application/pdf].
+      const runOcrMock = t.mock.method(documentExtractionService, 'runOcr', async () => {
+        throw new documentExtractionService.DocumentExtractionValidationError('mimeType is not supported for OCR');
+      });
+      t.after(() => {
+        downloadMock.mock.restore();
+        createMock.mock.restore();
+        langMock.mock.restore();
+        runOcrMock.mock.restore();
+      });
 
-    await ocrService.processDocument({}, 'doc-1', { actorUserId: 'u1' });
+      await ocrService.processDocument({}, 'doc-1', { actorUserId: 'u1' });
 
-    const fields = createMock.mock.calls[0].arguments[1];
-    assert.equal(fields.status, 'unsupported_mime_type');
-    assert.equal(fields.extractedText, '');
-  });
+      const fields = createMock.mock.calls[0].arguments[1];
+      assert.equal(fields.status, 'unsupported_mime_type');
+      assert.equal(fields.extractedText, '');
+    },
+  );
 });
 
 test('ocrService.listForDocument', async (t) => {

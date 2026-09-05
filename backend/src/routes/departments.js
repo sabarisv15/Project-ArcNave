@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const { requireAuth, requirePermission } = require('../middleware/rbac');
 const collegeProfileService = require('../services/collegeProfileService');
 const staffService = require('../services/staffService');
@@ -57,128 +59,206 @@ function mapDepartmentError(err, res) {
   return false;
 }
 
+const departmentIdParams = z.object({ id: z.string() });
+const hodInChargeAppointmentParams = z.object({ id: z.string(), appointmentId: z.string() });
+const departmentBodySchema = z
+  .object({
+    name: z.string().optional(),
+    approved_intake: z.any().optional(),
+    course_duration: z.any().optional(),
+    default_sections: z.any().optional(),
+  })
+  .optional();
+const createDepartmentSchema = z.object({ body: departmentBodySchema });
+const getDepartmentSchema = z.object({ params: departmentIdParams });
+const updateDepartmentSchema = z.object({ params: departmentIdParams, body: departmentBodySchema });
+const deleteDepartmentSchema = z.object({ params: departmentIdParams });
+const appointHodInChargeSchema = z.object({
+  params: departmentIdParams,
+  body: z.object({ faculty_user_id: z.string().optional(), reason: z.string().optional() }).optional(),
+});
+const getHodInChargeSchema = z.object({ params: departmentIdParams });
+const listHodInChargeHistorySchema = z.object({ params: departmentIdParams });
+const revokeHodInChargeSchema = z.object({ params: hodInChargeAppointmentParams });
+
 function createDepartmentsRouter() {
   const router = express.Router();
 
-  router.get('/departments', requirePermission('departments.read'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const departments = await collegeProfileService.listDepartments(req.dbClient, req.collegeId);
-    res.json(departments);
-  }));
+  router.get(
+    '/departments',
+    requirePermission('departments.read'),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const departments = await collegeProfileService.listDepartments(req.dbClient, req.collegeId);
+      res.json(departments);
+    }),
+  );
 
-  router.post('/departments', requirePermission('departments.create'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const department = await collegeProfileService.createDepartment(
-        req.dbClient,
-        { collegeId: req.collegeId, ...bodyToFields(req.body || {}, DEPARTMENT_BODY_FIELDS) },
-        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
-      res.status(201).json(department);
-    } catch (err) {
-      if (mapDepartmentError(err, res)) return;
-      throw err;
-    }
-  }));
+  router.post(
+    '/departments',
+    requirePermission('departments.create'),
+    validate(createDepartmentSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const department = await collegeProfileService.createDepartment(
+          req.dbClient,
+          { collegeId: req.collegeId, ...bodyToFields(req.body || {}, DEPARTMENT_BODY_FIELDS) },
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        res.status(201).json(department);
+      } catch (err) {
+        if (mapDepartmentError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
 
-  router.get('/departments/:id', requirePermission('departments.read'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const department = await collegeProfileService.getDepartment(req.dbClient, req.params.id);
-    if (department === null) {
-      res.status(404).json({ detail: `No department found with id ${JSON.stringify(req.params.id)}` });
-      return;
-    }
-    res.json(department);
-  }));
-
-  router.put('/departments/:id', requirePermission('departments.update'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const department = await collegeProfileService.updateDepartment(
-        req.dbClient,
-        req.params.id,
-        bodyToFields(req.body || {}, DEPARTMENT_BODY_FIELDS),
-        { actorUserId: identityService.resolveActorUserId(req.capabilities) },
-      );
+  router.get(
+    '/departments/:id',
+    requirePermission('departments.read'),
+    validate(getDepartmentSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const department = await collegeProfileService.getDepartment(req.dbClient, req.params.id);
       if (department === null) {
         res.status(404).json({ detail: `No department found with id ${JSON.stringify(req.params.id)}` });
         return;
       }
       res.json(department);
-    } catch (err) {
-      if (mapDepartmentError(err, res)) return;
-      throw err;
-    }
-  }));
+    }),
+  );
 
-  router.delete('/departments/:id', requirePermission('departments.delete'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const department = await collegeProfileService.removeDepartment(
-      req.dbClient,
-      req.params.id,
-      { actorUserId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
-    );
-    if (department === null) {
-      res.status(404).json({ detail: `No department found with id ${JSON.stringify(req.params.id)}` });
-      return;
-    }
-    res.status(204).end();
-  }));
+  router.put(
+    '/departments/:id',
+    requirePermission('departments.update'),
+    validate(updateDepartmentSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const department = await collegeProfileService.updateDepartment(
+          req.dbClient,
+          req.params.id,
+          bodyToFields(req.body || {}, DEPARTMENT_BODY_FIELDS),
+          { actorUserId: identityService.resolveActorUserId(req.capabilities) },
+        );
+        if (department === null) {
+          res.status(404).json({ detail: `No department found with id ${JSON.stringify(req.params.id)}` });
+          return;
+        }
+        res.json(department);
+      } catch (err) {
+        if (mapDepartmentError(err, res)) return;
+        throw err;
+      }
+    }),
+  );
+
+  router.delete(
+    '/departments/:id',
+    requirePermission('departments.delete'),
+    validate(deleteDepartmentSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const department = await collegeProfileService.removeDepartment(req.dbClient, req.params.id, {
+        actorUserId: identityService.resolveActorUserId(req.capabilities),
+        collegeId: req.collegeId,
+      });
+      if (department === null) {
+        res.status(404).json({ detail: `No department found with id ${JSON.stringify(req.params.id)}` });
+        return;
+      }
+      res.status(204).end();
+    }),
+  );
 
   // BusinessRules.md Staff lifecycle: "the Principal may appoint an
   // eligible faculty member as HOD In-Charge." requirePermission
   // mapped to ['principal'] is that authority check — unlike the
   // per-row tutor/hod checks elsewhere, "Principal" is a plain role
   // check, no per-row identity resolution needed.
-  router.post('/departments/:id/hod-in-charge', requirePermission('hod_in_charge.appoint'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const { faculty_user_id: facultyUserId, reason } = req.body || {};
-    try {
-      const appointment = await staffService.appointHodInCharge(
-        req.dbClient, req.params.id, facultyUserId, { reason }, { actorUserId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
-      );
-      res.status(201).json(appointment);
-    } catch (err) {
-      if (mapDepartmentError(err, res)) return;
-      if (err instanceof staffService.HodInChargeValidationError) {
-        res.status(400).json({ detail: err.message });
-        return;
+  router.post(
+    '/departments/:id/hod-in-charge',
+    requirePermission('hod_in_charge.appoint'),
+    validate(appointHodInChargeSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const { faculty_user_id: facultyUserId, reason } = req.body || {};
+      try {
+        const appointment = await staffService.appointHodInCharge(
+          req.dbClient,
+          req.params.id,
+          facultyUserId,
+          { reason },
+          { actorUserId: identityService.resolveActorUserId(req.capabilities), collegeId: req.collegeId },
+        );
+        res.status(201).json(appointment);
+      } catch (err) {
+        if (mapDepartmentError(err, res)) return;
+        if (err instanceof staffService.HodInChargeValidationError) {
+          res.status(400).json({ detail: err.message });
+          return;
+        }
+        if (err instanceof staffService.HodInChargeAlreadyActiveError) {
+          res.status(409).json({ detail: err.message });
+          return;
+        }
+        throw err;
       }
-      if (err instanceof staffService.HodInChargeAlreadyActiveError) {
-        res.status(409).json({ detail: err.message });
-        return;
-      }
-      throw err;
-    }
-  }));
+    }),
+  );
 
-  router.get('/departments/:id/hod-in-charge', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const appointment = await staffService.getActiveHodInCharge(req.dbClient, req.collegeId, req.params.id);
-    res.json(appointment);
-  }));
-
-  router.get('/departments/:id/hod-in-charge/history', requireAuth, asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    const history = await staffService.listHodInChargeHistory(req.dbClient, req.params.id);
-    res.json(history);
-  }));
-
-  router.post('/departments/:id/hod-in-charge/:appointmentId/revoke', requirePermission('hod_in_charge.appoint'), asyncHandler(async (req, res) => {
-    if (!requireResolvedTenant(req, res)) return;
-    try {
-      const appointment = await staffService.revokeHodInCharge(req.dbClient, req.params.appointmentId, { actorUserId: identityService.resolveActorUserId(req.capabilities) });
+  router.get(
+    '/departments/:id/hod-in-charge',
+    requireAuth,
+    validate(getHodInChargeSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const appointment = await staffService.getActiveHodInCharge(req.dbClient, req.collegeId, req.params.id);
       res.json(appointment);
-    } catch (err) {
-      if (err instanceof staffService.StaffDeactivationNotFoundError) {
-        res.status(404).json({ detail: err.message });
-        return;
+    }),
+  );
+
+  router.get(
+    '/departments/:id/hod-in-charge/history',
+    requireAuth,
+    validate(listHodInChargeHistorySchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      const history = await staffService.listHodInChargeHistory(req.dbClient, req.params.id);
+      res.json(history);
+    }),
+  );
+
+  router.post(
+    '/departments/:id/hod-in-charge/:appointmentId/revoke',
+    requirePermission('hod_in_charge.appoint'),
+    validate(revokeHodInChargeSchema),
+    asyncHandler(async (req, res) => {
+      if (!requireResolvedTenant(req, res)) return;
+      try {
+        const appointment = await staffService.revokeHodInCharge(req.dbClient, req.params.appointmentId, {
+          actorUserId: identityService.resolveActorUserId(req.capabilities),
+        });
+        res.json(appointment);
+      } catch (err) {
+        if (err instanceof staffService.StaffDeactivationNotFoundError) {
+          res.status(404).json({ detail: err.message });
+          return;
+        }
+        throw err;
       }
-      throw err;
-    }
-  }));
+    }),
+  );
 
   return router;
 }
 
 module.exports = createDepartmentsRouter;
+module.exports.schemas = {
+  '/departments': { post: createDepartmentSchema },
+  '/departments/{id}': { get: getDepartmentSchema, put: updateDepartmentSchema, delete: deleteDepartmentSchema },
+  '/departments/{id}/hod-in-charge': { post: appointHodInChargeSchema, get: getHodInChargeSchema },
+  '/departments/{id}/hod-in-charge/history': { get: listHodInChargeHistorySchema },
+  '/departments/{id}/hod-in-charge/{appointmentId}/revoke': { post: revokeHodInChargeSchema },
+};

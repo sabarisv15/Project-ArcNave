@@ -81,7 +81,7 @@
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.53.0",
     "react-markdown": "^10.1.0",
-    "react-router-dom": "^6.27.0",
+    "react-router-dom": "^7.18.3",
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",

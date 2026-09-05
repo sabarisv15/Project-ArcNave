@@ -37,7 +37,7 @@ jobs:
       contents: read
       id-token: write # required for Workload Identity Federation
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # VERIFY: exact `workload_identity_provider`/`service_account`
       # values depend on the WIF pool/provider created per

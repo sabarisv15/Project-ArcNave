@@ -17,7 +17,7 @@
     "audit:gate": "npm audit --json | node scripts/audit-policy-gate.js audit-allowlist.json"
   },
   "dependencies": {
-    "argon2": "^0.41.1",
+    "argon2": "^0.45.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "docx": "^9.7.1",
